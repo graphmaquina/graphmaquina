@@ -1,4 +1,4 @@
-package io.github.graphmaquina.graphonly;
+package io.github.graphmaquina.semantics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;

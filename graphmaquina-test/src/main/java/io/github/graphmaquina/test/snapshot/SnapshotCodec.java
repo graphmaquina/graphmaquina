@@ -8,16 +8,11 @@ import java.util.Map;
  * terminated by a line feed. Backslash, tab, line feed and carriage return are escaped in both halves, so
  * the separator and the line break are never ambiguous and a value may be empty or carry any text at all.
  *
- * <p>Only {@code graphmaquina-snapshot-v2} is read. A snapshot of the retired matrix format is a different
- * model, not an older spelling of this one, so it is rejected with the one instruction that can fix it
- * rather than converted.
+ * <p>Only {@code graphmaquina-snapshot-v1} is read; a document with any other version line is refused.
  */
 final class SnapshotCodec {
 
-    private static final String VERSION = "graphmaquina-snapshot-v2";
-
-    /** The retired matrix format, named only to tell its reader what to do next. */
-    private static final String RETIRED = "graphmaquina-snapshot-v1";
+    private static final String VERSION = "graphmaquina-snapshot-v1";
 
     private SnapshotCodec() { }
 
@@ -32,11 +27,6 @@ final class SnapshotCodec {
 
     static Map<String, String> decode(String text) {
         String[] lines = text.split("\n", -1);
-        if (RETIRED.equals(lines[0])) {
-            throw new IllegalArgumentException("the snapshot \"" + RETIRED + "\" describes the retired"
-                    + " transition matrix and carries no transition identifiers; regenerate it from the"
-                    + " migrated definition, which produces \"" + VERSION + "\"");
-        }
         if (!VERSION.equals(lines[0])) {
             throw new IllegalArgumentException("unsupported snapshot version \"" + escape(lines[0])
                     + "\", expected \"" + VERSION + "\"");

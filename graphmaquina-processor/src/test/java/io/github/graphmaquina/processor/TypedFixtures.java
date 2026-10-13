@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures written against the graph-only API, one entry per compilation unit. Everything lives in
+ * Source fixtures, one entry per compilation unit. Everything lives in
  * package {@code fx}, and no entry names a generated type the pre-javac generator does not produce from these
  * very sources, so the fixture can be prepared and compiled exactly as a consumer build does.
  */

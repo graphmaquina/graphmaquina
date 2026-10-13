@@ -102,13 +102,13 @@ class CommitContextHooksTest {
     }
 
     @Test
-    void legacyAndContextualHooksStillCountAsOneHookPerEdge() {
+    void plainAndContextualHooksCountAsOneHookPerEdge() {
         assertThrows(IllegalStateException.class, () -> StateGraph.define(DOCS)
-                .transition(SUBMIT, DRAFT, REVIEW).afterCommit("legacy", doc -> { })
+                .transition(SUBMIT, DRAFT, REVIEW).afterCommit("plain", doc -> { })
                 .afterCommitWith("contextual", (doc, context) -> { }));
         assertThrows(IllegalStateException.class, () -> StateGraph.define(DOCS)
                 .transition(SUBMIT, DRAFT, REVIEW).afterCommitWith("contextual", (doc, context) -> { })
-                .afterCommit("legacy", doc -> { }));
+                .afterCommit("plain", doc -> { }));
     }
 
     @Test

@@ -42,10 +42,9 @@ type-checks the application; no previously compiled machine is required.
 The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
 otherwise derive it with `git describe --tags`, so no file in the repository states a release version. That is
 the tag itself on a tagged commit, and on any other commit the most recent tag followed by the commits since it
-and the abbreviated commit, as `1.0.2-553-g03952fd`, so a development build never takes the coordinates of a
-published release; `centralBundle` refuses such a version. A published version is immutable; the next
-publication is `2.0.0`, which every module carries at once. The [README](guide.md#release-to-maven-central)
-describes the release, the steps below among them.
+and the abbreviated commit, as `2.0.0-12-g03952fd`, so a development build never takes the coordinates of a
+published release; `centralBundle` refuses such a version. A published version is immutable. The
+[guide](guide.md#release-to-maven-central) describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -68,7 +67,7 @@ GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which
 The rest of this section covers the other two cases: testing a build that is not released yet, and serving
 every component, including the Gradle implementation and its marker, from an internal repository. The source
 repository is private and requires authorized access; the published artifacts are public.
-See the [README](guide.md#configure-gradle) for a complete consumer configuration.
+See the [guide](guide.md#configure-gradle) for a complete consumer configuration.
 
 To test local changes, publish from an authorized checkout of this repository, under a version string of your
 choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina.version`:
@@ -819,7 +818,6 @@ inventory it left.
 | `SG603` "…share one canonical name…", "the class file of … of the unnamed package names both …" | a class of the unnamed package is named like a package, as a class `shop` beside the package `shop`, so one canonical name names two types: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. Rename one of them, or the class. |
 | `SG603` "…which a symbolic link takes out of …", "…would be written through a symbolic link that leads out of …" | a symbolic link inside an output directory, the class output or a generated source directory, leads out of it, and the step would remove or write a file outside it through that link. Nothing outside the directory is touched. Remove the link, then run the lifecycle again. |
 | `SG603` "…claims '…', which is not a file under …", "…which is not a class file under …", "…which is not a source file under …" | an inventory of the work directory names an entry that is not a file under its output root: a blank one, one that no path can spell, such as one holding a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; or a binary that is no `.class` file, or a source that is no `.java` file, such as `x`. Clean the build. |
-| `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | in Gradle, raise the JDK javac compiles with, from the project's toolchain or the compile task's own, or the generation task's `javaLauncher` when the build sets one, to 21+; in Maven, point `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
 | "…needs the jdk.compiler module…" | the installation the Gradle generation task's `javaLauncher` names, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |

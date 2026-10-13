@@ -141,8 +141,9 @@ class GeneratedNamingTest {
     }
 
     /**
-     * A refused companion name withholds only what depends on it, here that companion alone: the round still reports
-     * a declaration of the retired vocabulary, a machine and a set with problems of their own, each once.
+     * A refused companion name withholds only what depends on it, here that companion alone: the round reports that
+     * refusal, {@code SG603}, and a machine and a set with problems of their own, {@code SG103} and {@code SG510},
+     * each once and nothing else.
      */
     @Test
     void aRefusedRuntimeNameDoesNotHideTheOtherProblemsOfItsRound() {
@@ -150,14 +151,6 @@ class GeneratedNamingTest {
                 Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \""),
                 Fixtures.DOCS_BODY);
         sources.put("fx.PagesRuntime", "package fx;\npublic final class PagesRuntime { }\n");
-        sources.put("io.github.graphmaquina.annotation.Row", """
-                package io.github.graphmaquina.annotation;
-                import java.lang.annotation.ElementType;
-                import java.lang.annotation.Target;
-                @Target(ElementType.TYPE)
-                public @interface Row { }
-                """);
-        sources.put("fx.Sheets", "package fx;\n@io.github.graphmaquina.annotation.Row\npublic interface Sheets { }\n");
         sources.put("fx.Shelf", """
                 package fx;
                 import io.github.graphmaquina.annotation.StateGraphs;
@@ -172,9 +165,8 @@ class GeneratedNamingTest {
 
         assertEquals(1, result.countError("SG603"), result.describe());
         assertEquals(1, result.countError("SG103"), result.describe());
-        assertEquals(1, result.countError("SG609"), result.describe());
         assertEquals(1, result.countError("SG510"), result.describe());
-        assertEquals(4, result.errors().size(), result.describe());
+        assertEquals(3, result.errors().size(), result.describe());
     }
 
     /**

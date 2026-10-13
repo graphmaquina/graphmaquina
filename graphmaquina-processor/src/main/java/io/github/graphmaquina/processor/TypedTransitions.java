@@ -98,9 +98,7 @@ final class TypedTransitions {
         Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) -> duration(value, element, mirror));
         Optional<String> onFailure = single(element, mirror, "onFailure")
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
-        List<AnnotationValue> failsOnValues = annotations.find(mirror, "failsOn").isEmpty()
-                ? List.of()
-                : classValues(annotations.array(mirror, "failsOn"));
+        List<AnnotationValue> failsOnValues = classValues(annotations.array(mirror, "failsOn"));
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
         List<RecoveryModel> recoveries = recoveries(mirror, machine);
@@ -128,18 +126,10 @@ final class TypedTransitions {
                 .flatMap((AnnotationValue value) -> resolve(value, Bindings.Role.HOOK, element, mirror, machine));
     }
 
-    /**
-     * The one value of the element {@code name}, and empty when this annotation does not declare that element
-     * at all, which is how an older vocabulary without a default hook resolves here instead of crashing.
-     */
+    /** The one value of the element {@code name}, and empty when the element holds none. */
     private Optional<AnnotationValue> single(Element element, AnnotationMirror mirror, String name) {
-        Optional<AnnotationValue> declared = annotations.find(mirror, name);
-        if (declared.isEmpty()) {
-            // annotations.array(...) throws IllegalArgumentException for a member the annotation type does not declare.
-            return Optional.empty();
-        }
         return TypedValues.optional(mirror, name, annotations,
-                DiagnosticAnchor.of(element, mirror, declared.get()), diagnostics);
+                DiagnosticAnchor.of(element, mirror, annotations.value(mirror, name)), diagnostics);
     }
 
     /**
@@ -194,16 +184,10 @@ final class TypedTransitions {
         return timeouts.read(timeout, DiagnosticAnchor.of(element, mirror, value));
     }
 
-    /**
-     * The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order: none when its
-     * annotation type declares no such element.
-     */
+    /** The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order. */
     private List<RecoveryModel> recoveries(AnnotationMirror mirror, MachineTypes machine) {
-        List<AnnotationValue> declared = annotations.find(mirror, "recoveries").isEmpty()
-                ? List.of()
-                : annotations.array(mirror, "recoveries");
         List<RecoveryModel> recoveries = new ArrayList<>();
-        for (AnnotationValue value : declared) {
+        for (AnnotationValue value : annotations.array(mirror, "recoveries")) {
             if (value.getValue() instanceof AnnotationMirror recovery) {
                 recovery(recovery, machine).ifPresent(recoveries::add);
             }

@@ -337,7 +337,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         boolean valid = true;
         Set<Class<?>> kinds = new HashSet<>();
         Set<Class<?>> repeatedKinds = new HashSet<>();
-        Set<Class<?>> legacy = new HashSet<>(failsOn);
+        Set<Class<?>> failsOnTypes = new HashSet<>(failsOn);
         Set<Class<?>> declared = new HashSet<>();
         Set<Class<?>> repeatedTypes = new HashSet<>();
         for (DeclaredRecovery<T> recovery : recoveries) {
@@ -359,7 +359,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
                             + FailureTypes.FORBIDDEN_THROWABLE_RULE);
                     valid = false;
                 }
-                if ((!declared.add(type) || legacy.contains(type)) && repeatedTypes.add(type)) {
+                if ((!declared.add(type) || failsOnTypes.contains(type)) && repeatedTypes.add(type)) {
                     problems.add("SG304", fromIndex, idIndex, where + ": " + type.getName()
                             + " is declared more than once across recover and failsOn; a throwable type selects a"
                             + " single route");

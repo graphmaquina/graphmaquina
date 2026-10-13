@@ -11,12 +11,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The shared fixture of the graph-only tests: a ticket machine with three states and a catalogue of six
+ * The shared fixture of the graph semantics tests: a ticket machine with three states and a catalogue of six
  * identifiers, of which the base builder declares only two edges. Tests add the edges they need on top, which is
  * what makes absence, parallel edges and self-loops observable.
  */
-public final class GraphOnlyFixture {
-    private GraphOnlyFixture() { }
+public final class TicketMachineFixture {
+    private TicketMachineFixture() { }
 
     /** States of the ticket machine. */
     public enum State { OPEN, REVIEW, DONE }

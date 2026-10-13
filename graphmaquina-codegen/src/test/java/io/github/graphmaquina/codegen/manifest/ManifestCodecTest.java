@@ -38,32 +38,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Verifies the manifest codec: what schema 2 writes and reads back, and how a document of the retired semantic
- * schema 1 is refused.
+ * Verifies the manifest codec: what schema 2 writes and reads back, and how a document of another schema is refused.
  */
 class ManifestCodecTest {
 
     @TempDir
     Path directory;
-
-    private static final String SCHEMA_ONE_INDEX = """
-        {
-          "schemaVersion": 1,
-          "toolVersion": "1.0.0",
-          "compilationId": "fx:demo:main",
-          "model": {
-            "graphs": [
-              {
-                "facade": "fx.Orders", "packageName": "fx", "entityType": "fx.Order",
-                "stateType": "fx.Status", "states": ["NEW", "DONE"], "peers": [],
-                "origin": {"path": "fx/Orders.java", "line": 10, "column": 5}
-              }
-            ],
-            "symbols": []
-          },
-          "annotationTypes": ["fx.OrdersGraph.Row"]
-        }
-        """;
 
     private static SourceLocation origin() {
         return new SourceLocation("fx/Orders.java", 10, 5);
@@ -71,7 +51,7 @@ class ManifestCodecTest {
 
     @Test
     void aPublishedIndexRoundTripsWithoutExecutionPaths() throws IOException {
-        ExportIndex index = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:empty:main",
+        ExportIndex index = new ExportIndex(2, "2.0.0-test", "fx:empty:main",
             new GenerationModel(List.of(), List.of()), List.of());
         Path first = directory.resolve("first.json");
         Path second = directory.resolve("second.json");
@@ -94,7 +74,7 @@ class ManifestCodecTest {
         Path exports = directory.resolve("exports.json");
         ManifestCodec.writeExports(exports, index("fx:demo:main"));
         Path compile = directory.resolve("compile.json");
-        ManifestCodec.writeCompile(compile, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"),
+        ManifestCodec.writeCompile(compile, new CompileManifest(2, "2.0.0-test", index("fx:demo:main"),
             List.of(index("fx:peer:main")), "processor-inventory.json", List.of("fx/DocsGraph.java")));
         Path owned = directory.resolve("owned-outputs.json");
         ManifestCodec.writeOwned(owned, new OwnedOutputs(2, List.of("fx/Docs_.java"), List.of("fx/Docs_.class"),
@@ -116,7 +96,7 @@ class ManifestCodecTest {
         Files.writeString(file, """
             {
               "schemaVersion": 99,
-              "toolVersion": "0.3.0-SNAPSHOT",
+              "toolVersion": "2.0.0-test",
               "compilationId": "fx:empty:main",
               "model": { "graphs": [], "symbols": [] },
               "annotationTypes": []
@@ -136,7 +116,7 @@ class ManifestCodecTest {
         Files.writeString(file, """
             {
               "schemaVersion": %s,
-              "toolVersion": "0.3.0-SNAPSHOT",
+              "toolVersion": "2.0.0-test",
               "compilationId": "fx:empty:main",
               "model": { "graphs": [], "symbols": [] },
               "annotationTypes": []
@@ -155,7 +135,7 @@ class ManifestCodecTest {
         GraphDescriptor graph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
             List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT"), List.of(), origin());
         Path file = directory.resolve("origin.json");
-        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ManifestCodec.writeExports(file, new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(graph), List.of()), List.of()));
         Files.writeString(file, Files.readString(file).replace("\"line\": 10", "\"line\": 10.5"));
 
@@ -178,7 +158,7 @@ class ManifestCodecTest {
         GraphDescriptor graph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
             List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT"), List.of(), origin());
         Path file = directory.resolve("exponent.json");
-        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ManifestCodec.writeExports(file, new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(graph), List.of()), List.of()));
         Files.writeString(file, Files.readString(file)
             .replaceFirst("\"" + member + "\": \\d+", "\"" + member + "\": " + number));
@@ -320,7 +300,7 @@ class ManifestCodecTest {
             {
               "schemaVersion": 2,
               "schemaVersion": 2,
-              "toolVersion": "0.3.0-SNAPSHOT",
+              "toolVersion": "2.0.0-test",
               "compilationId": "fx:empty:main",
               "model": { "graphs": [], "symbols": [] },
               "annotationTypes": []
@@ -336,7 +316,7 @@ class ManifestCodecTest {
             List.of(new MemberDescriptor("fx.PaymentActions", "authorize", List.of(), "void",
                 SymbolKind.ACTION, false, origin())),
             Optional.empty(), origin());
-        ExportIndex indexWithout = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex indexWithout = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(), List.of(withoutProperty)), List.of());
         Path fileWithout = directory.resolve("without-property.json");
         ManifestCodec.writeExports(fileWithout, indexWithout);
@@ -347,7 +327,7 @@ class ManifestCodecTest {
             "PaymentActions", "amount", Set.of(SymbolKind.PROPERTY), List.of(),
             Optional.of(new PropertyDescriptor("fx.PaymentActions", "amount", "getAmount", true, origin())),
             origin());
-        ExportIndex indexWith = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex indexWith = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(), List.of(withProperty)), List.of());
         Path fileWith = directory.resolve("with-property.json");
         ManifestCodec.writeExports(fileWith, indexWith);
@@ -362,9 +342,9 @@ class ManifestCodecTest {
         GraphDescriptor billingGraph = new GraphDescriptor("fx.Billing", "fx", "fx.Invoice", "fx.Status",
             List.of("NEW", "DONE"), "fx.BillingTransition", List.of("ISSUE", "SETTLE"), List.of(), origin());
 
-        ExportIndex ordersFirst = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex ordersFirst = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(ordersGraph, billingGraph), List.of()), List.of("b", "a"));
-        ExportIndex billingFirst = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex billingFirst = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(billingGraph, ordersGraph), List.of()), List.of("a", "b"));
 
         Path first = directory.resolve("orders-first.json");
@@ -398,7 +378,7 @@ class ManifestCodecTest {
             List.of("NEW", "DONE"), "fx.BillingTransition", List.of("ISSUE", "SETTLE"), List.of(), origin());
         Path file = directory.resolve("exports.json");
 
-        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ManifestCodec.writeExports(file, new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(orders, billing), List.of(zeta, alpha)),
             List.of("fx.OrdersGraph.Transition", "fx.BillingGraph.Definition")));
 
@@ -428,7 +408,7 @@ class ManifestCodecTest {
     void writesTheDependenciesAndTheOwnedSourcesOfAManifestSorted() throws IOException {
         Path file = directory.resolve("compile.json");
 
-        ManifestCodec.writeCompile(file, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"),
+        ManifestCodec.writeCompile(file, new CompileManifest(2, "2.0.0-test", index("fx:demo:main"),
             List.of(index("fx:zeta:main"), index("fx:alpha:main")), "processor-inventory.json",
             List.of("fx/ZetaGraph.java", "fx/AlphaGraph.java")));
 
@@ -461,11 +441,11 @@ class ManifestCodecTest {
 
     @Test
     void compileManifestRoundTripsWithDependenciesAndOwnedSources() throws IOException {
-        ExportIndex local = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex local = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(), List.of()), List.of("io.github.graphmaquina.symbol.Authorize"));
-        ExportIndex dependency = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:peer:main",
+        ExportIndex dependency = new ExportIndex(2, "2.0.0-test", "fx:peer:main",
             new GenerationModel(List.of(), List.of()), List.of());
-        CompileManifest manifest = new CompileManifest(2, "0.3.0-SNAPSHOT", local,
+        CompileManifest manifest = new CompileManifest(2, "2.0.0-test", local,
             List.of(dependency), "META-INF/graphmaquina/pending-exports.json",
             List.of("fx/Authorize.java"));
 
@@ -476,9 +456,9 @@ class ManifestCodecTest {
 
     @Test
     void rejectsOwnedSourcePathEscapingRootOnWrite() {
-        ExportIndex local = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex local = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(), List.of()), List.of());
-        CompileManifest manifest = new CompileManifest(2, "0.3.0-SNAPSHOT", local, List.of(),
+        CompileManifest manifest = new CompileManifest(2, "2.0.0-test", local, List.of(),
             "META-INF/graphmaquina/pending-exports.json", List.of("../Escaped.java"));
         Path file = directory.resolve("escaping.json");
         assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(file, manifest));
@@ -497,13 +477,13 @@ class ManifestCodecTest {
         Path written = directory.resolve("written.json");
 
         CodegenException onWrite = assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(written,
-            new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(), "processor-inventory.json",
+            new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(), "processor-inventory.json",
                 List.of(ownedSource))));
 
         assertEquals("SG602", onWrite.code());
         assertFalse(Files.exists(written));
         Path valid = directory.resolve("valid.json");
-        ManifestCodec.writeCompile(valid, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(),
+        ManifestCodec.writeCompile(valid, new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(),
             "processor-inventory.json", List.of("fx/Valid.java")));
         Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
             .replace("fx/Valid.java", entry.equals("NUL") ? "fx/X\\u0000.java" : entry), StandardCharsets.UTF_8);
@@ -522,14 +502,14 @@ class ManifestCodecTest {
         Path written = directory.resolve("written.json");
 
         CodegenException onWrite = assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(written,
-            new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(), inventory,
+            new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(), inventory,
                 List.of("fx/Valid.java"))));
 
         assertEquals("SG602", onWrite.code());
         assertEquals("processor inventory '" + inventory + "' is not a path in " + written, onWrite.getMessage());
         assertFalse(Files.exists(written));
         Path valid = directory.resolve("valid.json");
-        ManifestCodec.writeCompile(valid, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(),
+        ManifestCodec.writeCompile(valid, new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(),
             "work/inventory.json", List.of("fx/Valid.java")));
         Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
             .replace("work/inventory.json", "work/inventory\\u0000.json"), StandardCharsets.UTF_8);
@@ -561,7 +541,7 @@ class ManifestCodecTest {
     /**
      * The release and the encoding of the compilation are optional members, each read on its own: a request names
      * them when the build knows them, and a member it leaves out, whether or not it names the other, is read as
-     * release 21 or as UTF-8, the values of a request that names neither, as every request did before they existed.
+     * release 21 or as UTF-8, the values of a request that names neither.
      * Both are written back as they were read.
      */
     @Test
@@ -680,7 +660,7 @@ class ManifestCodecTest {
     void aGraphCarriesItsTransitionEnumAndIdentifiersRightAfterItsStates() throws IOException {
         GraphDescriptor graph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
             List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT", "SHIP"), List.of(), origin());
-        ExportIndex index = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+        ExportIndex index = new ExportIndex(2, "2.0.0-test", "fx:demo:main",
             new GenerationModel(List.of(graph), List.of()), List.of());
         Path file = directory.resolve("graph.json");
         ManifestCodec.writeExports(file, index);
@@ -698,7 +678,7 @@ class ManifestCodecTest {
             Files.writeString(file, """
                 {
                   "schemaVersion": 2,
-                  "toolVersion": "0.3.0-SNAPSHOT",
+                  "toolVersion": "2.0.0-test",
                   "compilationId": "fx:demo:main",
                   "model": {
                     "graphs": [
@@ -724,47 +704,32 @@ class ManifestCodecTest {
     }
 
     @Test
-    void rejectsASemanticIndexOfSchemaOneAskingForTheProducerToBeRegenerated() throws IOException {
-        Path file = directory.resolve("schema-one-exports.json");
-        Files.writeString(file, SCHEMA_ONE_INDEX);
-
-        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
-
-        assertEquals("SG602", failure.code());
-        assertTrue(failure.getMessage().contains("schema 1"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("regenerate"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("recompile"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("producer"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("consumer"), failure.getMessage());
-    }
-
-    @Test
-    void rejectsACompileManifestOfSchemaOneBeforeReadingAnyGraphOfIt() throws IOException {
-        Path file = directory.resolve("schema-one-compile.json");
+    void rejectsACompileManifestOfAnotherSchemaBeforeReadingAnyGraphOfIt() throws IOException {
+        Path file = directory.resolve("other-schema-compile.json");
         Files.writeString(file, """
             {
-              "schemaVersion": 1,
-              "toolVersion": "1.0.0",
-              "local": %s,
+              "schemaVersion": 99,
+              "toolVersion": "2.0.0-test",
+              "local": {"graphs": "not a model"},
               "dependencies": [],
               "processorInventory": "META-INF/graphmaquina/pending-exports.json",
               "ownedSources": ["fx/OrdersGraph.java"]
             }
-            """.formatted(SCHEMA_ONE_INDEX.strip()));
+            """);
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(file));
 
         assertEquals("SG602", failure.code());
-        assertTrue(failure.getMessage().contains("schema 1"), failure.getMessage());
+        assertEquals("unsupported schemaVersion 99 in " + file + "; expected 2", failure.getMessage());
     }
 
-    /** The user cleans old outputs explicitly; the tool never consumes an inventory of the retired schema. */
+    /** The tool never consumes an inventory of a schema it does not read. */
     @Test
-    void rejectsAnOwnershipInventoryOfTheRetiredSchema() throws IOException {
+    void rejectsAnOwnershipInventoryOfAnotherSchema() throws IOException {
         Path file = directory.resolve("owned-outputs.json");
         Files.writeString(file, """
             {
-              "schemaVersion": 1,
+              "schemaVersion": 99,
               "sources": ["fx/OrdersGraph.java"],
               "binaries": ["fx/OrdersGraph.class"],
               "resources": ["META-INF/graphmaquina/exports.json"],
@@ -773,13 +738,14 @@ class ManifestCodecTest {
             """);
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
+
         assertEquals("SG602", failure.code());
-        assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
+        assertEquals("unsupported schemaVersion 99 in " + file + "; expected 2", failure.getMessage());
     }
 
     /** An index of {@code compilationId} with an empty model and no annotation type. */
     private static ExportIndex index(String compilationId) {
-        return new ExportIndex(2, "0.3.0-SNAPSHOT", compilationId, new GenerationModel(List.of(), List.of()),
+        return new ExportIndex(2, "2.0.0-test", compilationId, new GenerationModel(List.of(), List.of()),
             List.of());
     }
 

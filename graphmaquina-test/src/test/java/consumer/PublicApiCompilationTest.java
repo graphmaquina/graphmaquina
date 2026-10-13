@@ -166,21 +166,6 @@ class PublicApiCompilationTest {
         assertRejected(workDir, "rejects(Id.PREPARE, \"no\")", "rejects(OtherId.PREPARE, \"no\")");
     }
 
-    /**
-     * The retired matrix routes are not deprecated, they are gone: a consumer that still names
-     * {@code edge(from, to)} or {@code EdgeAssert} must fail to compile, which reflection over the jar
-     * could never show on its own.
-     */
-    @Test
-    void theRetiredMatrixRoutesNoLongerCompile(@TempDir Path workDir) throws IOException {
-        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
-                "edge(State.NEW, State.READY).isAction()");
-        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
-                "hasAllowedTargetsExactly(State.NEW, State.READY)");
-        assertRejected(workDir, "enum OtherId { PREPARE }",
-                "io.github.graphmaquina.test.EdgeAssert retired;");
-    }
-
     @Test
     void aForeignStateIsRejectedOnTheNestedReaction(@TempDir Path workDir) throws IOException {
         assertRejected(workDir, ".outcome().isApplied().movedTo(State.READY)",

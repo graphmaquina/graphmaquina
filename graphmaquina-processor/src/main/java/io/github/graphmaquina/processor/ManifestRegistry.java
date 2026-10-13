@@ -141,11 +141,9 @@ final class ManifestRegistry {
     /**
      * The annotations this processor owns whatever a compilation generates: every stable marker, the internal
      * metadata the generator writes, the {@code @GeneratedCompanion} the processor marks its own companions
-     * with, and the retired matrix vocabulary it only claims by name to report {@code SG609} at, so it coexists
-     * with other processors instead of claiming a package. Nothing here belongs to another tool: the JDK's
-     * {@code @Generated}, which other source generators write, is left to the processors that read it. The
-     * retired names are strings because those types no longer exist here; only a compilation that still
-     * resolves one of them from an older release ever matches.
+     * with, so it coexists with other processors instead of claiming a package. Nothing here belongs to another
+     * tool: the JDK's {@code @Generated}, which other source generators write, is left to the processors that
+     * read it.
      */
     private static Set<String> fixed() {
         List<Class<? extends Annotation>> types = List.of(
@@ -153,7 +151,7 @@ final class ManifestRegistry {
             GraphCondition.class, GraphLookup.class, GraphProperty.class, GraphBindings.class, Timeout.class,
             GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class, GeneratedCompanion.class,
             StateGraphs.class);
-        Set<String> names = new TreeSet<>(LegacyDeclarations.retiredAnnotationTypes());
+        Set<String> names = new TreeSet<>();
         for (Class<? extends Annotation> type : types) {
             names.add(type.getCanonicalName());
         }

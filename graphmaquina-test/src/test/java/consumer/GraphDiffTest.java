@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
  * Contract of the structural diff. Each property {@link SnapshotGraphs} can vary is changed on its own in a
  * pair of graphs built with the real DSL, and the diff must name exactly the paths that changed — including
  * the ones no diagram shows, such as a timeout, an exception class or a hook, and including the identifier
- * of an edge, which no matrix could have recorded. A path present on one side only stays distinguishable
- * from a path present with an empty value.
+ * of an edge. A path present on one side only stays distinguishable from a path present with an empty
+ * value.
  */
 class GraphDiffTest {
 
@@ -68,7 +68,7 @@ class GraphDiffTest {
 
     /**
      * Two graphs with the same states, the same endpoints and the same action, differing only in the
-     * identifier of their single edge. A matrix had no field for this; the identified snapshot does.
+     * identifier of their single edge. The identifier is part of every edge path, so the snapshot shows it.
      */
     @Test
     void aChangedIdentifierIsADifferenceEvenWithTheSameEndpointsAndAction() {
@@ -221,8 +221,8 @@ class GraphDiffTest {
     @Test
     void anAbsentFieldIsNotAnEmptyOne() {
         GraphDiff diff = GraphDiff.compare(
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/a\t\n/b\tkept\n"),
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/b\tkept\n"));
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/a\t\n/b\tkept\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/b\tkept\n"));
         assertFalse(diff.isEmpty());
         assertEquals(List.of(new GraphDiff.Change("/a", Optional.of(""), Optional.empty())),
                 diff.changes());
@@ -232,8 +232,8 @@ class GraphDiffTest {
     @Test
     void renderNamesEveryChangeWithItsEscapedValues() {
         GraphDiff diff = GraphDiff.compare(
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/one\tplain\n"),
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/one\ttwo\\tlines\\nhere\n/two\t\n"));
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/one\tplain\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/one\ttwo\\tlines\\nhere\n/two\t\n"));
         assertEquals("/one: expected \"plain\" but was \"two\\tlines\\nhere\"\n"
                 + "/two: expected <absent> but was \"\"\n", diff.render());
     }
@@ -245,11 +245,11 @@ class GraphDiffTest {
     @Test
     void renderEscapesTheQuotesOfAValueSoDifferentChangesNeverReadTheSame() {
         GraphDiff first = GraphDiff.compare(
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\ta\" but was \"b\n"),
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tc\n"));
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\ta\" but was \"b\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\tc\n"));
         GraphDiff second = GraphDiff.compare(
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\ta\n"),
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tb\" but was \"c\n"));
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\ta\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\tb\" but was \"c\n"));
         assertEquals("/p: expected \"a\\\" but was \\\"b\" but was \"c\"\n", first.render());
         assertEquals("/p: expected \"a\" but was \"b\\\" but was \\\"c\"\n", second.render());
         assertNotEquals(first.render(), second.render());
@@ -259,8 +259,8 @@ class GraphDiffTest {
     @Test
     void renderKeepsABackslashBeforeAQuoteApartFromTheQuoteAlone() {
         GraphDiff diff = GraphDiff.compare(
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tx\\\\\"y\n"),
-                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tx\"y\n"));
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\tx\\\\\"y\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v1\n/p\tx\"y\n"));
         assertEquals("/p: expected \"x\\\\\\\"y\" but was \"x\\\"y\"\n", diff.render());
     }
 

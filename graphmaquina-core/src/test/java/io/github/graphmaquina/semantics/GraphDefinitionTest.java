@@ -1,12 +1,12 @@
-package io.github.graphmaquina.graphonly;
+package io.github.graphmaquina.semantics;
 
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.RETOUCH;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.SUBMIT;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.RETOUCH;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.SUBMIT;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.DONE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.OPEN;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.REVIEW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -16,23 +16,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.InvalidGraphException;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Id;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.State;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Ticket;
+import io.github.graphmaquina.fixtures.TicketMachineFixture;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * The definition the DSL builds for the graph-only fixture: only the declared edges, a repeated key refused, parallel
+ * The definition the DSL builds for the ticket fixture: only the declared edges, a repeated key refused, parallel
  * edges told apart by identifier, one spec instance per edge, self-loops, and the declaration order of edges and of
  * outgoing edges.
  */
-class GraphOnlyDefinitionTest {
+class GraphDefinitionTest {
 
     @Test void definitionContainsOnlyDeclaredTransitions() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().build();
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder().build();
         assertEquals(2, graph.transitions().size());
         assertEquals(2, graph.graph().edges().size());
         assertTrue(graph.findTransition(OPEN, APPROVE).isEmpty());
@@ -40,15 +40,15 @@ class GraphOnlyDefinitionTest {
     }
 
     @Test void parallelEdgesAreNotDuplicates() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
         assertEquals(2, graph.outgoingFrom(REVIEW).size());
-        assertThrows(InvalidGraphException.class, () -> GraphOnlyFixture.builder()
+        assertThrows(InvalidGraphException.class, () -> TicketMachineFixture.builder()
             .transition(APPROVE, REVIEW, OPEN).endTransition().build());
     }
 
     @Test void everyDeclaredTransitionResolvesToTheExactSameSpecInstance() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().allowsCycle(REVIEW)
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder().allowsCycle(REVIEW)
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition()
             .transition(RETOUCH, REVIEW, REVIEW).endTransition().build();
         for (TransitionSpec<Ticket,State,Id> spec : graph.transitions()) {
@@ -57,12 +57,12 @@ class GraphOnlyDefinitionTest {
     }
 
     @Test void absentLookupIsEmptyForAStateWithNoDeclaredTransitionsAtAll() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().build();
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder().build();
         assertEquals(Optional.empty(), graph.findTransition(DONE, SUBMIT));
     }
 
     @Test void selfLoopIsAnOrdinaryEdgeByIdentityAndEndpoints() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().allowsCycle(REVIEW)
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder().allowsCycle(REVIEW)
             .transition(RETOUCH, REVIEW, REVIEW).endTransition().build();
         TransitionSpec<Ticket,State,Id> loop = graph.findTransition(REVIEW, RETOUCH).orElseThrow();
         assertEquals(REVIEW, loop.from());
@@ -70,7 +70,7 @@ class GraphOnlyDefinitionTest {
     }
 
     @Test void parallelEdgesAreDistinguishedByTransitionId() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
         TransitionSpec<Ticket,State,Id> approve = graph.findTransition(REVIEW, APPROVE).orElseThrow();
         TransitionSpec<Ticket,State,Id> autoApprove = graph.findTransition(REVIEW, AUTO_APPROVE).orElseThrow();
@@ -80,7 +80,7 @@ class GraphOnlyDefinitionTest {
     }
 
     @Test void outgoingFromAndTransitionsAgreeOnDeclarationOrder() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().allowsCycle(REVIEW)
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder().allowsCycle(REVIEW)
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition()
             .transition(RETOUCH, REVIEW, REVIEW).endTransition().build();
         assertEquals(List.of(SUBMIT, APPROVE, AUTO_APPROVE, RETOUCH),

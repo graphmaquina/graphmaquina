@@ -1,13 +1,13 @@
-package io.github.graphmaquina.graphonly;
+package io.github.graphmaquina.semantics;
 
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.FAIL;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.SUBMIT;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.FAIL;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.SUBMIT;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.KEY;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.DONE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.OPEN;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.REVIEW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.graphmaquina.api.ActionOutcome;
@@ -25,10 +25,10 @@ import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.GatewayException;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
+import io.github.graphmaquina.fixtures.TicketMachineFixture;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Id;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.State;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Ticket;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.time.Duration;
@@ -49,7 +49,7 @@ class OutcomeClassificationTest {
     final Ticket peer = new Ticket(9, OPEN);
 
     @Test void anAppliedEdgeExplainsNothingAndCarriesItsRecord() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(TicketMachineFixture.builder().build())) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, OPEN), SUBMIT);
             assertEquals(OutcomeCode.APPLIED, result.code());
             assertEquals(OutcomeStatus.APPLIED, result.status());
@@ -60,7 +60,7 @@ class OutcomeClassificationTest {
     }
 
     @Test void aRequestWithoutAnEdgeIsExplainedByTheStatePolicy() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(TicketMachineFixture.builder().build())) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, OPEN), APPROVE);
             assertEquals(OutcomeCode.NO_TRANSITION, result.code());
             assertEquals(Optional.of("submit first"), result.explanation());
@@ -70,9 +70,9 @@ class OutcomeClassificationTest {
 
     /** A reason declared for one identifier wins over the state's default, and the explanation is that reason. */
     @Test void aReasonDeclaredForTheIdentifierIsTheExplanation() {
-        GraphDefinition<Ticket, State, Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket, State, Id> graph = TicketMachineFixture.builder()
                 .reject(OPEN, APPROVE, "approval needs a review first").build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, OPEN), APPROVE);
             assertEquals(OutcomeCode.NO_TRANSITION, result.code());
             assertEquals(Optional.of("approval needs a review first"), result.explanation());
@@ -80,7 +80,7 @@ class OutcomeClassificationTest {
     }
 
     @Test void aGuardRejectionIsExplainedByTheGuard() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(guarded().build())) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(guarded().build())) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, REVIEW), AUTO_APPROVE);
             assertEquals(OutcomeCode.GUARD_REJECTED, result.code());
             assertEquals(OutcomeStatus.REJECTED, result.status());
@@ -93,7 +93,7 @@ class OutcomeClassificationTest {
     @Test void aReturnedFailureIsExplainedByTheAction() {
         GraphDefinition<Ticket, State, Id> graph = failing((TransitionContext<Ticket, State, Id> ctx) ->
                 ActionOutcome.failed("the board declined"));
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, REVIEW), APPROVE);
             assertEquals(OutcomeCode.FAILURE_ROUTED, result.code());
             assertEquals(OutcomeStatus.FAILED, result.status());
@@ -108,7 +108,7 @@ class OutcomeClassificationTest {
         GraphDefinition<Ticket, State, Id> graph = failing((TransitionContext<Ticket, State, Id> ctx) -> {
             throw new GatewayException("gateway 10.0.0.12 refused the charge");
         });
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, REVIEW), APPROVE);
             assertEquals(OutcomeCode.FAILURE_ROUTED, result.code());
             assertEquals(OutcomeStatus.FAILED, result.status());
@@ -119,7 +119,7 @@ class OutcomeClassificationTest {
     }
 
     @Test void aReevaluationWithoutAWatchIsNoWatch() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(TicketMachineFixture.builder().build())) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).reevaluate(new Ticket(1, OPEN));
             assertEquals(OutcomeCode.NO_WATCH, result.code());
             assertEquals(OutcomeStatus.IGNORED, result.status());
@@ -128,13 +128,13 @@ class OutcomeClassificationTest {
     }
 
     @Test void aReevaluationWhoseRulesAllFailIsNoRuleMatched() {
-        GraphDefinition<Ticket, State, Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket, State, Id> graph = TicketMachineFixture.builder()
                 .watch(REVIEW, KEY, (Ticket ticket) -> List.of(peer), (Ticket moved) -> Optional.empty())
                     .when("never", (Ticket ticket, Collection<? extends Ticket> peers,
                             PeerView<Ticket, State, Id> view) -> false)
                         .execute(APPROVE)
                     .endWatch().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).reevaluate(new Ticket(1, REVIEW));
             assertEquals(OutcomeCode.NO_RULE_MATCHED, result.code());
             assertEquals(Optional.empty(), result.explanation());
@@ -149,7 +149,7 @@ class OutcomeClassificationTest {
                             PeerView<Ticket, State, Id> view) -> true)
                         .execute(AUTO_APPROVE)
                     .endWatch().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).reevaluate(new Ticket(1, REVIEW));
             assertEquals(OutcomeCode.GUARD_REJECTED, result.code());
             assertEquals(Optional.of("not automatic"), result.explanation());
@@ -171,7 +171,7 @@ class OutcomeClassificationTest {
                     })
                     .endTransition()
                 .build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Outcome<Ticket, State, Id> root = registry.of(KEY).execute(new Ticket(1, REVIEW), APPROVE);
             assertEquals(1, cascaded.size());
             Outcome<Ticket, State, Id> step = cascaded.get(0);
@@ -214,7 +214,7 @@ class OutcomeClassificationTest {
 
     /** The base graph plus a parallel AUTO_APPROVE edge whose only guard always refuses. */
     private static GraphBuilder<Ticket, State, Id> guarded() {
-        return GraphOnlyFixture.builder()
+        return TicketMachineFixture.builder()
                 .transition(AUTO_APPROVE, REVIEW, DONE)
                     .guard("automatic", (GuardContext<Ticket, State, Id> ctx) -> GuardResult.reject("not automatic"))
                     .endTransition();

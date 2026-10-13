@@ -207,8 +207,8 @@ public final class SnapshotGraphs {
     }
 
     /**
-     * The same endpoints and the same action under a different identifier. Two of these differ in nothing
-     * a matrix could have recorded, which is exactly what makes the identifier part of the contract.
+     * The same endpoints and the same action under a different identifier. Two of these differ only in the
+     * identifier, which is exactly what makes the identifier part of the contract.
      */
     public static GraphDefinition<String, Flow, Gate> identityGraph(Gate transition) {
         return StateGraph.define(FLOW_KEY).initial(Flow.OPEN).terminal(Flow.CLOSED)

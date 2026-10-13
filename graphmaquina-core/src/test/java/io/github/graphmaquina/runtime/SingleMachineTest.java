@@ -154,9 +154,8 @@ class SingleMachineTest {
     }
 
     /**
-     * There is no implicit staying in 2.0: asking for an identifier that leaves no edge from the current state
-     * is a rejection, not an ignore. Nothing runs and the state is untouched, which is the guarantee that used
-     * to be carried by the STAY diagonal.
+     * Asking for an identifier that leaves no edge from the current state is a rejection, not an ignore. Nothing
+     * runs and the state is untouched.
      */
     @Test
     void anIdentifierWithNoEdgeFromHereIsRejectedAndNothingRuns() {

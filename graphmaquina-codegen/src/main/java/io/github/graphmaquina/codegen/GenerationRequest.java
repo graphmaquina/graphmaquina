@@ -25,8 +25,8 @@ import java.util.Objects;
  *
  * <p>{@code release} and {@code encoding} are the ones javac compiles the sources with. The generator parses the
  * original sources at that release and resolves the JDK types they name against it, reads them in that encoding,
- * and writes what it generates in it too. A request that names neither, as every request did before the two
- * existed, is read at release {@value #DEFAULT_RELEASE} in UTF-8. No request carries {@code --enable-preview}: the
+ * and writes what it generates in it too. A request that names neither is read at release
+ * {@value #DEFAULT_RELEASE} in UTF-8. No request carries {@code --enable-preview}: the
  * generator parses the original sources without it, whatever javac is given. An original source using a preview
  * feature that javac's parser checks, such as string templates on JDK 21, is refused with {@code SG601}; one using
  * a preview feature javac checks only after parsing, such as primitive patterns at release 25, is read like any

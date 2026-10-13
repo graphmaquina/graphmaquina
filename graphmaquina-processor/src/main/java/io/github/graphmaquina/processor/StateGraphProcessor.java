@@ -107,7 +107,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private BoundInvocation invocations;
     private Signatures signatures;
     private EffectiveMethods effective;
-    private LegacyDeclarations legacy;
     private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private Optional<VocabularyPlacement> placement = Optional.empty();
     private CompanionScope scope;
@@ -162,7 +161,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
         exports = new ExportValidator(signatures, effective, diagnostics);
         indexes = new ExportIndexWriter(env);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
-        legacy = new LegacyDeclarations(diagnostics);
         StructuralChecks structure = new StructuralChecks(signatures, diagnostics);
         sets = new SetModelBuilder(annotations, signatures, diagnostics, invocations);
         scope = new CompanionScope(env.getElementUtils(), diagnostics, runtimeOrigins);
@@ -196,7 +194,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
         validateExports();
         validateRuntimeNames(round);
-        failed.addAll(legacy.report(round));
         for (TypeElement type : waited(deferred)) {
             resolve(type, round);
         }

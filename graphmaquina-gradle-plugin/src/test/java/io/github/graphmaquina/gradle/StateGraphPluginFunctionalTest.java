@@ -166,7 +166,6 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
         assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
         assertTrue(fixture.jarContains("fx/OrdersGraph$Transition.class"));
-        assertEquals(List.of(), fixture.retiredVocabularyEntries());
         assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 fixture.localExports());
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
@@ -489,34 +488,22 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * A producer of the retired release is refused, never adapted. A dependency publishing a semantic index of
-     * schema 1 fails the generation with {@code SG602} and the demand to regenerate and recompile both sides,
-     * and one published by another tool version fails the same way. Neither run falls back to a partial graph:
-     * the generation stops before the preparation retires anything, so the index and the sealed inventory of
-     * the previous cycle are exactly what they were.
+     * A dependency published by another tool version is refused, never adapted. The generation fails with
+     * {@code SG602} and never falls back to a partial graph: it stops before the preparation retires anything,
+     * so the index and the sealed inventory of the previous cycle are exactly what they were.
      */
     @Test
-    void refusesAProducerOfTheRetiredSchemaOrOfAnotherToolVersion() throws IOException {
+    void refusesAProducerOfAnotherToolVersion() throws IOException {
         PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
         fixture.run("classes");
         List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
 
-        fixture.writeDependencyJar("dep:library:main", 1, PluginFixture.version());
-        BuildResult retired = fixture.runFailing("classes", "--stacktrace");
-
-        assertEquals(TaskOutcome.FAILED, retired.task(":generateStateGraphApi").getOutcome());
-        assertTrue(retired.getOutput().contains("[SG602]"), retired::getOutput);
-        assertTrue(retired.getOutput().contains("the schema 1 of"), retired::getOutput);
-        assertTrue(retired.getOutput().contains("run clean"), retired::getOutput);
-        assertTrue(retired.getOutput().contains(
-                "regenerate and recompile the producer and the consumer with 2.0"), retired::getOutput);
-
-        fixture.writeDependencyJar("dep:library:main", 2, "1.9.9-retired");
+        fixture.writeDependencyJar("dep:library:main", 2, "0.0.0-other");
         BuildResult mixed = fixture.runFailing("classes", "--stacktrace");
 
         assertEquals(TaskOutcome.FAILED, mixed.task(":generateStateGraphApi").getOutcome());
         assertTrue(mixed.getOutput().contains("[SG602]"), mixed::getOutput);
-        assertTrue(mixed.getOutput().contains("was written by tool version 1.9.9-retired"), mixed::getOutput);
+        assertTrue(mixed.getOutput().contains("was written by tool version 0.0.0-other"), mixed::getOutput);
 
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));

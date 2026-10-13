@@ -76,8 +76,9 @@ public final class CompilationOutputs {
     /**
      * Retires the outputs a previous cycle owned and invalidates the published index, before javac runs.
      *
-     * <p>Only schema 2 inventories are accepted. A retired inventory stops preparation with {@code SG602}
-     * before any output is changed; the user must clean the old build explicitly.</p>
+     * <p>Only schema 2 inventories are accepted. An inventory of another schema stops preparation with
+     * {@code SG602} before any output is changed, that inventory included, so the refusal repeats until the build
+     * is cleaned.</p>
      *
      * <p>A path an inventory records is only removed under the root it is relative to, and only when the directory
      * holding its file is, by its real path, the real directory of that root or one below it, so a symbolic link

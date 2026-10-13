@@ -632,12 +632,9 @@ class MavenPluginIntegrationTest {
         assertTrue(consumer.jarContains("cx/ReviewsGraph.class"));
         assertTrue(consumer.jarContains("cx/ReviewsRuntime.class"));
         assertFalse(consumer.jarContainsGraphCompilationCarrier());
-        // The downstream machine identifies its edges with the producer's own enum, and neither jar carries a
-        // nested type of the retired matrix vocabulary for it to have inherited instead.
+        // The downstream machine identifies its edges with the producer's own enum.
         assertEquals(List.of("fx.Transition.APPROVE"), producer.transitionsOf("fx.Orders"));
         assertEquals(List.of("fx.Transition.APPROVE"), consumer.transitionsOf("cx.Reviews"));
-        assertEquals(List.of(), producer.retiredVocabularyEntries());
-        assertEquals(List.of(), consumer.retiredVocabularyEntries());
     }
 
     /**
@@ -662,44 +659,6 @@ class MavenPluginIntegrationTest {
         assertTrue(module.jarContains("fx/OrdersGraph.class"));
         assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 module.localExports());
-    }
-
-    /**
-     * {@code clean} is a complete migration path out of the retired release. Over stand-ins for the outputs a 1.x
-     * build left, a schema 1 manifest and a binary of the retired matrix vocabulary, the build stops with
-     * {@code SG602} before it generates anything and asks for {@code clean}; after {@code clean} the build
-     * regenerates the vocabulary, compiles it and publishes the index of the shared domain, the jar carries nothing
-     * of the retired vocabulary, and the hand-written sources are byte for byte what they were, since nothing of the
-     * deletion ever reaches {@code src}.
-     */
-    @Test
-    void cleanIsACompleteMigrationPath() throws IOException {
-        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        fixture.writeFile("target/graphmaquina/main/annotation-manifest.json",
-                "{\n  \"schemaVersion\": 1\n}\n".getBytes(StandardCharsets.UTF_8));
-        fixture.writeFile("target/classes/fx/OrdersGraph$Row.class",
-                new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE});
-        Map<String, String> sources = handWrittenSources(fixture);
-
-        MavenResult retired = fixture.run("package");
-
-        assertNotEquals(0, retired.exitCode(), retired.output());
-        assertTrue(retired.output().contains("[SG602]"), retired.output());
-        assertTrue(retired.output().contains("is the retired format of GraphMaquina 1.x; run clean"),
-                retired.output());
-        assertFalse(fixture.exists("target/generated-sources/graphmaquina"), retired.output());
-
-        MavenResult result = fixture.run("clean", "package");
-
-        assertEquals(0, result.exitCode(), result.output());
-        assertTrue(fixture.inventoryIsSealed("main"));
-        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
-                fixture.localExports());
-        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
-        assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
-        assertEquals(List.of(), fixture.retiredVocabularyEntries());
-        assertFalse(fixture.jarContainsGraphCompilationCarrier());
-        assertEquals(sources, handWrittenSources(fixture));
     }
 
     /**
@@ -3723,16 +3682,6 @@ class MavenPluginIntegrationTest {
         Files.writeString(file, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<toolchains>\n" + declared
                 + "</toolchains>\n", StandardCharsets.UTF_8);
         return file;
-    }
-
-    /** Every hand-written source of {@code fixture}, keyed by its path relative to the source root. */
-    private static Map<String, String> handWrittenSources(MavenFixture fixture) throws IOException {
-        Path root = fixture.projectDirectory().resolve("src/main/java");
-        Map<String, String> sources = new LinkedHashMap<>();
-        for (Path file : filesUnder(root)) {
-            sources.put(root.relativize(file).toString(), Files.readString(file, StandardCharsets.UTF_8));
-        }
-        return sources;
     }
 
     /** Every regular file under {@code root}, or nothing when the build has not written it yet. */

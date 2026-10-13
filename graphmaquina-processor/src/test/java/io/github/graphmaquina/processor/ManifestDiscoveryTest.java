@@ -45,19 +45,7 @@ class ManifestDiscoveryTest {
             "io.github.graphmaquina.annotation.internal.GeneratedSymbol",
             "io.github.graphmaquina.annotation.internal.GraphCompilation",
             "io.github.graphmaquina.annotation.internal.GeneratedCompanion",
-            "io.github.graphmaquina.annotation.StateGraphs",
-            "io.github.graphmaquina.annotation.StateGraph",
-            "io.github.graphmaquina.annotation.Row",
-            "io.github.graphmaquina.annotation.Rows",
-            "io.github.graphmaquina.annotation.Action",
-            "io.github.graphmaquina.annotation.Move",
-            "io.github.graphmaquina.annotation.Cell",
-            "io.github.graphmaquina.annotation.Cells",
-            "io.github.graphmaquina.annotation.Forbid",
-            "io.github.graphmaquina.annotation.Forbids",
-            "io.github.graphmaquina.annotation.Watch",
-            "io.github.graphmaquina.annotation.Watches",
-            "io.github.graphmaquina.annotation.When");
+            "io.github.graphmaquina.annotation.StateGraphs");
 
     /** What other source generators mark their output with, which this processor neither claims nor reads. */
     private static final String FOREIGN_GENERATED = """

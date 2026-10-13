@@ -22,9 +22,9 @@ import java.util.List;
  * package and the model of {@code io.github.graphmaquina.codegen.model} are plain values, read and written as JSON
  * only through this class.
  *
- * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A schema 1 document
- * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
- * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
+ * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A document of
+ * another schema is refused with {@code SG602} before its model or owned paths are used. There is no conversion,
+ * partial model reading or cleanup using an inventory of another schema.
  *
  * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: a document
  * that is not well-formed strict JSON, holds bytes that are not UTF-8 text, escapes a surrogate that is not half of
@@ -72,9 +72,9 @@ import java.util.List;
  * }
  * }</pre>
  *
- * <p>{@code release} and {@code encoding} are optional: a request without them, as every request was before they
- * existed, is read at release {@value GenerationRequest#DEFAULT_RELEASE} in UTF-8. A {@code release} that is not
- * an exact integer, and an {@code encoding} that names no charset of the running JVM, are rejected with
+ * <p>{@code release} and {@code encoding} are optional: a request without them is read at release
+ * {@value GenerationRequest#DEFAULT_RELEASE} in UTF-8. A {@code release} that is not an exact integer, and an
+ * {@code encoding} that names no charset of the running JVM, are rejected with
  * {@code SG602}. {@link #writeRequest} always writes both. No member carries {@code --enable-preview}: the
  * generator parses the original sources without it, whatever javac is given. An original source using a preview
  * feature that javac's parser checks, such as string templates on JDK 21, is refused with {@code SG601}; one using
@@ -366,8 +366,7 @@ public final class ManifestCodec {
      * Writes the qualified names of every source the annotation processor generated, sorted, to {@code path}.
      *
      * <p>The processor calls this instead of encoding the document itself, so that this class stays the only
-     * place that knows the format. The document ends with a newline, which the manifests above do not: that is
-     * the shape this inventory has always been written and read back in.</p>
+     * place that knows the format. The document ends with a newline, which the manifests above do not.</p>
      *
      * @throws IOException if {@code path} cannot be written
      */

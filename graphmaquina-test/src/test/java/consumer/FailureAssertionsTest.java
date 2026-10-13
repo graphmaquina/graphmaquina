@@ -803,8 +803,8 @@ class FailureAssertionsTest {
     @Test
     void nullSubjectFailsHasCodesExactly() {
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> InvalidGraphAssert.assertThat(null).hasCodesExactly("SG101")),
-                "invalid graph", "codes", List.of("SG101"), null);
+                () -> InvalidGraphAssert.assertThat(null).hasCodesExactly("SG102")),
+                "invalid graph", "codes", List.of("SG102"), null);
     }
 
     @Test

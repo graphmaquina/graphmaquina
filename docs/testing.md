@@ -160,16 +160,12 @@ to confuse, so keep them apart:
 | The request was refused because the entity is a sub-machine whose parent does not hold it | `isRejected().isDetached()` |
 | The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 
-`hasTransitionsExactly` takes identifiers, not destinations, so two edges that reach the same state are two
-entries. No set of destinations could express that, which is exactly the point.
+`hasTransitionsExactly` takes identifiers, so two edges that reach the same state are two entries.
 
-An `Ignored` outcome now says which of the two reevaluation cases it is, through
+An `Ignored` outcome says which of the two reevaluation cases it is, through
 `isIgnored().hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED`. It is the only outcome with no
 requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
 every other variant.
-
-Upgrading tests written against 1.x is a separate document:
-[migrating to 2.0](migration-2.0.md) lists every renamed assertion.
 
 ## Verified samples
 
@@ -973,11 +969,9 @@ logic.
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
-Snapshots are `graphmaquina-snapshot-v2`. `GraphSnapshot.parse` refuses a v1 document by name and asks for
-it to be regenerated; it is never converted, so a 1.x `.graph` resource is rewritten from the migrated
-definition and its diff reviewed. `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
-removing every graphic-export class from the core JAR; assertions, state observation and structural
-snapshots must still work.
+Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header.
+`PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
+from the core JAR; assertions, state observation and structural snapshots must still work.
 
 From [DiagramsTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/DiagramsTest.java):
 

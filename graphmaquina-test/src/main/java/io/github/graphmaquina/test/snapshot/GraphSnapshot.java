@@ -62,8 +62,7 @@ public final class GraphSnapshot {
     /**
      * Reads back a serialized snapshot.
      *
-     * @throws IllegalArgumentException if the text is not a well-formed snapshot of the current version,
-     *     including a snapshot of an earlier format, which is reported with what to do about it
+     * @throws IllegalArgumentException if the text is not a well-formed snapshot of the current version
      */
     public static GraphSnapshot parse(String text) {
         return new GraphSnapshot(SnapshotCodec.decode(Objects.requireNonNull(text, "text")));

@@ -42,7 +42,6 @@ final class JsonSupport {
 
     static final String ERROR_CODE = "SG602";
     static final int SCHEMA_VERSION = 2;
-    static final int RETIRED_SCHEMA_VERSION = 1;
     /** What a strict reader says about syntax only its lenient mode accepts. */
     private static final String LENIENT_ADVICE =
         "Use JsonReader.setStrictness(Strictness.LENIENT) to accept malformed JSON";
@@ -306,15 +305,10 @@ final class JsonSupport {
     }
 
     /**
-     * Accepts only the current schema, including inventories. A retired document is rejected before its
-     * model or owned paths can be used; cleaning an old build belongs to the user.
+     * Accepts only the current schema, including inventories. A document of any other schema is rejected before
+     * its model or owned paths can be used.
      */
     static void requireSupportedSchema(int schemaVersion, Path file) {
-        if (schemaVersion == RETIRED_SCHEMA_VERSION) {
-            throw new CodegenException(ERROR_CODE, "the schema 1 of " + file
-                + " is the retired format of GraphMaquina 1.x; run clean, then regenerate and recompile the producer and the"
-                + " consumer with 2.0, which reads schema 2 only and converts nothing");
-        }
         if (schemaVersion != SCHEMA_VERSION) {
             throw new CodegenException(ERROR_CODE,
                 "unsupported schemaVersion " + schemaVersion + " in " + file + "; expected " + SCHEMA_VERSION);

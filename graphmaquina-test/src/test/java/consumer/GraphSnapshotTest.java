@@ -34,17 +34,17 @@ import org.junit.jupiter.api.Test;
  * and how they survive the line format. The format is pinned character by character on the smallest
  * fixture, because every golden and every future diff is read against it.
  *
- * <p>Version 2 records the declared edges under {@code /transitions/<from>/<id>} and the rejection policies
+ * <p>The snapshot records the declared edges under {@code /transitions/<from>/<id>} and the rejection policies
  * under {@code /policies/<state>}; there is no path for an edge that was never declared. An edge's recovery
  * rules are recorded under its {@code recoveries} path, indexed in declaration order, only when it declares some,
  * and the sub-machine bound to a state under {@code /submachines/<state>}.
  */
 class GraphSnapshotTest {
 
-    private static final String HEADER = "graphmaquina-snapshot-v2\n";
+    private static final String HEADER = "graphmaquina-snapshot-v1\n";
 
     private static final String MINIMAL = """
-            graphmaquina-snapshot-v2
+            graphmaquina-snapshot-v1
             /catalog/0\tCLOSE
             /catalog/1\tREOPEN
             /catalog/count\t2
@@ -72,7 +72,7 @@ class GraphSnapshotTest {
 
     /** The capture of {@code TestDomain}, which declares no rule: the very text of {@code contracts/simple.graph}. */
     private static final String SIMPLE = """
-            graphmaquina-snapshot-v2
+            graphmaquina-snapshot-v1
             /catalog/0\tPREPARE
             /catalog/1\tRECOVER
             /catalog/2\tFINISH
@@ -166,8 +166,6 @@ class GraphSnapshotTest {
         assertEquals(Map.of(), under(snapshot, "/transitions/NEW/ABANDON/"));
         assertEquals(Map.of(), under(snapshot, "/transitions/READY/PREPARE/"));
         assertEquals(Map.of(), under(snapshot, "/transitions/DONE/"));
-        assertTrue(snapshot.fields().keySet().stream().noneMatch(path -> path.startsWith("/cells/")),
-                "the retired matrix paths must not come back");
         assertEquals("ABANDON", snapshot.fields().get("/catalog/3"));
     }
 
@@ -491,27 +489,18 @@ class GraphSnapshotTest {
 
     // --- what parse rejects -------------------------------------------------------------------------
 
-    /** The matrix format is a different model, so it is refused with what to do about it, never converted. */
-    @Test
-    void theRetiredMatrixSnapshotIsRejectedWithAMigrationInstruction() {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> GraphSnapshot.parse("graphmaquina-snapshot-v1\n/cells/OPEN/CLOSED/kind\tMOVE\n"));
-        assertTrue(error.getMessage().contains("graphmaquina-snapshot-v1"), error.getMessage());
-        assertTrue(error.getMessage().contains("regenerate it"), error.getMessage());
-        assertTrue(error.getMessage().contains("graphmaquina-snapshot-v2"), error.getMessage());
-    }
-
     @Test
     void anUnknownVersionIsRejected() {
+        assertMessage("graphmaquina-snapshot-v2\n/initial\tOPEN\n", "unsupported snapshot version");
         assertMessage("graphmaquina-snapshot-v3\n/initial\tOPEN\n", "unsupported snapshot version");
         assertMessage("", "unsupported snapshot version");
     }
 
     @Test
     void aVersionLineWithAStrayCarriageReturnNamesTheCarriageReturn() {
-        assertMessage("graphmaquina-snapshot-v2\r\n/initial\tOPEN\r\n",
-                "unsupported snapshot version \"graphmaquina-snapshot-v2\\r\", "
-                        + "expected \"graphmaquina-snapshot-v2\"");
+        assertMessage("graphmaquina-snapshot-v1\r\n/initial\tOPEN\r\n",
+                "unsupported snapshot version \"graphmaquina-snapshot-v1\\r\", "
+                        + "expected \"graphmaquina-snapshot-v1\"");
     }
 
     @Test

@@ -32,8 +32,8 @@ class TypedMachineProcessorTest {
     /**
      * The companion keeps the operations of the facade and exposes no generic selector of its own, which is
      * what a facade preserves; the graph it builds calls the very method the action symbol names. The check is
-     * written on the declaration, not on any mention of the name, because an operation is still implemented by
-     * delegating to the state machine's own {@code execute}, as it has always been.
+     * written on the declaration, not on any mention of the name, because an operation is implemented by
+     * delegating to the state machine's own {@code execute}.
      */
     @Test
     void compilesMachineAndPreservesFacade() {

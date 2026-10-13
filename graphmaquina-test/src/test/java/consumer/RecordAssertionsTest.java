@@ -652,12 +652,11 @@ class RecordAssertionsTest {
     }
 
     /**
-     * Convergence by destination is gone: a tag that asks its own box for the transition already in flight
-     * no longer produces an idempotent no-op hop, it aborts the whole transaction, so nothing commits and
-     * there are no records to read.
+     * A tag that asks its own box for the transition already in flight closes a cascade cycle: the whole
+     * transaction aborts, so nothing commits and there are no records to read.
      */
     @Test
-    void aCascadeBackIntoAnEntityInFlightAbortsInsteadOfConverging() {
+    void aCascadeBackIntoAnEntityInFlightAbortsAsACascadeCycle() {
         Box box = new Box("b1", Crate.OPEN);
         Tag tag = new Tag("t1", TagState.LOOSE, box);
         sealBox = (TransitionContext<Box, Crate, Handling> ctx) -> {

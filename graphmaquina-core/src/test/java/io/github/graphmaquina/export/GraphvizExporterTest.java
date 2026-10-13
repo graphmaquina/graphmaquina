@@ -186,15 +186,13 @@ class GraphvizExporterTest {
                 """, GraphvizExporter.render(view));
     }
 
-    /** Nothing that was not declared is ever drawn: there is no mode that expands absent edges. */
+    /** Only declared edges are drawn: one arrow per edge of the view, whatever the state policies say. */
     @Test
     void onlyDeclaredEdgesAreEverDrawn() {
         GraphView view = new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
                 List.of(new PolicyView("B", "no way back", List.of("GO: B is final"))), List.of());
         String rendered = GraphvizExporter.render(view);
         assertEquals(1, rendered.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count());
-        assertFalse(rendered.contains("stay"), rendered);
-        assertFalse(rendered.contains("forbid"), rendered);
         assertTrue(rendered.contains("n1 [label=\"B\", shape=doublecircle, tooltip=\"otherwise: no way back; GO: B is final\"];"),
                 rendered);
     }
