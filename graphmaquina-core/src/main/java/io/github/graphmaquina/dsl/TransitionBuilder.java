@@ -55,16 +55,18 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * a more specific type that a {@code recover} rule of this edge declares accepts them too. The action's throwable
      * is unwrapped from CompletionException and ExecutionException first, and the most specific declared type wins,
      * in a rule or here, whatever the order of the declarations; when it is one of these types and the edge has no
-     * {@code onFailure}, the call throws {@code UnhandledFailureException}. An Error, a CancellationException and a
-     * StateMachineException never match. A declared type also accepts the JDK exceptions the engine throws from the
-     * action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
-     * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off
-     * the action's thread: they are matched like the action's own. A type listed here twice is harmless; one that a
-     * rule also declares is SG304. SG302 accepts only throwable types foreign to the library. It refuses
-     * {@code Throwable}, {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
-     * {@code CancellationException} as never a domain failure, and {@code CompletionException} or
-     * {@code ExecutionException} themselves because they are unwrapped before matching: declare the type of their
-     * cause instead.
+     * {@code onFailure}, the call throws {@code UnhandledFailureException}. An InterruptedException that the action
+     * throws on the calling thread interrupts that thread again, so the recovery it selects runs on an interrupted
+     * thread: the engine's wait for a recovery action's stage that is still pending aborts the call as interrupted at
+     * once. An Error, a CancellationException and a StateMachineException never match. A declared type also accepts the
+     * JDK exceptions the engine throws from the action's context, such as a NullPointerException for a null argument,
+     * an IllegalArgumentException for an identifier of another catalogue, a ClassCastException from
+     * {@code input(Class)} or a WrongThreadException off the action's thread: they are matched like the action's own. A
+     * type listed here twice is harmless; one that a rule also declares is SG304. SG302 accepts only throwable types
+     * foreign to the library. It refuses {@code Throwable}, {@code Exception} and {@code RuntimeException} as too
+     * broad, an {@code Error} or a {@code CancellationException} as never a domain failure, and
+     * {@code CompletionException} or {@code ExecutionException} themselves because they are unwrapped before matching:
+     * declare the type of their cause instead.
      */
     TransitionBuilder<E, S, T> failsOn(Class<? extends Throwable> type);
 
@@ -97,26 +99,29 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * ExecutionException, takes, unless the action runs as a recovery action, the route of the most specific type that
      * accepts it among every type this edge declares, in its rules and in its own {@code failsOn}: a type of this
      * rule's {@code failsOn} routes it to {@code transition} with {@code kind}, and a type of the edge's own
-     * {@code failsOn} to {@code onFailure} without a kind. For the types the DSL admits, the order of the declarations
-     * never matters. A throwable no declared type accepts aborts the call, a CancellationException and a
-     * StateMachineException that is not a failure of this call included, which never match. The two cases that do not
-     * abort are an Error thrown as itself, which propagates, and a failure of the call itself, for which the engine
-     * throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. An Error
-     * that completes the stage or arrives wrapped aborts the call. Once a failed cascade poisoned the transaction, for
-     * an accepted throwable of an action that does not run as a recovery action, the engine throws the failure that
-     * poisoned the transaction. A declared type also accepts the JDK exceptions the engine throws from the action's
-     * context, such as a NullPointerException for a null argument, an IllegalArgumentException for an identifier of
-     * another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off the action's
-     * thread: they are matched like the action's own. For a throwable a declared type accepts, from an action that does
-     * not run as a recovery action, the engine checks the poison before it reads the throwable's message, for
-     * synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have
-     * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. A
-     * throwable from the action when it runs as a recovery action is never routed, even one a declared type accepts: an
-     * Error thrown as itself propagates; the engine throws a failure of this call as itself or, when the transaction is
-     * poisoned, the failure that poisoned the transaction; and on any other throwable the engine aborts the call with
-     * it as cause, holding as suppressed the throwable that selected the failure route, when a throwable selected it
-     * and is not the same one. {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the
-     * call means inside a cascade.
+     * {@code failsOn} to {@code onFailure} without a kind. An InterruptedException that the action throws on the
+     * calling thread interrupts that thread again, so the recovery it selects runs on an interrupted thread: the
+     * engine's wait for a recovery action's stage that is still pending aborts the call as interrupted at once. For the
+     * types the DSL admits, the order of the declarations never matters. A throwable no declared type accepts aborts
+     * the call, a CancellationException and a StateMachineException that is not a failure of this call included, which
+     * never match. The two cases that do not abort are an Error thrown as itself, which propagates, and a failure of
+     * the call itself, for which the engine throws it as itself or, when the transaction is poisoned, the failure that
+     * poisoned the transaction. An Error that completes the stage or arrives wrapped aborts the call. Once a failed
+     * cascade poisoned the transaction, for an accepted throwable of an action that does not run as a recovery action,
+     * the engine throws the failure that poisoned the transaction. A declared type also accepts the JDK exceptions the
+     * engine throws from the action's context, such as a NullPointerException for a null argument, an
+     * IllegalArgumentException for an identifier of another catalogue, a ClassCastException from {@code input(Class)}
+     * or a WrongThreadException off the action's thread: they are matched like the action's own. For a throwable a
+     * declared type accepts, from an action that does not run as a recovery action, the engine checks the poison before
+     * it reads the throwable's message, for synchronous throws and exceptional completions of completed or pending
+     * stages alike; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the
+     * throwable in a CompletionException. A throwable from the action when it runs as a recovery action is never
+     * routed, even one a declared type accepts: an Error thrown as itself propagates; the engine throws a failure of
+     * this call as itself or, when the transaction is poisoned, the failure that poisoned the transaction; and on any
+     * other throwable the engine aborts the call with it as cause, holding as suppressed the throwable that selected
+     * the failure route, when a throwable selected it and is not the same one.
+     * {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call means inside a
+     * cascade.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name

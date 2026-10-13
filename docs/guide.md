@@ -1537,7 +1537,10 @@ the rule while every other `IOException` goes to the fallback.
   or a guard throws, whatever the engine then does with it, and one that a hook, a state getter or setter, an identity
   function, the trail's clock, a sub-machine's `childOf` or `parentOf`, a watch's `peersOf`, `ownerOf` or condition, an
   observer, the logger's backend, a value's `toString()` or a call submitted through `supplyAsync` throws. One that
-  completes a stage leaves the thread as it is.
+  completes a stage leaves the thread as it is. Once the engine interrupts the thread again, the rest of the call runs
+  on an interrupted thread, as an interrupt asks, the recovery of a routed failure included: a later wait of the call
+  for a stage that is still pending, the recovery action's for one, ends at once and aborts the call as interrupted,
+  while a synchronous action, and an asynchronous one whose stage has already completed, complete.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 
@@ -1603,8 +1606,12 @@ recovery step: when its action returns a null outcome or stage, or its wait time
 unless a failed cascade had poisoned the call, which then ends in that poison as it is; when a sub-machine that the
 recovery hop enters cannot start; and when the exit that a terminal state selects after the recovery cannot run, because
 that state maps to no exit or the exit would run deeper than `maxCascadeDepth`. An abort of the exit's own step holds no
-such exception. A definition assembled without the DSL whose rule names an identifier with no edge from the origin
-aborts the call when that rule is selected, as such an `onFailure` does.
+such exception. A recovery that an `InterruptedException` selected, or that runs after the engine contained one in the
+same call, runs on an interrupted thread, since the engine interrupts the thread again: when its action has to wait
+for a stage that is still pending, that wait is interrupted at once and the call aborts as just said, while a
+synchronous recovery action, or one whose stage has already completed, completes. A definition assembled without the
+DSL whose rule names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
+`onFailure` does.
 
 `Outcome.Failed` reports the kind as `failureKind()`, empty when the failure has none, beside
 `failureTransition()`, the identifier of the recovery edge that ran. `status()` is `FAILED` and `code()` is

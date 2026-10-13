@@ -60,6 +60,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -193,12 +194,19 @@ class InterruptedContainmentTest {
     /** The doc graph, with {@code submit} decorating its submit edge. */
     private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
             UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
+        return docs(submit, UnaryOperator.identity());
+    }
+
+    /** The doc graph, with {@code submit} decorating its submit edge and {@code discard} its discard edge. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
         GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
                 .statePolicy(PUBLISHED, "a publication is archived");
         graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        return graph.transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
+        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
     }
@@ -365,6 +373,73 @@ class InterruptedContainmentTest {
         assertInstanceOf(InterruptedException.class, failed.cause().orElseThrow());
         assertTrue(called.interrupted(), "the thread lost its interrupt");
         assertEquals(ARCHIVED, doc.status());
+    }
+
+    /**
+     * A routed interrupt, or one contained on the way to the route, leaves the rest of the call on an interrupted
+     * thread, as an interrupt asks: the recovery's wait for a stage that is still pending, which would complete a moment
+     * later, sees the interrupt at once and aborts the call, which holds the exception that selected the route as
+     * suppressed.
+     */
+    @Test
+    void aRecoveryThatWaitsForAPendingStageAfterAnInterruptAbortsAsInterruptedAndKeepsTheInterrupt() {
+        Map<Class<? extends Throwable>, UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>> routes =
+                new LinkedHashMap<>();
+        routes.put(InterruptedException.class, (TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
+                submit.action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    block();
+                    return ActionOutcome.ok();
+                }).failsOn(InterruptedException.class).onFailure(DISCARD));
+        routes.put(BlockingMessage.class, (TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
+                submit.action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    throw new BlockingMessage();
+                }).failsOn(BlockingMessage.class).onFailure(DISCARD));
+        for (Map.Entry<Class<? extends Throwable>, UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>> route
+                : routes.entrySet()) {
+            Doc doc = new Doc("1", DRAFT);
+            CompletableFuture<ActionOutcome> pending = CompletableFuture.supplyAsync(ActionOutcome::ok,
+                    CompletableFuture.delayedExecutor(200, TimeUnit.MILLISECONDS));
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(route.getValue(),
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard.asyncAction("Cleanup",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> pending)))
+                    .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+            Interrupted<TransitionAbortedException> called =
+                    abortedOnInterruptedThread(() -> machine.execute(doc, SUBMIT));
+            assertTrue(called.result().getMessage().contains("interrupted while waiting for the action Cleanup"),
+                    called.result().getMessage());
+            assertInstanceOf(InterruptedException.class, called.result().getCause());
+            assertInstanceOf(route.getKey(), called.result().getSuppressed()[0]);
+            assertTrue(called.interrupted(), "the thread lost its interrupt");
+            assertEquals(DRAFT, doc.status());
+        }
+    }
+
+    /** A recovery that need not wait, a sync action or a stage already completed, completes on the interrupted thread. */
+    @Test
+    void aRecoveryThatNeedNotWaitAfterARoutedInterruptCompletesAndKeepsTheInterrupt() {
+        List<UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>> recoveries = List.of(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard.action("Cleanup",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok()),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard.asyncAction("Cleanup",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.completedFuture(ActionOutcome.ok())));
+        for (UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> recovery : recoveries) {
+            Doc doc = new Doc("1", DRAFT);
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                block();
+                                return ActionOutcome.ok();
+                            }).failsOn(InterruptedException.class).onFailure(DISCARD), recovery))
+                    .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+            Interrupted<Outcome<Doc, DocStatus, DocTransition>> called =
+                    onInterruptedThread(() -> machine.execute(doc, SUBMIT));
+            Outcome.Failed<Doc, DocStatus, DocTransition> failed =
+                    (Outcome.Failed<Doc, DocStatus, DocTransition>) called.result();
+            assertInstanceOf(InterruptedException.class, failed.cause().orElseThrow());
+            assertTrue(called.interrupted(), "the thread lost its interrupt");
+            assertEquals(ARCHIVED, doc.status());
+        }
     }
 
     @Test
