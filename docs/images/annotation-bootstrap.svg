@@ -15,14 +15,14 @@
 <text x="76" y="260" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#7aafff" text-anchor="start">01 / SOURCE</text>
 <text x="76" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">You write Java</text>
 <text x="76" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">@GenerateGraphApi</text>
-<text x="76" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Tickets extends</text>
-<text x="76" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Machine&lt;Ticket, TicketStatus&gt;</text>
+<text x="76" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Tickets extends Machine&lt;Ticket,</text>
+<text x="76" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">TicketState, TicketTransition&gt;</text>
 <rect x="528" y="216" width="365" height="215" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="528" y="234" width="4" height="179" rx="2" fill="#c3a2ff" />
 <text x="552" y="260" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">02 / GENERATE</text>
 <text x="552" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Read declarations</text>
 <text x="552" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Machine name + type arguments</text>
-<text x="552" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">State enum + marked members</text>
+<text x="552" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Both enums + marked members</text>
 <text x="552" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">No application compilation</text>
 <rect x="984" y="216" width="404" height="215" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="984" y="234" width="4" height="179" rx="2" fill="#c3a2ff" />

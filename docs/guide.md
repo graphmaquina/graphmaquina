@@ -53,9 +53,8 @@ shop and billing domains the guide quotes.
 - [Diagnostics and troubleshooting](#diagnostics-and-troubleshooting)
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
-- [Migrating from 1.x](migration-2.0.md)
-- [Component benchmarks](../benchmarks/README.md) — graph-only harness, the V/E cost evidence and the measured cost of
-  the call's flow and logs; the 1.x figures are historical
+- [Component benchmarks](../benchmarks/README.md) — the harness, the V/E cost evidence and the measured cost of the
+  call's flow and logs
 - [Further reference](#further-reference)
 - [License](#license)
 
@@ -71,7 +70,7 @@ shop and billing domains the guide quotes.
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
-| Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
+| Reasoned refusals | Every node carries a policy, so a request with no edge gets the reason its node's policy gives. |
 | Inspectable execution | Outcomes carry transition records, watch reactions, the sub-machines a call started and the call's flow; technical aborts carry diagnostic details where applicable. |
 | Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call-logs-and-the-calls-flow). |
 | The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. Post-commit hooks that take a `CommitContext` read and write it too, so a value can reach the entity only once the call commits. With `recordTrail`, the flow also lists the hops and sub-machine starts the call took, each with the instant it took it, and, when the call is rejected or throws, how it ended. The caller receives it frozen, in the outcome or in the call's failure. See [the call's flow](#the-calls-flow). |
@@ -260,7 +259,7 @@ module the same way.
 | --- | --- |
 | Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). |
 | README quickstart | [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
-| Async guide | Migrated with the rest of this guide, then compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven; the behaviour-check count reported for the 1.x async guide is historical. |
+| Async guide | Compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven. |
 | Remaining acceptance work | Manual IntelliJ acceptance, a rerun of the async guide through both build tools, and full strict-lint acceptance of the external payments demo remain pending. |
 
 Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
@@ -817,11 +816,10 @@ public interface Tickets extends Machine<Ticket,TicketState,TicketTransition> {
 ```
 
 `APPROVE` and `AUTO_APPROVE` are two edges between the same pair of states, each with its own action. They
-are parallel edges, not duplicates: `approve(ticket)` can never run `autoApprove`'s action, and no
-deduplication by destination collapses them. `RETOUCH` is a self-loop, an ordinary edge that happens to end
-where it started, and `REJECT` closes the `OPEN → REVIEW → OPEN` loop, so both states appear in
-`allowsCycle`. `DECLINE` has no method of its own: it is the route `SUBMIT` names in `onFailure`, and it is
-resolved from `SUBMIT`'s origin.
+are parallel edges, not duplicates: `approve(ticket)` can never run `autoApprove`'s action. `RETOUCH` is a
+self-loop, an ordinary edge that happens to end where it started, and `REJECT` closes the `OPEN → REVIEW → OPEN`
+loop, so both states appear in `allowsCycle`. `DECLINE` has no method of its own: it is the route `SUBMIT`
+names in `onFailure`, and it is resolved from `SUBMIT`'s origin.
 
 `TicketsGraph`, `TicketRefs` and `TicketActionsRefs` do not exist in handwritten source. The generator writes
 them before javac compiles this interface, using `@GenerateGraphApi`, `Machine<Ticket, TicketState, TicketTransition>`
@@ -987,8 +985,7 @@ resolved from the origin that needs it.
 
 ### Absence, self-loops and reevaluation
 
-Three situations stay separate here, and each has its own
-observable result.
+Three situations are distinct, and each has its own observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
@@ -997,13 +994,9 @@ observable result.
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
-the only exit of a non-terminal state, and it is forbidden on a terminal. Requesting a transition while the
-entity already sits in that transition's destination is not special in any way: either an edge is keyed by
-`(current, requested)` and it runs, or none is and the request is refused.
+the only exit of a non-terminal state, and it is forbidden on a terminal.
 
-`Ignored` is reserved for reevaluation. There is no implicit staying, and no operation is silently ignored
-because the entity is already somewhere convenient. If the intent is to do nothing, do not call the
-operation.
+`Ignored` is reserved for reevaluation.
 
 ### Guards and the reason a request is refused
 
@@ -1042,8 +1035,7 @@ the same `(from, transition)` is `SG702`; a state with no policy is `SG701`. A t
 gets the stable text `terminal state <NAME> accepts no transitions`, which an explicit `StatePolicy`
 replaces.
 
-A policy is not a universe of destinations that must be "closed". You never enumerate what a state cannot do.
-You declare what it can do, and the policy words the answer for everything else.
+You declare what a state can do, and its policy words the answer for everything else.
 
 ### Structural rules
 
@@ -1061,9 +1053,8 @@ You declare what it can do, and the policy words the answer for everything else.
   and, with annotations, that no operation of the facade executes. A terminal state holds no sub-machine, another
   state holds at most one, and a machine's sub-machines never contain the machine again.
 
-Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one
-message per elementary cycle. The rule about what is accepted is unchanged; the number of messages is
-deliberately smaller, and the witnesses are deterministic.
+Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one message per
+elementary cycle, so a component that holds many cycles yields one message, and the witnesses are deterministic.
 
 For example, the ticket machine permits `OPEN → REVIEW → OPEN` and the `RETOUCH` self-loop by listing both
 states in `allowsCycle`. The shop permits `NEW → PAYMENT_DECLINED → NEW` with `allowsCycle = PAYMENT_DECLINED`.
@@ -1087,8 +1078,8 @@ A `Transition` on the interface itself declares an edge with no facade method. I
 cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and `PAYMENT_DECLINED` in the
 shop are exactly that. Omitting `action` makes the edge a `MOVE`.
 
-A typed facade intentionally exposes no generic selector by destination. The application's entry points are
-the operations you declared, plus `reevaluate`.
+A typed facade exposes no generic selector: the application's entry points are the operations you declared,
+plus `reevaluate`.
 
 An operation may accept a second argument: `Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict)`.
 Guards and actions read it through `ctx.input(Verdict.class)`, which returns `Optional<Verdict>`. This lets
@@ -1125,9 +1116,6 @@ public static GuardResult eligible(GuardContext<Entity, Status, Change> ctx) {
 `transitionsFrom(state)` returns the identifiers declared from a state. It is structural inspection: it runs
 no guard and promises nothing about a particular entity. To see where those identifiers lead, read
 `definition().outgoingFrom(state)`, and for one edge, `definition().findTransition(from, id)`.
-
-Upgrading an application written against the 1.x transition matrix is a separate document:
-[migrating to 2.0](migration-2.0.md) maps every retired contract to its replacement.
 
 ## Annotation and binding reference
 
@@ -2506,10 +2494,9 @@ For one entity, use `ctx.cascade(Items.class, item, ItemTransition.CANCEL)`. Mac
 for lower-level integrations.
 
 A cascade resolves the peer's edge by identity and runs its guards and action. Its success stages a change; it
-does not commit independently. The root commits after all required work succeeds. There is no convergence by
-destination: a nested request on an entity that is already in flight is a cascade cycle even when it asks for
-the transition that entity is running, and once the entity is no longer in flight the request is resolved
-from its pending state like any other.
+does not commit independently. The root commits after all required work succeeds. A nested request on an entity
+that is already in flight is a cascade cycle whatever transition it asks for, even the one that entity is running,
+and once the entity is no longer in flight the request is resolved from its pending state like any other.
 
 | Policy | Behavior |
 | --- | --- |
@@ -3713,7 +3700,7 @@ System.out.println(graph.findTransition(TicketState.REVIEW, TicketTransition.APP
 System.out.println(graph.policy(TicketState.OPEN).reasonFor(TicketTransition.APPROVE));
 ```
 
-`toString()` is a short summary of the machine's name and its counts; it never materializes pairs of states.
+`toString()` is a short summary of the machine's name and its counts.
 `transitionsFrom` returns the identifiers declared from a state, `outgoingFrom` the `TransitionSpec`s
 themselves, and `findTransition` the single spec keyed by `(from, id)`, as an `Optional` that is empty when
 no edge is declared. `graph()` returns the `DirectedGraph<S, T>`, which keeps parallel edges and offers
@@ -4242,11 +4229,10 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 
 | Area | Current status |
 | --- | --- |
-| Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
 | Watches and sub-machines between JARs/modules | Unsupported with annotations: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
 | State hierarchy and parallel regions | A state can hold a [sub-machine](#compose-machines): another machine bound to it, which entering the state starts and whose terminal state selects the parent's exit. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
 | Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge, plus the cascades its actions request and the exits of the sub-machines it ends; nothing walks a path or fires on a timer. |
-| Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |
+| Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` lists every elementary cycle. |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
 | Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
@@ -4293,8 +4279,7 @@ artifact smoke reports are under `graphmaquina-test/build/reports/tests/publishe
 ### Release to Maven Central
 
 Releasing is a maintainer operation. The version comes from git tags, so a release creates a tag and edits no
-file. The next release is `2.0.0`, not another `1.0.x` patch: the graph-only contract is incompatible with
-1.x, so every module moves to that version together. A published version can never be replaced or deleted.
+file. A published version can never be replaced or deleted.
 
 To build and check a bundle without publishing it, configure `SIGNING_KEY` with the project's ASCII-armored
 private release key and `SIGNING_PASSWORD` with its passphrase, then run:
@@ -4304,7 +4289,7 @@ private release key and `SIGNING_PASSWORD` with its passphrase, then run:
 ```
 
 Without `-PgraphmaquinaVersion`, the version is the tag of the commit being built, already published once that tag
-is released; on a commit no tag names, it is derived from the most recent tag, as `1.0.2-553-g03952fd`, which
+is released; on a commit no tag names, it is derived from the most recent tag, as `2.0.0-12-g03952fd`, which
 `centralBundle` refuses. Pass the flag to stage another version. Maintainers using 1Password CLI can inject both
 secrets for this command without copying them into the checkout or shell history. Replace `<vault>` and `<item>`
 with the vault and signing item's names or IDs; the item must have a `Private PGP key` field containing the
@@ -4341,7 +4326,6 @@ Do not publish a bundle signed with a temporary test key. See the
 
 | Reference | What to use it for |
 | --- | --- |
-| [Migrating to 2.0](migration-2.0.md) | Every retired 1.x contract and its replacement, with before/after examples |
 | [Testing guide](testing.md) | Typed assertions, probes, goldens and structural snapshots |
 | [Build integration guide](typed-annotations-build.md) | Adapter lifecycle, toolchain checks, paths and repository configuration |
 | [Shop source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades, watches, after-commit hooks and the call's flow |

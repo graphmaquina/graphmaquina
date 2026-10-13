@@ -160,16 +160,12 @@ to confuse, so keep them apart:
 | The request was refused because the entity is a sub-machine whose parent does not hold it | `isRejected().isDetached()` |
 | The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 
-`hasTransitionsExactly` takes identifiers, not destinations, so two edges that reach the same state are two
-entries. No set of destinations could express that, which is exactly the point.
+`hasTransitionsExactly` takes identifiers, so two edges that reach the same state are two entries.
 
-An `Ignored` outcome now says which of the two reevaluation cases it is, through
+An `Ignored` outcome says which of the two reevaluation cases it is, through
 `isIgnored().hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED`. It is the only outcome with no
 requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
 every other variant.
-
-Upgrading tests written against 1.x is a separate document:
-[migrating to 2.0](migration-2.0.md) lists every renamed assertion.
 
 ## Verified samples
 

@@ -26,7 +26,7 @@ gpg --fingerprint 851F75949D70884AC95AAB56455AD78F0EC0B9F1
 Download an artifact and its adjacent `.asc` signature from Maven Central, then verify both together:
 
 ```bash
-VERSION=1.0.0   # the version you are verifying
+VERSION=2.0.0   # the version you are verifying
 BASE=https://repo.maven.apache.org/maven2/io/github/graphmaquina/graphmaquina-core/$VERSION
 curl --fail --remote-name "$BASE/graphmaquina-core-$VERSION.jar"
 curl --fail --remote-name "$BASE/graphmaquina-core-$VERSION.jar.asc"
