@@ -19,7 +19,8 @@ import javax.lang.model.element.ElementKind;
  * ultimately extends. The supertype chain is walked by declaration identity, substituting each type argument into
  * the parameters the supertype declares, so a generic base contributes its specialization whether it is an original
  * source or a classpath binary. The facade's kind is not checked here, so a class facade is specialized like an
- * interface; the annotation processor is what refuses it, with {@code SG502}.
+ * interface, and refused like one with {@code SG601} when it does not extend {@code Machine}; the annotation processor
+ * is what refuses a class facade that does, with {@code SG502}.
  */
 public final class MachineHeaders {
 
