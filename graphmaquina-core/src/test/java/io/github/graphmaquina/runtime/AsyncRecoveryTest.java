@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
@@ -57,6 +58,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
@@ -152,6 +154,15 @@ class AsyncRecoveryTest {
             StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket, Object input) {
         CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
                 machine.async().execute(ticket, TicketChange.PUBLISH, input);
+        calls.add(call);
+        return call;
+    }
+
+    /** Starts and retains the facade's future of a call without input; executor ownership stays with the test. */
+    private CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> start(
+            StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket) {
+        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
+                machine.async().execute(ticket, TicketChange.PUBLISH);
         calls.add(call);
         return call;
     }
@@ -267,6 +278,12 @@ class AsyncRecoveryTest {
     private Outcome<Ticket, TicketState, TicketChange> viaFacade(
             StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket, Object input) throws Exception {
         return start(machine, ticket, input).get(WAIT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /** Publishes {@code ticket} without input through the async facade of {@code machine} and waits for it. */
+    private Outcome<Ticket, TicketState, TicketChange> viaFacade(
+            StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket) throws Exception {
+        return start(machine, ticket).get(WAIT_SECONDS, TimeUnit.SECONDS);
     }
 
     /**
@@ -536,7 +553,7 @@ class AsyncRecoveryTest {
                                 .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
                                         UnreadableFailure.class)
                                 .onFailure(TicketChange.MARK_INTEGRATION_FAILED)));
-                CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call = start(machine, root, null);
+                CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call = start(machine, root);
                 TransitionAbortedException poison = poisoned.get(WAIT_SECONDS, TimeUnit.SECONDS);
                 if (!alreadyCompleted) {
                     stage.awaitPendingRegistration();
@@ -759,7 +776,7 @@ class AsyncRecoveryTest {
                                     InterruptedException.class)));
             Ticket ticket = new Ticket("t1");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
             TransitionAbortedException error = assertInstanceOf(TransitionAbortedException.class, failure.getCause());
@@ -851,7 +868,7 @@ class AsyncRecoveryTest {
         Ticket ticket = new Ticket("t1");
         try {
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
             TransitionAbortedException error = assertInstanceOf(TransitionAbortedException.class, failure.getCause());
@@ -882,7 +899,7 @@ class AsyncRecoveryTest {
                             CompletableFuture.completedFuture(
                                     ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))));
             Ticket ticket = new Ticket("t1");
-            Outcome<Ticket, TicketState, TicketChange> outcome = viaFacade(machine, ticket, null);
+            Outcome<Ticket, TicketState, TicketChange> outcome = viaFacade(machine, ticket);
             assertEquals("FAILURE_ROUTED RECORD_REJECTION to REJECTED_BY_PROVIDER, kind Rejected, no cause;"
                     + " ticket REJECTED_BY_PROVIDER after 1 write(s)", routed(ticket, null, outcome));
             assertEquals(List.of("READY -RECORD_REJECTION-> REJECTED_BY_PROVIDER MOVE no action at depth 0"),
@@ -909,7 +926,7 @@ class AsyncRecoveryTest {
                             })));
             Ticket asyncTicket = new Ticket("async");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(asyncMachine, asyncTicket, null);
+                    start(asyncMachine, asyncTicket);
             retried.awaitPendingRegistration();
             retried.complete(ActionOutcome.ok());
             Outcome<Ticket, TicketState, TicketChange> async = call.get(WAIT_SECONDS, TimeUnit.SECONDS);
@@ -993,6 +1010,137 @@ class AsyncRecoveryTest {
     }
 
     /**
+     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and throws
+     * {@code down}, which the rule of the kind Unavailable routes to SCHEDULE_RETRY.
+     */
+    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> throwsUnavailable(
+            ServiceUnavailableException down) {
+        return (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
+                publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                    ctx.entity().calls.add("publish");
+                    throw down;
+                }));
+    }
+
+    /** SCHEDULE_RETRY with a synchronous action that throws {@code failure}. */
+    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> retryThrowing(
+            RuntimeException failure) {
+        return (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.action("schedule retry",
+                (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                    throw failure;
+                });
+    }
+
+    /**
+     * A recovery that throws loses neither failure. PUBLISH throws a ServiceUnavailableException, which its rule
+     * routes to SCHEDULE_RETRY, whose action then throws, or completes its stage with, another exception: the call
+     * aborts with that one as cause and holds, by identity, the one that selected the route as suppressed. A recovery
+     * that rethrows the very exception that selected it leaves that exception the cause alone, and a route that a
+     * returned failure selected has no exception to keep.
+     */
+    @Test
+    void aRecoveryThatThrowsKeepsTheExceptionThatSelectedItAsSuppressed() {
+        bounded(() -> {
+            ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+            IllegalStateException broken = new IllegalStateException("the scheduler is down");
+            UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailableThrown =
+                    throwsUnavailable(down);
+            Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retries =
+                    new LinkedHashMap<>();
+            retries.put("sync", retryThrowing(broken));
+            retries.put("async", (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.asyncAction(
+                    "schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                            CompletableFuture.failedFuture(broken)));
+            for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retry
+                    : retries.entrySet()) {
+                Ticket ticket = new Ticket(retry.getKey());
+                StateMachine<Ticket, TicketState, TicketChange> machine =
+                        machine(tickets(unavailableThrown, retry.getValue()));
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> machine.execute(ticket, TicketChange.PUBLISH), retry.getKey());
+                assertSame(broken, error.getCause(), retry.getKey());
+                assertEquals(1, error.getSuppressed().length, retry.getKey());
+                assertSame(down, error.getSuppressed()[0], retry.getKey());
+                assertEquals(TicketState.READY, ticket.state, retry.getKey());
+            }
+
+            StateMachine<Ticket, TicketState, TicketChange> rethrowing =
+                    machine(tickets(unavailableThrown, retryThrowing(down)));
+            TransitionAbortedException same = assertThrows(TransitionAbortedException.class,
+                    () -> rethrowing.execute(new Ticket("rethrown"), TicketChange.PUBLISH));
+            assertSame(down, same.getCause());
+            assertEquals(0, same.getSuppressed().length);
+
+            StateMachine<Ticket, TicketState, TicketChange> returning =
+                    machine(tickets(unavailable(), retryThrowing(broken)));
+            TransitionAbortedException noException = assertThrows(TransitionAbortedException.class,
+                    () -> returning.execute(new Ticket("returned"), TicketChange.PUBLISH));
+            assertSame(broken, noException.getCause());
+            assertEquals(0, noException.getSuppressed().length);
+        });
+    }
+
+    /**
+     * The engine's own abort of a recovery step loses no failure either. PUBLISH throws a ServiceUnavailableException,
+     * which its rule routes to SCHEDULE_RETRY, whose action then returns null or a null stage, or whose stage
+     * completes with null or outlasts the recovery edge's timeout: the call ends in the engine's abort of that step,
+     * which holds, by identity, the exception that selected the route as suppressed. When the recovery action has
+     * poisoned the unit of work first, through a cascade it caught, the call ends in that first poison, which the
+     * engine leaves as it is.
+     */
+    @Test
+    void anAbortOfARecoveryStepByTheEngineKeepsTheExceptionThatSelectedItAsSuppressed() {
+        bounded(() -> {
+            ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+            Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retries =
+                    new LinkedHashMap<>();
+            retries.put("the action schedule retry returned null",
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.action("schedule retry",
+                            (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> null));
+            retries.put("the action schedule retry returned a null stage",
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.asyncAction(
+                            "schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> null));
+            retries.put("the action schedule retry returned null, from its stage",
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.asyncAction(
+                            "schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                                    CompletableFuture.<ActionOutcome>completedFuture(null)));
+            retries.put("waiting for the action schedule retry timed out",
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.asyncAction(
+                            "schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> pending())
+                            .timeout(Duration.ofMillis(50)));
+            for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retry
+                    : retries.entrySet()) {
+                String ending = retry.getKey().replace(", from its stage", "");
+                Ticket ticket = new Ticket(retry.getKey());
+                StateMachine<Ticket, TicketState, TicketChange> machine =
+                        machine(tickets(throwsUnavailable(down), retry.getValue()));
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> machine.execute(ticket, TicketChange.PUBLISH), retry.getKey());
+                assertTrue(error.getMessage().contains(": " + ending), error.getMessage());
+                assertEquals(1, error.getSuppressed().length, retry.getKey());
+                assertSame(down, error.getSuppressed()[0], retry.getKey());
+                assertEquals(TicketState.READY, ticket.state, retry.getKey());
+            }
+
+            AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
+            StateMachine<Ticket, TicketState, TicketChange> poisoning = machine(tickets(throwsUnavailable(down),
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.action("schedule retry",
+                            (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                                try {
+                                    ctx.cascade(RecoveryFixtures.KEY, new Ticket("peer"), TicketChange.CLOSE);
+                                } catch (TransitionAbortedException failure) {
+                                    caught.set(failure);
+                                }
+                                return null;
+                            })));
+            TransitionAbortedException poison = assertThrows(TransitionAbortedException.class,
+                    () -> poisoning.execute(new Ticket("poisoned"), TicketChange.PUBLISH));
+            assertSame(caught.get(), poison);
+            assertEquals(0, poison.getSuppressed().length);
+        });
+    }
+
+    /**
      * The recovery edge's own hook runs once the recovery has committed and sees the committed state, while the hook
      * of the failed PUBLISH never runs. PUBLISH is asynchronous, and its stage fails while the facade's call waits.
      */
@@ -1016,7 +1164,7 @@ class AsyncRecoveryTest {
                                                     + " after " + ticket.stateWrites + " write(s)"))));
             Ticket ticket = new Ticket("t1");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             stage.awaitPendingRegistration();
             stage.completeExceptionally(new ServiceUnavailableException("provider down"));
             assertEquals(OutcomeCode.FAILURE_ROUTED, call.get(WAIT_SECONDS, TimeUnit.SECONDS).code());

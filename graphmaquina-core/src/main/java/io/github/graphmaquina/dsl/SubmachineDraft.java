@@ -51,13 +51,13 @@ final class SubmachineDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extend
 
     /** Once the graph is built nothing reads this binding any more, so a late call would be lost. */
     private void requireUnbuilt() {
-        graph.requireUnbuilt("the sub-machine of " + state);
+        graph.requireUnbuilt("the sub-machine of " + state.name());
     }
 
     private void requireChildState(Q terminal) {
         Class<Q> states = child.key().states();
         if (!states.isInstance(terminal)) {
-            throw new IllegalArgumentException("state must belong to " + states.getName() + ": " + terminal);
+            throw new IllegalArgumentException("state must belong to " + states.getName() + ": " + terminal.name());
         }
     }
 

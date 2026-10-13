@@ -144,7 +144,7 @@ constant of another machine's catalogue does not compile inside it.
 | State setter | `StateWriteProbe` | every write in entry order with its status, and a failure armed on one call |
 | Async callback | `ControlledAsyncAction`, `ControlledAsyncGuard` | that the engine entered the callback, with the test deciding when and how it answers |
 | Rendered diagram | `GraphGoldens.assertMatches` | visual DOT output only; not machine logic |
-| Whole definition | `GraphSnapshots.assertMatches` | every field the definition carries against a checked-in resource |
+| Whole definition | `GraphSnapshots.assertMatches` | the fields the definition declares against a checked-in resource, a sub-machine by its child's key and exits only, so the child's graph needs a snapshot of its own |
 
 ## Asserting on identity
 
@@ -266,8 +266,10 @@ assertThat(items.pack(i2)).isApplied().reactions()
         .hasEntityState(Order::status, OrderStatus.SHIPPED);
 ```
 
-A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. A domain
-failure keeps the very exception instance the action reported, and names the identifier that recovered:
+A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. The DSL refuses two
+guards of one name on an edge with `SG105`, and so does the annotation processor, so in a graph the DSL built the name
+identifies the guard that rejected. A definition assembled without the DSL is not checked for it. A domain failure
+keeps the very exception instance the action reported, and names the identifier that recovered:
 
 ```java
 assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
@@ -383,7 +385,9 @@ before.assertUnchanged();
 
 `assertUnchanged()` fails with every entity that moved, not only the first, so one run names the whole
 difference. `changes()` reads every tracked getter again on each call and answers about the entities as they
-are now.
+are now. Each `StateChange` holds the key, the entity and its states `before()` and `after()`, both `Optional`: a
+getter that answers null observes no state, which is empty, so a state that appears or disappears is a change like
+any other.
 
 ### Probes
 
@@ -449,8 +453,8 @@ assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> 
 `hasInput` compares by equality, `hasInputSameAs` checks identity, and `hasNoInput` requires absence.
 `inputSatisfies` checks presence and assignability before invoking the typed assertion; an absent or wrong
 input produces an inspectable `GraphAssertionError`. Null expected values are programming errors; use
-`hasNoInput()` to check a null operation argument. `CallInputAssert.assertThat(call)` is also available
-without the `GraphAssertions` facade.
+`hasNoInput()` to check a call that carried no operation argument, since the engine refuses a null one before the
+call starts. `CallInputAssert.assertThat(call)` is also available without the `GraphAssertions` facade.
 
 The recorded `input(Class)` follows the context contract: empty remains empty, supertypes are supported,
 and incompatible present values throw `ClassCastException`. A null type token throws `NullPointerException`;
@@ -528,8 +532,11 @@ and only the order inside the header decides how the two are closed. Try-with-re
 order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing cancels the
 invocations it is still holding, and a worker parked inside the action is released before the registry waits
 for it. Listed the other way round, a test that fails before answering an invocation makes the registry wait
-out the machine's whole `asyncTimeout` — once per unanswered invocation — before the fixture ever gets to
-cancel it.
+until each unanswered call gives up at its own deadline, the edge's `timeout` or the call's `asyncTimeout`,
+whichever ends first, before the fixture ever gets to cancel it. Calls that run side by side wait out their
+deadlines side by side, so two unanswered invocations started together cost about one such wait, not two. Only
+the default executors of the machines are awaited: closing the registry does not wait for an executor the
+application supplied.
 
 The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. When a call
 on a sub-machine can run that edge implicitly, as the exit of its binding or an edge that exit leads to, the
@@ -840,11 +847,11 @@ value, and a key that holds another value with `Optional[...]` of that value.
 
 `trail()` opens the trail, which a call records when its root machine was built with
 [`recordTrail`](guide.md#record-the-calls-trail). `hasEntryTypesExactly` compares the class of every entry, in order.
-`hasHopsExactly` compares the identifier of every hop, in order, and skips the sub-machine starts and the final entry,
-so with no argument it expects a trail without a hop. `hops()` opens the records of those hops, in the view that
-`records()` opens on an outcome: `forEntity(key, entity)` and `containsExactly(records)` read which machine and entity
-took each hop and from which state to which, on the trail of a call that failed before its hooks too, whose exception
-lists no `records()`.
+`hasHopsExactly` compares the identifier of every hop, in order, and skips the sub-machine starts and the final
+rejection or failure, so with no argument it expects a trail without a hop. `hops()` opens the records of those hops,
+in the view that `records()` opens on an outcome: `forEntity(key, entity)` and `containsExactly(records)` read which
+machine and entity took each hop and from which state to which, on the trail of a call that failed before its hooks
+too, whose exception lists no `records()`.
 `isInTimeOrder` checks that no entry's `at()` is earlier than
 the one of the entry before it, so equal instants pass. `endsWithRejection(kind)` and `endsWithFailure(phase)` read
 the final entry. Build the machine on a clock the test controls.
@@ -949,15 +956,17 @@ logic.
 - `GraphSnapshots.assertMatches(definition, resource)` compares declared metadata with a checked-in
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
-  the identifier each one executes, each sub-machine with its child machine and the identifier each terminal state
-  of the child exits through, and for every edge its `(from, id)` key, destination, kind, reason-free
+  the identifier each one executes, each sub-machine with its child's machine key and the identifier each terminal
+  state of the child exits through, and for every edge its `(from, id)` key, destination, kind, reason-free
   action and guard names/modes, fallback failure identifier, `failsOn` classes, timeout, after-commit hook and, only
   when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
   identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
   It reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
-  path at all: an identifier with no edge from a state simply does not appear. Use typed graph assertions
-  for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
-  watches through real operations and assert their outcomes, records, reactions and observed entity states.
+  path at all: an identifier with no edge from a state simply does not appear. The graph of a bound child is not
+  part of its parent's snapshot, so a change to that graph alone leaves the parent's snapshot as it was: give the
+  child's definition a snapshot of its own. Use typed graph assertions for focused expectations. Neither approach
+  executes domain logic; test guards, actions, cascades and watches through real operations and assert their
+  outcomes, records, reactions and observed entity states.
 - `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
   `.dot` file. There is no detail mode: the export draws the declared edges, draws each sub-machine as a
   cluster inside the state it is bound to, and renders each node's policy as that node's tooltip, or as the

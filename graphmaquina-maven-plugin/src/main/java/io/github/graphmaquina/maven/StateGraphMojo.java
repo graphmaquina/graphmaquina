@@ -3,6 +3,7 @@ package io.github.graphmaquina.maven;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.lifecycle.DefaultLifecycles;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
@@ -13,10 +14,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemLoopException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -63,6 +70,22 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** The directory, under the build directory, that holds the manifests and inventories of a compilation. */
     private static final String WORK = "graphmaquina";
 
+    /**
+     * The names the default excludes of Ant 1.10 name outright, which the generator's walk of a whole root leaves out
+     * beside the names {@code ._*}, {@code *~}, {@code #*#}, {@code .#*} and {@code %*%}: the files and directories
+     * of version control systems, and the {@code .DS_Store} of macOS.
+     */
+    private static final Set<String> WALK_EXCLUDED_NAMES = Set.of("CVS", ".cvsignore", "SCCS", "vssver.scc", ".svn",
+        ".git", ".gitattributes", ".gitignore", ".gitmodules", ".hg", ".hgignore", ".hgsub", ".hgsubstate", ".hgtags",
+        ".bzr", ".bzrignore", ".DS_Store");
+
+    /**
+     * The directories the generator's walk of a whole root leaves out that the scanner of the compiler leaves out with
+     * everything inside them as well, since an exclude ending in {@code /**} names each: those of the version control
+     * systems both lists name. Nothing below one is read on either side.
+     */
+    private static final Set<String> PRUNED_ALIKE = Set.of("CVS", "SCCS", ".svn", ".bzr", ".hg", ".git");
+
     /** The project this compilation belongs to; injected from {@code ${project}}. */
     private MavenProject project;
 
@@ -85,6 +108,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
     private ToolchainManager toolchainManager;
 
     /**
+     * The lifecycles of the build, injected as a descriptor requirement: an execution of the compiler runs between the
+     * preparation and the completion only when it is bound to a phase of the default one.
+     */
+    private DefaultLifecycles lifecycles;
+
+    /**
      * The project this goal runs for.
      *
      * @return the project being built
@@ -96,11 +125,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /**
      * Whether this build compiles nothing for {@code execution}, in which case the calling goal does nothing and
      * says so at info level. That is a project packaged as {@code pom}, which binds no compiler at all — the
-     * parent of a multi-module build runs the executions its modules inherit from it — and a compilation the
-     * build switched off the way maven-compiler-plugin skips its own goal: by {@code maven.main.skip} or
-     * {@code <skipMain>} for the main one, by {@code maven.test.skip} or {@code <skip>} for the test one.
-     * Nothing is generated, retired or published then, so the outputs of the previous cycle stay exactly as the
-     * compiler leaves them.
+     * parent of a multi-module build runs the executions its modules inherit from it — a compilation for which the
+     * default lifecycle runs no execution of the compiler's goal, as when {@code default-compile} is bound to the phase
+     * {@code none}, or to a phase of another lifecycle such as {@code pre-site}, and nothing else compiles the main
+     * sources, and a compilation the build switched off the way maven-compiler-plugin skips its own goal: by
+     * {@code maven.main.skip} or {@code <skipMain>} for the main one, by {@code maven.test.skip} or {@code <skip>}
+     * for the test one. Nothing is generated, retired or published then, so the outputs of the previous cycle stay
+     * exactly as the compiler leaves them.
      *
      * @param execution the compiler execution the calling goal belongs to
      * @return {@code true} if the calling goal must return without doing anything
@@ -109,12 +140,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
         String reason;
         if ("pom".equals(project.getPackaging())) {
             reason = "the project is packaged as pom, which compiles no Java";
+        } else if (CompilerConfiguration.idle(project, execution, lifecycles).isPresent()) {
+            reason = CompilerConfiguration.idle(project, execution, lifecycles).get();
         } else {
-            Optional<String> skip = CompilerConfiguration.of(project, session, execution).skip();
+            CompilerConfiguration compiler = compiler(execution);
+            Optional<String> skip = compiler.skip();
             if (skip.isEmpty()) {
                 return false;
             }
-            reason = skip.get() + " switches the " + execution.id() + " compilation off";
+            reason = skip.get() + " switches the " + compiler.id() + " compilation off";
         }
         getLog().info("StateGraph skips " + compilationId(execution.sourceSet()) + ": " + reason);
         return true;
@@ -128,14 +162,14 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the main source set
      * @throws MojoExecutionException if Maven has not resolved the compile classpath of the project, or a source
-     *     root the compiler narrows cannot be read
+     *     root, or a directory below it, fails while it is being listed
      */
     protected final Request mainRequest() throws MojoExecutionException {
         Path build = buildDirectory();
-        Path sourcesOutput = build.resolve("generated-sources").resolve(WORK);
+        Path sourcesOutput = generatedSources(CompilerExecution.MAIN);
         Path processorSourcesOutput = build.resolve("generated-sources").resolve("annotations");
         Path classesOutput = absolute(project.getBuild().getOutputDirectory());
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.MAIN);
+        CompilerConfiguration compiler = compiler(CompilerExecution.MAIN);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.MAIN,
@@ -148,7 +182,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
             build.resolve(WORK).resolve("main").toString(),
             compilationId("main"),
             compiler.release().orElse(null),
-            compiler.encoding().orElse(null));
+            compiler.encoding(toolchainManager, session).orElse(null));
     }
 
     /**
@@ -157,14 +191,14 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the test source set
      * @throws MojoExecutionException if Maven has not resolved the test classpath of the project, or a source
-     *     root the compiler narrows cannot be read
+     *     root, or a directory below it, fails while it is being listed
      */
     protected final Request testRequest() throws MojoExecutionException {
         Path build = buildDirectory();
-        Path sourcesOutput = build.resolve("generated-test-sources").resolve(WORK);
+        Path sourcesOutput = generatedSources(CompilerExecution.TEST);
         Path processorSourcesOutput = build.resolve("generated-test-sources").resolve("test-annotations");
         Path classesOutput = absolute(project.getBuild().getTestOutputDirectory());
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.TEST);
+        CompilerConfiguration compiler = compiler(CompilerExecution.TEST);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.TEST,
@@ -177,19 +211,21 @@ public abstract class StateGraphMojo extends AbstractMojo {
             build.resolve(WORK).resolve("test").toString(),
             compilationId("test"),
             compiler.release().orElse(null),
-            compiler.encoding().orElse(null));
+            compiler.encoding(toolchainManager, session).orElse(null));
     }
 
     /**
-     * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
-     * under another JDK, under a release the generated vocabulary does not compile with, with annotation
-     * processing off, without the annotation processor on the processor path or in the {@code -processor} list
-     * javac takes, with a processor module path, with the annotation processor only on the class path of a javac
-     * that would not run it, without writing its classes or past a failure of javac, writing its classes without the
-     * {@code SourceFile} attribute or anywhere but the class output of the project, over source roots that leave out
-     * the directory the generator writes into, over only part of the module, with includes or excludes that leave out
-     * the carrier of the compilation, over another annotation manifest, or writing the sources of the annotation
-     * processor somewhere this plugin does not own. Nothing has been written when this fails.
+     * Refuses to generate for a compilation the compiler is not going to run the way this request describes: in two
+     * running executions of its goal that both compile the generated vocabulary, before the preparation or after the
+     * completion of this compilation, under another JDK, under a release the generated vocabulary does not compile
+     * with, with annotation processing off, without the annotation processor on the processor path or in the
+     * {@code -processor} list javac takes, with a processor module path, with the annotation processor only on the
+     * class path of a javac that would not run it, without writing its classes or past a failure of javac, writing its
+     * classes without the {@code SourceFile} attribute or anywhere but the class output of the project, over source
+     * roots that leave out the directory the generator writes into, over only part of the module, with includes or
+     * excludes that leave out the carrier of the compilation, over another annotation manifest, writing the sources of
+     * the annotation processor somewhere this plugin does not own, or, inside Maven, writing them in another charset
+     * than it reads them back in. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -197,7 +233,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final void verifyCompiler(CompilerExecution execution, Request request)
             throws MojoExecutionException {
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, execution);
+        CompilerConfiguration compiler = compiler(execution);
+        compiler.requireOneCompilingExecution(request);
+        compiler.requireCompilerBetweenPreparationAndCompletion(project, lifecycles);
         CompilerConfiguration.Javac javac = compiler.requireAgreementWith(javaExecutable(), toolchainManager,
             session);
         compiler.requireAnnotationProcessor(project, javac);
@@ -209,6 +247,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
         compiler.requireCarrierSelected(request);
         compiler.requireManifestArgument(request, javac);
         compiler.requireProcessorSourcesOutput(request, javac);
+        compiler.requireOneSourceEncoding(javac);
     }
 
     /**
@@ -438,19 +477,42 @@ public abstract class StateGraphMojo extends AbstractMojo {
         return absolute(project.getBuild().getDirectory());
     }
 
+    /** The directory the generator writes the vocabulary of {@code execution} into, as an absolute path. */
+    private Path generatedSources(CompilerExecution execution) {
+        return buildDirectory().resolve(execution == CompilerExecution.MAIN ? "generated-sources"
+            : "generated-test-sources").resolve(WORK);
+    }
+
+    /**
+     * The configuration of the execution of the compiler that compiles {@code execution}, as
+     * {@link CompilerConfiguration#of} picks it. Every goal asks {@link #skips} first, which skips a compilation the
+     * default lifecycle runs no execution for, so there is one.
+     */
+    private CompilerConfiguration compiler(CompilerExecution execution) {
+        return CompilerConfiguration.of(project, session, execution, lifecycles, generatedSources(execution))
+            .orElseThrow(() -> new IllegalStateException("maven-compiler-plugin runs no execution of its "
+                + execution.goal() + " goal in the default lifecycle of this project, which the goal should have"
+                + " skipped"));
+    }
+
     /**
      * The sources the generator parses: every source root javac compiles — the {@code <compileSourceRoots>} of the
      * compiler execution when it declares them, which replace the source roots of the project, else those — except
      * the two directories this build generates into, which its own outputs must never overlap, whatever symbolic links
      * their names lead through. A root the execution does not narrow is handed to the generator whole, and the
      * generator walks it with Ant's default excludes, not with plexus-utils' longer list; {@code SourcePatterns}
-     * describes what that leaves in. A root the includes or excludes of the compiler narrow is handed over as the very
-     * files they select, with the compiler's own default excludes left out. Either is handed over under the name
+     * describes what that leaves in. That walk leaves out, as Gradle does, every directory whose name one of those
+     * excludes names, with everything inside it, where the scanner of the compiler enters it, and fails on a directory
+     * it cannot list, which that scanner reads as an empty one, so a root under which javac compiles a source inside
+     * such a directory, or the walk would fail, is handed over as the files the compiler selects instead. A root the
+     * includes or excludes of the compiler narrow is handed over as the very files they select, with the compiler's
+     * own default excludes left out. Either is handed over under the name
      * {@link #spelling} gives it, which anchors the origins the generator publishes to the project directory.
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
             Path processorSourcesOutput) throws MojoExecutionException {
-        SourcePatterns patterns = CompilerConfiguration.of(project, session, execution).sourcePatterns();
+        CompilerConfiguration compiler = compiler(execution);
+        SourcePatterns patterns = compiler.sourcePatterns();
         Set<Path> generated = Set.of(CompilerConfiguration.canonical(sourcesOutput),
             CompilerConfiguration.canonical(processorSourcesOutput));
         Path projectDirectory = Path.of(project.getBasedir().getAbsolutePath()).normalize();
@@ -463,20 +525,105 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 continue;
             }
             Path source = spelling(declared, canonicalRoot, projectDirectory, canonicalProject);
-            if (!patterns.narrow()) {
-                sources.add(source.toString());
-                continue;
-            }
             try {
+                if (!patterns.narrow() && !walkedOtherwise(source, patterns)) {
+                    sources.add(source.toString());
+                    continue;
+                }
                 for (Path file : patterns.select(source)) {
                     sources.add(file.toString());
                 }
             } catch (IOException failure) {
-                throw new MojoExecutionException("cannot read the sources under " + source
-                    + " that the includes and excludes of the " + execution.id() + " execution select", failure);
+                throw new MojoExecutionException("cannot read the sources under " + source + " that the "
+                    + compiler.id() + " execution compiles", failure);
             }
         }
         return List.copyOf(sources);
+    }
+
+    /**
+     * Whether the generator, handed {@code root} whole, would walk it otherwise than the scanner of the compiler does:
+     * whether javac compiles a source under it that the walk leaves out, one the scanner selects inside a directory
+     * whose name a default exclude of Ant names, such as {@code old~} or {@code .gitignore}, or the walk would fail on
+     * a directory it cannot list, which the scanner reads as an empty one. plexus-utils enters a directory such a name
+     * names and leaves out only the files those patterns name, while the generator's walk, like Gradle's, leaves the
+     * directory out with everything inside it; that walk opens every directory it reaches, such a one included. A
+     * directory both leave out with everything inside it, such as {@code .git}, is not entered.
+     *
+     * @param root a source root of the compilation
+     * @param patterns the includes and excludes of the compiler execution, which narrow no root
+     * @return {@code true} if javac compiles such a source or the walk would fail on such a directory
+     * @throws IOException if a directory fails while it is being listed
+     */
+    private static boolean walkedOtherwise(Path root, SourcePatterns patterns) throws IOException {
+        if (!Files.isDirectory(root)) {
+            return false;
+        }
+        List<Path> differences = new ArrayList<>();
+        Files.walkFileTree(root, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+            new SimpleFileVisitor<Path>() {
+
+                @Override
+                public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                    return !directory.equals(root) && PRUNED_ALIKE.contains(directory.getFileName().toString())
+                        ? FileVisitResult.SKIP_SUBTREE
+                        : FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                    if (!attributes.isRegularFile() || !file.getFileName().toString().endsWith(".java")) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    List<String> names = names(root, file);
+                    if (insideWhatTheWalkExcludes(names) && patterns.selects(String.join("/", names))) {
+                        differences.add(file);
+                        return FileVisitResult.TERMINATE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                    if (failure instanceof FileSystemLoopException || insideWhatTheWalkExcludes(names(root, file))) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    differences.add(file);
+                    return FileVisitResult.TERMINATE;
+                }
+            });
+        return !differences.isEmpty();
+    }
+
+    /** The names of the path from {@code root} to {@code path}; a single empty name for {@code root} itself. */
+    private static List<String> names(Path root, Path path) {
+        List<String> names = new ArrayList<>();
+        for (Path name : root.relativize(path)) {
+            names.add(name.toString());
+        }
+        return names;
+    }
+
+    /**
+     * Whether the path of {@code names} lies inside a directory the generator's walk of a whole root leaves out:
+     * whether one of the names before its last one is.
+     */
+    private static boolean insideWhatTheWalkExcludes(List<String> names) {
+        return names.subList(0, names.size() - 1).stream().anyMatch(StateGraphMojo::walkExcludes);
+    }
+
+    /**
+     * Whether the generator's walk of a whole root leaves out a directory named {@code name}, with everything inside
+     * it: whether a default exclude of Ant names it, as {@code ._*}, {@code *~}, {@code #*#}, {@code .#*},
+     * {@code %*%} or one of {@link #WALK_EXCLUDED_NAMES}.
+     */
+    private static boolean walkExcludes(String name) {
+        return name.startsWith("._")
+            || WALK_EXCLUDED_NAMES.contains(name)
+            || name.endsWith("~")
+            || (name.length() > 1 && name.startsWith("#") && name.endsWith("#"))
+            || name.startsWith(".#")
+            || (name.length() > 1 && name.startsWith("%") && name.endsWith("%"));
     }
 
     /**

@@ -25,18 +25,22 @@ class SubmachineGenerationTest {
 
         assertTrue(result.success(), result.describe());
         String bookings = result.generated("fx.BookingsRuntime");
-        assertTrue(bookings.contains("/** The definition, built from the annotations of {@link Bookings}. One parameter"
-                + " per machine it binds as a sub-machine, which takes its definition, then one per class with instance"
-                + " members. */"), bookings);
+        String comment = "\n" + " ".repeat(5) + "* ";
+        assertTrue(bookings.contains("/**" + comment + "The definition, built from the annotations of {@link Bookings}."
+                + " One parameter per machine it binds" + comment + "as a sub-machine, which takes its definition, then"
+                + " one per class with instance members.\n" + " ".repeat(5) + "*" + comment + "@param paymentsGraph the"
+                + " definition of {@code fx.Payments}, which the graph binds as a sub-machine" + comment + "@param ledger"
+                + " the {@code fx.Ledger} whose instance members the graph calls" + comment + "@return the definition\n"
+                + " ".repeat(5) + "*/\n"), bookings);
         assertTrue(bookings.contains("public static GraphDefinition<Booking, BookingStatus, BookingTransition> graph("
                 + "GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph, Ledger ledger)"),
                 bookings);
         String chain = " ".repeat(16);
-        assertTrue(bookings.contains(chain + ".submachine(BookingStatus.DEPOSIT, paymentsGraph, (Booking booking) ->"
-                + " booking.deposit(), (Payment payment) -> BookingLookups.depositOf(payment))\n"
-                + chain + "    .exit(PaymentStatus.CAPTURED, BookingTransition.DEPOSIT_PAID)\n"
-                + chain + "    .exit(PaymentStatus.DECLINED, BookingTransition.DECLINE)\n"
-                + chain + "    .endSubmachine()\n"), bookings);
+        assertTrue(bookings.contains(" ".repeat(8) + "graph = graph.submachine(BookingStatus.DEPOSIT, paymentsGraph,"
+                + " (Booking booking) -> booking.deposit(), (Payment payment) -> BookingLookups.depositOf(payment))\n"
+                + chain + ".exit(PaymentStatus.CAPTURED, BookingTransition.DEPOSIT_PAID)\n"
+                + chain + ".exit(PaymentStatus.DECLINED, BookingTransition.DECLINE)\n"
+                + chain + ".endSubmachine();\n"), bookings);
         assertTrue(bookings.contains(".submachine(BookingStatus.BALANCE, paymentsGraph, (Booking booking) ->"
                 + " booking.balance(), (Payment payment) -> ledger.balanceOf(payment))"), bookings);
         String orders = result.generated("fx.OrdersRuntime");
@@ -69,8 +73,10 @@ class SubmachineGenerationTest {
         assertEquals(1, set.split("PaymentsRuntime\\.graph\\(", -1).length - 1, set);
         assertFalse(set.contains("asyncTimeout"), set);
         String comment = "\n" + " ".repeat(9) + "* ";
-        assertTrue(set.contains(comment + "Bounds how deep a cascade may go, the root being at depth 0 and the exit"
-                + " of a sub-machine one level" + comment + "deeper than the step that ended it; the default is 10, and"
+        assertTrue(set.contains(comment + "Bounds how deep a cascade may go, the root being at depth 0. The exit of"
+                + " a sub-machine counts at its" + comment + "own depth: one level below the step that ended the child"
+                + " or, when the child stood in a terminal" + comment + "state while its parent was still running the"
+                + " step that entered the bound state, one level below that" + comment + "step. The default is 10, and"
                 + " a value below 1 is refused.\n"), set);
     }
 

@@ -13,6 +13,14 @@ import java.util.List;
  */
 final class JavaSource {
 
+    /**
+     * The annotation every generated type that names a type of the application carries: the author deprecates such a
+     * type in the sources they own and cannot suppress what a generated file says about it, and a build that compiles
+     * that file with {@code -Xlint:all -Werror} fails on a deprecation warning, one under {@code -Werror} alone on a
+     * removal warning. It is written qualified, as every name a generated file does not declare itself.
+     */
+    static final String SUPPRESS_DEPRECATION = "@java.lang.SuppressWarnings({\"deprecation\", \"removal\"})";
+
     private static final String INDENT = "    ";
 
     private final StringBuilder text = new StringBuilder();

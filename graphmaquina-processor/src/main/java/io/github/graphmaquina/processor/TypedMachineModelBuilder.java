@@ -26,6 +26,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
@@ -33,15 +34,16 @@ import javax.lang.model.type.TypeMirror;
  * Turns a machine that declares its graph with the vocabulary generated for it into the {@link MachineModel}
  * the generators read, reporting every problem it finds with an SG code.
  *
- * <p>Identity comes first, twice over. The facade must carry the {@code Definition} generated for that very
- * machine, and every other declaration on it must belong to the same vocabulary, so a machine can never be
- * described with the annotations of another one that happens to have the same states. Inside the machine, an
- * edge is identified by its own {@code id}: one method owns one identifier and every annotation it carries
- * must agree on it, while the interface may add further branches of that identifier from other origins. Each
- * state and each identifier is read as the enum constant it is, checked against the machine's own enum, and
- * only then named; each symbol is resolved to the exported member behind it. What the language itself refuses
- * — a constant of another enum, an annotation that omits an element it requires — is left to javac, which has
- * already reported it precisely.</p>
+ * <p>A facade is told what shape it must take, a top-level interface over a concrete entity and two distinct enums,
+ * which no {@code Definition} can make of it, before it is told to apply its {@code Definition}. Identity comes first
+ * among its declarations, twice over. The facade must carry the {@code Definition} generated for that very machine,
+ * and every other declaration on it must belong to the same vocabulary, so a machine can never be described with the
+ * annotations of another one that happens to have the same states. Inside the machine, an edge is identified by its
+ * own {@code id}: one method owns one identifier and every annotation it carries must agree on it, while the interface
+ * may add further branches of that identifier from other origins. Each state and each identifier is read as the enum
+ * constant it is, checked against the machine's own enum, and only then named; each symbol is resolved to the
+ * exported member behind it. What the language itself refuses — a constant of another enum, an annotation that omits
+ * an element it requires — is left to javac, which has already reported it precisely.</p>
  *
  * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
  * asked of {@link StructuralChecks}: the signature of an operation and the full outline of the graph. A key two
@@ -97,20 +99,17 @@ final class TypedMachineModelBuilder {
     /**
      * Empty when the machine has an error this processor reports, or a value javac refused that the model cannot do
      * without; nothing is generated for it then. {@code complete} is false when part of the machine's vocabulary is
-     * written where no builder reads it, or on the facade of another machine, whose builder refuses it: every
-     * declaration is still checked, but no conclusion is drawn from the graph as a whole, nor from the classes it
-     * binds, since that graph misses what the author declared.
+     * written where no builder reads it, or on the facade of another machine, whose builder refuses it, or when a
+     * declaration holds a value javac could not resolve: every declaration is still checked, but no conclusion is
+     * drawn from the graph as a whole, nor from the classes it binds, since that graph misses what the author
+     * declared.
      */
     Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
         List<AnnotationMirror> definitions = own(type, VocabularyKind.DEFINITION, type);
-        if (definitions.isEmpty()) {
-            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
-                    + ", which is the vocabulary its own name, states and transitions belong to", type);
-            return Optional.empty();
-        }
-        AnnotationMirror definition = definitions.get(0);
-        DiagnosticAnchor header = DiagnosticAnchor.of(type, definition);
+        DiagnosticAnchor header = definitions.isEmpty()
+                ? DiagnosticAnchor.of(type)
+                : DiagnosticAnchor.of(type, definitions.get(0));
         if (!structure.checkTopLevel(type, header)) {
             return Optional.empty();
         }
@@ -134,6 +133,12 @@ final class TypedMachineModelBuilder {
                     + " not be parameterized");
             return Optional.empty();
         }
+        if (definitions.isEmpty()) {
+            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
+                    + ", which is the vocabulary its own name, states and transitions belong to", type);
+            return Optional.empty();
+        }
+        AnnotationMirror definition = definitions.get(0);
 
         Optional<AnnotationValue> declaredInitial = annotations.find(definition, "initial");
         Optional<AnnotationValue> declaredState = annotations.find(definition, "state");
@@ -285,14 +290,19 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             String name = method.getSimpleName().toString();
-            Optional<TypeMirror> inputType = method.getParameters().size() == 2
-                    ? Optional.of(method.getParameters().get(1).asType()) : Optional.empty();
+            Optional<VariableElement> input = method.getParameters().size() == 2
+                    ? Optional.of(method.getParameters().get(1)) : Optional.empty();
+            Optional<TypeMirror> inputType = input.map(VariableElement::asType);
+            String entityParameter = method.getParameters().get(0).getSimpleName().toString();
+            Optional<String> inputParameter =
+                    input.map((VariableElement parameter) -> parameter.getSimpleName().toString());
             List<TransitionModel> edges = new ArrayList<>();
             for (AnnotationMirror mirror : mirrors) {
                 transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
             }
             if (edges.size() == mirrors.size()) {
-                operations.add(new OperationModel(name, identifier.get(), edges, inputType));
+                operations.add(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
+                        inputParameter));
             }
         }
         return operations;

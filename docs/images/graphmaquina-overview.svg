@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" role="img" aria-labelledby="title desc">
-<title id="title">GraphMaquina: typed graphs, predictable transitions</title><desc id="desc">GraphMaquina for Java 21. A ticket starts OPEN, takes the SUBMIT edge to REVIEW, then APPROVE reaches DONE or the declared failure route reaches FAILED.</desc>
+<title id="title">GraphMaquina: typed graphs, predictable transitions</title><desc id="desc">GraphMaquina for Java 21. A ticket starts OPEN and takes the SUBMIT edge to REVIEW, from which APPROVE reaches DONE. When SUBMIT fails, DECLINE, its declared failure route, takes the ticket from OPEN to FAILED.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>

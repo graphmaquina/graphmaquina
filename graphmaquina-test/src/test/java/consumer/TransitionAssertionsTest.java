@@ -215,18 +215,17 @@ class TransitionAssertionsTest {
                 List.of(new GuardExpectation("first", false), new GuardExpectation("second", false)));
     }
 
+    /** The guards of one edge have distinct names, so an expectation that repeats one is not collapsed into a match. */
     @Test
     void guardsKeepTheirMultiplicity() {
-        GraphDefinition<Entity, State, Id> graph = graphWithRepeatedGuardNames();
-        GraphAssert.assertThat(graph).transition(State.NEW, Id.PREPARE).hasGuardsExactly(
-                new GuardExpectation("check", false),
-                new GuardExpectation("other", false),
-                new GuardExpectation("check", false));
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                () -> GraphAssert.assertThat(graph).transition(State.NEW, Id.PREPARE).hasGuardsExactly(
-                        new GuardExpectation("check", false), new GuardExpectation("other", false)));
-        assertEquals("guards", error.property());
-        assertEquals(3, ((List<?>) error.actual()).size());
+                () -> GraphAssert.assertThat(TestDomain.graph(TIMEOUT)).transition(State.NEW, Id.PREPARE)
+                        .hasGuardsExactly(new GuardExpectation("first", false),
+                                new GuardExpectation("second", false), new GuardExpectation("first", false)));
+        assertFailure(error, PREPARE, "guards",
+                List.of(new GuardExpectation("first", false), new GuardExpectation("second", false),
+                        new GuardExpectation("first", false)),
+                List.of(new GuardExpectation("first", false), new GuardExpectation("second", false)));
     }
 
     @Test
@@ -511,22 +510,6 @@ class TransitionAssertionsTest {
                     .action("prepare", ctx -> ActionOutcome.ok()).endTransition()
                 .transition(Id.ABANDON, State.NEW, State.READY)
                     .action("shortcut", ctx -> ActionOutcome.ok()).endTransition()
-                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
-                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
-                .build();
-    }
-
-    private static GraphDefinition<Entity, State, Id> graphWithRepeatedGuardNames() {
-        return StateGraph.define(TestDomain.KEY).initial(State.NEW)
-                .terminal(State.DONE).terminal(State.FAILED)
-                .statePolicy(State.NEW, "prepare first")
-                .statePolicy(State.READY, "finish only")
-                .transition(Id.PREPARE, State.NEW, State.READY)
-                    .action("prepare", ctx -> ActionOutcome.ok())
-                    .guard("check", ctx -> GuardResult.pass())
-                    .guard("other", ctx -> GuardResult.pass())
-                    .guard("check", ctx -> GuardResult.pass())
-                    .endTransition()
                 .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
                 .transition(Id.FINISH, State.READY, State.DONE).endTransition()
                 .build();

@@ -22,7 +22,12 @@ import lombok.RequiredArgsConstructor;
 final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         implements TransitionContext<E, S, T>, ContextHandle {
 
-    private final Transaction tx;
+    /**
+     * The transaction of the call while this context is live; once it is invalidated, its machine's released one,
+     * which keeps nothing of the call reachable. Not final, so {@code @NonNull} puts it in the constructor.
+     */
+    @NonNull
+    private Transaction tx;
     private final DefaultStateMachine<E, S, T> machine;
     private final E entity;
     private final TransitionSpec<E, S, T> spec;
@@ -48,7 +53,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(@NonNull MachineKey<P, Q, U> key) {
         check();
-        return tx.peer(this, this::check, key);
+        return tx.peer(this, this::checkedUnit, key);
     }
 
     @Override
@@ -73,7 +78,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
         check();
-        return tx.peer(this, this::check, tx.peerKeyFor(this, peer));
+        return tx.peer(this, this::checkedUnit, tx.peerKeyFor(this, peer));
     }
 
     /** An unknown facade poisons the transaction, as an unknown key does once the cascade looks its machine up. */
@@ -105,7 +110,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public FlowContext flow() {
         check();
-        return tx.flow(this::check, depth);
+        return tx.flow(this::checkedUnit, depth);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */
@@ -117,6 +122,12 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             throw new WrongThreadException("the context of " + machine.key()
                     + " can only be used from the thread running process(): " + owner.getName());
         }
+    }
+
+    /** The call's unit of work, once this context is checked: what its peer views and its flow read and write. */
+    UnitOfWork checkedUnit() {
+        check();
+        return tx.uow();
     }
 
     @Override public MachineKey<?, ?, ?> machineKey() { return machine.key(); }
@@ -131,5 +142,10 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
 
     @Override public int contextDepth() { return depth; }
 
-    @Override public void invalidate() { stale = true; }
+    /** Ends the lifetime of this context, which lets go of the call's transaction and so of its unit of work. */
+    @Override
+    public void invalidate() {
+        stale = true;
+        tx = machine.releasedTransaction();
+    }
 }

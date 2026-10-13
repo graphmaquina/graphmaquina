@@ -29,6 +29,7 @@ import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.time.Duration;
 import java.time.InstantSource;
@@ -44,7 +45,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -63,7 +63,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Optional<Function<? super E, ?>> identity;
     @Getter
     private final Optional<Duration> asyncTimeout;
-    @Getter
     private final Executor executor;
     private final boolean ownsExecutor;
     private final MachineRegistry registry;
@@ -81,6 +80,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final boolean hasBindings;
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     private final Optional<InstantSource> trail;
+    /** See {@link #releasedTransaction()}. */
+    private final Transaction released;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
@@ -101,6 +102,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.bindsSubmachines = bindsSubmachines(definition);
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
+        this.released = Transaction.released(registry, definition.key());
     }
 
     /** Whether some state of {@code definition} holds a sub-machine. */
@@ -122,6 +124,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
     boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * The transaction of no call that a context of this machine holds once invalidated, in place of its call's, as
+     * {@link Transaction#released} says; made once, at construction, so that invalidating a context allocates nothing.
+     */
+    Transaction releasedTransaction() { return released; }
 
     /**
      * Whether this machine takes part in a binding: its own definition binds a sub-machine, or some definition binds
@@ -153,17 +161,27 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Outcome<E, S, T> execute(E entity, T transition) {
-        return execute(entity, transition, null);
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        return executeRoot(entity, transition, Optional.empty());
     }
 
     @Override
     public Outcome<E, S, T> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
+        Objects.requireNonNull(input, "input");
+        return executeRoot(entity, transition, Optional.of(input));
+    }
+
+    /**
+     * Runs the root call of {@code execute} over arguments already checked for null; {@code operationInput} is empty
+     * for the overload that takes no input.
+     */
+    private Outcome<E, S, T> executeRoot(E entity, T transition, Optional<Object> operationInput) {
         requireTransition(transition);
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
-        Optional<Object> operationInput = Optional.ofNullable(input);
         CallLog log = CallLog.open(Optional.empty());
         Optional<Observed> observed = observe(entity, requested, false, log);
         return runRoot(entity, requested, false, observed, log,
@@ -173,7 +191,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     void requireTransition(T transition) {
         if (!key().transitions().isInstance(transition)) {
             throw new IllegalArgumentException(
-                    "transition must belong to " + key().transitions().getName() + ": " + transition);
+                    "transition must belong to " + key().transitions().getName() + ": " + transition.name());
         }
     }
 
@@ -211,13 +229,14 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (log.debug()) {
                 log.start(key(), "reevaluate");
             }
-            Reentrancy.enter(key(), entity);
+            boolean[] marker = Reentrancy.enter(key(), entity);
             try {
                 try {
                     state = readState(entity);
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw unresolved(entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
                 }
                 if (chain > registry.maxWatchChain()) {
@@ -233,11 +252,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     } catch (Error fatal) {
                         throw fatal;
                     } catch (Throwable e) {
+                        Interrupts.keep(e);
                         throw unresolved(entity, observed, reaction, Optional.of(state), "the watch threw ", e);
                     }
                 }
             } finally {
-                Reentrancy.exit();
+                marker[0] = false;
             }
         } catch (Throwable thrown) {
             if (trail.isPresent() && thrown instanceof CallFailedException own) {
@@ -275,7 +295,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * A reevaluation that could not read its entity's state or evaluate its watch: an abort in RESOLVE that carries
-     * the failure, unwrapped from CompletionException and ExecutionException.
+     * the failure, unwrapped from CompletionException and ExecutionException. Its caller has already interrupted the
+     * thread again for an InterruptedException that the getter or the watch threw.
      */
     private TransitionAbortedException unresolved(E entity, Optional<Observed> observed, boolean reaction,
                                                   Optional<Enum<?>> from, String what, Throwable error) {
@@ -286,10 +307,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 what + Texts.shown(cause), cause);
     }
 
-    /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
+    /**
+     * Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. A peersOf
+     * that returns null instead of a collection is refused with a NullPointerException that says so, before any
+     * condition runs.
+     */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Optional<T> firstMatch(WatchSpec<E, S, T, P, Q, U> watch,
                                                                              E entity) {
         Collection<? extends P> peers = watch.peersOf().apply(entity);
+        if (peers == null) {
+            throw new NullPointerException("the peersOf of " + key() + "." + watch.state().name() + " returned null");
+        }
         PeerView<P, Q, U> view = DefaultPeerView.committed(registry.machineFor(watch.peer()));
         for (WatchRule<E, S, T, P, Q, U> rule : watch.rules()) {
             if (rule.condition().condition().test(entity, peers, view)) {
@@ -307,18 +335,20 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {
         Objects.requireNonNull(call, "call");
-        try {
-            return CompletableFuture.supplyAsync(call, executor);
-        } catch (RejectedExecutionException e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return submit(call);
+    }
+
+    /** Submits {@code call} to this machine's executor through {@link Submit}, which marks a default one's thread. */
+    <R> CompletableFuture<R> submit(Supplier<R> call) {
+        return Submit.supply(executor, ownsExecutor, call);
     }
 
     /**
      * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation, then the
      * hooks and the watch reactions of what it committed. Everything is prepared before the marker is set, so that
-     * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, whatever
-     * the step throws. The transaction keeps the phase of the call, which the observers are told when it throws.
+     * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, with a
+     * store before it invalidates the contexts, whatever the step throws, a StackOverflowError included. The
+     * transaction keeps the phase of the call, which the observers are told when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
@@ -359,7 +389,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             List<SubmachineStart<?, ?, ?>> starts;
             List<LogEntry> committed;
             CommitSummary summary;
-            Reentrancy.enter(key(), entity);
+            boolean[] marker = Reentrancy.enter(key(), entity);
             try {
                 step = body.apply(tx);
                 boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
@@ -376,8 +406,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     committed = List.of();
                 }
             } finally {
+                marker[0] = false;
                 tx.invalidate();
-                Reentrancy.exit();
             }
             List<Reaction> reactions = List.of();
             if (!committed.isEmpty()) {
@@ -505,7 +535,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
      * committed, the very {@code records} and {@code starts} the commit built; an Error propagates unchanged. A call
      * that logs at TRACE logs each hook before it runs. Each hook gets a handle of its own on the call's flow, in its
-     * CommitContext, invalidated in a finally once the hook returned or threw; a hop without a hook makes none.
+     * CommitContext, invalidated in a finally once the hook returned or threw; a hop without a hook makes none. An
+     * InterruptedException that a hook throws interrupts the thread again.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records,
                           List<SubmachineStart<?, ?, ?>> starts, List<LogEntry> committed) {
@@ -537,6 +568,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             throw new AfterCommitException(tx.call(), tx.uow().journal(), records, starts,
                     Typed.record(owner.key(), entry), hook.name(), e);
         } finally {
@@ -584,6 +616,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         long budget = Await.budgetNanos(asyncTimeout.get());
         return budget == Long.MAX_VALUE ? Long.MAX_VALUE : System.nanoTime() + budget;
+    }
+
+    /**
+     * Refuses to close this machine's default executor from a task of its own, which ExecutorService.close() would
+     * wait for forever: the task that is calling. Checked for every machine before the registry closes any.
+     */
+    void refuseCloseFromOwnTask() {
+        if (ownsExecutor && Submit.runsTaskOf(executor)) {
+            throw new IllegalStateException("close() was called from a task of the default executor of " + key()
+                    + ", which it would wait for forever: close the registry from another thread");
+        }
     }
 
     void closeIfOwned() {

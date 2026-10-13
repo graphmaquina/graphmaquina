@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.RecoveryRule;
+import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.export.GraphView;
 import io.github.graphmaquina.export.GraphvizExporter;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs;
+import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Move;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.PublicationFailures;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.ServiceUnavailableException;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Step;
@@ -433,6 +436,23 @@ class GraphSnapshotTest {
     void theExitOfOneTerminalStateIsOneChange() {
         assertEquals(List.of(change("/submachines/REVIEW/exits/C", "DROP", "ACCEPT")),
                 diff(SnapshotGraphs.submachineGraph(Verdict.DROP), SnapshotGraphs.submachineGraph(Verdict.ACCEPT)));
+    }
+
+    /**
+     * A sub-machine is recorded by its child's key and exits alone: two parents over children of the same key whose
+     * own graphs differ capture the same snapshot, and only the snapshots of the children tell them apart.
+     */
+    @Test
+    void theGraphOfAChildIsNotPartOfItsParentsSnapshot() {
+        GraphDefinition<String, Step, Move> child = SnapshotGraphs.branchGraph(true);
+        GraphDefinition<String, Step, Move> reworded = StateGraph.define(MachineKey.of(String.class, Step.class,
+                Move.class)).initial(Step.A).terminal(Step.C).terminal(Step.B).statePolicy(Step.A, "a moves on")
+                .transition(Move.ADVANCE, Step.A, Step.B).endTransition()
+                .transition(Move.SKIP, Step.A, Step.C).endTransition()
+                .build();
+        assertEquals(List.of(change("/policies/A/otherwise", "a branches", "a moves on")), diff(child, reworded));
+        assertEquals(GraphSnapshot.capture(SnapshotGraphs.submachineGraph(Verdict.DROP, child)).serialize(),
+                GraphSnapshot.capture(SnapshotGraphs.submachineGraph(Verdict.DROP, reworded)).serialize());
     }
 
     // --- the line format ----------------------------------------------------------------------------

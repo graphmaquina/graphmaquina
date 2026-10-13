@@ -46,7 +46,9 @@ import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.GatewayException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -435,6 +437,7 @@ class SingleMachineTest {
         assertThrows(StaleContextException.class, () -> captured.get().peer(DOCS));
     }
 
+    /** Every read of a stale peer view is refused, its helpers included, even over no peer at all. */
     @Test
     void peerViewIsStaleAfterCommit() {
         AtomicReference<PeerView<Doc, DocStatus, DocTransition>> captured = new AtomicReference<>();
@@ -443,6 +446,11 @@ class SingleMachineTest {
         machine.execute(doc, SUBMIT);
         PeerView<Doc, DocStatus, DocTransition> view = captured.get();
         assertThrows(StaleContextException.class, () -> view.stateOf(doc));
+        for (List<Doc> peers : List.of(List.<Doc>of(), List.of(doc))) {
+            assertThrows(StaleContextException.class, () -> view.allIn(peers, REVIEW));
+            assertThrows(StaleContextException.class, () -> view.anyIn(peers, REVIEW));
+            assertThrows(StaleContextException.class, () -> view.noneIn(peers, REVIEW));
+        }
     }
 
     @Test
@@ -465,6 +473,38 @@ class SingleMachineTest {
         };
         machine.execute(new Doc("1", DRAFT), SUBMIT);
         assertInstanceOf(WrongThreadException.class, captured.get());
+    }
+
+    /** A peer view's helpers refuse another thread as its stateOf does, even over no peer at all. */
+    @Test
+    void peerViewRejectsOtherThreads() {
+        List<String> ends = new ArrayList<>();
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            PeerView<Doc, DocStatus, DocTransition> view = ctx.peer(DOCS);
+            Map<String, Runnable> reads = new LinkedHashMap<>();
+            reads.put("allIn", () -> view.allIn(List.of(), REVIEW));
+            reads.put("anyIn", () -> view.anyIn(List.of(), REVIEW));
+            reads.put("noneIn", () -> view.noneIn(List.of(), REVIEW));
+            for (Map.Entry<String, Runnable> read : reads.entrySet()) {
+                Thread other = new Thread(() -> {
+                    try {
+                        read.getValue().run();
+                        ends.add(read.getKey() + " answered");
+                    } catch (RuntimeException e) {
+                        ends.add(read.getKey() + " " + e.getClass().getSimpleName());
+                    }
+                });
+                other.start();
+                try {
+                    other.join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        machine.execute(new Doc("1", DRAFT), SUBMIT);
+        assertEquals(List.of("allIn WrongThreadException", "anyIn WrongThreadException", "noneIn WrongThreadException"),
+                ends);
     }
 
     @Test

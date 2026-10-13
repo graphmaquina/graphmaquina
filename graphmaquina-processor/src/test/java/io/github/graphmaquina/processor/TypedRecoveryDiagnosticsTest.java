@@ -588,24 +588,31 @@ class TypedRecoveryDiagnosticsTest {
     }
 
     /**
-     * javac stops before annotation processing when a constant cannot be resolved: it reports its own error alone and
-     * the processor never runs, so no companion is generated.
+     * javac stops before annotation processing when a constant cannot be resolved: it reports its own error alone, at
+     * the constant, and the processor never runs, so no companion is generated. javac 21 words that error as
+     * {@code cannot find symbol} and javac 25 as {@code an enum annotation value must be an enum constant}, so the
+     * test reads where it is, not what it says.
      */
     @Test
     void anUnresolvedTransitionConstantStopsJavacBeforeAnnotationProcessing() {
-        Compilation.Result result = Compilation.compileTyped(RecoveryFixtures.sources("""
+        Map<String, String> sources = RecoveryFixtures.sources("""
                 @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                     action = TicketActionsRefs.Publish.class,
                     recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
                         transition = UNKNOWN))
                 Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
-                """));
+                """);
+        Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success());
         assertEquals(1, result.errors().size(), result.describe());
-        assertEquals(1, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
-                diagnostic.getKind() == Diagnostic.Kind.ERROR
-                        && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
-                        && diagnostic.getMessage(null).contains("UNKNOWN")).count(), result.describe());
+        Diagnostic<? extends JavaFileObject> error = result.diagnostics().stream()
+                .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                        diagnostic.getKind() == Diagnostic.Kind.ERROR)
+                .findFirst().orElseThrow();
+        long start = sources.get("fx.Tickets").indexOf("transition = UNKNOWN") + "transition = ".length();
+        assertFalse(error.getMessage(null).startsWith("[SG"), result.describe());
+        assertEquals(start, error.getStartPosition(), result.describe());
+        assertEquals(start + "UNKNOWN".length(), error.getEndPosition(), result.describe());
         assertFalse(result.hasGenerated("fx.TicketsRuntime"), result.describe());
     }
 

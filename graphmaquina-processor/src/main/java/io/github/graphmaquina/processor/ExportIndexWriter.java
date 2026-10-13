@@ -36,8 +36,11 @@ import javax.tools.StandardLocation;
  * <p>An index is published even when the compilation declares no machine at all: the carrier of the
  * compilation is still there, and a dependent that finds no index cannot tell an empty producer from one whose
  * publication was lost. A failure to write either file is reported where it happens, and so is an index that
- * would name a declaration this compilation never verified, which is published not at all; the writer runs
- * after everything else, so nothing reads a count of errors afterwards.</p>
+ * would name a declaration this compilation never processed, which is published not at all; the writer runs
+ * after everything else, so nothing reads a count of errors afterwards. Nor is an index published that would name
+ * a machine this compilation was handed but did not verify, and that says nothing: when this processor reported no
+ * error, only a value of that machine's own declarations that no round resolved leaves it unverified, and javac
+ * refuses that value itself once processing is over.</p>
  */
 final class ExportIndexWriter {
 
@@ -56,16 +59,24 @@ final class ExportIndexWriter {
     /**
      * Publishes the local index of {@code manifest} and the inventory of {@code generatedQualifiedNames}.
      * {@code verifiedLocalTypes} are the local declarations this compilation checked; nothing is written when
-     * the index would name one that was not among them, since the index states what this compilation verified,
-     * and that is reported as {@code SG602}: such a declaration was never processed, which is what happens to a
-     * source javac compiles implicitly, from the source path, instead of being handed it.
+     * the index would name one that was not among them, since the index states what this compilation verified.
+     * One that is not among {@code handedMachines} either, the machines some round handed to the processor, is
+     * reported as {@code SG602}: such a declaration was never processed, which is what happens to a source javac
+     * compiles implicitly, from the source path, instead of being handed it. One that was handed is reported by
+     * javac, which refuses, once processing is over, a value of its declarations that no round resolved.
      */
-    void publish(CompileManifest manifest, Set<String> verifiedLocalTypes, Set<String> generatedQualifiedNames) {
+    void publish(CompileManifest manifest, Set<String> verifiedLocalTypes, Set<String> handedMachines,
+            Set<String> generatedQualifiedNames) {
         Set<String> unverified = unverified(manifest.local(), verifiedLocalTypes);
-        if (!unverified.isEmpty()) {
-            diagnostics.error(UNPROCESSED, "the index of this compilation names " + String.join(", ", unverified)
+        Set<String> unprocessed = new LinkedHashSet<>(unverified);
+        unprocessed.removeAll(handedMachines);
+        if (!unprocessed.isEmpty()) {
+            diagnostics.error(UNPROCESSED, "the index of this compilation names " + String.join(", ", unprocessed)
                     + ", which this compilation never processed: javac does not process a source it compiles"
                     + " implicitly, from the source path, so pass every source of the compilation to javac");
+            return;
+        }
+        if (!unverified.isEmpty()) {
             return;
         }
         if (!writeIndex(manifest.local())) {

@@ -129,12 +129,12 @@ class CascadeLogPoisonTest {
     }
 
     /**
-     * A COLLECT element that ends in an abort the cascade throws without poisoning, a cycle or the depth limit, is held
-     * poisoned while it is rolled back and logged: an Error of its collect-rollback line, which the action catches,
-     * still aborts the call.
+     * A COLLECT element that ends in an abort the cascade throws without poisoning, a cycle or the depth limit, poisons
+     * the call, which stays poisoned while the element is rolled back and logged: an Error of its poison line or of its
+     * collect-rollback line, which the action catches, still aborts the call.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"cycle", "depth"})
+    @ValueSource(strings = {"cycle", "depth", "cycle poison", "depth poison"})
     void anUnpoisonedCollectAbortStaysPoisonedThroughItsRollbackLine(String scenario) {
         MachineKey<Node, State, Step> key = MachineKey.of(Node.class, State.class, Step.class);
         Node grandchild = new Node("grandchild", false, List.of());
@@ -147,7 +147,7 @@ class CascadeLogPoisonTest {
                 .transition(Step.GO, State.A, State.B)
                 .action("cascade", (TransitionContext<Node, State, Step> ctx) -> {
                     Node node = ctx.entity();
-                    List<Node> elements = scenario.equals("cycle") && node == root ? List.of(root) : node.children;
+                    List<Node> elements = scenario.startsWith("cycle") && node == root ? List.of(root) : node.children;
                     if (!elements.isEmpty()) {
                         try {
                             ctx.cascadeAll(key, elements, Step.GO, CascadePolicy.COLLECT);
@@ -157,7 +157,9 @@ class CascadeLogPoisonTest {
                     }
                     return ActionOutcome.ok();
                 }).endTransition().build();
-        BreakingHandler handler = new BreakingHandler("collect-rollback", fatal);
+        String line = !scenario.endsWith(" poison") ? "collect-rollback" : "poison error=io.github.graphmaquina.error."
+                + (scenario.startsWith("cycle") ? "CascadeCycleException" : "CascadeDepthExceededException");
+        BreakingHandler handler = new BreakingHandler(line, fatal);
         Logger logger = Logger.getLogger("io.github.graphmaquina.runtime");
         try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
             logger.addHandler(handler);
@@ -176,7 +178,7 @@ class CascadeLogPoisonTest {
                     assertSame(fatal, thrown);
                 }
                 assertTrue(log.records().stream()
-                        .anyMatch((LogRecord record) -> record.getMessage().contains("collect-rollback")));
+                        .anyMatch((LogRecord record) -> record.getMessage().contains(line)));
             } finally {
                 logger.removeHandler(handler);
             }

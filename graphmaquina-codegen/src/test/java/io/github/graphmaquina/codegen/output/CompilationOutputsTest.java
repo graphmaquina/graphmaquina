@@ -3,6 +3,7 @@ package io.github.graphmaquina.codegen.output;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -283,6 +285,58 @@ class CompilationOutputsTest {
     }
 
     /**
+     * After an interrupted cycle, an inventory entry that is not the kind of file its list holds, a binary or an
+     * excluded binary that is no class file or a source that is no Java source, is refused with {@code SG603} naming the
+     * inventory and the entry, before the pending inventory is rewritten: the next preparation refuses it again, rather
+     * than failing on what this one wrote. So is an owned source of the manifest that is no Java source, with
+     * {@code SG602} naming the manifest.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "owned-outputs.json, binaries, fx, class file",
+        "owned-outputs.json, excludedBinaries, a, class file",
+        "owned-outputs.json, sources, x, source file",
+        "owned-outputs.pending.json, binaries, fx/.class, class file",
+        "annotation-manifest.json, ownedSources, x, ''"})
+    void refusesAnEntryThatIsNotTheKindOfFileItsListHolds(String file, String list, String entry, String kind)
+            throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Map<String, List<String>> lists = new LinkedHashMap<>();
+        for (String name : List.of("sources", "binaries", "excludedBinaries")) {
+            lists.put(name, name.equals(list) ? List.of(entry) : List.of());
+        }
+        OwnedOutputs inventory = new OwnedOutputs(2, lists.get("sources"), lists.get("binaries"), List.of(),
+                lists.get("excludedBinaries"));
+        Path manifest = workDirectory.resolve("annotation-manifest.json");
+        Path pending = workDirectory.resolve(PENDING_INVENTORY);
+        if (file.equals(INVENTORY)) {
+            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), inventory);
+            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        } else if (file.equals(PENDING_INVENTORY)) {
+            ManifestCodec.writeOwned(pending, inventory);
+        } else {
+            Files.writeString(manifest, Files.readString(manifest).replace("\"" + CARRIER_SOURCE + "\"",
+                    "\"" + CARRIER_SOURCE + "\", \"" + entry + "\""));
+            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        }
+        byte[] interrupted = Files.readAllBytes(pending);
+
+        Exception failure = assertThrows(Exception.class, () -> CompilationOutputs.prepare(request()));
+
+        assertArrayEquals(interrupted, Files.readAllBytes(pending), failure.toString());
+        CodegenException refusal = assertInstanceOf(CodegenException.class, failure);
+        if (file.equals(manifest.getFileName().toString())) {
+            assertEquals("SG602", refusal.code());
+            assertEquals("inventory path '" + entry + "' names no Java source in " + manifest, refusal.getMessage());
+        } else {
+            assertEquals("SG603", refusal.code());
+            Path root = kind.equals("class file") ? classesOutput : processorSourcesOutput;
+            assertEquals("the inventory " + file + " claims '" + entry + "', which is not a " + kind + " under "
+                    + root.toAbsolutePath().normalize(), refusal.getMessage());
+        }
+    }
+
+    /**
      * A symbolic link inside the class output that leads outside it would take an inventory entry's file out of the
      * root, whether the entry goes through the link or through the link and back up. The entry is refused with
      * {@code SG603} before any output is changed, and the files outside survive.
@@ -350,6 +404,39 @@ class CompilationOutputsTest {
 
         assertFalse(Files.exists(inside.resolve("x.class")));
         assertTrue(Files.isSymbolicLink(back));
+    }
+
+    /**
+     * A manifest whose processor inventory no path can spell, such as one holding the NUL character, is refused with
+     * {@code SG602} naming the manifest, both by a preparation after an interrupted cycle, which reads that inventory,
+     * and by the completion, before either changes an output.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"prepare", "complete"})
+    void refusesAManifestWhoseProcessorInventoryNoPathCanSpell(String step) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        CompilationOutputs.prepare(request());
+        writeProvisionalIndex();
+        Path manifest = workDirectory.resolve("annotation-manifest.json");
+        String inventory = workDirectory.resolve("processor-inventory.json").toString()
+                .replace("processor-inventory.json", "processor-inventory\u0000.json");
+        Files.writeString(manifest, Files.readString(manifest, StandardCharsets.UTF_8)
+                .replace("processor-inventory.json", "processor-inventory\\u0000.json"), StandardCharsets.UTF_8);
+        byte[] pending = Files.readAllBytes(workDirectory.resolve(PENDING_INVENTORY));
+
+        Exception failure = assertThrows(Exception.class, () -> {
+            if (step.equals("prepare")) {
+                CompilationOutputs.prepare(request());
+            } else {
+                CompilationOutputs.complete(request());
+            }
+        });
+
+        CodegenException refusal = assertInstanceOf(CodegenException.class, failure);
+        assertEquals("SG602", refusal.code());
+        assertEquals("processor inventory '" + inventory + "' is not a path in " + manifest, refusal.getMessage());
+        assertArrayEquals(pending, Files.readAllBytes(workDirectory.resolve(PENDING_INVENTORY)));
+        assertTrue(Files.exists(classesOutput.resolve(PENDING)));
     }
 
     @Test

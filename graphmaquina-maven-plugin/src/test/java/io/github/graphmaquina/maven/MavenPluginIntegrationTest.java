@@ -102,6 +102,10 @@ class MavenPluginIntegrationTest {
                       </annotationProcessorPaths>
             """.strip();
 
+    /** Why a test that locks a directory is aborted where {@link MavenFixture#forbidListing} cannot lock it. */
+    private static final String UNLOCKABLE =
+            "this user lists a directory it has no permission on, or the file system has no POSIX permissions";
+
     /** The file repository the Gradle build published every StateGraph artifact of this version to. */
     private final Path fixtureRepository = Path.of(requireProperty("graphmaquina.fixtureRepository"));
 
@@ -487,6 +491,72 @@ class MavenPluginIntegrationTest {
                 + " execution of maven-compiler-plugin leaves out io/github/graphmaquina/generated/bootstrap/"
                 + "GraphCompilation"), excludes.output());
         assertTrue(fixture.inventoryIsSealed("test"));
+    }
+
+    /**
+     * The scanner of maven-compiler-plugin enters a directory only when an include matches it and no exclude does, or
+     * when an include could match a path below it, which an include that starts with a separator never can where the
+     * file separator is {@code /}. So {@code /io/github/graphmaquina/generated/**} matches the carrier and still leaves
+     * it out, since the scanner never enters {@code io}: javac would compile no carrier. Such includes are refused by
+     * the generation, before anything is retired, naming the include and the directory the scanner never enters. The
+     * test runs only where the file separator is {@code /}: where it is {@code \}, the scanner enters {@code io} for
+     * such an include, and javac compiles the carrier.
+     */
+    @Test
+    void anIncludeThatStartsWithASeparatorAndLeavesTheCarrierOutIsRefusedBeforeAnythingIsRetired()
+            throws IOException {
+        assumeTrue(File.separatorChar == '/', "an include that starts with a separator lets the scanner in here");
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String carrier = fixture.projectDirectory().resolve("target/generated-sources/graphmaquina")
+                .relativize(fixture.carrierSource()).toString();
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <includes>\n"
+                + "            <include>/fx/**</include>\n"
+                + "            <include>/io/github/graphmaquina/generated/**</include>\n"
+                + "          </includes>");
+
+        MavenResult result = fixture.run("package");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the <includes> of the default-compile execution of"
+                + " maven-compiler-plugin, [/fx/**, /io/github/graphmaquina/generated/**], select no " + carrier),
+                result.output());
+        assertTrue(result.output().contains("The include /io/github/graphmaquina/generated/** matches that path, but"
+                + " the scanner of the compiler never enters io: it enters a directory only when an include matches"
+                + " that directory and no exclude does"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * The generator reads the sources the scanner of maven-compiler-plugin reaches, and that scanner enters an excluded
+     * directory only when an include could match a path below it, which {@code /fx/**} never can where the file
+     * separator is {@code /}: with that include and the exclude {@code fx/drafts}, which matches the directory and none
+     * of the files under it, javac compiles no draft there, and the generator reads none, although {@code /fx/**}
+     * matches the draft's path. The draft does not even parse. The test runs only where the file separator is
+     * {@code /}: where it is {@code \}, the scanner enters {@code fx/drafts} for that include.
+     */
+    @Test
+    void theGeneratorSkipsTheDirectoriesTheCompilersScannerNeverEnters() throws IOException {
+        assumeTrue(File.separatorChar == '/', "an include that starts with a separator lets the scanner in here");
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <includes>\n"
+                + "            <include>/fx/**</include>\n"
+                + "            <include>io/github/graphmaquina/generated/**</include>\n"
+                + "          </includes>\n"
+                + "          <excludes><exclude>fx/drafts</exclude></excludes>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("fx/drafts/Draft.class"));
     }
 
     /**
@@ -1594,6 +1664,252 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A build may compile its sources through executions of its own and bind {@code default-compile} and
+     * {@code default-testCompile} to the phase {@code none}, which Maven never runs, as kotlin-maven-plugin asks a
+     * mixed Kotlin and Java build to do. The checks read the executions Maven runs, here {@code java-compile} and
+     * {@code java-test-compile}, which carry the manifest arguments, and not the two it never runs, whose missing
+     * manifest and {@code <proc>none</proc>} would be refused if they ran. Both compilations build and publish.
+     */
+    @Test
+    void theChecksReadTheCompilerExecutionsMavenRunsAndNotTheDefaultOnesBoundToNoPhase() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(fixture);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("--- compiler:3.15.0:compile (java-compile)"), result.output());
+        assertTrue(result.output().contains("--- compiler:3.15.0:testCompile (java-test-compile)"), result.output());
+        assertFalse(result.output().contains("(default-compile)"), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.localExports().contains("fx.Orders"), result.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertTrue(fixture.localExportsOf(TEST_EXPORTS).contains("fxt.Tickets"), result.output());
+    }
+
+    /**
+     * The settings the generation refuses are refused on the execution that compiles, whatever its id: with the main
+     * sources compiled by {@code java-compile}, its
+     * {@code <useIncrementalCompilation>false</useIncrementalCompilation>} is refused by the generation before
+     * anything is retired, naming that execution.
+     */
+    @Test
+    void aRefusedSettingOfTheExecutionThatCompilesIsRefusedWhateverItsId() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(fixture);
+        assertEquals(0, fixture.run("compile").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String compiling = "<goals><goal>compile</goal></goals>\n            <configuration>";
+        fixture.editPom(compiling, compiling + "\n              <useIncrementalCompilation>false"
+                + "</useIncrementalCompilation>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("<useIncrementalCompilation>false</useIncrementalCompilation> makes the"
+                + " java-compile execution of maven-compiler-plugin compile only the sources"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * Maven runs the executions the lifecycle binds, such as {@code default-compile}, before the others of their phase,
+     * and the executions a POM adds to one phase in the order their plugins are declared. A compilation run through an
+     * execution of its own therefore needs maven-compiler-plugin declared before graphmaquina-maven-plugin, or
+     * {@code complete} runs before javac, and {@code complete-test} before the test javac, and fails after the
+     * preparation retired the previous outputs. The generation refuses that order before anything is retired, for
+     * the main compilation and for the test one, and so it does for a compiling execution bound to a phase that runs
+     * before the preparation. The executions the lifecycle binds run first whatever the order, so a build of
+     * {@code default-compile} and {@code default-testCompile} that declares graphmaquina-maven-plugin first builds.
+     */
+    @Test
+    void aCompilerExecutionThatRunsOutsideThePreparationAndTheCompletionIsRefused() throws IOException {
+        MavenFixture main = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("main")),
+                fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(main);
+        assertEquals(0, main.run("compile").exitCode());
+        List<String> published = main.localExportsOf(MAIN_EXPORTS);
+        declareStateGraphPluginFirst(main);
+
+        MavenResult mainFirst = main.run("compile");
+
+        assertNotEquals(0, mainFirst.exitCode(), mainFirst.output());
+        assertTrue(mainFirst.output().contains("the java-compile execution of maven-compiler-plugin, bound to compile,"
+                + " runs after the sg-complete execution of graphmaquina-maven-plugin, bound to compile, which"
+                + " completes this compilation"), mainFirst.output());
+        assertTrue(mainFirst.output().contains("Declare maven-compiler-plugin before graphmaquina-maven-plugin in the"
+                + " <plugins> of the build."), mainFirst.output());
+        assertNothingWasRetired(main, published);
+
+        MavenFixture test = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("test")),
+                fixtureRepository);
+        moveCompilation(test, "default-testCompile", "java-test-compile", "testCompile", "test-compile");
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            test.writeTestSource(source.getKey(), source.getValue());
+        }
+        assertEquals(0, test.run("test-compile").exitCode());
+        List<String> testPublished = test.localExportsOf(TEST_EXPORTS);
+        declareStateGraphPluginFirst(test);
+
+        MavenResult testFirst = test.run("test-compile");
+
+        assertNotEquals(0, testFirst.exitCode(), testFirst.output());
+        assertTrue(testFirst.output().contains("the java-test-compile execution of maven-compiler-plugin, bound to"
+                + " test-compile, runs after the sg-complete-test execution of graphmaquina-maven-plugin"),
+                testFirst.output());
+        assertTrue(test.inventoryIsSealed("test"));
+        assertEquals(testPublished, test.localExportsOf(TEST_EXPORTS));
+
+        MavenFixture early = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("early")),
+                fixtureRepository);
+        moveCompilation(early, "default-compile", "java-compile", "compile", "process-sources");
+
+        MavenResult beforePreparation = early.run("compile");
+
+        assertNotEquals(0, beforePreparation.exitCode(), beforePreparation.output());
+        assertTrue(beforePreparation.output().contains("the java-compile execution of maven-compiler-plugin, bound to"
+                + " process-sources, runs before the sg-prepare execution of graphmaquina-maven-plugin, bound to"
+                + " process-sources, which prepares this compilation"), beforePreparation.output());
+        assertNothingWasRetiredOrPublished(early);
+
+        MavenFixture defaults = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("defaults")),
+                fixtureRepository);
+        declareStateGraphPluginFirst(defaults);
+
+        MavenResult lifecycleFirst = defaults.run("test-compile");
+
+        assertEquals(0, lifecycleFirst.exitCode(), lifecycleFirst.output());
+        assertTrue(defaults.inventoryIsSealed("main"));
+        assertTrue(defaults.inventoryIsSealed("test"));
+    }
+
+    /**
+     * A compilation no execution of the compiler runs, here because {@code default-compile} is bound to the phase
+     * {@code none} and nothing else compiles the main sources, is skipped like one {@code maven.main.skip} switches
+     * off: the main goals do nothing and say so, and the index and the sealed inventory of the previous build stay as
+     * they were.
+     */
+    @Test
+    void aCompilationNoCompilerExecutionRunsIsSkipped() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("compile").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<id>default-compile</id>", "<id>default-compile</id>\n            <phase>none</phase>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("StateGraph skips fx.build:fixture:main: maven-compiler-plugin runs no"
+                + " execution of its compile goal in the default lifecycle of this project, as default-compile is bound"
+                + " to none, which is no phase of a lifecycle"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * StateGraph surrounds the compilations of the default lifecycle, and Maven runs an execution of the compiler bound
+     * to a phase of another lifecycle, such as {@code pre-site} of the site lifecycle, only when the build invokes that
+     * lifecycle, never between the preparation and the completion. A compilation whose only execution of the compile
+     * goal is bound there is skipped in a build of the default lifecycle, as one bound to {@code none} is, naming both
+     * bindings, and the index and the sealed inventory of the previous build stay as they were. Beside
+     * {@code default-compile}, such an execution, which would compile the vocabulary too, is not a second running
+     * execution of the goal: the build compiles and publishes as without it.
+     */
+    @Test
+    void aCompilerExecutionBoundToAPhaseOfAnotherLifecycleIsNotOneTheDefaultLifecycleRuns() throws IOException {
+        MavenFixture alone = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("alone")),
+                fixtureRepository);
+        assertEquals(0, alone.run("compile").exitCode());
+        List<String> published = alone.localExportsOf(MAIN_EXPORTS);
+        moveCompilation(alone, "default-compile", "site-compile", "compile", "pre-site");
+
+        MavenResult skipped = alone.run("compile");
+
+        assertEquals(0, skipped.exitCode(), skipped.output());
+        assertTrue(skipped.output().contains("StateGraph skips fx.build:fixture:main: maven-compiler-plugin runs no"
+                + " execution of its compile goal in the default lifecycle of this project, as default-compile is bound"
+                + " to none, which is no phase of a lifecycle, and site-compile is bound to pre-site, a phase of the"
+                + " site lifecycle"), skipped.output());
+        assertNothingWasRetired(alone, published);
+
+        MavenFixture beside = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("beside")),
+                fixtureRepository);
+        beside.editPom("<id>default-testCompile</id>", """
+                <id>site-compile</id>
+                            <phase>pre-site</phase>
+                            <goals><goal>compile</goal></goals>
+                          </execution>
+                          <execution>
+                            <id>default-testCompile</id>""".strip());
+
+        MavenResult built = beside.run("compile");
+
+        assertEquals(0, built.exitCode(), built.output());
+        assertTrue(beside.inventoryIsSealed("main"));
+        assertTrue(beside.exists(MAIN_EXPORTS));
+        assertTrue(beside.exists("target/classes/fx/OrdersGraph.class"));
+    }
+
+    /**
+     * A build may run more than one execution of the compile goal, as a multi-release jar does through one of its own
+     * that compiles another source root into {@code META-INF/versions}. The execution that compiles the vocabulary the
+     * generator writes, here {@code default-compile}, is the main compilation the checks read, and the other one, whose
+     * {@code <compileSourceRoots>} leave that vocabulary out and whose {@code <multiReleaseOutput>} would be refused
+     * on the main compilation, runs untouched, build after build. A third execution that compiles the vocabulary as
+     * well would make javac compile it twice, and the generation refuses it naming both, before anything is retired.
+     */
+    @Test
+    void theExecutionThatCompilesTheVocabularyIsTheMainCompilationAmongSeveral() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<id>default-testCompile</id>", """
+                <id>versioned</id>
+                            <goals><goal>compile</goal></goals>
+                            <configuration>
+                              <multiReleaseOutput>true</multiReleaseOutput>
+                              <compileSourceRoots>
+                                <compileSourceRoot>${project.basedir}/src/main/java21</compileSourceRoot>
+                              </compileSourceRoots>
+                            </configuration>
+                          </execution>
+                          <execution>
+                            <id>default-testCompile</id>""".strip());
+        fixture.writeFile("src/main/java21/fx/Versioned.java", """
+                package fx;
+
+                /** A class of release 21 of a multi-release jar. */
+                public final class Versioned {
+
+                    private Versioned() {
+                    }
+                }
+                """.getBytes(StandardCharsets.UTF_8));
+
+        MavenResult first = fixture.run("package");
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        MavenResult second = fixture.run("package");
+
+        for (MavenResult result : List.of(first, second)) {
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(result.output().contains("--- compiler:3.15.0:compile (versioned)"), result.output());
+        }
+        assertTrue(fixture.jarContains("META-INF/versions/21/fx/Versioned.class"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+        assertTrue(published.contains("fx.Orders"), published::toString);
+
+        fixture.editPom("<id>versioned</id>", "<id>again</id><goals><goal>compile</goal></goals></execution>"
+                + "<execution><id>versioned</id>");
+
+        MavenResult twice = fixture.run("package");
+
+        assertNotEquals(0, twice.exitCode(), twice.output());
+        assertTrue(twice.output().contains("maven-compiler-plugin runs the executions default-compile and again of"
+                + " its compile goal for this project, and each of them compiles "), twice.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
      * A compilation that can end without the classes the completion publishes is refused by the generation,
      * before the preparation retires anything: {@code failOnError=false} carries the build on past a
      * compilation javac rejected, and {@code proc=only}, as a parameter or as a compiler argument, runs the
@@ -2023,6 +2339,56 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * Maven evaluates a parameter of the compiler before it hands it over, completing what the effective model leaves
+     * for it, such as {@code ${session.executionRootDirectory}}, the directory the build was started in, and so does
+     * the generation. An {@code <outputDirectory>} that names the class output of the project through that expression
+     * builds and publishes, and so does the {@code maven.compiler.outputDirectory} property spelled the same way, while
+     * one that names another directory through it is refused before anything is retired, naming the directory it
+     * evaluates to.
+     */
+    @Test
+    void anOutputDirectoryIsReadAsMavenEvaluatesIt() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String classes = "<outputDirectory>${session.executionRootDirectory}/target/classes</outputDirectory>";
+        fixture.editPom(main, main + "\n              " + classes);
+
+        MavenResult same = fixture.run("package");
+
+        assertEquals(0, same.exitCode(), same.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        String elsewhere = "<outputDirectory>${session.executionRootDirectory}/target/elsewhere-classes"
+                + "</outputDirectory>";
+        fixture.editPom(classes, elsewhere);
+
+        MavenResult moved = fixture.run("package");
+
+        assertNotEquals(0, moved.exitCode(), moved.output());
+        Matcher refusal = Pattern.compile(Pattern.quote(elsewhere + " makes the default-compile execution of"
+                + " maven-compiler-plugin write its classes to ") + "(.+?), while StateGraph completes")
+                .matcher(moved.output());
+        assertTrue(refusal.find(), moved.output());
+        Path written = Path.of(refusal.group(1));
+        assertEquals(fixture.projectDirectory().resolve("target").toRealPath(), written.getParent().toRealPath(),
+                moved.output());
+        assertEquals("elsewhere-classes", written.getFileName().toString(), moved.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("\n              " + elsewhere, "");
+
+        MavenResult property = fixture.run(
+                "-Dmaven.compiler.outputDirectory=${session.executionRootDirectory}/target/classes", "package");
+
+        assertEquals(0, property.exitCode(), property.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
      * javac takes the last {@code -d} and the last {@code -s} it is given, and maven-compiler-plugin passes its own
      * ahead of the compiler arguments. A {@code -d} compiler argument therefore moves the classes, and the index the
      * annotation processor publishes beside them, away from the class output the completion reads, and a {@code -s}
@@ -2249,6 +2615,49 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The roots of {@code <compileSourceRoots>} are read as Maven evaluates them for the compiler, completing what the
+     * effective model leaves for it, such as {@code ${session.executionRootDirectory}}, the directory the build was
+     * started in. Here a root of their own named through that expression holds the shared domain, while the source
+     * root of the project holds only a draft that does not parse: the generator parses the root javac compiles, and
+     * not the draft. The directory the generator writes into, named through the same expression, is then one javac
+     * compiles too, so that build is not refused either, and both publish the same index.
+     */
+    @Test
+    void compileSourceRootsAreReadAsMavenEvaluatesThem() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : MavenFixture.domainSources().entrySet()) {
+            fixture.writeFile("src/other/java/" + source.getKey().replace('.', '/') + ".java",
+                    source.getValue().getBytes(StandardCharsets.UTF_8));
+        }
+        fixture.writeSources(Map.of("misc.Draft", draft("misc")));
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String generated = "<compileSourceRoot>${project.build.directory}/generated-sources/graphmaquina"
+                + "</compileSourceRoot>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>"
+                + "<compileSourceRoot>${session.executionRootDirectory}/src/other/java</compileSourceRoot>"
+                + generated + "</compileSourceRoots>");
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+        assertFalse(fixture.jarContains("misc/Draft.class"));
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+        byte[] published = Files.readAllBytes(exports);
+
+        fixture.editPom(generated, "<compileSourceRoot>${session.executionRootDirectory}/target/generated-sources"
+                + "/graphmaquina</compileSourceRoot>");
+
+        MavenResult session = fixture.run("package");
+
+        assertEquals(0, session.exitCode(), session.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+    }
+
+    /**
      * The sources of a root outside the project directory keep the origin a plain build publishes for them, their path
      * from the project directory once symbolic links are resolved, when the build reaches that root with {@code -f}
      * through a link to the project directory that lies in another directory, whose path has at least as many names
@@ -2370,9 +2779,11 @@ class MavenPluginIntegrationTest {
         assertEquals(List.of("io.github.graphmaquina:graphmaquina-codegen:runtime"), scopedDependencies(pom));
         assertEquals(List.of("io.github.graphmaquina:graphmaquina-codegen:" + VERSION), dependencies(descriptor));
 
-        // The goals resolve toolchains through the public component alone; the private one is Maven internals
-        // this plugin has no reason to require.
-        assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager"), requirements(descriptor));
+        // The goals resolve toolchains through the public component alone, the private one being Maven internals
+        // this plugin has no reason to require, and the phases an execution of the compiler can run in through the
+        // lifecycles Maven exports from its core.
+        assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager",
+                "org.apache.maven.lifecycle.DefaultLifecycles"), requirements(descriptor));
     }
 
     @Test
@@ -2620,6 +3031,126 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A javac that compiles inside Maven reads the sources through a file manager maven-compiler-plugin opens in the
+     * encoding it is configured with, which then wins over every {@code -encoding} compiler argument, and without one
+     * in the last {@code -encoding} compiler argument. The generator is told the encoding javac reads in either way: an
+     * accented identifier of a project kept in ISO-8859-1 reaches the generated vocabulary intact, whether the project
+     * names no encoding and passes {@code -encoding ISO-8859-1}, or names ISO-8859-1 and passes {@code -encoding latin1},
+     * an alias of that charset, the request then naming the configured ISO-8859-1.
+     */
+    @Test
+    void aJavacInsideMavenReadsTheConfiguredEncodingElseTheLastEncodingArgument() throws IOException {
+        MavenFixture argument = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("argument")),
+                fixtureRepository);
+        argument.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>", "");
+        addMainCompilerArguments(argument, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+        MavenFixture configured = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("configured")),
+                fixtureRepository);
+        configured.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>",
+                "<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>");
+        addMainCompilerArguments(configured, "<arg>-encoding</arg><arg>latin1</arg>");
+
+        for (MavenFixture fixture : List.of(argument, configured)) {
+            fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+            assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+        }
+    }
+
+    /**
+     * {@code <forceJavacCompilerUse>} or {@code maven.compiler.forceLegacyJavacApi} keeps javac inside Maven but runs it
+     * through {@code com.sun.tools.javac.Main}, which reads and writes every source in the last {@code -encoding} it is
+     * given, as a forked javac does. A project kept in ISO-8859-1 whose {@code project.build.sourceEncoding} says UTF-8
+     * builds with {@code -encoding ISO-8859-1} as a compiler argument, either way: the generator is told ISO-8859-1,
+     * and the accented identifier reaches the generated vocabulary intact.
+     */
+    @Test
+    void aForcedLegacyJavacReadsTheLastEncodingArgumentLikeAForkedOne() throws IOException {
+        MavenFixture configured = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("configured")),
+                fixtureRepository);
+        configured.editPom("<release>21</release>",
+                "<release>21</release><forceJavacCompilerUse>true</forceJavacCompilerUse>");
+        MavenFixture property = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("property")),
+                fixtureRepository);
+
+        for (MavenFixture fixture : List.of(configured, property)) {
+            addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+            fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+            MavenResult result = fixture == configured
+                    ? fixture.run("package")
+                    : fixture.run("-Dmaven.compiler.forceLegacyJavacApi=true", "package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+            assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+        }
+    }
+
+    /**
+     * A javac that compiles inside Maven reads every source, those the annotation processors generate included, in the
+     * encoding maven-compiler-plugin is configured with, but writes the sources an annotation processor generates in
+     * the last {@code -encoding} it is given, so it would read them back in another charset than they were written in:
+     * here the StateGraph processor's sources, written in UTF-16 and read back in UTF-8, would fail javac after the
+     * preparation retired the previous outputs. An {@code -encoding} compiler argument that names another charset than
+     * the configured encoding is therefore refused by the generation, before anything is retired, while one that names
+     * an alias of the configured charset builds.
+     */
+    @Test
+    void anEncodingArgumentThatDisagreesWithTheConfiguredEncodingInsideMavenIsRefusedBeforeAnythingIsRetired()
+            throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeSources(accentedDomain(), StandardCharsets.UTF_8);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>UTF-16</arg>");
+
+        MavenResult refused = fixture.run("package");
+
+        assertNotEquals(0, refused.exitCode(), refused.output());
+        assertTrue(refused.output().contains("project.build.sourceEncoding=UTF-8 and the compiler argument -encoding"
+                + " UTF-16 of the default-compile execution of maven-compiler-plugin name two charsets for a javac that"
+                + " compiles inside Maven"), refused.output());
+        assertTrue(refused.output().contains("Remove that -encoding from the compiler arguments of that execution, or"
+                + " configure <encoding>UTF-16</encoding> for it."), refused.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<arg>UTF-16</arg>", "<arg>utf8</arg>");
+
+        MavenResult alias = fixture.run("package");
+
+        assertEquals(0, alias.exitCode(), alias.output());
+        assertEquals("UTF-8", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), alias.output());
+    }
+
+    /**
+     * A javac that maven-compiler-plugin forks gets the encoding the compiler is configured with as an
+     * {@code -encoding} ahead of the compiler arguments, and takes the last one, so an {@code -encoding} compiler
+     * argument wins over the configured encoding, and the generator is told that one: a project kept in ISO-8859-1
+     * whose {@code project.build.sourceEncoding} says UTF-8 builds with a forked javac given
+     * {@code -encoding ISO-8859-1}, its accented identifier intact.
+     */
+    @Test
+    void aForkedJavacReadsTheLastEncodingArgumentOverTheConfiguredEncoding() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>",
+                "<release>21</release><fork>true</fork><executable>${java.home}/bin/javac</executable>");
+        addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+    }
+
+    /**
      * The test compilation of maven-compiler-plugin compiles at {@code <testRelease>} when one is set, else at
      * {@code <release>}, and takes {@code <testSource>} and {@code <testTarget>} over {@code <source>} and
      * {@code <target>} the same way. A test release or test source below Java 21 is therefore refused by the
@@ -2658,6 +3189,37 @@ class MavenPluginIntegrationTest {
             assertEquals("21", fixture.requestValue("main", "release"));
             assertFalse(fixture.exists("target/graphmaquina/test/request.json"));
         }
+    }
+
+    /**
+     * javac takes the last {@code --release} it is given, and maven-compiler-plugin passes the release it is configured
+     * with ahead of the compiler arguments, so a {@code --release} compiler argument is the release javac compiles at.
+     * The {@code generate} goal checks that release and the request carries it: a {@code --release 17} argument beside
+     * {@code <release>21</release>} is refused before the request is written, naming the argument and what fixes it,
+     * and a {@code --release=21} argument beside {@code <release>17</release>} is accepted, the request carrying 21.
+     * Only the generation runs, so no javac does.
+     */
+    @Test
+    void aReleaseCompilerArgumentWinsOverTheConfiguredRelease() throws IOException {
+        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ":generate";
+        MavenFixture lowered = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("lowered")),
+                fixtureRepository);
+        addMainCompilerArguments(lowered, "<arg>--release</arg><arg>17</arg>");
+        MavenFixture raised = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("raised")),
+                fixtureRepository);
+        raised.editPom("<release>21</release>", "<release>17</release>");
+        addMainCompilerArguments(raised, "<arg>--release=21</arg>");
+
+        MavenResult refused = lowered.run(goal);
+        MavenResult accepted = raised.run(goal);
+
+        assertNotEquals(0, refused.exitCode(), refused.output());
+        assertTrue(refused.output().contains("the default-compile execution of maven-compiler-plugin compiles with the"
+                + " compiler argument --release 17, but the vocabulary the StateGraph generator emits needs Java 21 or"
+                + " later. Give that argument a release of 21 or later, or remove it."), refused.output());
+        assertFalse(lowered.exists("target/graphmaquina/main/request.json"));
+        assertEquals(0, accepted.exitCode(), accepted.output());
+        assertEquals("21", raised.requestValue("main", "release"));
     }
 
     /**
@@ -2730,8 +3292,9 @@ class MavenPluginIntegrationTest {
      * inside the directory of a version control system, such as {@code CVS}. The generator leaves out these two,
      * which Ant's default excludes name as well, whether this plugin hands it the files that includes and excludes
      * select or a whole root to walk. Not every file the compiler leaves out is left out of a whole root: a root the
-     * execution does not narrow is handed to the generator whole, and the generator walks it with Ant's default
-     * excludes, not with plexus-utils' longer list.
+     * execution does not narrow is handed to the generator whole, unless javac compiles a source under it that the
+     * generator's walk leaves out or that walk would fail on a directory it cannot list, and the generator walks it
+     * with Ant's default excludes, not with plexus-utils' longer list.
      */
     @Test
     void theGeneratorSkipsTheFilesTheCompilerExcludesByDefault() throws IOException {
@@ -2750,6 +3313,83 @@ class MavenPluginIntegrationTest {
 
             assertEquals(0, result.exitCode(), result.output());
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"), excludes);
+        }
+    }
+
+    /**
+     * The scanner of maven-compiler-plugin enters a directory named like a file its default excludes name, such as
+     * {@code old~} or {@code .gitignore}, and javac compiles the sources inside it, while the generator, walking a
+     * whole root as Gradle walks it, leaves such a directory out. A root the execution does not narrow that holds a
+     * source javac compiles inside one is therefore handed to the generator file by file, so the generator reads the
+     * machine and the action host declared there.
+     */
+    @Test
+    void theGeneratorReadsTheSourcesTheCompilerCompilesInsideADirectoryNamedLikeAnExcludedFile() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Map<String, String> sources = MavenFixture.domainSources();
+        String orders = sources.remove("fx.Orders");
+        String actions = sources.remove("fx.Actions");
+        fixture.writeSources(sources);
+        fixture.writeFile("src/main/java/fx/old~/Orders.java", orders.getBytes(StandardCharsets.UTF_8));
+        fixture.writeFile("src/main/java/fx/.gitignore/Actions.java", actions.getBytes(StandardCharsets.UTF_8));
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertTrue(fixture.localExports().containsAll(List.of("fx.Orders", "fx.ActionsRefs.Approve")),
+                fixture.localExports()::toString);
+    }
+
+    /**
+     * The directory of a version control system, such as {@code .git}, holds nothing javac compiles, and the
+     * generator never enters it: neither does this plugin when it looks for a source the generator would miss, so a
+     * directory inside it that cannot be listed, as {@code .git/objects} can be, fails nothing.
+     */
+    @Test
+    void aDirectoryInsideTheDirectoryOfAVersionControlSystemThatCannotBeListedFailsNothing() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeFile("src/main/java/fx/.git/objects/Junk.java", new byte[0]);
+        Path objects = fixture.projectDirectory().resolve("src/main/java/fx/.git/objects");
+        assumeTrue(MavenFixture.forbidListing(objects), UNLOCKABLE);
+        try {
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        } finally {
+            MavenFixture.allowListing(objects);
+        }
+    }
+
+    /**
+     * The scanner of maven-compiler-plugin reads a directory it cannot list as an empty one, an ordinary directory as
+     * well as the directory of a version control system itself, so javac compiles the sources beside it and nothing
+     * inside it. The generator, which would fail on such a directory walking the root whole, is handed the files the
+     * compiler selects instead, and reads just those.
+     */
+    @Test
+    void aDirectoryTheCompilerCannotListLeavesTheSourcesBesideItToTheGenerator() throws IOException {
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeFile("src/main/java/fx/locked/Junk.java", junk);
+        fixture.writeFile("src/main/java/fx/.svn/Junk.java", junk);
+        List<Path> locked = List.of(fixture.projectDirectory().resolve("src/main/java/fx/locked"),
+                fixture.projectDirectory().resolve("src/main/java/fx/.svn"));
+        try {
+            for (Path directory : locked) {
+                assumeTrue(MavenFixture.forbidListing(directory), UNLOCKABLE);
+            }
+
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        } finally {
+            for (Path directory : locked) {
+                MavenFixture.allowListing(directory);
+            }
         }
     }
 
@@ -2823,6 +3463,50 @@ class MavenPluginIntegrationTest {
                 """);
         sources.put("fx.Orders", MavenFixture.orders("Orders", "ApproveRésumé", "approveRésumé"));
         return sources;
+    }
+
+    /**
+     * Has the executions {@code java-compile} and {@code java-test-compile} compile the main and the test sources with
+     * the configuration the fixture gives {@code default-compile} and {@code default-testCompile}, and binds those two
+     * to the phase {@code none}, configured with {@code <proc>none</proc>} and no manifest argument, as
+     * kotlin-maven-plugin asks a mixed Kotlin and Java build to do.
+     */
+    private static void compileThroughExecutionsOfTheirOwn(MavenFixture fixture) throws IOException {
+        moveCompilation(fixture, "default-compile", "java-compile", "compile", "compile");
+        moveCompilation(fixture, "default-testCompile", "java-test-compile", "testCompile", "test-compile");
+    }
+
+    /**
+     * Binds the execution {@code defaultId} to the phase {@code none}, and gives the configuration it had to a new
+     * execution {@code id} of {@code goal}, bound to {@code phase}.
+     */
+    private static void moveCompilation(MavenFixture fixture, String defaultId, String id, String goal, String phase)
+            throws IOException {
+        fixture.editPom("<id>" + defaultId + "</id>", "<id>" + defaultId + "</id>\n"
+                + "            <phase>none</phase>\n"
+                + "            <configuration><proc>none</proc></configuration>\n"
+                + "          </execution>\n"
+                + "          <execution>\n"
+                + "            <id>" + id + "</id>\n"
+                + "            <phase>" + phase + "</phase>\n"
+                + "            <goals><goal>" + goal + "</goal></goals>");
+    }
+
+    /** Moves the declaration of graphmaquina-maven-plugin ahead of that of maven-compiler-plugin in the fixture POM. */
+    private static void declareStateGraphPluginFirst(MavenFixture fixture) throws IOException {
+        String pom = Files.readString(fixture.projectDirectory().resolve("pom.xml"), StandardCharsets.UTF_8);
+        String compiler = "      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>";
+        int start = pom.indexOf("      <plugin>\n        <groupId>io.github.graphmaquina</groupId>");
+        String end = "      </plugin>\n";
+        String stateGraph = pom.substring(start, pom.indexOf(end, start) + end.length());
+        fixture.editPom(stateGraph, "");
+        fixture.editPom(compiler, stateGraph + compiler);
+    }
+
+    /** Adds {@code arguments}, as {@code <arg>} elements, to the compiler arguments of the main compilation. */
+    private static void addMainCompilerArguments(MavenFixture fixture, String arguments) throws IOException {
+        String manifest = "graphmaquina/main/annotation-manifest.json</arg>";
+        fixture.editPom(manifest, manifest + arguments);
     }
 
     /**

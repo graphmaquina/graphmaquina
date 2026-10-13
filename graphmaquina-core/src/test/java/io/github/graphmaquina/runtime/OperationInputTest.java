@@ -38,9 +38,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The per-call input of {@code execute(entity, id, input)}: guards, actions and the recovery of a failure route read
- * the call's own value, an absent or null input reads as empty, and neither a cascaded call, a cascade's failure
- * route nor a watch reevaluation inherits it. A wrong input type aborts the call, the value stays readable after the
- * call and on another thread, and overlapping asynchronous calls keep theirs apart.
+ * the call's own value, an absent input reads as empty and a null one is refused before the call starts, and neither
+ * a cascaded call, a cascade's failure route nor a watch reevaluation inherits it. A wrong input type aborts the
+ * call, the value stays readable after the call and on another thread, and overlapping asynchronous calls keep theirs
+ * apart.
  */
 class OperationInputTest {
 
@@ -81,11 +82,28 @@ class OperationInputTest {
         Verdict v = new Verdict(true);
         m.execute(new Entity(), T.WORK, v);
         m.execute(new Entity(), T.WORK);
-        m.execute(new Entity(), T.WORK, null);
-        assertEquals(6, seen.size());
+        assertEquals(4, seen.size());
         assertSame(v, seen.get(0).orElseThrow());
         assertSame(v, seen.get(1).orElseThrow());
-        assertTrue(seen.subList(2, 6).stream().allMatch(Optional::isEmpty));
+        assertTrue(seen.subList(2, 4).stream().allMatch(Optional::isEmpty));
+    }
+
+    /**
+     * A null input is no absent one: execute and the execute of the async view refuse it on the calling thread, before
+     * the call starts, so no guard or action runs and the entity keeps its state.
+     */
+    @Test void aNullInputIsRefusedBeforeTheCallStarts() {
+        List<Optional<?>> seen = new ArrayList<>();
+        StateMachine<Entity, S, T> m = machine(
+                (GuardContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return GuardResult.pass(); },
+                (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); },
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
+        Entity e = new Entity();
+        assertEquals("input", assertThrows(NullPointerException.class, () -> m.execute(e, T.WORK, null)).getMessage());
+        assertEquals("input",
+                assertThrows(NullPointerException.class, () -> m.async().execute(e, T.WORK, null)).getMessage());
+        assertEquals(List.of(), seen);
+        assertEquals(S.OPEN, e.state);
     }
 
     @Test void rejectionKeepsStateAndSkipsAction() {

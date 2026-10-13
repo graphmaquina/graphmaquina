@@ -2,8 +2,10 @@ package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -11,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +35,58 @@ class TypedWatchTest {
         int condition = companion.indexOf(".when(\"ready\", (doc, peers, view) -> docActions.ready(");
         int filter = companion.indexOf(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)");
         assertTrue(condition > 0 && filter > condition, companion);
+    }
+
+    /**
+     * An owner reader may return the owner itself rather than an Optional of it, but never null, since a peer without
+     * an owner is an empty Optional. A null from either kind of reader is refused when the commit of the peer looks
+     * its owner up: the peer's outcome carries an aborted reaction whose NullPointerException says the ownerOf
+     * returned null, and the owner is not reevaluated.
+     */
+    @Test
+    void anOwnerReaderThatReturnsNullIsRefusedWhetherItReturnsAnOptionalOrTheOwner() throws Exception {
+        String plain = "@GraphProperty public Doc doc() { return orphan ? null : doc; }";
+        String optional = "@GraphProperty public Optional<Doc> doc() { return orphan ? null : Optional.of(doc); }";
+        for (String reader : List.of(plain, optional)) {
+            Map<String, String> sources = TypedFixtures.watching();
+            sources.put("fx.Page", sources.get("fx.Page").replace(
+                    "@GraphProperty public Optional<Doc> doc() { return Optional.of(doc); }",
+                    "public boolean orphan;\n    " + reader));
+            sources.put("fx.Scenario", """
+                    package fx;
+                    import io.github.graphmaquina.api.Outcome;
+                    import io.github.graphmaquina.api.Reaction;
+                    public final class Scenario {
+                        public static String run() {
+                            try (Library library = LibraryRuntime.builder(new DocActions()).build()) {
+                                Doc doc = new Doc("d");
+                                Page page = new Page("p", doc);
+                                page.orphan = true;
+                                library.docs().submit(doc);
+                                Outcome<Page, PageStatus, PageTransition> finished = library.pages().finish(page);
+                                if (finished instanceof Outcome.Applied<?, ?, ?> applied
+                                        && applied.reactions().size() == 1
+                                        && applied.reactions().get(0) instanceof Reaction.Aborted aborted) {
+                                    return aborted.cause().getClass().getSimpleName() + ": "
+                                            + aborted.cause().getMessage() + ", " + doc.status();
+                                }
+                                return finished + ", " + doc.status();
+                            }
+                        }
+                    }
+                    """);
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertTrue(result.success(), result.describe());
+            assertEquals("NullPointerException: the ownerOf of Doc/DocStatus.REVIEW returned null, REVIEW",
+                    result.load("fx.Scenario").getMethod("run").invoke(null), reader);
+            if (reader.equals(plain)) {
+                String companion = result.generated("fx.DocsRuntime");
+                assertTrue(companion.contains("(Page page) -> Optional.of(Objects.requireNonNull(page.doc(),"
+                        + " \"the ownerOf of Doc/DocStatus.REVIEW returned null\"))"), companion);
+            }
+        }
     }
 
     @Test
@@ -153,9 +208,25 @@ class TypedWatchTest {
     }
 
     /**
-     * A peer declared twice generates the vocabulary of that pair twice, which the generator itself refuses
-     * before javac runs; the duplicate is written here after the generation, so the processor is the one that
-     * has to answer for it.
+     * A peer declared twice would generate the vocabulary of that pair twice, so the generator refuses it before
+     * javac runs, with the code the processor reports it with, rather than as two declarations that claim one
+     * generated type.
+     */
+    @Test
+    void refusesAPeerDeclaredTwiceBeforeJavacRuns() {
+        Map<String, String> sources = TypedFixtures.watching("@GraphPeers({Pages.class, Pages.class})\n",
+                TypedFixtures.WATCH);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.prepare(sources));
+
+        assertEquals("SG608", failure.code());
+        assertEquals("fx.Pages is declared twice as a peer of fx.Docs", failure.getMessage());
+        assertEquals("originals/fx/Docs.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * The generator refuses a peer declared twice, so the duplicate is written here after the generation, as an
+     * edit between the two stages does, and the processor is the one that has to answer for it.
      */
     @Test
     void reportsAPeerDeclaredTwice() {

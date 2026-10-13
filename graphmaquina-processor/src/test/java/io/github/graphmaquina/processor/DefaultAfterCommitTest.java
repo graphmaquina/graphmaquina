@@ -43,8 +43,12 @@ class DefaultAfterCommitTest {
         assertTrue(definition >= 0, generated);
         int at = generated.indexOf(member, definition);
         assertTrue(at >= 0, generated);
-        // Remove only Definition's new element; the per-edge hook elements remain available.
-        Files.writeString(vocabulary, generated.substring(0, at) + generated.substring(at + member.length()));
+        int comment = generated.lastIndexOf("/**", at);
+        assertTrue(comment > definition && generated.substring(generated.indexOf("*/", comment) + 2, at).isBlank(),
+            generated);
+        // Remove only Definition's new element and its documentation comment, which javac 25 would otherwise report
+        // under -Xlint:all as attached to no declaration; the per-edge hook elements remain available.
+        Files.writeString(vocabulary, generated.substring(0, comment) + generated.substring(at + member.length()));
 
         Compilation.Result legacy = Compilation.compilePrepared(prepared);
         assertTrue(legacy.success(), legacy::describe);

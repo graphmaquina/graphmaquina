@@ -39,14 +39,16 @@ final class PropertyResolver {
     private static final String OPTIONAL = "java.util.Optional";
 
     private final Map<String, SymbolDescriptor> symbols;
+    private final MissingExportIndex missingIndex;
     private final Signatures signatures;
     private final Accessors accessors;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
-    PropertyResolver(Map<String, SymbolDescriptor> symbols, Signatures signatures, Accessors accessors,
-            Diagnostics diagnostics) {
+    PropertyResolver(Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Signatures signatures,
+            Accessors accessors, Diagnostics diagnostics) {
         this.symbols = symbols;
+        this.missingIndex = missingIndex;
         this.signatures = signatures;
         this.accessors = accessors;
         this.diagnostics = diagnostics;
@@ -73,11 +75,15 @@ final class PropertyResolver {
                 : Optional.of(new StateAccess(reader.get(), writer.get()));
     }
 
-    /** The reader of {@code machine} that returns the peers a watch of {@code peer} follows. */
+    /**
+     * The reader of {@code machine} that returns the peers a watch of {@code peer} follows: a
+     * {@code Collection<? extends P>} or a subtype of it, never a raw collection, which only an unchecked conversion
+     * would turn into one.
+     */
     Optional<Property> peers(TypeMirror symbol, MachineTypes machine, MachineTypes peer, DiagnosticAnchor anchor) {
         TypeMirror collection = signatures.declared(COLLECTION, signatures.extendsWildcard(peer.entity()));
         return declaration(symbol, machine, anchor).flatMap((PropertyDescriptor property) -> read(property, machine,
-                (TypeMirror returned) -> signatures.assignable(returned, collection),
+                (TypeMirror returned) -> signatures.subtypeOf(returned, collection),
                 "Collection<? extends " + peer.entityName() + ">", anchor));
     }
 
@@ -107,11 +113,12 @@ final class PropertyResolver {
 
     /**
      * The property {@code symbol} names on the entity of {@code host}, or empty after reporting {@code SG605}
-     * when it is not a property symbol of this compilation or names another entity.
+     * when it is not a property symbol of this compilation or names another entity, and {@code SG602} when it comes
+     * from a dependency whose export index is missing or does not list it.
      */
     private Optional<PropertyDescriptor> declaration(TypeMirror symbol, MachineTypes host, DiagnosticAnchor anchor) {
         Optional<SymbolResolver.Reference> reference = SymbolResolver.reference(symbol, SymbolKind.PROPERTY,
-                anchor, symbols, annotations, diagnostics);
+                anchor, symbols, missingIndex, annotations, diagnostics);
         if (reference.isEmpty()) {
             return Optional.empty();
         }
@@ -217,13 +224,13 @@ final class PropertyResolver {
         Predicate<Element> getter = (Element member) -> member.getKind() == ElementKind.METHOD
                 && member.getSimpleName().contentEquals(property.declarationName())
                 && ((ExecutableElement) member).getParameters().isEmpty();
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), (TypeElement) entity.asElement(),
-                property.declaringType(), getter.and((Element member) -> annotations.find(member, GraphProperty.class)
-                        .isPresent()));
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), (TypeElement) entity.asElement(),
+                property.declaringType(), property.declarationName(), getter.and((Element member) ->
+                        annotations.find(member, GraphProperty.class).isPresent()));
         if (declaring == null) {
             return Optional.empty();
         }
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, property.declarationName())) {
             if (getter.test(member)) {
                 ExecutableElement method = (ExecutableElement) member;
                 return Accessors.isPublicInstance(method)
@@ -237,7 +244,7 @@ final class PropertyResolver {
     /** The member of {@code entity} a call to {@code declaration} runs: itself, or the override that hides it. */
     private ExecutableElement effective(ExecutableElement declaration, DeclaredType entity) {
         TypeElement element = (TypeElement) entity.asElement();
-        for (Element member : signatures.elements().getAllMembers(element)) {
+        for (Element member : signatures.members().all(element, declaration.getSimpleName())) {
             if (member.getKind() != ElementKind.METHOD) {
                 continue;
             }

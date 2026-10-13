@@ -57,31 +57,38 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The same machine, submitting each call to its executor: a new virtual thread by default, wherever a supplied
-     * executor runs it otherwise. A null argument throws on the calling thread, and a submission the executor refuses
-     * returns a failed future.
+     * executor runs it otherwise, or a new thread when that executor is ForkJoinPool.commonPool() and its parallelism
+     * is below two, as {@code StateMachines.Builder.asyncExecutor} says. A null argument throws on the calling thread,
+     * and a submission the executor refuses returns a failed future.
      */
     AsyncStateMachine<E, S, T> async();
 
     /**
-     * Runs {@code call} on the machine's executor; implements {@link Machine#async}. A submission the executor
-     * refuses, as the default one does after close(), returns a failed future.
+     * Runs {@code call} on the machine's executor; implements {@link Machine#async}. A submission the executor refuses,
+     * as the default one does after close(), returns a failed future. The call completes the returned future as it
+     * would complete the one CompletableFuture.supplyAsync returns, but it is queued as a plain task, which
+     * CompletableFuture's get and join never run on the thread that waits, and anything it throws, an Error included,
+     * fails the future, wrapped in a CompletionException unless it is one, so that nothing escapes on the executor's
+     * thread; an InterruptedException it throws interrupts the thread that ran it again. That holds even for a
+     * throwable whose printing throws, which leaves the future of supplyAsync pending on JDK 21 and fails it with an
+     * empty message on JDK 25: the message of the CompletionException is then {@code <toString threw <class name>>} in
+     * place of the throwable's string.
      */
     <R> CompletableFuture<R> supplyAsync(Supplier<R> call);
 
     /**
      * Same as the two-argument {@code execute}, carrying a second, operation-specific value that guards and
-     * actions read back through their context's {@code input} accessors. A {@code null} input delegates to that
-     * overload; this default rejects any other value instead of silently dropping it.
+     * actions read back through their context's {@code input} accessors. A {@code null} input is refused before the
+     * call starts, as a {@code null} entity is; a call that carries no input is the two-argument {@code execute}.
+     * This default rejects every input instead of silently dropping it.
      *
-     * @throws NullPointerException if {@code entity} or {@code transition} is null
-     * @throws UnsupportedOperationException if {@code input} is not null and this machine does not support it
+     * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
+     * @throws UnsupportedOperationException if this machine does not support operation input
      */
     default Outcome<E, S, T> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
-        if (input == null) {
-            return execute(entity, transition);
-        }
+        Objects.requireNonNull(input, "input");
         throw new UnsupportedOperationException("this StateMachine does not support operation input");
     }
 }

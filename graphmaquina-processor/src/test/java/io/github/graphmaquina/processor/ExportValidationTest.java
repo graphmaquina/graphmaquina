@@ -74,6 +74,39 @@ class ExportValidationTest {
                 && error.contains("approved") && error.contains("GuardResult")), result::describe);
     }
 
+    /**
+     * A raw {@code CompletionStage} is no {@code CompletionStage<ActionOutcome>} nor
+     * {@code CompletionStage<GuardResult>}: only an unchecked conversion would make it one, and the companion could not
+     * pass it on without one. Both an action and a guard that return it are refused where they are declared.
+     */
+    @Test
+    void refusesAnActionAndAGuardThatReturnARawCompletionStage() {
+        Compilation.Result result = Compilation.compileTyped(exports("fx.Raw", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                import io.github.graphmaquina.api.GuardContext;
+                import io.github.graphmaquina.api.TransitionContext;
+                import java.util.concurrent.CompletionStage;
+                @SuppressWarnings("rawtypes")
+                public final class Raw {
+                    @GraphAction
+                    public CompletionStage publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                        return null;
+                    }
+                    @GraphGuard public CompletionStage approved(GuardContext<Doc, DocStatus, DocTransition> context) {
+                        return null;
+                    }
+                }
+                """));
+
+        assertEquals(List.of("[SG604] fx.Raw.approved does not have the signature of a guard: expected GuardResult"
+                        + " or CompletionStage<GuardResult> from one GuardContext",
+                "[SG604] fx.Raw.publish does not have the signature of an action: expected ActionOutcome"
+                        + " or CompletionStage<ActionOutcome> from one TransitionContext"),
+                result.errors(), result.describe());
+    }
+
     @Test
     void refusesAHookThatDoesNotTakeTheEntityAlone() {
         Compilation.Result result = Compilation.compileTyped(exports("fx.Hooks", """

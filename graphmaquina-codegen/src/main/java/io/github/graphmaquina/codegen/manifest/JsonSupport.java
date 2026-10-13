@@ -23,15 +23,18 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.function.Supplier;
 
 /**
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
  * into a {@link JsonObject} tree while rejecting duplicate keys, and typed, null-checked member access that
  * reports every violation as a {@link CodegenException} with code {@value #ERROR_CODE}. A document that is not
- * well-formed strict JSON, holds bytes that are not UTF-8 text, carries content after its end or holds a number whose
- * exponent lies beyond the range a {@link BigDecimal} holds is reported the same way, naming its file.
+ * well-formed strict JSON, holds bytes that are not UTF-8 text, escapes a surrogate that is not half of a pair in a
+ * string or a name, carries content after its end or holds a number whose exponent lies beyond the range a
+ * {@link BigDecimal} holds is reported the same way, naming its file.
  *
  * <p>Package-private: {@link ManifestCodec} is the only public JSON boundary of this package.
  */
@@ -68,7 +71,8 @@ final class JsonSupport {
      *
      * @throws CodegenException {@value #ERROR_CODE} naming {@code path} if the document is not well-formed
      *     strict JSON, for example because a write was interrupted, holds bytes that are not UTF-8 text, as a
-     *     write cut off inside a multi-byte character leaves, carries content after its end, or holds a number,
+     *     write cut off inside a multi-byte character leaves, escapes in a string or a name a surrogate that is not
+     *     half of a pair, which no UTF-8 file can hold, carries content after its end, or holds a number,
      *     wherever it stands, whose exponent lies beyond the range a {@link BigDecimal} holds, such as
      *     {@code 1e99999999999}
      * @throws IOException if {@code path} cannot be opened or read
@@ -125,7 +129,7 @@ final class JsonSupport {
                 reader.beginObject();
                 JsonObject object = new JsonObject();
                 while (reader.hasNext()) {
-                    String name = reader.nextName();
+                    String name = paired(reader.nextName(), reader::getPath, file);
                     if (object.has(name)) {
                         throw new CodegenException(ERROR_CODE, "duplicate key '" + name + "' in " + file);
                     }
@@ -143,7 +147,7 @@ final class JsonSupport {
                 reader.endArray();
                 yield array;
             }
-            case STRING -> new JsonPrimitive(reader.nextString());
+            case STRING -> new JsonPrimitive(paired(reader.nextString(), reader::getPreviousPath, file));
             case NUMBER -> {
                 String text = reader.nextString();
                 try {
@@ -161,6 +165,35 @@ final class JsonSupport {
             }
             default -> throw new CodegenException(ERROR_CODE, "unexpected token " + token + " in " + file);
         };
+    }
+
+    /**
+     * {@code text}, a string or a name read at the place {@code path} describes, refused when it holds a surrogate
+     * that is not half of a pair: strict JSON can escape one, but no UTF-8 file can hold it, so the tools could not
+     * write it back. The place is named with such a surrogate escaped, as the message itself must be text. It is
+     * asked for only then, before the reader moves on, since the reader builds a new text each time it describes one.
+     */
+    private static String paired(String text, Supplier<String> path, Path file) {
+        int index = 0;
+        while (index < text.length()) {
+            int codePoint = text.codePointAt(index);
+            if (Character.charCount(codePoint) == 1 && Character.isSurrogate((char) codePoint)) {
+                throw new CodegenException(ERROR_CODE, "malformed JSON in " + file + ": an unpaired surrogate "
+                    + escaped(Character.toString(codePoint)) + " at path " + escaped(path.get()));
+            }
+            index += Character.charCount(codePoint);
+        }
+        return text;
+    }
+
+    /** {@code text} with every surrogate that is not half of a pair written as its Unicode escape. */
+    private static String escaped(String text) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        text.codePoints().forEach((int codePoint) -> escaped.append(
+                Character.charCount(codePoint) == 1 && Character.isSurrogate((char) codePoint)
+                        ? String.format(Locale.ROOT, "\\u%04x", codePoint)
+                        : Character.toString(codePoint)));
+        return escaped.toString();
     }
 
     private static JsonElement requireMember(JsonObject object, String name, Path file) {
@@ -289,6 +322,18 @@ final class JsonSupport {
     }
 
     /**
+     * Rejects a processor inventory that no path can spell, such as one holding the NUL character: every step that
+     * reads or writes that inventory makes a path of it.
+     */
+    static void requireProcessorInventory(String value, Path file) {
+        try {
+            Path.of(value);
+        } catch (InvalidPathException unspellable) {
+            throw new CodegenException(ERROR_CODE, "processor inventory '" + value + "' is not a path in " + file);
+        }
+    }
+
+    /**
      * Rejects an inventory path that no path can spell, such as one holding the NUL character, one that is absolute
      * or has a root, as {@code \x} and {@code C:x} have on Windows, where resolving one against a directory can give
      * a path outside that directory, one that holds a {@code ..} segment, whether or not that segment leads out of its
@@ -311,6 +356,17 @@ final class JsonSupport {
         }
         if (candidate.normalize().toString().isEmpty()) {
             throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no file in " + file);
+        }
+    }
+
+    /**
+     * Rejects an owned source whose file name is not a name followed by {@code .java}: every source a generation
+     * owns is a Java source, and the type it declares is read from its path.
+     */
+    static void requireJavaSource(String value, Path file) {
+        String fileName = value.substring(value.lastIndexOf('/') + 1);
+        if (!fileName.endsWith(".java") || fileName.length() == ".java".length()) {
+            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no Java source in " + file);
         }
     }
 

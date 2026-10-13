@@ -15,11 +15,16 @@ import lombok.NonNull;
 public record CallFailure(@NonNull CallPhase phase, @NonNull StatesWritten statesWritten, @NonNull Throwable error) {
 
     public CallFailure {
-        boolean possible = switch (phase) {
-            case RESOLVE, GUARD, ACTION -> statesWritten == StatesWritten.NONE;
-            case COMMIT -> statesWritten != StatesWritten.ALL;
-            case HOOK, REACTIONS -> statesWritten == StatesWritten.ALL;
-        };
+        // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static initializer,
+        // which assembling a registry cannot name to initialise, as MachineRegistry.staticallyInitialized says.
+        boolean possible;
+        if (phase == CallPhase.COMMIT) {
+            possible = statesWritten != StatesWritten.ALL;
+        } else if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+            possible = statesWritten == StatesWritten.ALL;
+        } else {
+            possible = statesWritten == StatesWritten.NONE;
+        }
         if (!possible) {
             throw new IllegalArgumentException(
                     "a call that failed in " + phase + " cannot have written " + statesWritten);

@@ -6,6 +6,7 @@ import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
+import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.codegen.source.Bootstrap;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -19,11 +20,11 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
@@ -37,8 +38,9 @@ import java.util.stream.Stream;
  *
  * <p>Only the files the previous manifest and the pending one listed are removed, so a hand-written file that
  * happens to live under the generated source root is never touched, and a generated type an original source already
- * declares, in the file it would overwrite or in a file of another name, is refused instead. So is one whose file or
- * class file a volume that does not tell names apart by case would take for an original's. The original sources it
+ * declares, at the generated file's path or in a file of another name, is refused instead. So is one whose file or
+ * class file a volume that does not tell names apart by case would take for an original's, and so are two generated
+ * types whose files or class files such a volume would take for one another's. The original sources it
  * is checked against are the ones the generator read, as the one walk of {@link Bootstrap} read them; below every
  * directory the request names, a file standing where a generated file would stand is refused as well. A listed file
  * is removed only below the generated source root: one whose path does not resolve below it, or whose directory, by
@@ -77,11 +79,11 @@ public final class GenerationOutput {
      * an archive.
      *
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
-     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath, would overwrite a file the previous generation did not own or would be written through a
-     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
-     *     manifest cannot be read, which leaves that manifest in place; {@code SG601} if javac cannot read or parse
-     *     an original source, as when the file may not be read
+     *     takes the name of one, or of another generated type, where the volume does not tell names apart by case,
+     *     would shadow a class of the classpath, would overwrite a file the previous generation did not own or
+     *     would be written through a symbolic link inside the generated source output that leads out of it;
+     *     {@code SG602} if a previous manifest cannot be read, which leaves that manifest in place; {@code SG601} if
+     *     javac cannot read or parse an original source, as when the file may not be read
      * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
      *     file manager javac read the original sources with cannot be closed
      * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
@@ -105,10 +107,10 @@ public final class GenerationOutput {
      *     {@link Bootstrap#read} and {@link Bootstrap#originals} report them
      * @return the published sources and the manifest
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
-     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath, would overwrite a file the previous generation did not own or would be written through a
-     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
-     *     manifest cannot be read, which leaves that manifest in place
+     *     takes the name of one, or of another generated type, where the volume does not tell names apart by case,
+     *     would shadow a class of the classpath, would overwrite a file the previous generation did not own or
+     *     would be written through a symbolic link inside the generated source output that leads out of it;
+     *     {@code SG602} if a previous manifest cannot be read, which leaves that manifest in place
      * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
      *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
      *     the collision check looks up cannot be examined
@@ -131,13 +133,17 @@ public final class GenerationOutput {
                 previouslyOwned.addAll(ManifestCodec.readCompile(inventory).ownedSources());
             }
         }
+        // Every generation the generator publishes owns its carrier, so a manifest that owns nothing records none: at
+        // most a run that failed before it published, as each run after the work directory was deleted does.
+        boolean recorded = !previouslyOwned.isEmpty() || CompilationOutputs.holdsInventory(work);
         // Save the last generation before anything that can fail invalidates its active manifest. A failure to save it
         // leaves that manifest in place, since no source has changed yet.
         remember(pending, manifest, previouslyOwned);
         try {
             delete(staging);
             requireNoClasspathCollision(request, sources);
-            List<Path> staged = stage(request, sources, staging, previouslyOwned, originals);
+            requireDistinctInCase(request, sources, manifest.local().model().symbols());
+            List<Path> staged = stage(request, sources, staging, previouslyOwned, recorded, originals);
             Path output = Files.createDirectories(request.sourcesOutput().toAbsolutePath());
             Set<String> publishing = new TreeSet<>(previouslyOwned);
             publishing.addAll(manifest.ownedSources());
@@ -176,10 +182,13 @@ public final class GenerationOutput {
      * Writes every source under {@code staging}, in the encoding of the compilation, refusing one an original
      * source already declares, one that takes the name of an original source or type where the volume does not
      * tell names apart by case, one that a symbolic link inside the generated source output would take out of it,
-     * and one that would overwrite a file the previous generation did not own.
+     * and one that would overwrite a file the previous generation did not own. When nothing in the work directory
+     * records a file a previous generation wrote, as after that directory was deleted, {@code recorded} is false and
+     * that refusal says so and names clean as the remedy: such a file cannot be told from one somebody else put
+     * there, so it is never overwritten.
      */
     private static List<Path> stage(GenerationRequest request, List<GeneratedSource> sources, Path staging,
-            Set<String> previouslyOwned, List<Bootstrap.OriginalSource> originals)
+            Set<String> previouslyOwned, boolean recorded, List<Bootstrap.OriginalSource> originals)
             throws IOException {
         List<Path> directories = new ArrayList<>();
         for (Path source : request.sources()) {
@@ -191,9 +200,9 @@ public final class GenerationOutput {
         Map<String, List<Bootstrap.OriginalSource>> standing = new HashMap<>();
         Map<String, List<Declared>> declaring = new HashMap<>();
         for (Bootstrap.OriginalSource original : originals) {
-            standing.computeIfAbsent(caseKey(original.path()), (String key) -> new ArrayList<>()).add(original);
+            standing.computeIfAbsent(CaseFolding.key(original.path()), (String key) -> new ArrayList<>()).add(original);
             for (String type : original.types()) {
-                declaring.computeIfAbsent(caseKey(type), (String key) -> new ArrayList<>())
+                declaring.computeIfAbsent(CaseFolding.key(type), (String key) -> new ArrayList<>())
                         .add(new Declared(type, original.origin()));
             }
         }
@@ -201,8 +210,9 @@ public final class GenerationOutput {
         for (GeneratedSource source : sources) {
             String relative = source.qualifiedName().replace('.', '/') + ".java";
             requireNoOriginal(source.qualifiedName(), relative, directories,
-                    standing.getOrDefault(caseKey(relative), List.of()),
-                    declaring.getOrDefault(caseKey(source.qualifiedName()), List.of()), request.classesOutput());
+                    standing.getOrDefault(CaseFolding.key(relative), List.of()),
+                    declaring.getOrDefault(CaseFolding.key(source.qualifiedName()), List.of()),
+                    request.classesOutput());
             Path target = request.sourcesOutput().resolve(relative);
             if (!writesUnder(request.sourcesOutput(), target)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
@@ -211,7 +221,10 @@ public final class GenerationOutput {
             }
             if (Files.exists(target) && !ownedBefore(request.sourcesOutput(), target, relative, previouslyOwned)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
-                    + " would overwrite the unowned file " + target);
+                    + " would overwrite the unowned file " + target + (recorded ? ""
+                    : ": nothing in the work directory " + request.workDirectory() + " records a file a previous"
+                    + " generation wrote, as when that directory was deleted; if one wrote this file, run clean, or"
+                    + " delete the generated sources, then build again"));
             }
             Path file = staging.resolve(relative);
             Files.createDirectories(file.getParent());
@@ -323,14 +336,12 @@ public final class GenerationOutput {
         for (Path directory : directories) {
             Path original = directory.resolve(relative);
             if (Files.isRegularFile(original)) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original);
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.toString()));
             }
         }
         for (Bootstrap.OriginalSource original : standing) {
             if (original.path().equals(relative)) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original.file());
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.file().toString()));
             }
         }
         String fileName = relative.substring(relative.lastIndexOf('/') + 1);
@@ -342,8 +353,8 @@ public final class GenerationOutput {
             }
             Path underGeneratedName = original.file().resolveSibling(fileName);
             if (Files.exists(underGeneratedName) && Files.isSameFile(underGeneratedName, original.file())) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original.file().toRealPath());
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative,
+                    original.file().toRealPath().toString()) + " on a volume that does not tell names apart by case");
             }
         }
         for (Declared declared : declaring) {
@@ -352,7 +363,7 @@ public final class GenerationOutput {
                     + " is already declared by the original source " + declared.origin());
             }
         }
-        if (!declaring.isEmpty() && foldsCase(classesOutput)) {
+        if (!declaring.isEmpty() && CaseFolding.folds(classesOutput)) {
             Declared declared = declaring.get(0);
             throw new CodegenException(COLLISION, "the generated type " + qualifiedName + " differs only in case"
                 + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
@@ -360,55 +371,70 @@ public final class GenerationOutput {
         }
     }
 
+    /**
+     * Says that the generated type {@code qualifiedName} would stand at {@code relative} below the generated source
+     * root, where {@code original} stands below its own source root. The generated source root never overlaps a
+     * source root, so the generated file would overwrite nothing; javac would report a duplicate class where the
+     * original declares the generated type.
+     */
+    private static String sharedPath(String qualifiedName, String relative, String original) {
+        return "the generated type " + qualifiedName + " would stand at " + relative + " below the generated source"
+            + " root, where the original source " + original + " stands below its own";
+    }
+
+    /**
+     * Refuses two generated types whose names differ only in case where a volume that holds their files does not
+     * tell names apart by case, which would keep one file of the two. Two top-level types are refused where the
+     * volume of the generated sources, of the work directory their sources are staged in or of the class output does
+     * not, and two symbol types of one references container, whose class files alone are files of their own, where
+     * the volume of the class output does not. The symbols are the ones of this compilation, in the order the local
+     * index of the manifest lists them; a refusal of two of them names both of their members and is anchored at the
+     * second.
+     *
+     * @throws CodegenException {@code SG603} naming both generated types and the volume
+     * @throws IOException if an output directory, or a directory above it, cannot be examined
+     */
+    private static void requireDistinctInCase(GenerationRequest request, List<GeneratedSource> sources,
+            List<SymbolDescriptor> symbols) throws IOException {
+        Map<String, String> types = new HashMap<>();
+        for (GeneratedSource source : sources) {
+            String previous = types.putIfAbsent(CaseFolding.key(source.qualifiedName()), source.qualifiedName());
+            if (previous == null || previous.equals(source.qualifiedName())) {
+                continue;
+            }
+            Map<String, Path> volumes = new LinkedHashMap<>();
+            volumes.put("the generated sources ", request.sourcesOutput());
+            volumes.put("the work directory ", request.workDirectory());
+            volumes.put("the class output ", request.classesOutput());
+            for (Map.Entry<String, Path> volume : volumes.entrySet()) {
+                if (CaseFolding.folds(volume.getValue())) {
+                    throw new CodegenException(COLLISION, "the generated types " + previous + " and "
+                        + source.qualifiedName() + " differ only in case, and the volume of " + volume.getKey()
+                        + volume.getValue() + " does not tell their files apart");
+                }
+            }
+        }
+        Map<String, SymbolDescriptor> nested = new HashMap<>();
+        for (SymbolDescriptor symbol : symbols) {
+            SymbolDescriptor previous = nested.putIfAbsent(CaseFolding.key(symbol.qualifiedName()), symbol);
+            if (previous != null && !previous.qualifiedName().equals(symbol.qualifiedName())
+                    && CaseFolding.folds(request.classesOutput())) {
+                throw new CodegenException(COLLISION, "the generated symbols " + previous.qualifiedName() + ", of "
+                    + member(previous) + ", and " + symbol.qualifiedName() + ", of " + member(symbol)
+                    + ", differ only in case, and the volume of the class output " + request.classesOutput()
+                    + " does not tell their class files apart", symbol.origin());
+            }
+        }
+    }
+
+    /** The member {@code symbol} names, with its host and where it is declared. */
+    private static String member(SymbolDescriptor symbol) {
+        return symbol.host() + '#' + symbol.member() + " at " + symbol.origin().path() + ':' + symbol.origin().line();
+    }
+
     /** The directories of {@code path}, a path separated by {@code /}, with the last separator; empty for none. */
     private static String directories(String path) {
         return path.substring(0, path.lastIndexOf('/') + 1);
-    }
-
-    /**
-     * {@code name} with every character in one case, as {@link String#equalsIgnoreCase} compares characters, so
-     * two names that differ only in case have the same key.
-     */
-    private static String caseKey(String name) {
-        StringBuilder key = new StringBuilder(name.length());
-        name.codePoints().forEach((int codePoint) ->
-                key.appendCodePoint(Character.toLowerCase(Character.toUpperCase(codePoint))));
-        return key.toString();
-    }
-
-    /**
-     * Whether the volume of {@code classesOutput} does not tell names apart by case. The class output, or while it
-     * does not exist the nearest directory above it that does, is looked up under its own name with one letter in
-     * the other case, going further up while a name has no letter that has another case; the volume does not tell
-     * names apart when that lookup finds the very same directory. The directory asked is therefore the one that
-     * holds the directory looked up: the parent of the class output, or of the existing ancestor looked up instead.
-     */
-    private static boolean foldsCase(Path classesOutput) throws IOException {
-        Path probed = classesOutput.toAbsolutePath().normalize();
-        while (probed != null) {
-            Path name = probed.getFileName();
-            if (name != null && Files.exists(probed)) {
-                Optional<String> otherCase = otherCase(name.toString());
-                if (otherCase.isPresent()) {
-                    Path other = probed.resolveSibling(otherCase.get());
-                    return Files.exists(other) && Files.isSameFile(other, probed);
-                }
-            }
-            probed = probed.getParent();
-        }
-        return false;
-    }
-
-    /** {@code name} with its first letter that has another case in that case; empty when no letter has one. */
-    private static Optional<String> otherCase(String name) {
-        for (int index = 0; index < name.length(); index++) {
-            char letter = name.charAt(index);
-            char other = Character.isUpperCase(letter) ? Character.toLowerCase(letter) : Character.toUpperCase(letter);
-            if (other != letter) {
-                return Optional.of(name.substring(0, index) + other + name.substring(index + 1));
-            }
-        }
-        return Optional.empty();
     }
 
     /**
@@ -470,15 +496,27 @@ public final class GenerationOutput {
 
     /**
      * Writes {@code manifest} beside {@code target} and moves it into place, so no run is ever left with half a
-     * manifest, which every later run would refuse to read.
+     * manifest, which every later run would refuse to read. A write or a move that fails removes the temporary file it
+     * wrote, and nothing else that stands there, such as a directory.
      */
     private static void replace(Path target, CompileManifest manifest) throws IOException {
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
-        ManifestCodec.writeCompile(temporary, manifest);
         try {
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException unsupported) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            ManifestCodec.writeCompile(temporary, manifest);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException failure) {
+            try {
+                if (Files.isRegularFile(temporary, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.delete(temporary);
+                }
+            } catch (IOException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
         }
     }
 

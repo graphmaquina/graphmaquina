@@ -18,8 +18,9 @@ import java.util.Optional;
  * Error, a checked exception included, stops phase 2 where it stood: {@link #statesWritten()} is PARTIAL,
  * {@link #applied()} lists the entities whose setter returned, {@link #failedEntity()} the one whose setter threw,
  * which may or may not have been written, and {@link #pending()} the ones never tried. A setter's Error propagates
- * unchanged instead of this exception. The journal still lists the actions that ran: their external effects happened
- * although the states did not move, or moved only in part.
+ * unchanged instead of this exception. When the cause is an InterruptedException, the engine interrupts the thread
+ * again. The journal still lists the actions that ran: their external effects happened although the states did not
+ * move, or moved only in part.
  */
 public final class CommitFailedException extends CallFailedException {
 

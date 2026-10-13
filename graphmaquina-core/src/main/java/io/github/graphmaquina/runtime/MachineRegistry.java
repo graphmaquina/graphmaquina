@@ -1,17 +1,31 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
+import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.RecoveryRule;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.SubmachineSpec;
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
+import io.github.graphmaquina.internal.CallFailureFlows;
+import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Interrupts;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -65,11 +79,27 @@ import lombok.RequiredArgsConstructor;
  * {@link #close()} closes the default executors of the registry's machines. A standalone machine runs in a registry
  * of its own too, but that registry is internal and unreachable, so nothing can close it, and the machine's default
  * executor is never closed.
+ *
+ * <p>A cascade, the exit of a sub-machine and a watch reaction each run one level deeper on the stack of the calling
+ * thread, so that stack bounds maxCascadeDepth and maxWatchChain too. A call that outgrows it meets a
+ * StackOverflowError, which reaches the actions on its way up, as {@link io.github.graphmaquina.api.TransitionContext}
+ * says, and otherwise ends the call; in a watch chain, the root and the reactions before the one that overflowed have
+ * committed already. Neither the registry nor the thread is left unusable by it: later calls run as before.
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {
 
+    /**
+     * How many machines {@link #anyMachineFor} scans for the very key instance asked for before it hashes the key: a
+     * registry that holds more hashes it at once. A call asks with the machines' own key instances for its root, the
+     * entities it logged and its sub-machine bindings, and a few comparisons cost less than one hash; another instance
+     * of a registered key, which an application may pass, and a key of no machine resolve through the map.
+     */
+    private static final int REFERENCE_SCAN_LIMIT = 8;
+
     private final Map<MachineKey<?, ?, ?>, DefaultStateMachine<?, ?, ?>> machines = new LinkedHashMap<>();
+    /** The machines in the order they joined, for the scan of {@link #REFERENCE_SCAN_LIMIT}. */
+    private final List<DefaultStateMachine<?, ?, ?>> assembled = new ArrayList<>();
     private final Map<MachineKey<?, ?, ?>, List<Watcher<?, ?, ?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
     private final Map<Class<?>, MachineKey<?, ?, ?>> facades = new LinkedHashMap<>();
     private final int maxCascadeDepth;
@@ -123,11 +153,13 @@ public final class MachineRegistry implements AutoCloseable {
                         + edge.get() + " implicitly and does not declare asyncTimeout(...)");
             }
         }
+        initializeRuntime();
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             DefaultStateMachine<?, ?, ?> machine =
                     builder.build(registry, List.copyOf(bindings.getOrDefault(builder.key(), List.of())));
             registry.machines.put(machine.key(), machine);
+            registry.assembled.add(machine);
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent()) {
                 registry.facades.put(facade.get(), machine.key());
@@ -137,13 +169,47 @@ public final class MachineRegistry implements AutoCloseable {
         return registry;
     }
 
+    /**
+     * Every class that has a static initializer in the packages a call runs through: api, error, internal and runtime.
+     * A static initializer that does not complete, because a StackOverflowError interrupts it at the bottom of a deep
+     * call for one, leaves its class unusable for as long as the class is loaded, and every subclass with it (JLS
+     * 12.4.2): each later use throws NoClassDefFoundError, as every later failure of every call would, had it been
+     * CallFailedException's. A class without one cannot be left so once its superclass is initialized. A test over the
+     * compiled classes keeps this list complete, and keeps those packages free of switches on another class's enum,
+     * whose synthetic holder class has a static initializer that no source can name.
+     */
+    static List<Class<?>> staticallyInitialized() {
+        return List.of(ActionStatus.class, CallPhase.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class,
+                OutcomeStatus.class, RejectionKind.class, StatesWritten.class, TransitionKind.class,
+                CallFailedException.class, CallFailureFlows.class, FrozenFlow.class, Await.class, CallLog.class,
+                CommitSummary.class, FlowHandle.Hook.class, Observers.class, Reentrancy.class, Submit.class,
+                Transaction.Hold.class, UnitOfWork.class, Watcher.NoOwner.class);
+    }
+
+    /**
+     * Initialises each class of {@link #staticallyInitialized()} now, on the stack that assembles the registry, so
+     * that none of their static initializers runs for the first time inside a call, where a call that overflows its
+     * stack would leave the class unusable. A class already initialized costs a check.
+     */
+    private static void initializeRuntime() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        for (Class<?> type : staticallyInitialized()) {
+            try {
+                lookup.ensureInitialized(type);
+            } catch (IllegalAccessException unreachable) {
+                // Each class is in this module and accessible from this package.
+                throw new IllegalStateException(unreachable);
+            }
+        }
+    }
+
     /** A watch must point to one of the machines being assembled; for a standalone machine, that is itself. */
     private static <E, S extends Enum<S>, T extends Enum<T>> void checkWatches(GraphDefinition<E, S, T> definition,
                                                                                Set<MachineKey<?, ?, ?>> keys) {
         for (S state : definition.key().states().getEnumConstants()) {
             Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
             if (watch.isPresent() && !keys.contains(watch.get().peer())) {
-                throw new IllegalStateException("the watch of " + definition.key() + "." + state + " points to "
+                throw new IllegalStateException("the watch of " + definition.key() + "." + state.name() + " points to "
                         + watch.get().peer() + ", which is not in the registry");
             }
         }
@@ -166,11 +232,11 @@ public final class MachineRegistry implements AutoCloseable {
             SubmachineSpec<E, S, T, ?, ?, ?> spec = submachine.get();
             Optional<StateMachines.Builder<?, ?, ?>> child = Optional.ofNullable(builders.get(spec.childKey()));
             if (child.isEmpty()) {
-                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state + " is "
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state.name() + " is "
                         + spec.childKey() + ", which is not in the registry");
             }
             if (child.get().definition() != spec.child()) {
-                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state.name()
                         + " was built from another definition of " + spec.childKey() + " than the registered machine");
             }
             bindings.computeIfAbsent(spec.childKey(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
@@ -193,7 +259,7 @@ public final class MachineRegistry implements AutoCloseable {
 
         /** {@code <Key>.<FROM> -<ID>->}, which names the edge in its graph. */
         String describe() {
-            return graph.key() + "." + edge.from() + " -" + edge.transition() + "->";
+            return graph.key() + "." + edge.from().name() + " -" + edge.transition().name() + "->";
         }
     }
 
@@ -334,10 +400,22 @@ public final class MachineRegistry implements AutoCloseable {
 
     /**
      * Closes only the default executors of its machines, blocking until the operations they already accepted end.
-     * An executor the application supplied is neither closed nor awaited.
+     * An executor the application supplied is neither closed nor awaited. An interrupt of the calling thread, before
+     * or during the wait, reaches every default executor not yet closed, not only the one awaited: each interrupts the
+     * threads of its operations, so a call waiting for a stage aborts as interrupted, and this method still waits for
+     * them to end, then returns with the thread interrupted.
+     *
+     * @throws IllegalStateException before it closes anything, on a thread that runs an operation of one of those
+     *         default executors, an asynchronous call or a {@code supplyAsync} supplier, which closing that executor
+     *         would wait for forever, whatever calls it there: an action, a hook or a watch reaction of the call, a
+     *         call a hook starts, or a dependent that completing the operation's future runs on that thread. The
+     *         registry stays open.
      */
     @Override
     public void close() {
+        for (DefaultStateMachine<?, ?, ?> machine : machines.values()) {
+            machine.refuseCloseFromOwnTask();
+        }
         for (DefaultStateMachine<?, ?, ?> machine : machines.values()) {
             machine.closeIfOwned();
         }
@@ -358,6 +436,14 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     DefaultStateMachine<?, ?, ?> anyMachineFor(MachineKey<?, ?, ?> key) {
+        if (assembled.size() <= REFERENCE_SCAN_LIMIT) {
+            for (int index = 0; index < assembled.size(); index++) {
+                DefaultStateMachine<?, ?, ?> registered = assembled.get(index);
+                if (registered.key() == key) {
+                    return registered;
+                }
+            }
+        }
         DefaultStateMachine<?, ?, ?> machine = machines.get(key);
         if (machine == null) {
             throw new UnknownPeerMachineException(key, machines.keySet());
@@ -401,11 +487,12 @@ public final class MachineRegistry implements AutoCloseable {
      * After the root commit: for each moved entity, every watcher of its machine resolves the owner; an owner is
      * re-evaluated only once even if several of its peers moved. A registry that indexed no watcher answers before
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
-     * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
-     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code log} is the
-     * log of the call whose commit is dispatched: at TRACE it logs each lookup once, with the owner it found, once
-     * that owner is a target, or what it threw, and when that call logs, each reaction's log names its id as the
-     * trigger.
+     * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException, and an
+     * InterruptedException interrupts the thread again. Each lookup runs with the reentrancy marker set, so one that
+     * calls execute or reevaluate ends that way too. {@code log} is the log of the call whose commit is dispatched: at
+     * TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner is a target,
+     * the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each reaction's
+     * log names its id as the trigger.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
@@ -417,13 +504,13 @@ public final class MachineRegistry implements AutoCloseable {
         for (EntityRef moved : summary.movedEntities()) {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
-                    Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
-                    if (owner.isPresent()) {
-                        targets.putIfAbsent(owner.get(), watcher);
+                    Watcher.Lookup lookup = watcher.lookUpOwner(moved.instance());
+                    if (lookup instanceof Watcher.Watched watched) {
+                        targets.putIfAbsent(watched.owner(), watcher);
                     }
                     if (log.trace()) {
-                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
-                                + " owner=" + (owner.isPresent() ? CallLog.show(owner.get()) : "none"));
+                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved) + " "
+                                + traced(lookup));
                     }
                 } catch (RuntimeException e) {
                     traceLookupThrew(log, watcher, moved, e);
@@ -431,6 +518,7 @@ public final class MachineRegistry implements AutoCloseable {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(),
                             new UndeclaredThrowableException(e)));
@@ -441,6 +529,20 @@ public final class MachineRegistry implements AutoCloseable {
             reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
         }
         return List.copyOf(reactions);
+    }
+
+    /**
+     * How the TRACE line of an owner lookup names what it found: {@code owner=} and the owner in the watched state,
+     * {@code owner-state=} and the state of an owner outside it, or {@code owner=none} when it found no owner.
+     */
+    private static String traced(Watcher.Lookup lookup) {
+        if (lookup instanceof Watcher.Watched watched) {
+            return "owner=" + CallLog.show(watched.owner());
+        }
+        if (lookup instanceof Watcher.Unwatched unwatched) {
+            return "owner-state=" + unwatched.state().name();
+        }
+        return "owner=none";
     }
 
     /** Logs at TRACE that the lookup of {@code watcher} threw {@code error} for the moved entity {@code moved}. */
@@ -487,8 +589,10 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one level deeper
-         * than the step that ended it; the default is 10, and a value below 1 is refused.
+         * Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at its own
+         * depth: one level below the step that ended the child or, when the child stood in a terminal state while its
+         * parent was still running the step that entered the bound state, one level below that step. The default is
+         * 10, and a value below 1 is refused.
          */
         public Builder maxCascadeDepth(int depth) {
             requireUnused();
@@ -501,7 +605,9 @@ public final class MachineRegistry implements AutoCloseable {
 
         /**
          * Bounds how many watch reactions may follow one another; the default is 10, and a value below 1 is
-         * refused.
+         * refused. A call that an after-commit hook starts is a new root, which this bound never counts: the watch
+         * reactions it triggers begin a chain of their own, so hooks that keep starting calls recur until the stack of
+         * the thread overflows, as the class description says.
          */
         public Builder maxWatchChain(int chain) {
             requireUnused();

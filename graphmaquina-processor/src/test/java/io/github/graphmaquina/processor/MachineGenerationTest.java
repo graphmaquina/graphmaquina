@@ -21,6 +21,8 @@ import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The companion generated for a machine: what its source writes for the key, the graph and the operations, how it
@@ -74,11 +76,113 @@ class MachineGenerationTest {
 
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime")
-                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class DocsRuntime"),
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\", \"rawtypes\"})\n"
+                        + "public final class DocsRuntime"),
                 result.generated("fx.DocsRuntime"));
         assertTrue(result.generated("fx.LibraryRuntime")
-                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class LibraryRuntime"),
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\", \"rawtypes\"})\n"
+                        + "public final class LibraryRuntime"),
                 result.generated("fx.LibraryRuntime"));
+    }
+
+    /**
+     * A raw type the author writes and suppresses in a declaration they own, as the input of an operation or as an
+     * entity that is an inner class of a generic class used raw, is written back by the companions, where the author
+     * cannot suppress anything, so neither a companion nor a set compiled with {@code -Xlint:all -Werror} may warn
+     * about it.
+     */
+    @Test
+    void rawTypesTheAuthorSuppressesKeepAStrictBuildGreen() {
+        for (String input : List.of("java.util.List", "Class", "java.util.List<Comparable>")) {
+            Map<String, String> sources = TypedFixtures.minimal();
+            String declared = "Outcome<Doc, DocStatus, DocTransition> publish(Doc doc";
+            sources.put("fx.Docs", sources.get("fx.Docs").replace(declared + ");",
+                    "@SuppressWarnings(\"rawtypes\")\n    " + declared + ", " + input + " input);"));
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertTrue(result.success(), input + "\n" + result.describe());
+        }
+        Map<String, String> inner = new LinkedHashMap<>();
+        inner.put("fx.DocStatus", "package fx;\npublic enum DocStatus { DRAFT, REVIEW, PUBLISHED }\n");
+        inner.put("fx.DocTransition", "package fx;\npublic enum DocTransition { SUBMIT, PUBLISH }\n");
+        inner.put("fx.Store", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Store<T> {
+                    public final class Doc {
+                        @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                        @GraphProperty public String id() { return "doc"; }
+                        public DocStatus status() { return status; }
+                        public void status(DocStatus value) { status = value; }
+                    }
+                }
+                """);
+        inner.put("fx.Docs", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
+                    state = StoreDocRefs.Status.class, id = StoreDocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "submit first")
+                @DocsGraph.StatePolicy(state = REVIEW, otherwise = "publish next")
+                @SuppressWarnings("rawtypes")
+                public interface Docs extends Machine<Store.Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Store.Doc, DocStatus, DocTransition> submit(Store.Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED)
+                    Outcome<Store.Doc, DocStatus, DocTransition> publish(Store.Doc doc);
+                }
+                """);
+        inner.put("fx.Library", Fixtures.LIBRARY.replace("    Pages pages();\n", ""));
+
+        Compilation.Result result = Compilation.compileTyped(inner);
+
+        assertTrue(result.success(), result.describe());
+    }
+
+    /**
+     * Deprecating a type the generated files name is as ordinary a step: a host, the machine, its state enum or the
+     * machine it watches. The vocabularies and the references containers the generator writes name such a type where
+     * the author cannot suppress anything, and the build compiles them with {@code -Xlint:all -Werror}, so neither a
+     * {@code [deprecation]} nor a {@code [removal]} warning may come out of them either; the author suppresses the
+     * warnings of the sources they own that name the type, listed beside it. The machine names its states qualified,
+     * since no annotation suppresses what javac says about a static import of a deprecated enum.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "fx.DocActions | ''",
+        "fx.Docs | fx.Library",
+        "fx.DocStatus | fx.Doc fx.DocActions fx.Docs",
+        "fx.Pages | fx.Docs fx.Library"})
+    void deprecatedTypesTheGeneratedFilesNameKeepAStrictBuildGreen(String deprecated, String users) {
+        for (String deprecation : List.of("@Deprecated", "@Deprecated(since = \"2\", forRemoval = true)")) {
+            Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                    Fixtures.DOCS_BODY, Fixtures.LIBRARY);
+            sources.put("fx.Docs", sources.get("fx.Docs").replace("import static fx.DocStatus.*;\n", "")
+                    .replaceAll("\\b(DRAFT|REVIEW|PUBLISHED|ARCHIVED)\\b", "DocStatus.$1"));
+            annotate(sources, deprecated, deprecation);
+            for (String user : users.split(" ")) {
+                if (!user.isEmpty()) {
+                    annotate(sources, user, "@SuppressWarnings({\"deprecation\", \"removal\"})");
+                }
+            }
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertTrue(result.success(), deprecation + " " + deprecated + "\n" + result.describe());
+        }
+    }
+
+    /** Writes {@code annotation} on the top-level type the source of {@code name} declares, before its modifiers. */
+    private static void annotate(Map<String, String> sources, String name, String annotation) {
+        String source = sources.get(name);
+        int declaration = source.indexOf("\npublic ") + 1;
+        sources.put(name, source.substring(0, declaration) + annotation + "\n" + source.substring(declaration));
     }
 
     /**
@@ -149,6 +253,61 @@ class MachineGenerationTest {
         assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)"), source);
         assertTrue(source.contains(".endWatch()"), source);
         assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
+    }
+
+    /**
+     * An operation of the companion takes its parameters under the names the facade's method declares, and the
+     * NullPointerException it throws for a null entity or input names that parameter as declared. A declared name the
+     * companion already uses, here that of its field {@code stateMachine}, is suffixed in the source only.
+     */
+    @Test
+    void anOperationTakesItsParametersUnderTheNamesTheFacadeDeclares() throws Exception {
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.DocTransition", "package fx; public enum DocTransition { PUBLISH, AUTO_PUBLISH }");
+        sources.put("fx.Docs", sources.get("fx.Docs").replace("publish(Doc doc);", """
+                publish(Doc theDocument, String theReason);
+                    @DocsGraph.Transition(id = AUTO_PUBLISH, from = DRAFT, to = PUBLISHED)
+                    Outcome<Doc, DocStatus, DocTransition> autoPublish(Doc stateMachine);
+                """));
+        sources.put("fx.Consumer", """
+                package fx;
+                import io.github.graphmaquina.runtime.StateMachines;
+                import java.util.ArrayList;
+                import java.util.List;
+                public final class Consumer {
+                    public static List<String> refusals() {
+                        Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(new DocActions()))
+                                .state(Doc::status, Doc::status).build());
+                        List<String> messages = new ArrayList<>();
+                        for (Runnable call : List.<Runnable>of(() -> docs.publish(null, "late"),
+                                () -> docs.publish(new Doc(), null), () -> docs.autoPublish(null))) {
+                            try {
+                                call.run();
+                                messages.add("accepted");
+                            } catch (NullPointerException refused) {
+                                messages.add(refused.getMessage());
+                            }
+                        }
+                        return messages;
+                    }
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.DocsRuntime");
+        assertTrue(source.contains("publish(Doc theDocument, java.lang.String theReason) {"), source);
+        assertTrue(source.contains("Objects.requireNonNull(theDocument, \"theDocument\");"), source);
+        assertTrue(source.contains("Objects.requireNonNull(theReason, \"theReason\");"), source);
+        assertTrue(source.contains("return stateMachine.execute(theDocument, DocTransition.PUBLISH, theReason);"),
+                source);
+        assertTrue(source.contains("autoPublish(Doc stateMachine2) {"), source);
+        assertTrue(source.contains("Objects.requireNonNull(stateMachine2, \"stateMachine\");"), source);
+        assertTrue(source.contains("return stateMachine.execute(stateMachine2, DocTransition.AUTO_PUBLISH);"),
+                source);
+        assertEquals(List.of("theDocument", "theReason", "stateMachine"),
+                result.load("fx.Consumer").getMethod("refusals").invoke(null));
     }
 
     @Test

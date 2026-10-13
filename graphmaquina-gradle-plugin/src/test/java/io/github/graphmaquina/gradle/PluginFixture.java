@@ -431,11 +431,13 @@ public final class PluginFixture {
                     val generator = tasks.named<GenerateGraphApi>("generateStateGraphApi")
                             .flatMap { it.javaLauncher }
                     val toolchain = javaToolchains.launcherFor(java.toolchain)
+                    val compiler = tasks.named<JavaCompile>("compileJava").flatMap { it.javaCompiler }
                     doLast {
                         println("GENERATOR_LAUNCHER=" + generator.get().executablePath.asFile.absolutePath)
                         println("GENERATOR_LANGUAGE_VERSION="
                                 + generator.get().metadata.languageVersion.asInt())
                         println("TOOLCHAIN_LAUNCHER=" + toolchain.get().executablePath.asFile.absolutePath)
+                        println("COMPILER_HOME=" + compiler.get().metadata.installationPath.asFile.absolutePath)
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
                         println("DAEMON_LANGUAGE_VERSION=" + Runtime.version().feature())
                     }
@@ -1332,6 +1334,24 @@ public final class PluginFixture {
      */
     public List<String> localExportsOf(String relativePath) {
         return exportsOf(readJson(directory.resolve(relativePath)));
+    }
+
+    /**
+     * The {@code origin.path} the index the project's jar publishes gives the machine {@code facade}: the path of its
+     * source, relative to the project directory.
+     *
+     * @param facade the qualified name of the machine's facade
+     * @return the published origin path
+     * @throws IllegalStateException if that index declares no such machine
+     */
+    public String publishedOrigin(String facade) {
+        for (JsonElement graph : readJarJson(EXPORTS).getAsJsonObject("model").getAsJsonArray("graphs")) {
+            JsonObject machine = graph.getAsJsonObject();
+            if (facade.equals(machine.get("facade").getAsString())) {
+                return machine.getAsJsonObject("origin").get("path").getAsString();
+            }
+        }
+        throw new IllegalStateException("the index the jar publishes declares no machine " + facade);
     }
 
     private static List<String> exportsOf(JsonObject index) {

@@ -37,18 +37,19 @@ final class Bindings {
     /**
      * Whether a method taking {@code parameters} and returning {@code returned} is usable as {@code role} of
      * {@code machine}. The types are the ones the method has where it is called, so a contract of a generic
-     * base is judged with the host's own entity and states.
+     * base is judged with the host's own entity and states. An asynchronous result is a subtype of the completion
+     * stage of the verdict, never a raw completion stage, which only an unchecked conversion would make one.
      */
     boolean fits(List<? extends TypeMirror> parameters, TypeMirror returned, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
         return switch (role) {
             case ACTION -> parameters.size() == 1
                     && signatures.same(parameters.get(0), signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states(), machine.transitions()))
                     && (signatures.same(returned, signatures.declared(ACTION_OUTCOME))
-                        || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(ACTION_OUTCOME))));
+                        || signatures.subtypeOf(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(ACTION_OUTCOME))));
             case GUARD -> parameters.size() == 1
                     && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states(), machine.transitions()))
                     && (signatures.same(returned, signatures.declared(GUARD_RESULT))
-                        || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
+                        || signatures.subtypeOf(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
             case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
                     && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states(), machine.transitions()))))
                     && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;

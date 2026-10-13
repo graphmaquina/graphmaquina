@@ -121,7 +121,7 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
     }
 
     /** The edges leaving {@code state}, in the order of {@link #transitions()}. */
-    public List<TransitionOutline> outgoing(String state) {
+    public List<TransitionOutline> outgoing(@NonNull String state) {
         List<TransitionOutline> leaving = new ArrayList<>();
         for (TransitionOutline edge : transitions) {
             if (edge.from().equals(state)) {

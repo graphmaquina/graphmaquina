@@ -7,9 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
@@ -22,6 +24,7 @@ import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.AmbiguousParentException;
+import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
@@ -34,10 +37,13 @@ import io.github.graphmaquina.fixtures.Billing.PaymentStatus;
 import io.github.graphmaquina.fixtures.Billing.PaymentTransition;
 import io.github.graphmaquina.fixtures.Billing.RiskStatus;
 import io.github.graphmaquina.fixtures.Billing.RiskTransition;
+import io.github.graphmaquina.fixtures.LibraryLog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,8 +51,9 @@ import org.junit.jupiter.api.Test;
  * parent is in the bound node, or leaving it, steps as usual; one whose parent is elsewhere is rejected as DETACHED,
  * and one with no parent is a free machine. Two active parents, a lookup that breaks its contract or throws, and a
  * parent that cannot be read abort the call: in RESOLVE at the root, in ACTION and poisoning inside a cascade or an
- * exit. A parent that leaves one bound node for another that binds the same child holds it in the node it enters. An
- * identifier that a binding maps as an exit is refused from the bound node as RESERVED_EXIT.
+ * exit. Under COLLECT, a parent or a child that cannot be read stops the cascade at once, while the abort of a lookup
+ * that throws is collected. A parent that leaves one bound node for another that binds the same child holds it in the
+ * node it enters. An identifier that a binding maps as an exit is refused from the bound node as RESERVED_EXIT.
  */
 class SubmachineBindingTest {
 
@@ -760,6 +767,128 @@ class SubmachineBindingTest {
             assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
             assertEquals(RiskStatus.SCORING, deposit.risk());
         }
+    }
+
+    /** The start of the message of a payment's abort for what its binding check of DEPOSIT could not read. */
+    private static final String CHECKING_DEPOSIT = "transition aborted in Payment/PaymentStatus AUTHORIZING -CAPTURE->"
+            + " ?: checking the binding Booking/BookingStatus.DEPOSIT threw ";
+
+    /**
+     * Runs CANCEL on a new booking whose action cascades CAPTURE over {@code first}, then over a free payment, under
+     * COLLECT, and lets what the cascade throws through. Returns what the call threw, once it checked that the action
+     * received that very failure, in ACTION, and that nothing was written.
+     */
+    private TransitionAbortedException collectThrough(MachineRegistry registry, Payment first) {
+        Payment free = new Payment("p2", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b2", BookingStatus.REQUESTED);
+        List<RuntimeException> caught = new ArrayList<>();
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            try {
+                ctx.cascadeAll(PAYMENTS, List.of(first, free), PaymentTransition.CAPTURE, CascadePolicy.COLLECT);
+            } catch (RuntimeException failure) {
+                caught.add(failure);
+                throw failure;
+            }
+            return ActionOutcome.ok();
+        };
+        try (registry) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(BOOKINGS).execute(booking, BookingTransition.CANCEL));
+            assertSame(single(caught), error);
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertEquals(BookingStatus.REQUESTED, booking.status());
+            assertEquals(List.of(PaymentStatus.AUTHORIZING, PaymentStatus.AUTHORIZING),
+                    List.of(first.status(), free.status()));
+            return error;
+        }
+    }
+
+    /**
+     * A parent whose state is null is no failure of the call, as a cascaded payment's own null state is not: COLLECT
+     * stops at the payment whose binding check found it, the free payment after it never runs, and the call ends in
+     * the abort of that check, which carries the UninitializedStateException. At TRACE, that abort logs the one poison
+     * line of the call, and no element is rolled back.
+     */
+    @Test
+    void aParentWithAnUninitializedStateStopsCollectAtOnce() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        new Booking("b1", null).attachDeposit(deposit);
+        try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            TransitionAbortedException error = collectThrough(billing.registry(), deposit);
+            assertEquals(List.of(), billing.paymentActions.calls);
+            assertEquals(TransitionAbortedException.class, error.getClass());
+            assertInstanceOf(UninitializedStateException.class, error.getCause());
+            assertTrue(error.getMessage().startsWith(CHECKING_DEPOSIT), error.getMessage());
+            List<String> lines = log.records().stream().map(LogRecord::getMessage)
+                    .filter((String line) -> line.contains(" poison ") || line.contains(" collect-rollback "))
+                    .map((String line) -> line.substring(line.indexOf(' ') + 1)).toList();
+            assertEquals(List.of("depth=1 poison error=" + error), lines);
+        }
+    }
+
+    /**
+     * Another instance with the identity of the payment is no failure of the call, as an ambiguous cascaded payment is
+     * not: COLLECT stops at the payment whose binding check met it, and the free payment after it never runs.
+     */
+    @Test
+    void aChildOfThatAnswersAnotherInstanceOfTheChildStopsCollectAtOnce() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        Payment loaded = new Payment("d1", PaymentStatus.AUTHORIZING);
+        billing.depositOf = (Booking booking) -> Optional.of(loaded);
+        TransitionAbortedException error = collectThrough(billing.registry(), deposit);
+        assertEquals(List.of(), billing.paymentActions.calls);
+        assertEquals(TransitionAbortedException.class, error.getClass());
+        AmbiguousIdentityException cause = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
+        assertSame(deposit, cause.first());
+        assertSame(loaded, cause.second());
+        assertTrue(error.getMessage().startsWith(CHECKING_DEPOSIT), error.getMessage());
+    }
+
+    /**
+     * A state getter that throws for the parent is no failure of the call either, as one that throws for a cascaded
+     * payment is not: COLLECT stops at once.
+     */
+    @Test
+    void aParentWhoseGetterThrowsStopsCollectAtOnce() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking locked = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        IllegalStateException failure = new IllegalStateException("the booking row is locked");
+        MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(billing.bookings).state((Booking booking) -> {
+                    if (booking == locked) {
+                        throw failure;
+                    }
+                    return booking.status();
+                }, Booking::setStatus).identity(Booking::id))
+                .add(billing.paymentMachine())
+                .build();
+        TransitionAbortedException error = collectThrough(registry, deposit);
+        assertEquals(List.of(), billing.paymentActions.calls);
+        assertEquals(TransitionAbortedException.class, error.getClass());
+        assertSame(failure, error.getCause());
+        assertTrue(error.getMessage().startsWith(CHECKING_DEPOSIT), error.getMessage());
+    }
+
+    /**
+     * A parentOf that throws is a lookup of the binding, whose failure the engine wraps as it wraps a guard's: the
+     * abort of the check is a failure of the call, so COLLECT collects it and runs the free payment after it.
+     */
+    @Test
+    void aParentOfThatThrowsInsideCollectIsCollected() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        IllegalStateException failure = new IllegalStateException("the ledger is down");
+        billing.bookingOf = (Payment payment) -> {
+            if (payment == deposit) {
+                throw failure;
+            }
+            return payment.booking();
+        };
+        CascadeException error = assertInstanceOf(CascadeException.class, collectThrough(billing.registry(), deposit));
+        assertEquals(List.of("Payment#p2:AUTHORIZING-CAPTURE>CAPTURED@1"), billing.paymentActions.calls);
+        TransitionAbortedException collected = single(error.errors());
+        assertSame(failure, collected.getCause());
     }
 
     /**

@@ -39,7 +39,9 @@ import java.util.TreeMap;
  * <p>The sub-machine bound to a state lives under {@code /submachines/<state>}: its child machine at
  * {@code child/entity}, {@code child/states} and {@code child/transitions}, as a watch records its peer, and at
  * {@code exits/<terminal>} the identifier that each terminal state of the child exits through. A state without one
- * has no path, and neither lookup of the binding is ever invoked.
+ * has no path, and neither lookup of the binding is ever invoked. The child's own graph is not recorded, so two
+ * parents over children of the same key whose graphs differ capture the same snapshot; capture the child's
+ * definition on its own to pin it.
  *
  * <p>The map is immutable and always in canonical order — ascending {@link String#compareTo} of the path —
  * which is also the order {@link #serialize()} writes and the order a parsed snapshot comes back in.

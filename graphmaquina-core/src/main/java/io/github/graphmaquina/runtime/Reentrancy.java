@@ -10,11 +10,16 @@ import io.github.graphmaquina.error.ReentrantTransitionException;
  * sub-machine's childOf or parentOf, a watch function, a state accessor, an identity function or an observer callback,
  * whatever the machine or entity. After-commit hooks run once it is released, and a reaction's selected edge runs as a
  * root of its own once the watch functions are done. Carries nothing else. Each holder sets it once everything else is
- * prepared and releases it in a finally, so no failure leaves it set.
+ * prepared and releases it with a store as the first statement of a finally, so no failure leaves it set, not even a
+ * StackOverflowError that unwinds through that finally with no stack left for a call.
  */
 final class Reentrancy {
 
-    private static final ThreadLocal<Boolean> ACTIVE = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    /**
+     * The thread's cell: its only element is the marker. The thread keeps it, so that a release is a store into it,
+     * which needs no stack, where a call, to ThreadLocal.set for one, could overflow again and leave the marker set.
+     */
+    private static final ThreadLocal<boolean[]> ACTIVE = ThreadLocal.withInitial(() -> new boolean[1]);
 
     private Reentrancy() { }
 
@@ -23,21 +28,23 @@ final class Reentrancy {
      * without claiming the marker.
      */
     static void check(MachineKey<?, ?, ?> key, Object entity) {
-        if (ACTIVE.get()) {
+        if (ACTIVE.get()[0]) {
             throw new ReentrantTransitionException(key, entity);
         }
     }
 
-    static void enter(MachineKey<?, ?, ?> key, Object entity) {
-        check(key, entity);
-        ACTIVE.set(Boolean.TRUE);
-    }
-
     /**
-     * Releases the marker. The thread keeps its entry, set to false: a removed entry is created again by the next
-     * read, which every call makes.
+     * Rejects a call as {@link #check} does, then claims the marker and returns the thread's cell, which the caller
+     * releases with {@code cell[0] = false} as the first statement of the finally of the try that follows: nothing
+     * between the claim and the try can throw. The cell is read before the marker is claimed, so a read that
+     * overflows leaves the marker as it was.
      */
-    static void exit() {
-        ACTIVE.set(Boolean.FALSE);
+    static boolean[] enter(MachineKey<?, ?, ?> key, Object entity) {
+        boolean[] cell = ACTIVE.get();
+        if (cell[0]) {
+            throw new ReentrantTransitionException(key, entity);
+        }
+        cell[0] = true;
+        return cell;
     }
 }

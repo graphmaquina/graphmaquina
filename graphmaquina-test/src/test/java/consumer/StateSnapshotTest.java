@@ -2,7 +2,6 @@ package consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -14,13 +13,15 @@ import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
  * Contract of the entity state snapshot. Tracking is explicit, so an entity nobody named can move
- * freely; a captured value is frozen while every later read goes back to the entity; a state observed
- * as null is a value like any other; and the failure of {@code assertUnchanged} is read off the fields
- * of the {@link GraphAssertionError} rather than off its type alone.
+ * freely; a captured value is frozen while every later read goes back to the entity; a getter that
+ * answers null observes no state, reported as an empty state and never as null, which is a value like
+ * any other; and the failure of {@code assertUnchanged} is read off the fields of the
+ * {@link GraphAssertionError} rather than off its type alone.
  */
 class StateSnapshotTest {
 
@@ -35,8 +36,8 @@ class StateSnapshotTest {
                 .track(TestDomain.KEY, second, Entity::state)
                 .capture();
         second.setState(State.READY);
-        assertEquals(List.of(new StateChange(TestDomain.KEY, second, State.NEW, State.READY)),
-                snapshot.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, second, Optional.of(State.NEW),
+                Optional.of(State.READY))), snapshot.changes());
         assertThrows(GraphAssertionError.class, snapshot::assertUnchanged);
     }
 
@@ -60,8 +61,8 @@ class StateSnapshotTest {
                 .track(TestDomain.KEY, entity, Entity::state).capture();
         assertEquals(List.of(), snapshot.changes());
         entity.setState(State.READY);
-        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, State.NEW, State.READY)),
-                snapshot.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, Optional.of(State.NEW),
+                Optional.of(State.READY))), snapshot.changes());
         entity.setState(State.NEW);
         assertEquals(List.of(), snapshot.changes());
         snapshot.assertUnchanged();
@@ -75,8 +76,8 @@ class StateSnapshotTest {
         entity.setState(State.READY);
         StateSnapshot after = StateSnapshot.builder()
                 .track(TestDomain.KEY, entity, Entity::state).capture();
-        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, State.NEW, State.READY)),
-                before.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, Optional.of(State.NEW),
+                Optional.of(State.READY))), before.changes());
         assertEquals(List.of(), after.changes());
     }
 
@@ -89,8 +90,8 @@ class StateSnapshotTest {
         StateSnapshot two = builder.track(TestDomain.KEY, second, Entity::state).capture();
         second.setState(State.READY);
         assertEquals(List.of(), one.changes());
-        assertEquals(List.of(new StateChange(TestDomain.KEY, second, State.NEW, State.READY)),
-                two.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, second, Optional.of(State.NEW),
+                Optional.of(State.READY))), two.changes());
     }
 
     @Test
@@ -104,33 +105,51 @@ class StateSnapshotTest {
         first.setState(State.READY);
         second.setState(State.DONE);
         List<StateChange> changes = snapshot.changes();
-        assertEquals(List.of(new StateChange(TestDomain.KEY, second, State.NEW, State.DONE),
-                new StateChange(TestDomain.KEY, first, State.NEW, State.READY)), changes);
+        assertEquals(List.of(
+                new StateChange(TestDomain.KEY, second, Optional.of(State.NEW), Optional.of(State.DONE)),
+                new StateChange(TestDomain.KEY, first, Optional.of(State.NEW), Optional.of(State.READY))), changes);
         assertThrows(UnsupportedOperationException.class, () -> changes.add(changes.get(0)));
         assertNotSame(changes, snapshot.changes());
     }
 
-    // --- a state observed as null is a value ---------------------------------------------------------
+    // --- a getter that answers null observes no state, which is a value -----------------------------
 
     @Test
-    void aStateThatAppearsIsAChangeFromNull() {
+    void aStateThatAppearsIsAChangeFromNoState() {
         Entity entity = new Entity("e", null);
         StateSnapshot snapshot = StateSnapshot.builder()
                 .track(TestDomain.KEY, entity, Entity::state).capture();
         assertEquals(List.of(), snapshot.changes());
         entity.setState(State.READY);
-        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, null, State.READY)),
-                snapshot.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, Optional.empty(),
+                Optional.of(State.READY))), snapshot.changes());
     }
 
     @Test
-    void aStateThatDisappearsIsAChangeToNull() {
+    void aStateThatAppearsOrDisappearsIsReportedAsEmptyNeverAsNull() {
+        Entity appearing = new Entity("appearing", null);
+        Entity disappearing = new Entity("disappearing", State.READY);
+        StateSnapshot snapshot = StateSnapshot.builder()
+                .track(TestDomain.KEY, appearing, Entity::state)
+                .track(TestDomain.KEY, disappearing, Entity::state)
+                .capture();
+        appearing.setState(State.READY);
+        disappearing.setState(null);
+        List<StateChange> changes = snapshot.changes();
+        assertEquals(Optional.empty(), changes.get(0).before());
+        assertEquals(Optional.of(State.READY), changes.get(0).after());
+        assertEquals(Optional.of(State.READY), changes.get(1).before());
+        assertEquals(Optional.empty(), changes.get(1).after());
+    }
+
+    @Test
+    void aStateThatDisappearsIsAChangeToNoState() {
         Entity entity = new Entity("e", State.READY);
         StateSnapshot snapshot = StateSnapshot.builder()
                 .track(TestDomain.KEY, entity, Entity::state).capture();
         entity.setState(null);
-        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, State.READY, null)),
-                snapshot.changes());
+        assertEquals(List.of(new StateChange(TestDomain.KEY, entity, Optional.of(State.READY),
+                Optional.empty())), snapshot.changes());
         assertThrows(GraphAssertionError.class, snapshot::assertUnchanged);
     }
 
@@ -152,8 +171,10 @@ class StateSnapshotTest {
         assertEquals("state snapshot", error.context());
         assertEquals("changes", error.property());
         assertEquals(List.of(), error.expected());
-        assertEquals(List.of(new StateChange(TestDomain.KEY, first, State.NEW, State.READY),
-                new StateChange(TestDomain.KEY, second, State.NEW, State.DONE)), error.actual());
+        assertEquals(List.of(
+                new StateChange(TestDomain.KEY, first, Optional.of(State.NEW), Optional.of(State.READY)),
+                new StateChange(TestDomain.KEY, second, Optional.of(State.NEW), Optional.of(State.DONE))),
+                error.actual());
     }
 
     // --- tracking is per machine and by reference ----------------------------------------------------
@@ -166,7 +187,8 @@ class StateSnapshotTest {
                 .track(SHELVES, box, Box::shelf)
                 .capture();
         box.setShelf(Shelf.IN);
-        assertEquals(List.of(new StateChange(SHELVES, box, Shelf.OUT, Shelf.IN)), snapshot.changes());
+        assertEquals(List.of(new StateChange(SHELVES, box, Optional.of(Shelf.OUT), Optional.of(Shelf.IN))),
+                snapshot.changes());
 
         StateSnapshot.Builder builder = StateSnapshot.builder().track(FLAGS, box, Box::flag);
         MachineKey<Box, Flag, Toggle> sameValue = MachineKey.of(Box.class, Flag.class, Toggle.class);
@@ -188,7 +210,7 @@ class StateSnapshotTest {
         List<StateChange> changes = snapshot.changes();
         assertEquals(1, changes.size());
         assertSame(other, changes.get(0).entity());
-        assertEquals(Flag.ON, changes.get(0).after());
+        assertEquals(Optional.of(Flag.ON), changes.get(0).after());
     }
 
     // --- configuration errors ------------------------------------------------------------------------
@@ -204,15 +226,19 @@ class StateSnapshotTest {
     }
 
     @Test
-    void aChangeRequiresItsKeyAndItsEntityButNotItsStates() {
+    void aChangeRequiresEveryComponentAndTakesNoStateAsEmpty() {
         Entity entity = new Entity("e", State.NEW);
         assertThrows(NullPointerException.class,
-                () -> new StateChange(null, entity, State.NEW, State.READY));
+                () -> new StateChange(null, entity, Optional.of(State.NEW), Optional.of(State.READY)));
         assertThrows(NullPointerException.class,
-                () -> new StateChange(TestDomain.KEY, null, State.NEW, State.READY));
-        StateChange change = new StateChange(TestDomain.KEY, entity, null, null);
-        assertNull(change.before());
-        assertNull(change.after());
+                () -> new StateChange(TestDomain.KEY, null, Optional.of(State.NEW), Optional.of(State.READY)));
+        assertThrows(NullPointerException.class,
+                () -> new StateChange(TestDomain.KEY, entity, null, Optional.of(State.READY)));
+        assertThrows(NullPointerException.class,
+                () -> new StateChange(TestDomain.KEY, entity, Optional.of(State.NEW), null));
+        StateChange change = new StateChange(TestDomain.KEY, entity, Optional.empty(), Optional.empty());
+        assertEquals(Optional.empty(), change.before());
+        assertEquals(Optional.empty(), change.after());
     }
 
     @Test

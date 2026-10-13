@@ -39,9 +39,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * What {@code build()} reports for the declarations of one graph, one code at a time: duplicates (SG102), blank
- * reasons (SG103), guards declared twice and names that are missing or blank (SG105 to SG107), the initial state
- * (SG201), forbidden failsOn types (SG302), watches (SG403, SG404), edge declarations that need an action, that are
- * repeated or that are never closed (SG507), non-positive timeouts (SG511), and the order the problems come in.
+ * reasons (SG103), guards declared twice or under one name and names that are missing or blank (SG105 to SG107), the
+ * initial state (SG201), forbidden failsOn types (SG302), watches (SG403, SG404), edge declarations that need an
+ * action, that are repeated or that are never closed (SG507), non-positive timeouts (SG511), and the order the problems
+ * come in.
  */
 class DraftProblemsTest {
 
@@ -112,6 +113,26 @@ class DraftProblemsTest {
         Approved approved = new Approved();
         assertEquals(List.of("SG105"), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).guard(approved).guard(approved).endTransition())).codes());
+    }
+
+    /**
+     * A rejection names the guard that rejected, so two guards of one edge may not share a name: two given names, or
+     * the class name two instances of one class take.
+     */
+    @Test
+    void sg105TwoGuardsOfOneName() {
+        InvalidGraphException named = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .guard("approved", new Approved())
+                    .guard("approved", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.reject("no"))
+                    .endTransition()));
+        assertEquals(List.of("SG105"), named.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares two guards named approved", named.problems().get(0).message());
+
+        InvalidGraphException derived = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).guard(new Approved()).guard(new Approved()).endTransition()));
+        assertEquals(List.of("SG105"), derived.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares two guards named Approved", derived.problems().get(0).message());
     }
 
     @Test

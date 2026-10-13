@@ -6,8 +6,8 @@ import io.github.graphmaquina.example.item.Restock;
 
 /**
  * The keys under which the shop's steps and hooks share values in the call's flow. The order's cancel puts the batch
- * its caller passed, or {@code manual} when it passed none; the restock action of each item it cancels reads it and
- * puts that item's restock, and the item's hook applies that restock once the call committed.
+ * its caller passed; the restock action of each item it cancels reads it and puts that item's restock, and the item's
+ * hook applies that restock once the call committed.
  */
 public final class ShopFlow {
 

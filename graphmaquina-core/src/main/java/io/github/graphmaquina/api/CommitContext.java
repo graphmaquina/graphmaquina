@@ -10,8 +10,9 @@ import lombok.NonNull;
  * this hop. The context may be retained after the hook returns, and its metadata stays readable, but the flow the
  * runtime hands a hook works only while that hook runs and only on the thread running it: afterwards every operation
  * of that flow throws {@code StaleContextException}, and on another thread {@code WrongThreadException}. Once the hook
- * returned or threw, that flow no longer holds the call, so a retained context keeps none of the call's values in
- * memory. A hook
+ * returned or threw, that flow no longer holds the call, so a retained context keeps in memory nothing of the call but
+ * the root call's entity, the entity of this hop with its identity and, when the call logs at DEBUG, the root call's
+ * identity: it keeps a value of the flow only when that value is one of them. A hook
  * declared with the entity alone, through {@link HookRef#of}, never sees the context, so never the flow. Two contexts
  * are equal when their components are: the flow the runtime hands a hook is equal only to itself, and two flows of the
  * five-argument constructor are equal when they hold equal values.

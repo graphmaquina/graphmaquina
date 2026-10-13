@@ -390,6 +390,72 @@ public final class DeclarationIndex implements AutoCloseable {
         return marks(declaration, marker, annotationType, true);
     }
 
+    /**
+     * {@link #marks} for {@code local}, written in a local or anonymous class that the body of {@code declaration}
+     * declares. javac reads its name in the bodies of the classes that enclose it there before the body of
+     * {@code declaration}: a member type one of them declares, or inherits from a supertype it spells, takes the name
+     * over, and is never a marker. A name that starts with a local class the member declares, which may be in scope
+     * there, is not taken for {@code annotationType} either. Nor is one below a class whose supertype the index cannot
+     * tell, because it is such a local class, a member of the type of an expression or a type that neither the sources
+     * nor the classpath declare, since that supertype may declare such a member type as well. The refusals this serves
+     * only spare the user a marker that would generate or export nothing, so a marker the generator cannot read is
+     * let through rather than refused.
+     */
+    boolean marksInLocalClass(TypeHeader declaration, TypeHeader.LocalMarker local, String annotationType) {
+        Objects.requireNonNull(declaration, "declaration");
+        Objects.requireNonNull(local, "local");
+        Objects.requireNonNull(annotationType, "annotationType");
+        if (!marks(declaration, local.marker(), annotationType, false)) {
+            return false;
+        }
+        String head = local.marker().name().split("\\.", -1)[0];
+        return !local.localTypes().contains(head)
+                && !localBinding(declaration, local, 0, head, new HashSet<>()).bound();
+    }
+
+    /**
+     * What {@code name}, a simple name, means in the class bodies of {@code local} from the one at {@code from}
+     * outwards, as far as the index can tell: a member type one of them declares or inherits, the first one found.
+     */
+    private LocalBinding localBinding(TypeHeader declaration, TypeHeader.LocalMarker local, int from, String name,
+            Set<String> pending) {
+        for (int at = from; at < local.scopes().size(); at++) {
+            TypeHeader.LocalScope scope = local.scopes().get(at);
+            if (scope.memberTypes().contains(name) || scope.supertypes().isEmpty()) {
+                return LocalBinding.UNKNOWN;
+            }
+            for (String supertype : scope.supertypes().get()) {
+                Optional<TypeHeader> resolved = resolveLocally(declaration, local, at + 1, supertype, pending);
+                if (resolved.isEmpty()) {
+                    return LocalBinding.UNKNOWN;
+                }
+                Optional<TypeHeader> member = memberType(resolved.get(), name, pending)
+                        .filter((TypeHeader type) -> inheritedBy(type, declaration));
+                if (member.isPresent()) {
+                    return new LocalBinding(true, member);
+                }
+            }
+        }
+        return LocalBinding.FREE;
+    }
+
+    /**
+     * The type {@code spelledName} names in the class bodies of {@code local} from the one at {@code from} outwards,
+     * and then in the body of {@code declaration}; empty when the index cannot tell it.
+     */
+    private Optional<TypeHeader> resolveLocally(TypeHeader declaration, TypeHeader.LocalMarker local, int from,
+            String spelledName, Set<String> pending) {
+        List<String> segments = List.of(spelledName.split("\\.", -1));
+        if (local.localTypes().contains(segments.get(0))) {
+            return Optional.empty();
+        }
+        LocalBinding head = localBinding(declaration, local, from, segments.get(0), pending);
+        if (!head.bound()) {
+            return lookup(declaration, spelledName, false, pending);
+        }
+        return head.type().flatMap((TypeHeader type) -> walk(type, segments.subList(1, segments.size()), pending));
+    }
+
     private boolean marks(TypeHeader context, TypeHeader.Marker marker, String annotationType, boolean header) {
         String simpleName = annotationType.substring(annotationType.lastIndexOf('.') + 1);
         if (!marker.name().equals(simpleName) && !marker.name().endsWith('.' + simpleName)) {
@@ -726,5 +792,20 @@ public final class DeclarationIndex implements AutoCloseable {
             chain.add(header);
         }
         return chain;
+    }
+
+    /**
+     * What a simple name means in the class bodies between a member and a local marker.
+     *
+     * @param bound whether a member type of one of those classes takes the name over, or may, as far as the index
+     *     can tell
+     * @param type that member type, when the index declares it
+     */
+    private record LocalBinding(boolean bound, Optional<TypeHeader> type) {
+
+        /** No class between takes the name over: the body of the declaration decides what it means. */
+        private static final LocalBinding FREE = new LocalBinding(false, Optional.empty());
+        /** A class between takes the name over, or may, with a type the index does not declare. */
+        private static final LocalBinding UNKNOWN = new LocalBinding(true, Optional.empty());
     }
 }

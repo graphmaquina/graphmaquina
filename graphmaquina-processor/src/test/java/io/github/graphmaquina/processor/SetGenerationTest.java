@@ -37,8 +37,8 @@ import org.junit.jupiter.api.function.Executable;
 class SetGenerationTest {
 
     /**
-     * The emitted Javadoc of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter, whose
-     * name depends on the other variables of the companion.
+     * The emitted description of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter,
+     * whose name depends on the other variables of the companion; only the {@code @param} tag after it does.
      */
     private static final String RECORD_TRAIL_DOC = "Records the trail of every call through the set on the given clock,"
             + " by handing it to the StateMachines.Builder of every machine of the set. The root machine of a call"
@@ -50,9 +50,11 @@ class SetGenerationTest {
             + " ended the call, at the instant it ended. A call that records its trail creates its flow when its step"
             + " starts, so it hands out its flow, with the root entity and the trail, even when none of its steps or"
             + " hooks wrote to it; a reevaluation that selects no edge runs no step, and its ignored outcome hands out"
-            + " the empty flow. The clock is read on the thread running the call, once per entry; a test can pass a"
-            + " clock it controls, such as a java.time.Clock. Anything but an Error that the clock throws, a checked"
-            + " exception included, fails the call as what an identity function throws does: the entry it could not"
+            + " the empty flow. The clock is read on the thread running the call, once per entry the call appends, an"
+            + " entry a rollback later drops included, so a clock that advances on each read leaves a gap for each"
+            + " dropped entry; a test can pass a clock it controls, such as a java.time.Clock. Anything but an Error"
+            + " that the clock throws, a checked exception included, fails the call as what an identity function"
+            + " throws does: the entry it could not"
             + " mark is left out of the trail. When it throws"
             + " while the call reads the instant of the Failed entry that ends a failed call, whatever failed the call,"
             + " the call's CallFailedException carries what it threw as suppressed, unless it threw that very"
@@ -184,6 +186,19 @@ class SetGenerationTest {
         assertInstanceOf(IllegalArgumentException.class, error.getCause());
     }
 
+    /** The generated maxWatchChain says what MachineRegistry.Builder's does: a call that a hook starts is not counted. */
+    @Test
+    void theGeneratedMaxWatchChainSaysThatACallAHookStartsIsNotCounted() {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.LibraryRuntime").replaceAll("\n\\s*\\* ?", " ");
+        assertTrue(source.contains("Bounds how many watch reactions may follow one another; the default is 10, and a"
+                + " value below 1 is refused. A call that an after-commit hook starts is a new root, which this bound"
+                + " never counts: the watch reactions it triggers begin a chain of their own, so hooks that keep"
+                + " starting calls recur until the stack of the thread overflows, as MachineRegistry says."), source);
+    }
+
     /**
      * The generated Builder mirrors MachineRegistry.Builder and StateMachines.Builder: a setting is refused when
      * it is given, a null clock by name, and a refused setting configures nothing, so a set whose clock was refused
@@ -256,8 +271,10 @@ class SetGenerationTest {
                 + "pagesBuilder.recordTrail(clock);" + body + "return this;\n"), source);
         assertEquals("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
                 + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes.", doc(source, "public Builder recordTrail()"));
-        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock)"));
+                + " recordTrail(InstantSource) describes. @return this builder",
+                doc(source, "public Builder recordTrail()"));
+        assertEquals(RECORD_TRAIL_DOC + " @param clock the clock the trail is read on @return this builder",
+                doc(source, "public Builder recordTrail(InstantSource clock)"));
     }
 
     /**
@@ -479,7 +496,8 @@ class SetGenerationTest {
         assertTrue(source.contains("public Builder recordTrail(InstantSource clock2) {"), source);
         assertTrue(source.contains("Objects.requireNonNull(clock2, \"clock\");"), source);
         assertTrue(source.contains("clockBuilder.recordTrail(clock2);"), source);
-        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock2)"));
+        assertEquals(RECORD_TRAIL_DOC + " @param clock2 the clock the trail is read on @return this builder",
+                doc(source, "public Builder recordTrail(InstantSource clock2)"));
     }
 
     @Test

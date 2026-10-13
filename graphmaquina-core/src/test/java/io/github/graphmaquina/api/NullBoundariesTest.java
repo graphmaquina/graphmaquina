@@ -38,6 +38,8 @@ class NullBoundariesTest {
                 Arguments.of("from", (Executable) () -> new TransitionKey<DayOfWeek, Month>(null, Month.JANUARY)),
                 Arguments.of("state", (Executable) () -> new StatePolicy<DayOfWeek, Month>(null, "why", Map.of())),
                 Arguments.of("otherwise", (Executable) () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, null, Map.of())),
+                Arguments.of("transition", (Executable) () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, "why",
+                        Map.of()).reasonFor(null)),
                 Arguments.of("condition", (Executable) () ->
                         new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(null, Month.JANUARY)),
                 Arguments.of("transition", (Executable) () -> new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(

@@ -25,7 +25,10 @@ import lombok.NonNull;
  * @param <U> transition identifier enum of the child machine
  * @param state the parent state the child is bound to
  * @param child the child machine's own definition
- * @param childOf the child entity of a parent entity, if it has one
+ * @param childOf the child entity of a parent entity, if it has one; it must have one in {@code state}: when it answers
+ *     empty for a parent that an edge enters {@code state} with, the step of that edge aborts before its action runs,
+ *     with a {@code TransitionAbortedException} whose message says the parent entered {@code state} with no child, and
+ *     the call commits nothing
  * @param parentOf the parent entity of a child entity, if it has one
  * @param exits the parent identifier of each terminal state of the child, copied in the given order into a map that
  *     cannot be modified; a null terminal or identifier is refused with a {@link NullPointerException} whose message

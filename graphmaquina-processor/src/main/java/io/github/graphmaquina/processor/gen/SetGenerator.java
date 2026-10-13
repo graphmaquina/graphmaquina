@@ -21,12 +21,13 @@ import javax.lang.model.type.TypeMirror;
  * assembles the registry from the machines' companions and hands out the facades.
  *
  * <p>Like a machine's companion, it is marked {@code @GeneratedCompanion} and suppresses the {@code deprecation}
- * and {@code removal} warnings of the members it calls, it writes its types and suffixes its variables as
- * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope, and it
- * throws on a checked exception that a state or identity accessor declares as that class describes, naming its
- * method after the methods the set declares or inherits; a variable is named after its role, after the accessor
- * it serves, or after the class a parameter of {@code builder(...)} takes. {@link #emit} answers, beside the source,
- * what the processor checks against that scope before writing it.</p>
+ * and {@code removal} warnings of the members it calls and the {@code rawtypes} warnings of the types it writes,
+ * it writes its types and suffixes its variables as {@link MachineGenerator} describes, its own {@code Builder}
+ * counted among the member types of its scope, and it throws on a checked exception that a state or identity
+ * accessor declares as that class describes, naming its method after the methods the set declares or inherits; a
+ * variable is named after its role, after the accessor it serves, or after the class a parameter of
+ * {@code builder(...)} takes. {@link #emit} answers, beside the source, what the processor checks against that
+ * scope before writing it.</p>
  *
  * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates them
  * when it is created and hands every setting to them as soon as it is given, so a setting they refuse is refused where
@@ -40,6 +41,9 @@ import javax.lang.model.type.TypeMirror;
  * child and what the {@code graph(...)} of each of its parents takes, as the registry requires. The shared timeout
  * goes to the machines {@link SetModel#asynchronous} names, and {@code asyncTimeout(Machine.class, Duration)}
  * accepts those only.</p>
+ *
+ * <p>Every public member it declares, but the methods it overrides, whose comments {@code javadoc} inherits, carries
+ * a documentation comment with the tags its signature calls for, as {@link SourceWriter#javadoc} writes it.</p>
  */
 public final class SetGenerator {
 
@@ -70,13 +74,6 @@ public final class SetGenerator {
             "chain", "observer", "built");
 
     /**
-     * The longest doc text of a {@code Builder} method emitted as a one-line comment; a longer one takes the
-     * multi-line form. The bound stays below what one emitted line can hold within 120 columns at the Builder's
-     * indentation.
-     */
-    private static final int DOC_LINE_WIDTH = 100;
-
-    /**
      * The doc text of the {@code Builder}'s {@code recordTrail(InstantSource)}: what
      * {@code StateMachines.Builder.recordTrail(InstantSource)} says of one machine, said of the set. It never names the
      * parameter: when another variable of the companion holds {@code clock}, the parameter takes another name.
@@ -91,8 +88,10 @@ public final class SetGenerator {
             + " at the instant it ended. A call that records its trail creates its flow when its step starts, so it"
             + " hands out its flow, with the root entity and the trail, even when none of its steps or hooks wrote to"
             + " it; a reevaluation that selects no edge runs no step, and its ignored outcome hands out the empty flow."
-            + " The clock is read on the thread running the call, once per entry; a test can pass a clock it controls,"
-            + " such as a java.time.Clock. Anything but an Error that the clock throws, a checked exception included,"
+            + " The clock is read on the thread running the call, once per entry the call appends, an entry a rollback"
+            + " later drops included, so a clock that advances on each read leaves a gap for each dropped entry; a"
+            + " test can pass a clock it controls, such as a java.time.Clock. Anything but an Error that the clock"
+            + " throws, a checked exception included,"
             + " fails the call as what an identity function throws does: the entry it could not mark is left out of"
             + " the trail. When it throws while the"
             + " call reads the instant of the Failed entry that ends a failed call, whatever failed the call, the"
@@ -100,6 +99,9 @@ public final class SetGenerator {
             + " and its trail ends without that entry; an InterruptedException suppressed there interrupts the"
             + " thread again, and an Error propagates. A clock that answers null counts as one that throws a"
             + " NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
+
+    /** The {@code @return} tag of every {@code Builder} method that answers the builder itself. */
+    private static final String THIS_BUILDER = "@return this builder";
 
     private SetGenerator() { }
 
@@ -161,7 +163,7 @@ public final class SetGenerator {
         out.line("/** Generated set of {@link " + set
                 + "}: builds the registry once and hands out the facades. Do not edit. */");
         out.line("@" + names.of(GENERATED));
-        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\"})");
+        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\", \"rawtypes\"})");
         out.open("public final class " + companion + " implements " + set);
         out.blank();
         out.line("private final " + names.of(MACHINE_REGISTRY) + " " + registry + ";");
@@ -179,11 +181,16 @@ public final class SetGenerator {
         out.close();
         out.blank();
         List<String> parameters = new ArrayList<>();
+        List<String> tags = new ArrayList<>();
         for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             parameters.add(names.of(parameter.getKey()) + " " + parameter.getValue());
+            tags.add("@param " + parameter.getValue() + (parameter.getValue().equals(variables.timeout())
+                    ? " the timeout shared by the asynchronous machines"
+                    : " the {@code " + parameter.getKey() + "} whose instance members the machines call"));
         }
-        out.line("/** Every class with instance members the machines use"
-                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
+        tags.add("@return a new builder of the set");
+        out.javadoc("Starts a builder of the set over every class with instance members the machines use"
+                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ".", tags);
         out.open("public static Builder builder(" + String.join(", ", parameters) + ")");
         out.line("return new Builder(" + String.join(", ", variables.parameters().values()) + ");");
         out.close();
@@ -257,8 +264,10 @@ public final class SetGenerator {
         if (model.hasAsync()) {
             String machine = setters.get("machine");
             String timeout = setters.get("timeout");
-            comment(out, "Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
-                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.");
+            out.javadoc("Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
+                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.",
+                    List.of("@param " + machine + " the facade class of an asynchronous machine of the set",
+                            "@param " + timeout + " the timeout of that machine", THIS_BUILDER));
             out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
                     + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
             out.line("checkUnused();");
@@ -278,6 +287,10 @@ public final class SetGenerator {
             out.blank();
         }
         String executor = setters.get("executor");
+        out.javadoc("Hands the given executor to the StateMachines.Builder of every machine of the set, whose calls"
+                + " submitted through async(...) then run on it, as StateMachines.Builder.asyncExecutor(Executor)"
+                + " describes.",
+                List.of("@param " + executor + " the executor of those calls", THIS_BUILDER));
         out.open("public Builder asyncExecutor(" + names.of(EXECUTOR) + " " + executor + ")");
         out.line("checkUnused();");
         out.line(objects + ".requireNonNull(" + executor + ", \"executor\");");
@@ -287,9 +300,9 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        comment(out, "Records the trail of every call through the set on the system clock, InstantSource.system(), by"
+        out.javadoc("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
                 + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes.");
+                + " recordTrail(InstantSource) describes.", List.of(THIS_BUILDER));
         out.open("public Builder recordTrail()");
         out.line("checkUnused();");
         for (MachineAccessor accessor : model.machines()) {
@@ -299,7 +312,7 @@ public final class SetGenerator {
         out.close();
         out.blank();
         String clock = setters.get("clock");
-        comment(out, RECORD_TRAIL);
+        out.javadoc(RECORD_TRAIL, List.of("@param " + clock + " the clock the trail is read on", THIS_BUILDER));
         out.open("public Builder recordTrail(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
         out.line("checkUnused();");
         out.line(objects + ".requireNonNull(" + clock + ", \"clock\");");
@@ -309,18 +322,28 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one"
-                + " level deeper than the step that ended it; the default is 10, and a value below 1 is refused.",
+        forward(out, "Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at"
+                + " its own depth: one level below the step that ended the child or, when the child stood in a terminal"
+                + " state while its parent was still running the step that entered the bound state, one level below"
+                + " that step. The default is 10, and a value below 1 is refused.",
                 "maxCascadeDepth", "int " + setters.get("depth"),
+                "@param " + setters.get("depth") + " the deepest level a cascade may reach, at least 1",
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
-                + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
+                + " is refused. A call that an after-commit hook starts is a new root, which this bound never counts:"
+                + " the watch reactions it triggers begin a chain of their own, so hooks that keep starting calls recur"
+                + " until the stack of the thread overflows, as MachineRegistry says.", "maxWatchChain",
+                "int " + setters.get("chain"),
+                "@param " + setters.get("chain") + " how many watch reactions may follow one another, at least 1",
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
         forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
                 + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
+                "@param " + setters.get("observer") + " the observer to add",
                 registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
         String companion = names.of(qualifiedName(model));
+        out.javadoc("Builds the registry of the machines and the set over it, which hands out their facades. Once it"
+                + " succeeds, the builder accepts nothing more.", List.of("@return the set"));
         out.open("public " + names.of(model.type().getQualifiedName().toString()) + " build()");
         out.line("checkUnused();");
         out.line(companion + " " + built + " = new " + companion + "(" + registry + ".build());");
@@ -341,38 +364,17 @@ public final class SetGenerator {
 
     /**
      * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
-     * {@code doc} as {@link #comment} writes it.
+     * {@code doc} and by {@code tag}, the {@code @param} tag of its one parameter.
      */
-    private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
-        comment(out, doc);
+    private static void forward(SourceWriter out, String doc, String method, String parameter, String tag,
+                                String statement) {
+        out.javadoc(doc, List.of(tag, THIS_BUILDER));
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);
         out.line("return this;");
         out.close();
         out.blank();
-    }
-
-    /**
-     * {@code doc} as a documentation comment: on one line when the text is at most {@code DOC_LINE_WIDTH} characters,
-     * else in the multi-line form, so that no emitted comment line passes 120 columns.
-     */
-    private static void comment(SourceWriter out, String doc) {
-        if (doc.length() <= DOC_LINE_WIDTH) {
-            out.line("/** " + doc + " */");
-            return;
-        }
-        out.line("/**");
-        StringBuilder line = new StringBuilder();
-        for (String word : doc.split(" ")) {
-            if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
-                out.line(" * " + line);
-                line.setLength(0);
-            }
-            line.append(line.length() == 0 ? "" : " ").append(word);
-        }
-        out.line(" * " + line);
-        out.line(" */");
     }
 
     /**

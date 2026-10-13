@@ -17,8 +17,8 @@ public final class MachineCall {
     private final boolean reaction;
 
     /**
-     * Describes one call. It refuses a null argument, an identifier from another catalogue than {@code key}'s, and a
-     * reaction that requests an identifier.
+     * Describes one call. It refuses a null argument, an identifier from another catalogue than {@code key}'s, which
+     * the refusal names by {@code name()}, and a reaction that requests an identifier.
      *
      * @param key the machine the call runs on
      * @param entity the entity it was called with
@@ -33,7 +33,7 @@ public final class MachineCall {
         this.transition = Objects.requireNonNull(transition, "transition");
         if (transition.isPresent() && !key.transitions().isInstance(transition.get())) {
             throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": "
-                    + transition.get());
+                    + transition.get().name());
         }
         if (reaction && transition.isPresent()) {
             throw new IllegalArgumentException("a watch reaction is a reevaluation and requests no identifier");

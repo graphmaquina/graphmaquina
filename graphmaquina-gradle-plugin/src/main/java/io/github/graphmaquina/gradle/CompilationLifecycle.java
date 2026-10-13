@@ -118,8 +118,8 @@ public final class CompilationLifecycle {
         }
 
         /**
-         * The launcher the generation task of this source set runs the generator under, by convention the one the
-         * project's Java toolchain selected, so every step of one compilation runs on the same JDK.
+         * The launcher the generation task of this source set runs the generator under, by convention the one of the
+         * JDK javac compiles with, so every step of one compilation runs on the same JDK.
          *
          * @return the launcher of the generator process
          */
@@ -377,9 +377,10 @@ public final class CompilationLifecycle {
                         + " options.encoding = \"" + declaredEncoding + "\" and the compiler argument -encoding "
                         + lastEncoding.get() + ": Gradle's Java compiler, in process or in its compiler daemon, reads"
                         + " the sources in options.encoding, while javac writes the sources an annotation processor"
-                        + " generates in the last -encoding it is given, so the sources the StateGraph processor writes"
-                        + " would be read back in another charset than they were written in, which garbles their"
-                        + " non-ASCII text or fails the compilation. Remove that -encoding from the compiler arguments"
+                        + " generates in the last -encoding it is given, so the sources annotation processors write,"
+                        + " the StateGraph processor's among them, would be read back in another charset than they were"
+                        + " written in, which garbles the characters the two charsets encode differently or fails the"
+                        + " compilation. Remove that -encoding from the compiler arguments"
                         + " of " + compilation + ", or set options.encoding to the charset it names.");
             }
             List<String> declared = CompilerSettings.declaredArguments(options);

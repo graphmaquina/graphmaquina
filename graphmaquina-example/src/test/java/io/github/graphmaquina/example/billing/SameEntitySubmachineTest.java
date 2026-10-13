@@ -11,6 +11,7 @@ import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.StateChange;
 import io.github.graphmaquina.test.StateSnapshot;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -89,8 +90,10 @@ class SameEntitySubmachineTest {
                     .records().forEntity(STAYS, stay).single()
                     .hasTransition(StayTransition.CONFIRM).to(StayStatus.CONFIRMED).hasDepth(1);
             assertEquals(List.of(
-                            new StateChange(STAYS, stay, StayStatus.PAYING, StayStatus.CONFIRMED),
-                            new StateChange(STAY_PAYMENTS, stay, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED)),
+                            new StateChange(STAYS, stay, Optional.of(StayStatus.PAYING),
+                                    Optional.of(StayStatus.CONFIRMED)),
+                            new StateChange(STAY_PAYMENTS, stay, Optional.of(PaymentStatus.AUTHORIZING),
+                                    Optional.of(PaymentStatus.CAPTURED))),
                     before.changes());
         }
     }

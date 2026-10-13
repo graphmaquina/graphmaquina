@@ -107,8 +107,8 @@ final class ProcessorPath {
     /**
      * The file the URL of a jar the loader reaches names. The loader resolves a name the {@code Class-Path} of a
      * manifest gives against the URL of that jar as a URL, which keeps the name as the manifest spells it, so it may
-     * hold a character a URI does not allow, such as {@code [}, {@code {} or {@code ^}. The loader then opens the file
-     * its URL names with the {@code %} escapes decoded, and so does this.
+     * hold a character a URI does not allow, such as {@code [}, <code>&#123;</code> or {@code ^}. The loader then opens
+     * the file its URL names with the {@code %} escapes decoded, and so does this.
      */
     private static File fileOf(URL jar) throws URISyntaxException {
         URI uri;

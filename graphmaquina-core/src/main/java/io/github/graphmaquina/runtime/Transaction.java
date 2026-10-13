@@ -47,10 +47,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletionStage;
+import java.util.function.Supplier;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
- * call included, and so does the call's log.
+ * call included, and so does the call's log. Wherever it contains what application code threw on the calling thread,
+ * through a failure route, an abort or a poison, an InterruptedException interrupts the thread again, as
+ * {@link Interrupts} says; one that completes a stage leaves the thread as it is.
  */
 final class Transaction {
 
@@ -77,6 +80,12 @@ final class Transaction {
     private Optional<RootStep> rootStep = Optional.empty();
     /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
     private final CallLog log;
+    /**
+     * Set by the first statement of the catch of every cascade, with a store, which needs neither stack nor memory: a
+     * cascade of the call failed, and what it failed with may not be the poison yet. {@link #settle} records it.
+     * COLLECT clears it, with the poison, when it collects the abort of an element.
+     */
+    private boolean condemned;
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
                 Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
@@ -88,6 +97,17 @@ final class Transaction {
         this.reaction = reaction;
         this.call = Objects.requireNonNull(call, "call");
         this.log = Objects.requireNonNull(log, "log");
+    }
+
+    /**
+     * The transaction of no call, which a context of the machine with the key {@code key} holds in place of the
+     * transaction of its call once invalidated, so that a context kept after its call keeps neither that call nor its
+     * unit of work reachable. Nothing uses it: an invalidated context refuses every operation before it reaches its
+     * transaction. Its unit of work is its own, and empty, and {@code key} stands in for its entity.
+     */
+    static Transaction released(MachineRegistry registry, MachineKey<?, ?, ?> key) {
+        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(), false, Optional.empty(),
+                CallLog.OFF);
     }
 
     /** The log of the call this transaction runs. */
@@ -120,12 +140,12 @@ final class Transaction {
     UnitOfWork uow() { return uow; }
 
     /**
-     * A handle on the call's flow for a context of this call at {@code depth}, checked by {@code guard}, that
-     * context's own check. It does not create the flow: the first write of the call does, with the entity of the
-     * root call, unless the call records its trail, whose flow exists from its start.
+     * A handle on the call's flow for a context of this call at {@code depth}, which reaches the call's unit of work
+     * through {@code unit}, that context's own check. It does not create the flow: the first write of the call does,
+     * with the entity of the root call, unless the call records its trail, whose flow exists from its start.
      */
-    FlowHandle flow(Runnable guard, int depth) {
-        return FlowHandle.of(uow, callEntity, guard, log, depth);
+    FlowHandle flow(Supplier<UnitOfWork> unit, int depth) {
+        return FlowHandle.of(unit, callEntity, log, depth);
     }
 
     /**
@@ -231,11 +251,15 @@ final class Transaction {
      * did.
      */
     StatesWritten statesWritten() {
-        return switch (phase) {
-            case RESOLVE, GUARD, ACTION -> StatesWritten.NONE;
-            case COMMIT -> writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
-            case HOOK, REACTIONS -> StatesWritten.ALL;
-        };
+        // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static initializer,
+        // which assembling a registry cannot name to initialise, as MachineRegistry.staticallyInitialized says.
+        if (phase == CallPhase.COMMIT) {
+            return writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
+        }
+        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+            return StatesWritten.ALL;
+        }
+        return StatesWritten.NONE;
     }
 
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
@@ -532,7 +556,9 @@ final class Transaction {
      *       terminal in the entity's graph, {@link #exitParent} runs the parent's exit.</li>
      * </ul>
      * Each exit is a step of its own, which runs its own exits in turn, so a chain climbs one binding per level.
-     * Returns {@code result} itself: the outcome of a call is its own step's.
+     * Returns {@code result} itself: the outcome of a call is its own step's. When {@code result} took a failure route
+     * that a throwable selected, an abort that {@link #exit} builds for this step holds that throwable as suppressed,
+     * as {@link #keepingOriginal} says; the aborts of an exit's own step do not.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> exits(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, int depth, StepResult<S, T> result,
@@ -542,12 +568,15 @@ final class Transaction {
         }
         S reached;
         T last;
+        Optional<Throwable> original;
         if (result instanceof StepResult.Applied<S, T> applied) {
             reached = applied.to();
             last = applied.transition();
+            original = Optional.empty();
         } else if (result instanceof StepResult.Failed<S, T> failed) {
             reached = failed.movedTo();
             last = failed.failureTransition();
+            original = failed.cause();
         } else {
             return result;
         }
@@ -555,13 +584,13 @@ final class Transaction {
         if (machine.bindsSubmachines()) {
             Optional<SubmachineSpec<E, S, T, ?, ?, ?>> bound = machine.definition().submachine(current);
             if (bound.isPresent() && exitEntered(machine, ref, entity, bound.get(), depth, machine, ref,
-                    result.from(), last, reached)) {
+                    result.from(), last, reached, original)) {
                 return result;
             }
         }
         if (holder.isPresent() && machine.definition().terminals().contains(current)) {
             exitParent(machine, ref, result.from(), last, current, depth, holder.get().binding(),
-                    holder.get().parent(), holder.get().logAtCheck());
+                    holder.get().parent(), holder.get().logAtCheck(), original);
         }
         return result;
     }
@@ -575,13 +604,14 @@ final class Transaction {
      * exits normally. When a descendant's exit enters the node again, the latest start under the parent logged since
      * the selection decides, as in {@link #exitParent}: another child cancels the node's exit, and for the same child
      * the exit runs only if its state, read again, is terminal. The position of the log at the selection marks what
-     * came after; starts are never compared by value.
+     * came after; starts are never compared by value. {@code original} is the throwable that selected the failure
+     * route of that entering step, if one did, for {@link #exit}.
      * Returns whether any exit ran, including an exit that already completed the containing machine.
      */
     private <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> boolean exitEntered(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity,
             SubmachineSpec<E, S, T, P, Q, U> spec, int depth, DefaultStateMachine<?, ?, ?> origin,
-            EntityRef originRef, Enum<?> from, Enum<?> last, Enum<?> reached) {
+            EntityRef originRef, Enum<?> from, Enum<?> last, Enum<?> reached, Optional<Throwable> original) {
         Optional<LogEntry.Start> selected = uow.lastStartUnder(ref);
         if (selected.isEmpty() || selected.get().node() != spec.state()
                 || !selected.get().ref().key().equals(spec.childKey())) {
@@ -596,7 +626,7 @@ final class Transaction {
             Optional<SubmachineSpec<P, Q, U, ?, ?, ?>> descendant = childMachine.definition().submachine(state);
             if (descendant.isPresent()) {
                 exited = exitEntered(childMachine, start.ref(), spec.childKey().entity().cast(start.ref().instance()),
-                        descendant.get(), depth, origin, originRef, from, last, reached);
+                        descendant.get(), depth, origin, originRef, from, last, reached, original);
             }
         }
         Optional<LogEntry.Start> reentry = uow.lastStartUnderSince(ref, selectedAt);
@@ -609,7 +639,7 @@ final class Transaction {
         if (!childMachine.definition().terminals().contains(state)) {
             return exited;
         }
-        exit(machine, ref, spec, start.ref(), state, origin, originRef, from, last, reached, depth);
+        exit(machine, ref, spec, start.ref(), state, origin, originRef, from, last, reached, depth, original);
         return true;
     }
 
@@ -623,11 +653,13 @@ final class Transaction {
      * Otherwise the exit retains the binding's node as its source, so a parent moved externally since the binding
      * check conflicts with that source at commit before any state is written. Neither the parent's state nor its
      * childOf is read again: the binding check at the start of the child's step decided which parent holds the child,
-     * and only this unit of work's own effects since then can cancel the exit.
+     * and only this unit of work's own effects since then can cancel the exit. {@code original} is the throwable that
+     * selected the failure route of the child's step, if one did, for {@link #exit}.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exitParent(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> last, Enum<?> terminal,
-            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef, int logAtCheck) {
+            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef, int logAtCheck,
+            Optional<Throwable> original) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
         if (uow.inFlight(parentRef).isPresent()) {
             return;
@@ -642,7 +674,7 @@ final class Transaction {
         }
         DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());
         exit(parentMachine, parentRef, spec, ref, spec.childKey().states().cast(terminal), machine, ref, from, last,
-                terminal, depth);
+                terminal, depth, original);
     }
 
     /**
@@ -650,28 +682,29 @@ final class Transaction {
      * selects in {@code spec}: a step at the depth after {@code depth}, the depth of the step that ended, in the same
      * unit of work, without input and with the privilege of a reserved exit. A terminal that {@code spec} maps to no
      * exit, which only a hand-written graph can hold, and an exit deeper than maxCascadeDepth abort the step that
-     * ended, which {@code machine}, {@code ref}, {@code from}, {@code last} and {@code reached} describe; the exit
-     * it selected is logged at TRACE before the depth is checked.
+     * ended, which {@code machine}, {@code ref}, {@code from}, {@code last} and {@code reached} describe, and hold
+     * {@code original}, the throwable that selected the failure route of that step, if one did, as suppressed before
+     * they poison the call; the exit it selected is logged at TRACE before the depth is checked.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exit(
             DefaultStateMachine<A, B, C> parentMachine, EntityRef parentRef, SubmachineSpec<A, B, C, P, Q, U> spec,
             EntityRef child, Q terminal, DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
-            Enum<?> last, Enum<?> reached, int depth) {
+            Enum<?> last, Enum<?> reached, int depth, Optional<Throwable> original) {
         Optional<C> exit = Optional.ofNullable(spec.exits().get(terminal));
         if (exit.isEmpty()) {
-            throw abort(machine, ref, from, Optional.of(last), Optional.of(reached), Optional.empty(), depth,
-                    "the terminal " + terminal.name() + " of " + spec.childKey() + " has no exit in "
-                            + spec.state().name(),
-                    Optional.empty());
+            throw poisonIfNested(depth, keepingOriginal(unpoisonedAbort(machine, ref, from, Optional.of(last),
+                    Optional.of(reached), Optional.empty(), "the terminal " + terminal.name() + " of "
+                            + spec.childKey() + " has no exit in " + spec.state().name(), Optional.empty()),
+                    original));
         }
         if (log.trace()) {
             log.trace(depth, "submachine-exit " + CallLog.show(child) + " terminal=" + terminal.name() + " parent="
                     + CallLog.show(parentRef) + " exit=" + exit.get().name());
         }
         if (depth + 1 > uow.maxDepth()) {
-            throw poisonIfNested(depth, new CascadeDepthExceededException(call(),
+            throw poisonIfNested(depth, keepingOriginal(new CascadeDepthExceededException(call(),
                     details(machine, ref, from, Optional.of(last), Optional.of(reached), Optional.empty()),
-                    uow.maxDepth()));
+                    uow.maxDepth()), original));
         }
         step(parentMachine, parentMachine.key().entity().cast(parentRef.instance()), exit.get(), depth + 1,
                 Optional.empty(), Optional.of(new ExitOf(spec.state(), child)));
@@ -688,14 +721,14 @@ final class Transaction {
      * abort the step with an {@link AmbiguousParentException} as cause, except one parent that holds the child both
      * in the node its pending state names and leaving another node, on an edge between two nodes that bind the same
      * child: the node it enters, whose entry has just restarted the child, holds it. A lookup that returns null or
-     * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} says. Every lookup runs
-     * inside the root, under its reentrancy marker.
+     * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} and
+     * {@link #bindingReadAbort} say. Every lookup runs inside the root, under its reentrancy marker.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> BindingCheck checkBindings(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
         Optional<Holder> active = Optional.empty();
         Optional<Hold> activeHold = Optional.empty();
-        List<Enum<?>> found = new ArrayList<>();
+        List<Enum<?>> found = new ArrayList<>(machine.bindingsAsChild().size());
         for (SubmachineBinding<?, ?, ?, ?, ?, ?> binding : machine.bindingsAsChild()) {
             Optional<EntityRef> parent = findParent(machine, ref, entity, from, id, depth, binding);
             if (parent.isEmpty()) {
@@ -745,7 +778,7 @@ final class Transaction {
     private record Holder(SubmachineBinding<?, ?, ?, ?, ?, ?> binding, EntityRef parent, int logAtCheck) { }
 
     /** How a binding holds a child: its parent is in the bound node, or in flight on an edge that leaves it. */
-    private enum Hold { IN_NODE, LEAVING }
+    enum Hold { IN_NODE, LEAVING }
 
     /**
      * The parent that {@code binding}'s parentOf answers for {@code entity}, the child, registered in the unit of
@@ -754,20 +787,20 @@ final class Transaction {
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<EntityRef>
             findParent(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Object entity, Enum<?> from, Enum<?> id,
                        int depth, SubmachineBinding<A, B, C, P, Q, U> binding) {
-        String name = binding.parentKey() + "." + binding.spec().state().name();
         Optional<A> parent;
         try {
             parent = binding.spec().parentOf().apply(binding.spec().childKey().entity().cast(entity));
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw bindingAbort(machine, ref, from, id, depth,
-                    "the parentOf of " + name + " threw " + Texts.shown(cause), Optional.of(cause));
+                    "the parentOf of " + bindingName(binding) + " threw " + Texts.shown(cause), Optional.of(cause));
         }
         if (parent == null) {
-            throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " returned null",
-                    Optional.empty());
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the parentOf of " + bindingName(binding) + " returned null", Optional.empty());
         }
         if (parent.isEmpty()) {
             return Optional.empty();
@@ -778,8 +811,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth,
-                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
+            throw bindingReadAbort(machine, ref, from, id, depth, binding, e);
         }
     }
 
@@ -789,13 +821,12 @@ final class Transaction {
      * one first, is the bound node ({@link Hold#IN_NODE}), or the parent is in flight on an edge that leaves the node
      * ({@link Hold#LEAVING}). Another child, or none, is no hold; another instance with the child's identity aborts the
      * step with an {@link AmbiguousIdentityException} as cause, and so does a parent whose state is null, with an
-     * {@code UninitializedStateException}.
+     * {@code UninitializedStateException}, as {@link #bindingReadAbort} says.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<Hold> holds(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
             SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
-        String name = binding.parentKey() + "." + spec.state().name();
         A parent = binding.parentKey().entity().cast(parentRef.instance());
         Optional<P> child;
         try {
@@ -803,13 +834,14 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
-            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + Texts.shown(cause),
-                    Optional.of(cause));
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the childOf of " + bindingName(binding) + " threw " + Texts.shown(cause), Optional.of(cause));
         }
         if (child == null) {
-            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " returned null",
-                    Optional.empty());
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the childOf of " + bindingName(binding) + " returned null", Optional.empty());
         }
         if (child.isEmpty()) {
             return Optional.empty();
@@ -827,8 +859,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth,
-                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
+            throw bindingReadAbort(machine, ref, from, id, depth, binding, e);
         }
         if (state == spec.state()) {
             return Optional.of(Hold.IN_NODE);
@@ -844,11 +875,44 @@ final class Transaction {
     /**
      * An abort of a child's step from its binding check, before its edge was looked up: in RESOLVE at the root, in
      * ACTION and poisoning when nested. A lookup's throwable that is not an Error is the cause, unwrapped from
-     * CompletionException and ExecutionException; what reading the parent or the child threw is the cause as it is.
+     * CompletionException and ExecutionException. What reading the parent or the child threw aborts the step as
+     * {@link #bindingReadAbort} says.
      */
     private TransitionAbortedException bindingAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                                     Enum<?> id, int depth, String message, Optional<Throwable> cause) {
         return abort(machine, ref, from, Optional.of(id), Optional.empty(), Optional.empty(), depth, message, cause);
+    }
+
+    /**
+     * An abort of a child's step for what reading the parent or the child threw while checking {@code binding}: an
+     * identity function or a state getter that threw, a null state or an ambiguous identity, the cause as it is. At the
+     * root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure that is no failure of
+     * the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT never collects it and
+     * stops at once. The first poison is stored before its TRACE line, as in {@link #poisonAt}.
+     */
+    private TransitionAbortedException bindingReadAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                                        Enum<?> from, Enum<?> id, int depth,
+                                                        SubmachineBinding<?, ?, ?, ?, ?, ?> binding, Throwable thrown) {
+        Interrupts.keep(thrown);
+        TransitionAbortedException abort = unpoisonedAbort(machine, ref, from, Optional.of(id), Optional.empty(),
+                Optional.empty(), "checking the binding " + bindingName(binding) + " threw " + Texts.shown(thrown),
+                Optional.of(thrown));
+        if (depth > 0) {
+            boolean first = !uow.isPoisoned();
+            uow.poisonWrapping(abort);
+            if (first) {
+                tracePoison(depth, abort);
+            }
+        }
+        return abort;
+    }
+
+    /**
+     * How the messages of a binding check's aborts name {@code binding}, {@code <parent key>.<node>}: only an abort
+     * builds it, so a check that passes concatenates nothing.
+     */
+    private static String bindingName(SubmachineBinding<?, ?, ?, ?, ?, ?> binding) {
+        return binding.parentKey() + "." + binding.spec().state().name();
     }
 
     /**
@@ -911,6 +975,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             throw entryAbort(machine, ref, edge, depth, "reading the sub-machine of " + parentMachine.key() + "."
                     + spec.state().name() + " threw " + Texts.shown(e), Optional.of(e));
         }
@@ -943,6 +1008,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " threw " + Texts.shown(cause),
                     Optional.of(cause));
@@ -981,6 +1047,7 @@ final class Transaction {
             outcome = executeAction(machine, ref, transition, action, ctx);
         } catch (ActionFailure failure) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
+            settle(ctx);
             Throwable cause = failure.getCause();
             if (cause instanceof CallFailedException own && owns(own)) {
                 throw poisonOr(own);
@@ -999,12 +1066,19 @@ final class Transaction {
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
                     "the action " + action.name() + " threw " + Texts.shown(cause), Optional.of(cause));
+        } catch (EngineAbort aborted) {
+            uow.journalStatus(journalIndex, ActionStatus.THREW);
+            settle(ctx);
+            // A null stage or outcome, or a wait that timed out, was interrupted or was refused: poisoned now that the
+            // action's end is logged, as the abort of an action that threw is.
+            throw poisonOr(poisonIfNested(depth, aborted.abort()));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
-            // Reaching here: a null stage or outcome, a wait that timed out, was interrupted or was refused, or a
-            // CallFailedException that a hand-written stage's handle throws.
+            settle(ctx);
+            // Reaching here: a CallFailedException that a hand-written stage's handle throws.
             throw poisonOr(e);
         }
+        settle(ctx);
         if (uow.isPoisoned()) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             throw uow.poison().orElseThrow();
@@ -1065,7 +1139,8 @@ final class Transaction {
         try {
             outcome = invokeAction(machine, ref, transition, action, ctx);
         } catch (RuntimeException thrown) {
-            Throwable cause = thrown instanceof ActionFailure failure ? failure.getCause() : thrown;
+            Throwable cause = thrown instanceof ActionFailure || thrown instanceof EngineAbort
+                    ? thrown.getCause() : thrown;
             log.trace(ctx.depth(), name + " THREW error=" + cause.getClass().getName() + " elapsed="
                     + CallLog.micros(System.nanoTime() - started));
             throw thrown;
@@ -1082,12 +1157,16 @@ final class Transaction {
      * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the action
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
-     * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions hand the
-     * throwable they completed with to ActionFailure; the engine reads no message before classification, though the JDK
-     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException. Before it
-     * waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when neither the edge nor
-     * the call sets a limit.
+     * that its caller classifies. An InterruptedException that the action throws on the calling thread, a sync one
+     * or an async one before it returns its stage, interrupts the thread again, since the blocking call that threw it
+     * cleared the interrupt; one that completes the stage leaves the thread as it is. An Error is never routed: thrown
+     * as itself, it propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     * Exceptional stage completions hand the throwable they completed with to ActionFailure; the engine reads no
+     * message before classification, though the JDK may already have read it, as when {@code supplyAsync} wrapped the
+     * throwable in a CompletionException. The engine's own abort of the step, for a null outcome or stage or a wait
+     * that timed out, was interrupted or was refused, leaves as an EngineAbort, which a nested step poisons the call
+     * with once executeAction logged the action's end. Before it waits for a stage, a call that logs at TRACE logs the
+     * budget the wait has left: none when neither the edge nor the call sets a limit.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome invokeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -1099,6 +1178,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw new ActionFailure(e);
                 }
             }
@@ -1110,12 +1190,13 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
-                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                            Optional.of(action.name()), ctx.depth(),
-                            "the action " + action.name() + " returned a null stage", Optional.empty());
+                    throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                            Optional.of(ctx.to()), Optional.of(action.name()),
+                            "the action " + action.name() + " returned a null stage", Optional.empty()));
                 }
                 long deadline = edgeDeadline(edgeBudget);
                 if (log.trace()) {
@@ -1123,20 +1204,20 @@ final class Transaction {
                             ? "none" : CallLog.micros(Math.max(0L, deadline - System.nanoTime()))));
                 }
                 Optional<ActionOutcome> result = await(machine, ref, ctx.from(), Optional.of(ctx.transition()),
-                        Optional.of(ctx.to()), Optional.of(action.name()), ctx.depth(), "the action " + action.name(),
-                        stage, deadline);
+                        Optional.of(ctx.to()), Optional.of(action.name()), "the action " + action.name(), stage,
+                        deadline);
                 if (result.isEmpty()) {
-                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                            Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
-                            Optional.empty());
+                    throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                            Optional.of(ctx.to()), Optional.of(action.name()),
+                            "the action " + action.name() + " returned null", Optional.empty()));
                 }
                 yield result.orElseThrow();
             }
         };
         if (outcome == null) {
-            throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                    Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
-                    Optional.empty());
+            throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                    Optional.of(ctx.to()), Optional.of(action.name()), "the action " + action.name() + " returned null",
+                    Optional.empty()));
         }
         return outcome;
     }
@@ -1144,8 +1225,10 @@ final class Transaction {
     /**
      * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. For whatever
      * the guard throws or completes its stage with, an Error inside the stage included, the engine throws what
-     * {@link #guardFailure} says: a library exception of another call is a cause like any other. An Error thrown as
-     * itself propagates. A verdict is logged at TRACE with the time the guard took; a guard that throws logs none.
+     * {@link #guardFailure} says: a library exception of another call is a cause like any other. An
+     * InterruptedException that the guard throws on the calling thread interrupts the thread again; one that completes
+     * its stage leaves the thread as it is. An Error thrown as itself propagates. A verdict is logged at TRACE with
+     * the time the guard took; a guard that throws logs none.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
@@ -1160,6 +1243,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
             }
@@ -1170,6 +1254,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
                 if (stage == null) {
@@ -1178,12 +1263,14 @@ final class Transaction {
                 }
                 try {
                     Optional<GuardResult> result = await(machine, ref, transition.from(), id, to, Optional.empty(),
-                            depth, "the guard " + guard.name(), stage, uow.deadlineNanos());
+                            "the guard " + guard.name(), stage, uow.deadlineNanos());
                     if (result.isEmpty()) {
                         throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                                 "the guard " + guard.name() + " returned null", Optional.empty());
                     }
                     yield result.orElseThrow();
+                } catch (EngineAbort aborted) {
+                    throw poisonIfNested(depth, aborted.abort());
                 } catch (ActionFailure failure) {
                     throw guardFailure(machine, ref, transition, depth, guard, "failed:", failure.getCause());
                 }
@@ -1204,23 +1291,25 @@ final class Transaction {
 
     /**
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
-     * are aborts, each caused by what ended the wait; the user's stage is left running.
+     * are aborts, each caused by what ended the wait, which leave as an EngineAbort that has not poisoned the call: a
+     * nested action's step poisons the call with it once it logged the action's end, a nested guard's evaluation as
+     * soon as it catches it. The user's stage is left running.
      */
     private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
-                                  Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, int depth,
-                                  String what, CompletionStage<R> stage, long deadlineNanos) {
+                                  Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, String what,
+                                  CompletionStage<R> stage, long deadlineNanos) {
         try {
             return Await.completedOrAwait(stage, deadlineNanos);
         } catch (Await.Timeout timeout) {
-            throw abort(machine, ref, from, id, to, action, depth, "waiting for " + what + " timed out",
-                    Optional.of(timeout.getCause()));
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
+                    "waiting for " + what + " timed out", Optional.of(timeout.getCause())));
         } catch (Await.Interrupted interrupted) {
-            throw abort(machine, ref, from, id, to, action, depth, "interrupted while waiting for " + what,
-                    Optional.of(interrupted.getCause()));
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
+                    "interrupted while waiting for " + what, Optional.of(interrupted.getCause())));
         } catch (Await.Rejected rejected) {
-            throw abort(machine, ref, from, id, to, action, depth,
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
                     "waiting for " + what + " was refused by the thread's ForkJoinPool",
-                    Optional.of(rejected.getCause()));
+                    Optional.of(rejected.getCause())));
         }
     }
 
@@ -1252,13 +1341,21 @@ final class Transaction {
     }
 
     /**
-     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
-     * original origin and run that edge without guards and without a failure route of its own. An empty
-     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A call that logs
-     * at TRACE logs the route, or the unhandled failure, once the rollback is done. A call that records its trail
-     * leaves what failed on the mark of the recovery hop, which sits at the savepoint since the rollback truncated the
-     * log there, as soon as the hop is marked: before a sub-machine its target binds starts and before the recovery
-     * action runs.
+     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the original
+     * origin and run that edge without guards and without a failure route of its own. An empty {@code recovery} leaves
+     * the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
+     * completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of the call aborts
+     * the call with it as cause, and the abort holds {@code cause}, the original throwable, as suppressed when it is
+     * present and another one: adding it reads no message. These aborts that the engine builds for the recovery step
+     * hold it as suppressed too, unless one is caused by that very throwable, as {@link #keepingOriginal} says: its own
+     * abort of the recovery action, for a null outcome or stage or a wait that timed out, was interrupted or was
+     * refused, before it poisons the call, where a poison stored earlier still ends the call as it is; the abort of a
+     * sub-machine that the recovery hop enters and that cannot start, once it poisoned the call, since no poison can
+     * precede it; and, once this method returned, the abort that {@link #exit} builds for this step when the exit that
+     * a terminal state selects cannot run. A call that logs at TRACE logs the route, or the unhandled failure, once the
+     * rollback is done. A call that records its trail leaves what failed on the mark of the recovery hop, which sits at
+     * the savepoint since the rollback truncated the log there, as soon as the hop is marked: before a sub-machine its
+     * target binds starts and before the recovery action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1291,7 +1388,12 @@ final class Transaction {
         Optional<FlowEntry.Recovery> recovered = uow.recordsTrail()
                 ? Optional.of(new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind))
                 : Optional.empty();
-        appendHop(machine, ref, entity, route, depth, recovered);
+        try {
+            appendHop(machine, ref, entity, route, depth, recovered);
+        } catch (TransitionAbortedException entering) {
+            // Only the abort a start built for this hop gets here, on a unit of work that no poison preceded.
+            throw keepingOriginal(entering, cause);
+        }
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
@@ -1304,20 +1406,28 @@ final class Transaction {
                 outcome = executeAction(machine, ref, route, action, ctx);
             } catch (ActionFailure failure) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
                 Throwable recoveryCause = failure.getCause();
                 if (recoveryCause instanceof CallFailedException own && owns(own)) {
                     throw poisonOr(own);
                 }
-                throw abort(machine, ref, from, Optional.of(recoveryId), Optional.of(route.to()),
-                        Optional.of(action.name()), depth,
+                throw poisonIfNested(depth, keepingOriginal(unpoisonedAbort(machine, ref, from,
+                        Optional.of(recoveryId), Optional.of(route.to()), Optional.of(action.name()),
                         "the failure route action " + action.name() + " threw after the original failure ("
                                 + reason + ")",
-                        Optional.of(recoveryCause));
+                        Optional.of(recoveryCause)), cause));
+            } catch (EngineAbort aborted) {
+                uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
+                // As in runAction: a poison stored earlier still wins.
+                throw poisonOr(poisonIfNested(depth, keepingOriginal(aborted.abort(), cause)));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
                 // Reaching here: what reaches the same catch in runAction.
                 throw poisonOr(e);
             }
+            settle(ctx);
             if (uow.isPoisoned()) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 throw uow.poison().orElseThrow();
@@ -1345,12 +1455,17 @@ final class Transaction {
         if (depth == 0) {
             return new StepResult.Rejected<>(from, id, reason, kind, guard);
         }
-        String who = switch (kind) {
-            case NO_TRANSITION -> "no such transition";
-            case GUARD -> "guard " + guard.orElseThrow();
-            case DETACHED -> "detached sub-machine";
-            case RESERVED_EXIT -> "reserved exit";
-        };
+        // Not a switch, as in statesWritten.
+        String who;
+        if (kind == RejectionKind.NO_TRANSITION) {
+            who = "no such transition";
+        } else if (kind == RejectionKind.GUARD) {
+            who = "guard " + guard.orElseThrow();
+        } else if (kind == RejectionKind.DETACHED) {
+            who = "detached sub-machine";
+        } else {
+            who = "reserved exit";
+        }
         String inside = exitOf.isPresent() ? "the exit of " + exitOf.get().node().name() : "a cascade";
         throw abort(machine, ref, from, Optional.of(id), to.map((S state) -> (Enum<?>) state), Optional.empty(), depth,
                 "rejected inside " + inside + " by " + who + ": " + reason, Optional.empty());
@@ -1389,11 +1504,30 @@ final class Transaction {
     private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                              Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
                                              int depth, String message, Optional<Throwable> cause) {
+        return poisonIfNested(depth, unpoisonedAbort(machine, ref, from, id, to, action, message, cause));
+    }
+
+    /**
+     * {@code abort}, which the engine built for a step that took a failure route, holding as suppressed
+     * {@code original}, the throwable that selected the route, when there is one and it is not the abort's own cause.
+     * Adding it reads no message.
+     */
+    private static <X extends TransitionAbortedException> X keepingOriginal(X abort, Optional<Throwable> original) {
+        if (original.isPresent() && original.get() != abort.getCause()) {
+            abort.addSuppressed(original.get());
+        }
+        return abort;
+    }
+
+    /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to where the call is poisoned with it. */
+    private TransitionAbortedException unpoisonedAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                                       Enum<?> from, Optional<Enum<?>> id, Optional<Enum<?>> to,
+                                                       Optional<String> action, String message,
+                                                       Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
-        TransitionAbortedException error = cause.isPresent()
+        return cause.isPresent()
                 ? new TransitionAbortedException(call(), phase, details, message, cause.get())
                 : new TransitionAbortedException(call(), phase, details, message);
-        return poisonIfNested(depth, error);
     }
 
     /**
@@ -1402,6 +1536,7 @@ final class Transaction {
      */
     private TransitionAbortedException unread(DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> id,
                                               Throwable error) {
+        Interrupts.keep(error);
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
@@ -1422,6 +1557,7 @@ final class Transaction {
         if (error instanceof CallFailedException failure && owns(failure)) {
             return failure;
         }
+        Interrupts.keep(error);
         uow.markRunningAsThrew();
         Optional<Enum<?>> from = rootStep.map(RootStep::from);
         Optional<Enum<?>> transition = rootStep.isPresent() ? Optional.of(rootStep.get().id()) : requested;
@@ -1488,13 +1624,14 @@ final class Transaction {
     // Peers and cascading.
 
     /**
-     * {@code guard} is the caller context's own check: the view stays as alive as the context that made it. A read
-     * stages nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in peerKeyFor.
+     * {@code unit} is the caller context's own check, which answers the call's unit of work: the view stays as alive
+     * as the context that made it, and holds nothing of the call once that context is invalidated. A read stages
+     * nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in peerKeyFor.
      */
-    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Runnable guard,
+    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Supplier<UnitOfWork> unit,
                                                                      MachineKey<P, Q, U> key) {
         checkPoison(caller);
-        return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
+        return new DefaultPeerView<>(unit, registry.machineFor(key));
     }
 
     /**
@@ -1508,8 +1645,11 @@ final class Transaction {
     }
 
     /**
-     * Resolves the facade a cascade names inside the poisoning scope: an unknown facade poisons, as an unknown key
-     * does once the cascade looks its machine up, and the action receives the abort that carries it.
+     * Resolves the facade a cascade names: an unknown facade poisons, as an unknown key does once the cascade looks its
+     * machine up, and the action receives the abort that carries it. The catch condemns the call first, as a cascade's
+     * does, so the call stays poisoned when an Error strikes while that poison is recorded. A VirtualMachineError that
+     * strikes while the facade resolves poisons nothing: the identifier is checked next, so the cascade has not
+     * accepted its arguments yet.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(
             ContextHandle caller, Class<? extends Machine<P, Q, U>> facade) {
@@ -1517,6 +1657,8 @@ final class Transaction {
         try {
             return keyFor(facade);
         } catch (StateMachineException e) {
+            // First a store, as in cascade: the call stays condemned if an Error strikes while its poison is recorded.
+            condemned = true;
             throw poisonWith(caller, facade.getSimpleName(), e);
         }
     }
@@ -1526,7 +1668,8 @@ final class Transaction {
      * refuses a null argument before calling this: such a refusal stages nothing and poisons nothing. Once the cascade
      * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The action
      * receives the failure of this call as it is, or else the new abort, as {@link #poisonWith} says, and an Error as
-     * itself.
+     * itself. A VirtualMachineError, a StackOverflowError or an OutOfMemoryError for one, leaves at once, unrecorded:
+     * {@link #settle} records it once the action goes on.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
                                                                        P peer, U id) {
@@ -1536,7 +1679,8 @@ final class Transaction {
     /**
      * {@link #cascade(ContextHandle, MachineKey, Object, Enum)}, or one element of a FAIL_FAST cascadeAll, whose
      * {@code policy} the element's TRACE line names; it is empty for a single cascade and when the call does not log
-     * at TRACE.
+     * at TRACE. An element runs inside the catch of {@link #cascadeEach}, which condemns the call: since the elements
+     * before it may have staged their hops, whatever strikes while its arguments are checked again poisons the call.
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(
             ContextHandle caller, MachineKey<P, Q, U> key, P peer, U id, Optional<CascadePolicy> policy) {
@@ -1545,6 +1689,12 @@ final class Transaction {
         try {
             return cascadeOne(caller, key, peer, id, policy);
         } catch (Throwable error) {
+            // First a store, which cannot overflow: whatever the rest of this catch throws, a cascade failed.
+            condemned = true;
+            if (error instanceof VirtualMachineError fatal) {
+                // Recording it would need the stack or the memory that ran out; settle records it.
+                throw fatal;
+            }
             CallFailedException poisoned = poisonWith(caller, key.toString(), error);
             if (error instanceof Error fatal) {
                 throw fatal;
@@ -1553,10 +1703,14 @@ final class Transaction {
         }
     }
 
-    /** Refuses an identifier from another machine's catalogue, which only a caller that bypasses generics can pass. */
+    /**
+     * Refuses an identifier from another machine's catalogue, which only a caller that bypasses generics can pass, and
+     * names it by {@code name()}, never through a {@code toString()} that could change or replace the refusal.
+     */
     private static void requireTransition(MachineKey<?, ?, ?> key, Enum<?> id) {
         if (!key.transitions().isInstance(id)) {
-            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + id);
+            throw new IllegalArgumentException(
+                    "transition must belong to " + key.transitions().getName() + ": " + id.name());
         }
     }
 
@@ -1564,8 +1718,9 @@ final class Transaction {
      * Poisons the transaction with a failure that left a cascade, and returns the failure of this call as it is, or
      * else the new abort. A failure of this call is itself the poison. Anything else, an engine exception that
      * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
-     * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
-     * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
+     * exception of another call or an Error other than a VirtualMachineError, which the cascades let through before
+     * they call this, poisons through an abort of the caller's step that names the cascade and carries it as cause;
+     * COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
      * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort
      * prints the failure and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so
      * one that cannot be printed shows a marker; when printing them throws an Error, the transaction is first poisoned
@@ -1587,6 +1742,7 @@ final class Transaction {
      * {@code error}, and returns that abort.
      */
     private TransitionAbortedException poisonThrough(ContextHandle caller, String target, Throwable error) {
+        Interrupts.keep(error);
         String cascade = "the cascade to " + target + " failed: ";
         TransitionAbortedException wrapper;
         try {
@@ -1685,7 +1841,10 @@ final class Transaction {
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
      * stops the cascade at once, a nested one too, once an element's step was poisoned through such an abort, whether
-     * its action let it through, caught it or replaced it.
+     * its action let it through, caught it or replaced it. The abort of an element's step whose binding check could
+     * not read a parent or a child poisons as such a failure, as {@link #bindingReadAbort} says, so it stops the
+     * cascade too. A VirtualMachineError stops it at once too, as itself and unrecorded, as a single cascade lets it
+     * through, and so does the abort of an element's step that recorded one its action caught.
      * Once the poison is checked, the collection is copied, and every later step reads the copy alone: the elements
      * checked are the elements run, and a change to the collection while the cascade runs, by an element's action for
      * instance, changes neither which elements run nor their order. Copying is part of accepting the arguments: an
@@ -1693,7 +1852,9 @@ final class Transaction {
      * nothing. The arguments are refused before any element runs, as cascade refuses its own, and the refusal stages
      * nothing and poisons nothing: a null element first, then an identifier from another catalogue, which the key
      * carries. The machine is looked up next, before any element runs, so an unknown key poisons whatever valid
-     * elements the collection holds, and an empty collection too, as it does in cascade.
+     * elements the collection holds, and an empty collection too, as it does in cascade. Once the identifier is
+     * accepted, whatever ends the cascade poisons the call, as {@link #cascadeEach} says, an Error that strikes between
+     * two elements, after the first one staged its hop, too.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
@@ -1727,12 +1888,20 @@ final class Transaction {
     }
 
     /**
-     * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
+     * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. Once the
+     * identifier is accepted, all of it runs inside a catch whose first statement condemns the call with a store, which
+     * needs neither stack nor memory, as the catch of a single cascade does: whatever ends the cascade from then on
+     * poisons the call, the lookup of the machine included, and so does an Error that strikes where no element's catch
+     * runs, between two elements, while an element's arguments are checked again or while the outcomes are gathered.
+     * Such an Error leaves as itself, and {@link #settle} records it, unless a poison is stored already. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
-     * with the abort that ended its step. A rollback that an identity's equals or hashCode stops is a failure that
-     * leaves the cascade like any other, whatever it threw: the abort of the caller's step that carries it, through
-     * {@link #poisonThrough}, replaces the element's abort as the poison, holds that abort as suppressed, and reaches
-     * the action; a COLLECT that encloses this one collects no such poison, so it stops at once too. When printing the
+     * with the abort that ended its step. An element that fails before its step runs, a cycle or the depth limit,
+     * poisons the call through {@link #poisonAt} before it is rolled back, so its poison is logged as a single
+     * cascade's is; an element whose step aborted poisoned the call inside the step, which logged it. A rollback that
+     * an identity's equals or hashCode stops is a failure that leaves the cascade like any other, whatever it threw:
+     * the abort of the caller's step that carries it, through {@link #poisonThrough}, replaces the element's abort as
+     * the poison, holds that abort as suppressed, and reaches the action; a COLLECT that encloses this one collects no
+     * such poison, so it stops at once too. When printing the
      * entities in flight for the aggregate throws an Error, an
      * aggregate whose path names each entity's machine alone poisons the transaction first, as {@link #poisonWith}
      * says, and then that Error propagates.
@@ -1740,67 +1909,81 @@ final class Transaction {
     private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
             ContextHandle caller, MachineKey<P, Q, U> key, List<P> elements, U id, CascadePolicy policy) {
         requireTransition(key, id);
-        requireMachine(caller, key);
-        List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
-        List<TransitionAbortedException> errors = new ArrayList<>();
-        // Only the TRACE lines read the policy and the element's reference: a call that does not log at TRACE keeps
-        // neither, and allocates nothing for them.
-        Optional<CascadePolicy> traced = log.trace() ? Optional.of(policy) : Optional.empty();
-        for (P peer : elements) {
-            if (policy == CascadePolicy.FAIL_FAST) {
-                outcomes.add(cascade(caller, key, peer, id, traced));
-                continue;
-            }
-            int savepoint = uow.savepoint();
-            Optional<EntityRef> target = Optional.empty();
-            try {
-                DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
-                EntityRef ref = uow.register(machine.refOf(peer));
-                if (log.trace()) {
-                    target = Optional.of(ref);
-                }
-                outcomes.add(cascadeTo(caller, machine, ref, peer, id, traced));
-            } catch (Throwable error) {
-                if (error instanceof TransitionAbortedException abort && owns(abort)
-                        && !uow.poisonWrapsAForeignFailure()) {
-                    uow.poison(abort);
-                    try {
-                        uow.rollbackTo(savepoint);
-                    } catch (Error fatal) {
-                        throw fatal;
-                    } catch (Throwable stopped) {
-                        uow.clearPoison();
-                        TransitionAbortedException interrupted = poisonThrough(caller, key.toString(), stopped);
-                        interrupted.addSuppressed(abort);
-                        throw interrupted;
-                    }
-                    if (target.isPresent()) {
-                        log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
-                                + id.name() + " error=" + CallLog.show(abort));
-                    }
-                    errors.add(abort);
-                    uow.clearPoison();
+        try {
+            requireMachine(caller, key);
+            List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
+            List<TransitionAbortedException> errors = new ArrayList<>();
+            // Only the TRACE lines read the policy and the element's reference: a call that does not log at TRACE keeps
+            // neither, and allocates nothing for them.
+            Optional<CascadePolicy> traced = log.trace() ? Optional.of(policy) : Optional.empty();
+            for (P peer : elements) {
+                if (policy == CascadePolicy.FAIL_FAST) {
+                    outcomes.add(cascade(caller, key, peer, id, traced));
                     continue;
                 }
-                CallFailedException poisoned = poisonWith(caller, key.toString(), error);
-                if (error instanceof Error fatal) {
+                int savepoint = uow.savepoint();
+                Optional<EntityRef> target = Optional.empty();
+                try {
+                    DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
+                    EntityRef ref = uow.register(machine.refOf(peer));
+                    if (log.trace()) {
+                        target = Optional.of(ref);
+                    }
+                    outcomes.add(cascadeTo(caller, machine, ref, peer, id, traced));
+                } catch (Throwable error) {
+                    // As in cascade: a store first, then a VirtualMachineError leaves as itself.
+                    condemned = true;
+                    if (error instanceof VirtualMachineError fatal) {
+                        throw fatal;
+                    }
+                    if (error instanceof TransitionAbortedException abort && owns(abort)
+                            && !uow.poisonWrapsAForeignFailure()) {
+                        poisonAt(caller.contextDepth(), abort);
+                        try {
+                            uow.rollbackTo(savepoint);
+                        } catch (Error fatal) {
+                            throw fatal;
+                        } catch (Throwable stopped) {
+                            uow.clearPoison();
+                            TransitionAbortedException interrupted = poisonThrough(caller, key.toString(), stopped);
+                            interrupted.addSuppressed(abort);
+                            throw interrupted;
+                        }
+                        if (target.isPresent()) {
+                            log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
+                                    + id.name() + " error=" + CallLog.show(abort));
+                        }
+                        errors.add(abort);
+                        uow.clearPoison();
+                        condemned = false;
+                        continue;
+                    }
+                    CallFailedException poisoned = poisonWith(caller, key.toString(), error);
+                    if (error instanceof Error fatal) {
+                        throw fatal;
+                    }
+                    throw poisoned;
+                }
+            }
+            if (!errors.isEmpty()) {
+                CascadeException aggregate;
+                try {
+                    aggregate = new CascadeException(call(), details(caller), errors);
+                } catch (Error fatal) {
+                    uow.poison(new CascadeException(call(), bareDetails(caller), errors));
                     throw fatal;
                 }
-                throw poisoned;
+                poisonAt(caller.contextDepth(), aggregate);
+                throw aggregate;
             }
+            return List.copyOf(outcomes);
+        } catch (Throwable error) {
+            // First a store, which cannot overflow: once the identifier is accepted, whatever ends the cascade poisons
+            // the call, an Error that strikes between two elements, where no element's catch runs, too. It leaves as
+            // itself, and settle records it unless a poison is stored already.
+            condemned = true;
+            throw error;
         }
-        if (!errors.isEmpty()) {
-            CascadeException aggregate;
-            try {
-                aggregate = new CascadeException(call(), details(caller), errors);
-            } catch (Error fatal) {
-                uow.poison(new CascadeException(call(), bareDetails(caller), errors));
-                throw fatal;
-            }
-            poisonAt(caller.contextDepth(), aggregate);
-            throw aggregate;
-        }
-        return List.copyOf(outcomes);
     }
 
     /** Looks the machine of a cascade up inside the poisoning scope: an unknown key poisons, as in cascadeOne. */
@@ -1829,8 +2012,24 @@ final class Transaction {
     }
 
     private void checkPoison(ContextHandle caller) {
+        settle(caller);
         if (uow.isPoisoned()) {
             throw new PoisonedUnitOfWorkException(call(), details(caller), uow.poison().orElseThrow());
+        }
+    }
+
+    /**
+     * Records a failed cascade that left no poison, as an abort of {@code caller}'s step that carries no cause: a
+     * VirtualMachineError that the cascade let through unrecorded, or a failure whose recording overflowed the stack,
+     * which the step's action caught and went on from. The engine calls this on that step's own stack, unwound from
+     * the Error, before it reads or stores a poison there: before it checks the poison for a peer read or a cascade,
+     * and first when the action ends, unless an Error it throws as itself ends it. The abort is a failure that is no
+     * failure of the call, so COLLECT does not collect it, and a poison already stored stays: the call keeps its first.
+     */
+    private void settle(ContextHandle caller) {
+        if (condemned && !uow.isPoisoned()) {
+            uow.poisonWrapping(new TransitionAbortedException(call(), phase, details(caller),
+                    "the action caught an Error that ended one of its cascades: the call cannot commit"));
         }
     }
 }

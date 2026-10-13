@@ -12,9 +12,13 @@ import lombok.NonNull;
  * and reevaluate throw {@code ReentrantTransitionException}, as they do in a guard. A throwable that is not an Error
  * and that {@code peersOf} or a condition throws ends the reevaluation in a {@code TransitionAbortedException} of phase
  * RESOLVE that carries it, once unwrapped from CompletionException and ExecutionException, which a watch reaction
- * reports as {@code Reaction.Aborted}. A throwable that is not an Error and that {@code ownerOf} throws, while the
- * commit that triggered the reaction looks the owner up, is the cause of a {@code Reaction.Aborted} itself, a checked
- * one wrapped in {@code UndeclaredThrowableException}.
+ * reports as {@code Reaction.Aborted}; an InterruptedException that either throws interrupts the thread again. A
+ * throwable that is not an Error and that {@code ownerOf} throws, while the commit that triggered the reaction looks
+ * the owner up, is the cause of a {@code Reaction.Aborted} itself, a checked one wrapped in
+ * {@code UndeclaredThrowableException}, and an InterruptedException interrupts the thread again. A {@code peersOf} that
+ * returns null instead of a collection ends the reevaluation the same way, before any condition runs, and an
+ * {@code ownerOf} that returns null instead of an Optional ends the lookup the same way, each with a
+ * {@code NullPointerException} that says it returned null.
  */
 public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         @NonNull S state,
@@ -26,7 +30,7 @@ public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends En
     public WatchSpec {
         rules = List.copyOf(rules);
         if (rules.isEmpty()) {
-            throw new IllegalArgumentException("the watch of " + state + " has no rules");
+            throw new IllegalArgumentException("the watch of " + state.name() + " has no rules");
         }
     }
 }

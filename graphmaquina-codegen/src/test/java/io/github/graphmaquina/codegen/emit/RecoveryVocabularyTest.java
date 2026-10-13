@@ -146,8 +146,11 @@ class RecoveryVocabularyTest {
                 "@java.lang.annotation.Target({})",
                 "@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)",
                 "public @interface Recovery {",
+                "/** {@return the failure kind the rule takes} */",
                 "java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();",
+                "/** {@return the transition the rule takes, resolved from the origin the entity is in} */",
                 "fx.DocTransition transition();",
+                "/** {@return the throwable types of the action the rule takes; none by default} */",
                 "java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};",
                 "}"), declaration(vocabulary, "Recovery"));
         List<String> transition = declaration(vocabulary, "Transition");

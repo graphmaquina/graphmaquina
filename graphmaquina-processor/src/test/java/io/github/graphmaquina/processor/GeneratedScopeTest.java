@@ -285,7 +285,7 @@ class GeneratedScopeTest {
 
         assertTrue(result.success(), result.describe());
         String companion = result.generated("shop.OrdersRuntime");
-        assertTrue(companion.contains("pay(Order order, billing.Payment input)"), companion);
+        assertTrue(companion.contains("pay(Order order, billing.Payment payment)"), companion);
     }
 
     /** The companion reads the constants of the state enum, where a constant of the facade of that name is read instead. */

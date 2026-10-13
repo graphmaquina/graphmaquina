@@ -43,7 +43,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         requireUnbuilt();
         if (name.isBlank()) {
             graph.problems().add("SG107", state.ordinal(), -1,
-                    "a condition of the watch of " + state + " has a blank name");
+                    "a condition of the watch of " + state.name() + " has a blank name");
             return pend(new NamedCondition<>("(unnamed)", condition));
         }
         return pend(new NamedCondition<>(name, condition));
@@ -62,7 +62,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         graph.requireTransition(transition);
         if (pending.isEmpty()) {
             graph.problems().add("SG404", state.ordinal(), transition.ordinal(),
-                    "the watch of " + state + " declares execute(" + transition + ") without when(...)");
+                    "the watch of " + state.name() + " declares execute(" + transition.name() + ") without when(...)");
             return this;
         }
         rules.add(new WatchRule<>(pending.get(), transition));
@@ -77,12 +77,12 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
 
     /** Once the graph is built nothing reads this watch any more, so a late call would be lost. */
     private void requireUnbuilt() {
-        graph.requireUnbuilt("the watch of " + state);
+        graph.requireUnbuilt("the watch of " + state.name());
     }
 
     private void reportPending(Problems problems) {
         if (pending.isPresent()) {
-            problems.add("SG404", state.ordinal(), -1, "the watch of " + state + " declares when("
+            problems.add("SG404", state.ordinal(), -1, "the watch of " + state.name() + " declares when("
                     + pending.get().name() + ") without execute(...)");
         }
     }
@@ -91,7 +91,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         reportPending(problems);
         if (rules.isEmpty()) {
             problems.add("SG404", state.ordinal(), -1,
-                    "the watch of " + state + " declares no when(...).execute(...) rule");
+                    "the watch of " + state.name() + " declares no when(...).execute(...) rule");
             return Optional.empty();
         }
         return Optional.of(new WatchSpec<>(state, peer, peersOf, ownerOf, rules));

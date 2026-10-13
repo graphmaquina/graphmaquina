@@ -5,6 +5,7 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -34,8 +35,8 @@ public final class StateSnapshot {
     public List<StateChange> changes() {
         List<StateChange> changes = new ArrayList<>();
         for (Captured entry : captured) {
-            Enum<?> after = entry.tracked().reader().get();
-            if (!Objects.equals(entry.before(), after)) {
+            Optional<Enum<?>> after = entry.tracked().reader().get();
+            if (!entry.before().equals(after)) {
                 changes.add(new StateChange(entry.tracked().key(), entry.tracked().entity(),
                         entry.before(), after));
             }
@@ -73,7 +74,7 @@ public final class StateSnapshot {
                     throw new IllegalArgumentException("the entity is already tracked under " + key);
                 }
             }
-            tracked.add(new Tracked(key, entity, () -> getter.apply(entity)));
+            tracked.add(new Tracked(key, entity, () -> Optional.ofNullable(getter.apply(entity))));
             return this;
         }
 
@@ -87,9 +88,12 @@ public final class StateSnapshot {
         }
     }
 
-    /** An entity tracked under a machine, with the reader that gets its state through the tracking getter. */
-    private record Tracked(MachineKey<?, ?, ?> key, Object entity, Supplier<Enum<?>> reader) { }
+    /**
+     * An entity tracked under a machine, with the reader that gets its state through the tracking getter, empty when
+     * the getter answers null.
+     */
+    private record Tracked(MachineKey<?, ?, ?> key, Object entity, Supplier<Optional<Enum<?>>> reader) { }
 
     /** A tracked entity together with the state its reader returned when {@link Builder#capture()} froze it. */
-    private record Captured(Tracked tracked, Enum<?> before) { }
+    private record Captured(Tracked tracked, Optional<Enum<?>> before) { }
 }

@@ -22,7 +22,7 @@
   <mojos>
     <mojo>
       <goal>generate</goal>
-      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the default-compile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the execution of maven-compiler-plugin's compile goal that compiles the generated vocabulary, default-compile unless the build binds another, is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, no manifest argument, a second running execution of that goal that compiles the vocabulary too, or that execution running before the preparation or after the completion of the compilation, as an execution of the build's own does when graphmaquina-maven-plugin is declared before maven-compiler-plugin. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -85,11 +85,15 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
       <goal>prepare</goal>
-      <description>Retires the outputs the previous cycle of the main compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Retires the outputs the previous cycle of the main compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -152,11 +156,15 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
       <goal>complete</goal>
-      <description>Publishes the index of what javac accepted for the main compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Publishes the index of what javac accepted for the main compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -219,11 +227,15 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
       <goal>generate-test</goal>
-      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the default-testCompile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the execution of maven-compiler-plugin's testCompile goal that compiles the generated vocabulary, default-testCompile unless the build binds another, is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, no manifest argument, a second running execution of that goal that compiles the vocabulary too, or that execution running before the preparation or after the completion of the compilation, as an execution of the build's own does when graphmaquina-maven-plugin is declared before maven-compiler-plugin. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's testCompile goal, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -286,11 +298,15 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
       <goal>prepare-test</goal>
-      <description>Retires the outputs the previous cycle of the test compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
+      <description>Retires the outputs the previous cycle of the test compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's testCompile goal, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -353,11 +369,15 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
       <goal>complete-test</goal>
-      <description>Publishes the index of what javac accepted for the test compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
+      <description>Publishes the index of what javac accepted for the test compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's testCompile goal, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -419,6 +439,10 @@
         <requirement>
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
         </requirement>
       </requirements>
     </mojo>

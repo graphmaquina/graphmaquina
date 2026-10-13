@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
@@ -21,6 +22,7 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 
 /**
  * Checks every member this compilation exports against the declarations javac has, whether or not a graph of
@@ -29,8 +31,9 @@ import javax.lang.model.type.TypeMirror;
  * <p>An export is published: a dependent compilation reads it from the manifest and binds to it without seeing
  * these sources again. So the contract is verified where it is declared, not where it is used. What is
  * verified here is what a use cannot repair: a marked method is public, since generated code may call it from
- * another package, its shape is the one its role requires, and it does not contradict the role of the contract it
- * overrides; a property is still declared as the field or the getter it was read from, and such a getter is a
+ * another package, its shape is the one its role requires, it does not contradict the role of the contract it
+ * overrides, and a static one is inherited by the host that exports it, since generated code calls it through that
+ * host; a property is still declared as the field or the getter it was read from, and such a getter is a
  * public instance method. Whether its host is accessible where a companion is generated, and which entity and
  * which states it suits, are questions about a machine, and belong to the use.</p>
  *
@@ -75,7 +78,7 @@ final class ExportValidator {
         for (SymbolDescriptor symbol : manifest.local().model().symbols()) {
             int before = diagnostics.errors();
             boolean holds = true;
-            TypeElement host = CanonicalNames.type(signatures.elements(), symbol.host(),
+            TypeElement host = CanonicalNames.type(signatures.members(), symbol.host(),
                     CanonicalNames.packageOfMemberType(symbol.qualifiedName()));
             if (host == null) {
                 diagnostics.error(INVALID, symbol.qualifiedName() + " exports members of " + symbol.host()
@@ -100,8 +103,8 @@ final class ExportValidator {
      */
     private boolean candidate(SymbolDescriptor symbol, MemberDescriptor candidate, TypeElement host,
             Map<ExecutableElement, Boolean> validated) {
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
-                (Element member) -> marks(member, candidate)
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, candidate.declaringType(),
+                candidate.name(), (Element member) -> marks(member, candidate)
                         && effective.marker((ExecutableElement) member).orElseThrow().role() == candidate.role());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
@@ -120,6 +123,14 @@ final class ExportValidator {
         for (ExecutableElement method : marked) {
             SymbolKind role = effective.marker(method).orElseThrow().role();
             declared |= role == candidate.role();
+            Optional<String> uninherited = notInherited(method, declaring, host);
+            if (uninherited.isPresent()) {
+                DiagnosticAnchor.of(method, effective.marker(method).orElseThrow().mirror()).report(diagnostics,
+                        INVALID, symbol.qualifiedName() + " exports " + declaring.getQualifiedName() + '.'
+                        + method.getSimpleName() + " through " + host.getQualifiedName()
+                        + ", which does not inherit it: " + uninherited.get());
+                holds = false;
+            }
             if (!validated.containsKey(method)) {
                 validated.put(method, member(method, declaring, role));
             }
@@ -132,6 +143,30 @@ final class ExportValidator {
             return false;
         }
         return holds;
+    }
+
+    /**
+     * Why {@code host} does not inherit the static method {@code method} of its supertype {@code declaring}, which
+     * generated code calls through {@code host}: neither a class nor an interface inherits a static method of an
+     * interface, and a method {@code host} declares or inherits may hide it. Empty when {@code host} inherits it, when
+     * {@code host} declares it, and for an instance method, which is inherited or overridden by one that keeps its
+     * role.
+     */
+    private Optional<String> notInherited(ExecutableElement method, TypeElement declaring, TypeElement host) {
+        if (declaring.equals(host) || !method.getModifiers().contains(Modifier.STATIC)) {
+            return Optional.empty();
+        }
+        if (declaring.getKind().isInterface()) {
+            return Optional.of("neither a class nor an interface inherits a static method of an interface");
+        }
+        List<ExecutableElement> named = ElementFilter.methodsIn(signatures.members().all(host, method.getSimpleName()));
+        for (ExecutableElement other : named) {
+            if (signatures.elements().hides(other, method)) {
+                return Optional.of(((TypeElement) other.getEnclosingElement()).getQualifiedName() + "."
+                        + other.getSimpleName() + " hides it");
+            }
+        }
+        return Optional.empty();
     }
 
     /** Whether one marked declaration holds: public, shaped like its role, and true to its contract. */
@@ -160,15 +195,15 @@ final class ExportValidator {
 
     /** The declaration a property was resolved from must still be the kind of declaration it was read as. */
     private void property(SymbolDescriptor symbol, PropertyDescriptor property, TypeElement host) {
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, property.declaringType(),
-                (Element member) -> reads(member, property)
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, property.declaringType(),
+                property.declarationName(), (Element member) -> reads(member, property)
                         && annotations.find(member, GraphProperty.class).isPresent());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
                     + " of " + property.declaringType() + ", which this compilation does not declare", host);
             return;
         }
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, property.declarationName())) {
             if (reads(member, property)) {
                 if (property.directGetter()) {
                     reader((ExecutableElement) member, declaring, property);
@@ -224,16 +259,19 @@ final class ExportValidator {
         };
     }
 
-    /** A result the engine understands: the verdict itself, or the completion stage that will carry it. */
+    /**
+     * A result the engine understands: the verdict itself, or the completion stage that will carry it, never a raw
+     * completion stage, which only an unchecked conversion would make one.
+     */
     private boolean result(TypeMirror returned, String verdict) {
         return signatures.same(returned, signatures.declared(verdict))
-                || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(verdict)));
+                || signatures.subtypeOf(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(verdict)));
     }
 
     /** The declarations of {@code declaring} that {@code candidate} names and that carry a role of their own. */
     private List<ExecutableElement> marked(TypeElement declaring, MemberDescriptor candidate) {
         List<ExecutableElement> found = new ArrayList<>();
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, candidate.name())) {
             if (marks(member, candidate)) {
                 found.add((ExecutableElement) member);
             }

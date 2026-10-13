@@ -117,6 +117,27 @@ class DependencyExportsTest {
                 + directory.resolve("classes") + " cannot be read: malformed JSON in "), failure.getMessage());
     }
 
+    /**
+     * An index that escapes an unpaired surrogate is well-formed strict JSON that no UTF-8 manifest could carry on, so
+     * it is refused when it is read, against the classpath entry that carries it.
+     */
+    @Test
+    void namesTheEntryWhoseIndexHoldsAnUnpairedSurrogate() throws IOException {
+        Path metadata = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
+        Files.writeString(metadata.resolve("exports.json"), "{\"schemaVersion\": 2, \"toolVersion\": \""
+                + ToolVersion.current() + "\", \"compilationId\": \"other:lib:main\", \"model\": {\"graphs\": [],"
+                + " \"symbols\": []}, \"annotationTypes\": [\"lib.Orders\\ud800.Transition\"]}",
+                StandardCharsets.US_ASCII);
+
+        CodegenException failure = assertThrows(CodegenException.class,
+                () -> DependencyExports.read(List.of(directory.resolve("classes"))));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("the StateGraph export index published by " + directory.resolve("classes") + " cannot be read:"
+                + " malformed JSON in " + metadata.resolve("exports.json") + ": an unpaired surrogate \\ud800 at path"
+                + " $.annotationTypes[0]", failure.getMessage());
+    }
+
     /** An archive that cannot be opened is named, rather than surfacing the archive library's bare complaint. */
     @Test
     void namesAnArchiveItCannotOpen() throws IOException {

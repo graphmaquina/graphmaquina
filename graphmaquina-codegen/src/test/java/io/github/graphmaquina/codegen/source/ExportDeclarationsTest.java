@@ -167,6 +167,68 @@ class ExportDeclarationsTest {
                 risky.candidates().get(1).origin().path());
     }
 
+    /**
+     * A host marked {@code @GraphBindings} exports the marked static methods it inherits and no other, since
+     * generated code calls a static binding through the host: never a static method of an interface, which no type
+     * inherits, nor one that the host or a superclass between hides with a method of the same name and parameter
+     * types, raw or parameterized, which is exported in its place when it is marked itself.
+     */
+    @Test
+    void exportsOnlyTheStaticMethodsTheHostInherits() {
+        List<SymbolDescriptor> symbols = collect(Map.of(
+                "fx.Order", ORDER,
+                "fx.Hooks", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphHook;
+                    public interface Hooks {
+                        @GraphHook
+                        static void announced(Order order) {}
+                    }
+                    """,
+                "fx.BaseActions", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    import java.util.List;
+                    public class BaseActions {
+                        @GraphAction
+                        public static void archive(Order order) {}
+                        @GraphAction
+                        public static void approve(Order order) {}
+                        @GraphAction
+                        public static void sort(List<Order> orders) {}
+                        @GraphAction
+                        public static void keep(Order order) {}
+                    }
+                    """,
+                "fx.MiddleActions", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class MiddleActions extends BaseActions {
+                        @GraphAction
+                        public static void approve(Order order) {}
+                    }
+                    """,
+                "fx.Host", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphBindings;
+                    import java.util.List;
+                    @GraphBindings
+                    public class Host extends MiddleActions implements Hooks {
+                        public static void archive(Order order) {}
+                        @SuppressWarnings("rawtypes")
+                        public static void sort(List orders) {}
+                    }
+                    """));
+
+        assertEquals(List.of("fx.HostRefs.Approve", "fx.HostRefs.Keep"), symbols.stream()
+                .map(SymbolDescriptor::qualifiedName).filter((String name) -> name.startsWith("fx.HostRefs.")).toList());
+        assertEquals(List.of("fx.MiddleActions"), symbol(symbols, "fx.HostRefs.Approve").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(List.of("fx.BaseActions"), symbol(symbols, "fx.HostRefs.Keep").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(Set.of(SymbolKind.HOOK), symbol(symbols, "fx.HooksRefs.Announced").kinds());
+    }
+
     @Test
     void exportsMarkedMembersInheritedFromABinaryBase() {
         Path jar = SourceFiles.compileToJar(directory.resolve("build"),
@@ -811,6 +873,234 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * A local or anonymous class has no canonical name, so no references container can name it as a host: a marker
+     * written in one, on one of its members or on the class itself, is refused where it is written, as one in a
+     * private class is, wherever the class is declared, and even in a class that nothing marked encloses.
+     */
+    @Test
+    void refusesAMarkerWrittenInALocalOrAnonymousClass() {
+        Map<String, Long> lines = new LinkedHashMap<>();
+        Map<String, String> shops = new LinkedHashMap<>();
+        shops.put("GraphAction", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Shop {
+                    public static Object handlers() {
+                        class Handlers {
+                            @GraphAction
+                            public void archive(Order order) {}
+                        }
+                        return new Handlers();
+                    }
+                }
+                """);
+        lines.put("GraphAction", 6L);
+        shops.put("io.github.graphmaquina.annotation.GraphGuard", """
+                package fx;
+                public class Shop {
+                    private final Object handlers = new Object() {
+                        @io.github.graphmaquina.annotation.GraphGuard
+                        public void approved(Order order) {}
+                    };
+                }
+                """);
+        lines.put("io.github.graphmaquina.annotation.GraphGuard", 4L);
+        shops.put("GraphProperty", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public enum Shop {
+                    OPEN {
+                        @GraphProperty
+                        public String label() { return "open"; }
+                    };
+                }
+                """);
+        lines.put("GraphProperty", 5L);
+        shops.put("GraphBindings", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                public class Shop {
+                    static {
+                        Runnable runnable = () -> {
+                            @GraphBindings
+                            class Handlers {}
+                        };
+                    }
+                }
+                """);
+        lines.put("GraphBindings", 6L);
+        for (Map.Entry<String, String> shop : shops.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.getValue())), shop.getKey());
+
+            assertEquals("SG604", failure.code());
+            assertEquals("the marker @" + shop.getKey() + " is written in a local or anonymous class of fx.Shop,"
+                    + " which no references container can name, so it exports nothing: mark a member of a top-level"
+                    + " or member class instead", failure.getMessage());
+            assertEquals("fx/Shop.java", failure.location().orElseThrow().path());
+            assertEquals(lines.get(shop.getKey()), failure.location().orElseThrow().line());
+        }
+
+        assertEquals(List.of(), collect(Map.of("fx.Order", ORDER, "fx.Shop", """
+                package fx;
+                public class Shop {
+                    public static Object handlers() {
+                        class Handlers {
+                            @Deprecated
+                            public void archive(Order order) {}
+                        }
+                        return new Handlers();
+                    }
+                }
+                """)));
+    }
+
+    /**
+     * In the body of a local or anonymous class, javac reads a name as a member type of that class first, declared
+     * or inherited, then of each class enclosing it there, and only then as the file's imports read it. A marker
+     * spelled like a StateGraph marker that such a member type takes over is another annotation, so nothing is
+     * refused and the file still exports its real marker. A supertype the generator cannot resolve, such as one of a
+     * library missing from its classpath or a local class, may declare such a member type too, so a marker below it
+     * is let through. A marker on a local class itself is read outside its body, where its own supertypes declare
+     * nothing in scope, and is still refused, as is one in the class body of a constant of a local enum, whose
+     * supertype is that enum.
+     */
+    @Test
+    void readsAMarkerNameInALocalOrAnonymousClassAsAMemberTypeItTakesOver() {
+        String lib = """
+                package fx;
+                public class Lib {
+                    public @interface GraphAction {}
+                    public @interface GraphBindings {}
+                    public static class Holder {
+                        public @interface GraphGuard {}
+                    }
+                    public class Part extends Holder {}
+                }
+                """;
+        String shop = """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                public class Shop {
+                    @GraphAction
+                    public void archive(Order order) {}
+                    public static Object handlers() {
+                %s
+                    }
+                }
+                """;
+        Map<String, String> bodies = new LinkedHashMap<>();
+        bodies.put("an anonymous class of a type that declares it", """
+                        return new Lib() {
+                            @GraphAction
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a type that inherits it", """
+                        return new Base() {
+                            @GraphBindings
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member class of a local class", """
+                        class Handlers {
+                            class Holder extends Lib {}
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphAction
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Handlers();
+                """);
+        bodies.put("a local class in a local class that inherits it", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                class Inner {
+                                    @GraphAction
+                                    void run() {}
+                                }
+                                return new Inner();
+                            }
+                        }
+                        return new Outer();
+                """);
+        bodies.put("a supertype a local class takes over", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphGuard
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Outer();
+                """);
+        bodies.put("a local class named like a type of the package", """
+                        class Holder extends Lib.Holder {}
+                        return new Holder() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member of the type of an expression", """
+                        return new Lib().new Part() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        int compiled = 0;
+        for (Map.Entry<String, String> body : bodies.entrySet()) {
+            List<Path> files = SourceFiles.write(directory, Map.of("fx.Order", ORDER, "fx.Lib", lib,
+                    "fx.Base", "package fx; public class Base extends Lib {}", "fx.Holder",
+                    "package fx; public class Holder {}", "fx.Part", "package fx; public class Part {}",
+                    "fx.Shop", shop.formatted(body.getValue())));
+            SourceFiles.Compilation compilation =
+                    SourceFiles.compileStrict(files, directory.resolve("classes-" + compiled++));
+            assertTrue(compilation.success(), body.getKey() + ": " + compilation.messages());
+
+            assertEquals(List.of("fx.ShopRefs.Archive"),
+                    collect(files).stream().map(SymbolDescriptor::qualifiedName).toList(), body.getKey());
+        }
+
+        assertEquals(List.of("fx.ShopRefs.Archive"), collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.formatted("""
+                        return new Generated() {
+                            @GraphAction
+                            void run() {}
+                        };
+                """))).stream().map(SymbolDescriptor::qualifiedName).toList());
+
+        Map<String, String> refused = new LinkedHashMap<>();
+        refused.put("GraphBindings", """
+                        @GraphBindings
+                        class Handlers extends Lib {}
+                        return new Handlers();
+                """);
+        refused.put("GraphAction", """
+                        enum Kind {
+                            OPEN {
+                                @GraphAction
+                                void run() {}
+                            }
+                        }
+                        return Kind.OPEN;
+                """);
+        for (Map.Entry<String, String> body : refused.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of("fx.Order", ORDER,
+                    "fx.Lib", lib, "fx.Shop", shop.formatted(body.getValue()))), body.getKey());
+
+                assertEquals("SG604", failure.code());
+            assertEquals("the marker @" + body.getKey() + " is written in a local or anonymous class of fx.Shop, which"
+                    + " no references container can name, so it exports nothing: mark a member of a top-level or"
+                    + " member class instead", failure.getMessage());
+            assertEquals(body.getKey().equals("GraphBindings") ? 9L : 11L, failure.location().orElseThrow().line());
+        }
+    }
+
+    /**
      * The references container is a top-level type of the host's package and names its host by a class
      * literal, so a host that is private, or nested in a private type, is refused at the host. A host that is
      * only package-private, or a member of an interface, is still accessible there.
@@ -873,14 +1163,15 @@ class ExportDeclarationsTest {
     }
 
     /**
-     * The references container names StateGraph's {@code io} package and its host qualified, so a type of the
-     * host's package named like the first segment of either obscures it there (JLS 6.4.2). That is refused at the
-     * host, naming the type.
+     * The references container names StateGraph's {@code io} package, {@code java.lang.SuppressWarnings} and its host
+     * qualified, so a type of the host's package named like the first segment of any of them obscures it there
+     * (JLS 6.4.2). That is refused at the host, naming the type.
      */
     @Test
     void refusesAHostWhosePackageObscuresAPackageItsReferencesContainerNames() {
         Map<String, String> obscurers = new LinkedHashMap<>();
         obscurers.put("fx.io", "io.github.graphmaquina");
+        obscurers.put("fx.java", "java.lang.SuppressWarnings");
         obscurers.put("fx.fx", "fx.Shop");
         for (Map.Entry<String, String> obscurer : obscurers.entrySet()) {
             Path project = directory.resolve(obscurer.getKey());
@@ -1117,6 +1408,47 @@ class ExportDeclarationsTest {
                 directory.resolve("out/classes"), directory.resolve("out/work"), "fx:demo:main"));
 
         assertEquals(List.of("fx.PaymentActionsRefs.Authorize"),
+                model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
+    }
+
+    /**
+     * Gradle leaves out of a source directory, with everything inside it, every directory a default exclude of Ant
+     * names, not only the directory of a version control system: one named like an editor's backup or lock file,
+     * like an AppleDouble companion or like a file of a version control system. So does the generator's walk. A
+     * directory whose name only resembles one, such as {@code #} or {@code %}, which the patterns {@code #*#} and
+     * {@code %*%} need two characters to match, is walked as Gradle walks it.
+     */
+    @Test
+    void skipsTheDirectoriesGradleExcludesByDefault() throws IOException {
+        Path sources = directory.resolve("src");
+        SourceFiles.write(sources, Map.of("fx.Order", ORDER));
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        for (String excluded : List.of("~", "old~", "#old#", ".#old", "%old%", "._old", ".DS_Store", ".cvsignore",
+                "vssver.scc", ".gitattributes", ".gitignore", ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
+                ".hgtags", ".bzrignore")) {
+            Path file = sources.resolve("fx").resolve(excluded).resolve("Junk.java");
+            Files.createDirectories(file.getParent());
+            Files.write(file, junk);
+        }
+        for (Map.Entry<String, String> walked : Map.of("#", "PaymentActions", "%", "RefundActions").entrySet()) {
+            Path file = sources.resolve("fx").resolve(walked.getKey()).resolve(walked.getValue() + ".java");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class %s {
+                        @GraphAction
+                        public void authorize(Order order) {}
+                    }
+                    """.formatted(walked.getValue()));
+        }
+
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
+                SourceFiles.classpath(), directory.resolve("out/sources"), directory.resolve("out/processor"),
+                directory.resolve("out/classes"), directory.resolve("out/work"), "fx:demo:main"));
+
+        assertEquals(List.of("fx.PaymentActionsRefs.Authorize", "fx.RefundActionsRefs.Authorize"),
                 model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
     }
 

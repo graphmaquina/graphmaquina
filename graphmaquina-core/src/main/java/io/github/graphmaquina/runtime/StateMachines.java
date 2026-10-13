@@ -91,6 +91,14 @@ public final class StateMachines {
             return this;
         }
 
+        /**
+         * The executor that runs the calls submitted through {@code async(...)}. Given ForkJoinPool.commonPool() while
+         * the common pool's parallelism is below two when the machine is built, the machine runs each call on a new
+         * thread instead, as CompletableFuture.supplyAsync does with that pool on JDK 21: with parallelism 0 the pool
+         * starts no worker, and a call queued there would never run. On JDK 25, CompletableFuture raises the common
+         * pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs its calls
+         * on the pool.
+         */
         public Builder<E, S, T> asyncExecutor(Executor executor) {
             requireUnused();
             Objects.requireNonNull(executor, "executor");
@@ -119,14 +127,16 @@ public final class StateMachines {
          * records its trail creates its flow when its step starts, so it hands out its flow, with the root entity and
          * the trail, even when none of its steps or hooks wrote to it; a reevaluation that selects no edge runs no
          * step, and its ignored outcome hands out the empty flow. The clock is read on the thread running the call,
-         * once per entry; a test can pass a clock it controls, such as a {@link java.time.Clock}. Anything but an Error
-         * that the clock throws, a checked exception included, fails the call as what an identity function throws does:
-         * the entry it could not mark is left out of the trail. When it throws while the call reads the instant of the
+         * once per entry the call appends, an entry a rollback later drops included, so a clock that advances on each
+         * read leaves a gap for each dropped entry; a test can pass a clock it controls, such as a
+         * {@link java.time.Clock}. Anything but an Error that the clock throws, a checked exception included, fails the
+         * call as what an identity function throws does, an InterruptedException interrupting the thread again: the
+         * entry it could not mark is left out of the trail. When it throws while the call reads the instant of the
          * Failed entry that ends a failed call, whatever failed the call, the call's {@code CallFailedException}
          * carries what it threw as suppressed, unless it threw that very exception, and its trail ends without that
-         * entry; an InterruptedException suppressed there interrupts the thread again, and an Error propagates. A
-         * clock that answers null counts as one that throws a NullPointerException. A machine that does not call this
-         * reads no clock and keeps no mark.
+         * entry; an InterruptedException suppressed there interrupts the thread again, and an Error propagates. A clock
+         * that answers null counts as one that throws a NullPointerException. A machine that does not call this reads
+         * no clock and keeps no mark.
          */
         public Builder<E, S, T> recordTrail(InstantSource clock) {
             requireUnused();
@@ -191,7 +201,8 @@ public final class StateMachines {
             validate();
             used = true;
             boolean owns = executor.isEmpty();
-            Executor resolved = executor.isPresent() ? executor.get() : Executors.newVirtualThreadPerTaskExecutor();
+            Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
+                    : Executors.newVirtualThreadPerTaskExecutor();
             return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
                     owns, registry, bindingsAsChild, trail);
         }

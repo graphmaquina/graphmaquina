@@ -12,9 +12,10 @@ import lombok.NonNull;
  * when it ends in a rejection, a final {@link Rejected}; a clock that cannot date that {@link Rejected} fails the call
  * instead, whose trail then ends as a failed call's. A hop or a start whose instant the clock could not read, which
  * fails the call, is left out. An Error ends a call without a final entry. A hop or a start that a rollback dropped,
- * the failed step of a failure route or a {@code COLLECT} element that aborted, leaves the trail with it. {@link #at()}
- * is read on the clock the root machine was built with: for a hop or a start, right after it was logged, before its
- * action runs; for the final entry, when the call ended. Each entry is a value, compared by its components.
+ * the failed step of a failure route or a {@code COLLECT} element whose abort the cascade collected, leaves the trail
+ * with it. {@link #at()} is read on the clock the root machine was built with: for a hop or a start, right after it
+ * was logged, before its action runs; for the final entry, when the call ended. Each entry is a value, compared by its
+ * components.
  */
 public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEntry.Rejected, FlowEntry.Failed {
 
@@ -65,7 +66,8 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
      * @param key the machine of the root call
      * @param entity the entity of the root call
      * @param from the state the request was refused in
-     * @param transition the identifier that was requested
+     * @param transition the identifier the caller asked for, or the one the watch selected in a reevaluation, whose
+     *     call requested none
      * @param kind why the request was refused
      * @param reason the reason of the rejection
      * @param guard the guard that rejected, for a {@link RejectionKind#GUARD} rejection

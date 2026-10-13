@@ -4,7 +4,11 @@ import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.annotation.processing.RoundEnvironment;
@@ -56,15 +60,36 @@ final class VocabularyPlacement {
      * read, and answers with the qualified names of the machines whose graph misses vocabulary of theirs: the ones
      * that vocabulary was generated for, and the ones whose vocabulary sits on the facade of another machine,
      * where that facade's builder refuses it.
+     *
+     * <p>The round is scanned once for all of those annotation types, whose elements are then sorted by the
+     * annotation they carry, each in the order of the scan, which is the order a scan for that annotation alone would
+     * give: the cost of the round does not multiply with the machines. No vocabulary annotation is inherited, so an
+     * element carries one exactly when it is directly present on it.</p>
      */
     Set<String> report(Set<? extends TypeElement> annotationTypes, RoundEnvironment round) {
         Set<String> machines = new LinkedHashSet<>();
+        Set<TypeElement> present = new LinkedHashSet<>();
         for (TypeElement annotation : annotationTypes) {
-            if (!vocabulary.contains(annotation.getQualifiedName().toString())) {
-                continue;
+            if (vocabulary.contains(annotation.getQualifiedName().toString())) {
+                present.add(annotation);
             }
+        }
+        if (present.isEmpty()) {
+            return machines;
+        }
+        Map<TypeElement, List<Element>> carriers = new HashMap<>();
+        for (Element element : round.getElementsAnnotatedWithAny(present.toArray(new TypeElement[0]))) {
+            Set<TypeElement> carried = new LinkedHashSet<>();
+            for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+                if (mirror.getAnnotationType().asElement() instanceof TypeElement type && present.contains(type)
+                        && carried.add(type)) {
+                    carriers.computeIfAbsent(type, (TypeElement key) -> new ArrayList<>()).add(element);
+                }
+            }
+        }
+        for (TypeElement annotation : present) {
             Optional<String> machine = machine(annotation);
-            for (Element element : round.getElementsAnnotatedWith(annotation)) {
+            for (Element element : carriers.getOrDefault(annotation, List.of())) {
                 if (read(element)) {
                     // The builder of that facade refuses the vocabulary of another machine as SG606 where it reads it.
                     if (machine.isPresent() && !machine.get().contentEquals(facade(element).getQualifiedName())) {

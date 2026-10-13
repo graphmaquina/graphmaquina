@@ -316,7 +316,7 @@ inventing one was how a caller could end up believing a route existed.
 | A cascade whose peer already holds the requested state is a convergent no-op, recorded with `TransitionRecord.convergent`. | Convergence by destination is gone, and so is `convergent`. A peer that used to converge now resolves the identifier from its own pending state and runs that edge: its guards are evaluated, its action runs, its hook runs and its record is an ordinary one, where 1.x ran none of the three and marked the record `convergent`. If no edge is keyed by that pair, the rejection aborts the whole cascade. A cascade whose peers used to converge therefore does work 1.x skipped, which is what declaring edges instead of choosing them by destination costs. A nested request on an entity already in flight is always `CascadeCycleException`, even when it asks for the transition that entity is running. Once the entity is no longer in flight, the request resolves from its pending state. |
 | `CascadeCycleException` reports `inFlightTarget` and `requestedTarget` as states. | It reports `inFlightTransition` and `requestedTransition` as identifiers. |
 | `onFailure(state)` routes to the cell `(origin, state)`. | `onFailure(transition)` names the recovering edge and resolves it from the failing edge's origin. A route may legitimately share the destination of the edge it recovers, because identity removes the old ambiguity. Its guards are still skipped and its own route is still not chained. |
-| `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved reports the requested identifier and no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Messages read `FROM -ID-> TO`, `FROM -ID-> ?` when no edge was resolved, or `FROM` when no identifier was read. |
+| `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved reports the requested identifier and no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Messages read `FROM -ID-> TO`, `FROM -ID-> ?` when no edge was resolved, or `FROM` when no identifier was read, with `?` in place of `FROM` when the state could not be read: a call whose entity could not be read reads `? -ID-> ?`, and a reevaluation that could not read its state reads `?` alone. |
 | `ActionRecord` and `TransitionRecord` identify a hop by its endpoints and action name. | Both carry the transition identity as well, so two actions with the same name and endpoints stay distinguishable. |
 | `CommitContext<S>` carries `from`, `to`, `EdgeKind` and `isTerminal`; `HookRef<E>` takes only the entity. | `CommitContext<S, T>` adds the committed identifier and `flow()`, the call's flow, which the hook reads and writes while it runs ([the call's flow](guide.md#the-calls-flow)), and uses `TransitionKind`. `HookRef<E, S, T>.run(entity, context)` receives the context of the edge that committed; `HookRef.of(name, consumer)` adapts a one-argument hook. |
 | A watch rule moves to a state: `.when(c).goTo(state)`. | A watch rule executes a transition of the owner: `.when(c).execute(transition)`. The rule runs that very edge, never another one reaching the same state. |
@@ -334,6 +334,7 @@ that survive keep their numbers; some of them mean something slightly different.
 |---|---|
 | SG101 | Retired from core. There is no N² completeness to check. |
 | SG104 | Retired from core. A self-loop is an ordinary edge; it needs `allowsCycle`, not a special kind. In 1.x this code refused a `MOVE` whose `from` equalled its `to` in the DSL, and refused any annotated cell whose `to` was also in its `from`. |
+| SG105 | Now also refuses two guards of one edge that share a name, in the DSL and in the processor. In 1.x it refused only the same guard declared twice. |
 | SG506 | Retired from the processor along with the row it closed. A non-terminal with no outgoing edge is `SG202`; a state with no policy is `SG701`. |
 | SG204 | Still rejects an unauthorised cycle, but reports **one witness per cyclic strongly connected component** instead of every elementary cycle. The acceptance rule is unchanged; the number of messages is deliberately smaller. |
 | SG301 | Now means: the recovery identifier is this edge's own key, or no edge with that identifier leaves the same origin. |
@@ -419,10 +420,11 @@ the DSL builds, and validates them with `MachineOutlineValidator`. What it gener
 | SG703 | New. Two annotations of one method name different identifiers, or two methods claim the same identifier. A `TYPE`-level `Transition` may add further branches of an identifier a method owns, as long as their keys are disjoint. |
 | SG609 | The retired annotations are recognised by their qualified names — `io.github.graphmaquina.annotation.StateGraph`, `Row`, `Rows`, `Cell`, `Cells`, `Forbid`, `Forbids`, `Action`, `Move`, `Watch`, `Watches`, `When` — and are reported wherever a compilation still resolves them from an older release. They are not kept loadable for the sake of the diagnostic. |
 
-If a source still *imports* one of those twelve types, javac refuses the import before any processor runs and
-SG609 is never reached. The replacement of each one is the table in *Generated vocabulary and build artefacts*
-above: `Row`→`StatePolicy`, `Cell`/`Action`/`Move`→`Transition`, `Forbid`→`Reject`, and the per-pair
-`Watch`/`Watches`/`When` generated for each `@GraphPeers` declaration. Mark the bound members with
+If a source still *imports* one of those twelve types and no older release supplies it, javac reports the import it
+cannot resolve as its own `cannot find symbol` error and SG609 is never reached: the processor still runs over the
+other sources, and the compilation fails on that error. The replacement of each one is the table in *Generated
+vocabulary and build artefacts* above: `Row`→`StatePolicy`, `Cell`/`Action`/`Move`→`Transition`, `Forbid`→`Reject`,
+and the per-pair `Watch`/`Watches`/`When` generated for each `@GraphPeers` declaration. Mark the bound members with
 `@GraphAction`, `@GraphGuard`, `@GraphHook`, `@GraphCondition` or `@GraphProperty`, and name each of them as
 `<Host>Refs.<Member>.class`.
 
@@ -479,14 +481,18 @@ observe. Most items refuse up front what used to fail later, in generated code o
   guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
   can, now goes through a recovery rule or `failsOn`, or aborts, becomes `AfterCommitException` or
   `CommitFailedException`, or, in a watch reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an
-  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
+  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged. Once contained,
+  an `InterruptedException` interrupts the thread again.
 - **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
   a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception that a
   recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null element
   before any element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
   like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an ambiguous
   identity, a null peer state, reaches the action as an abort that carries it. The transaction is poisoned; the
-  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends.
+  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends. A `StackOverflowError`,
+  an `OutOfMemoryError` or another `VirtualMachineError` that strikes once the cascade accepted its arguments, between
+  two elements of a `cascadeAll` too, reaches the action at once; if the action catches it, the poison is an abort of
+  the action's step that carries no cause.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
@@ -520,6 +526,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
   transition.
+- **A stack overflow leaves its thread usable.** A call that ends in a `StackOverflowError`, whatever depth it
+  started at and wherever its stack ran out, releases its thread for the next call. It could leave the thread
+  refusing every later call with `ReentrantTransitionException`.
 - **An async wait runs no other task.** A root waiting on a `ForkJoinPool` worker no longer runs other queued
   tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
@@ -528,6 +537,19 @@ observe. Most items refuse up front what used to fail later, in generated code o
   worker block now aborts the transition, where its `RejectedExecutionException` used to escape the call. The abort
   carries that exception as its cause, unless a failed cascade has already poisoned the transaction: the call then
   ends in the failure that poisoned it.
+- **A wait that gives up leaves one callback per stage.** A wait that times out, is interrupted or is refused still
+  leaves its callback on the stage until the stage completes, but later waits for the same stage share it: a stage
+  that a single-flight cache hands to every caller no longer collects one callback per call that gave up on it. See
+  [timeout, cancellation and late completion](guide.md#timeout-cancellation-and-late-completion).
+- **A submitted call runs inside no `CompletableFuture` wait.** A call submitted through `async(...)`, or through
+  `AsyncStateMachine`'s `execute` or `reevaluate`, is queued as a plain task, which `CompletableFuture`'s `get` and
+  `join` no longer run on a waiting `ForkJoinPool` worker, a common-pool worker for instance, inside the callback
+  that waits, where it failed with `ReentrantTransitionException`. While such a call is queued on the waiting worker,
+  a callback that waits for it, or for a `CompletableFuture` task queued behind it, now waits for another worker to
+  take that task, as [executors and machine lifetime](guide.md#executors-and-machine-lifetime) describes. Such a call
+  now fails its future too when what it throws cannot be printed, because its `getMessage()` or `toString()` throws,
+  with a `CompletionException` whose message is `<toString threw <exception class>>`: it left the future pending on
+  JDK 21, and failed it with an empty message on JDK 25.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
@@ -539,12 +561,30 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `GraphView.terminals()` keep the declared order; `MachineOutlineValidator` no longer takes two names that
   contain `/` for one key; and a context's `peer(Class)` reports a wrong thread, a stale context or a poisoned
   transaction before an unknown facade, as its other calls do.
+- **A watch's lookups must answer.** A `peersOf` that returns null instead of a collection, and an `ownerOf` that
+  returns null instead of an `Optional`, are refused with a `NullPointerException` that says it returned null,
+  before any condition runs: a null collection used to reach the watch's conditions, and a null owner failed inside
+  the engine. An owner lookup's `InterruptedException`, which its `Reaction.Aborted` carries, interrupts the thread
+  again.
+- **A context's peer view refuses even over an empty collection.** `allIn`, `anyIn` and `noneIn` of a view a
+  context's `peer(...)` gave throw `StaleContextException` once the transaction ended, and `WrongThreadException`
+  on another thread, whatever collection they are given; over an empty one they used to answer.
+- **Values refuse what no call could use.** `MachineKey` refuses a primitive class token as its entity type, which
+  every call failed to cast its entity to, and `StatePolicy.reasonFor` and `MachineOutline.outgoing` refuse null.
 
 ### Graph declarations
 
 - **New DSL refusals.** `SG507` for an edge never closed with `endTransition()`, which used to be dropped, and
   for an edge that declares more than one action, `onFailure` or `timeout`, where the last one used to win.
   `SG404` for a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`.
+- **Messages name constants by `name()`.** The DSL's problems and refusals, the refusals of `TransitionSpec`,
+  `RecoveryRule`, `StatePolicy` and `WatchSpec`, the refusals of a registry's build, and a call's refusal of an
+  identifier of another enum name states and identifiers by `name()`, never through a `toString()` the application
+  overrides, which used to change their text or, when it threw, replace the refusal, or refuse a valid declaration.
+- **Guard names are unique per edge in the DSL and the processor.** A rejection reports the name of the guard that
+  rejected, and 1.x let two guards of one edge share it. `SG105` now refuses a second guard of one name on an edge: in
+  the DSL, two given names, or the class name that two instances of one class take; in the processor, two symbols whose
+  members share a simple name, such as `DocActionsRefs.Approved` and `ReviewsRefs.Approved`. Rename one of the two.
 - **`failsOn`.** `SG302` also refuses a `CancellationException` or one of its subtypes, and
   `CompletionException` and `ExecutionException` themselves, in the DSL and in the processor. A cancellation
   never matched, and the two wrappers are unwrapped before matching whenever they carry a cause.
@@ -561,21 +601,66 @@ observe. Most items refuse up front what used to fail later, in generated code o
   threw: vocabulary on a default, static or private method, or anywhere but a facade and its abstract operations
   (`SG504`, `SG606`); an abstract method a facade or set inherits from another interface (`SG504`, `SG510`); an
   operation that overrides a `Machine` method, or a redeclaration of one with a result the companion cannot
-  return (`SG504`); a parameterized entity (`SG601`, `SG509`); an instance binding of a generic host, and a type
-  the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
-  same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
+  return (`SG504`); a parameterized entity, `Store<String>.Doc` included (`SG601`, `SG509`); an instance binding
+  of a generic host or of an inner class of one, and a type the companion's package cannot access (`SG505`,
+  `SG509`, `SG510`); two machines of one set that write the same entity and state enum (`SG510`); an instance
+  method, declared or inherited, abstract or default, with the
   signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
   the former reported once the facade's declarations have no other error and none of its vocabulary is misplaced,
   the latter only once the set's accessors and machines have no other error; a name the companion writes whose first
   segment a type, member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a
   machine javac compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index
   case used to publish nothing and report nothing.
-- **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
-  member type of the facade named like a type they write, with parameter names that would have been keywords,
-  with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
-  static overloads of the state and identity accessors, in a set with an accessor named `machineRegistry`, and
-  for a bound member or accessor that declares a checked exception, which is now handled as the same exception
-  thrown undeclared would be.
+- **Raw results the companion could only take unchecked.** A watch's peers reader that returns a raw collection is
+  refused with `SG503`, and an action or a guard that returns a raw `CompletionStage` with `SG604` where it is
+  declared: only an unchecked conversion made either one a collection of peers or a stage of the verdict. The
+  companion used to compile against them only with unchecked warnings, which javac reports under `-Xlint:unchecked`
+  or `-Xlint:all` and `-Werror` then turns into errors, and javac refused it outright for a raw peers reader under a
+  watch whose rule names a condition.
+- **`@GraphBindings` exports only what the host inherits.** Generated code calls a static binding through the host,
+  so a marked static method of an interface is exported only through the interface's own symbol, and one that the
+  host or a superclass between hides with a method of the same name and parameter types is not exported through the
+  host, whose symbol of that name exports the hiding method when it is marked. A symbol that is therefore not
+  generated is javac's `cannot find symbol` where it is named; a hidden method whose parameter is a type variable,
+  which only the processor can tell is hidden, is refused with `SG604` instead. Both used to be exported through the
+  host: the companion then called an unmarked method of the host that hid the marked one in its place, and the
+  processor refused a static method of an interface with `SG505`, as one whose signature fit no machine.
+- **A dependency without its export index is `SG602`.** A jar or a directory of classes that carries a machine a
+  set holds, or a generated symbol a declaration binds, but no export index, or an index that does not list it
+  because it is stale or another build's, is reported as `SG602` where the set or the declaration uses it, naming
+  that jar or directory. Such a symbol used to be `SG605`, one the compilation neither exports nor depends on, and
+  the set's machine `SG502`, one that declares no graph.
+- **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a member
+  type of the facade named like a type they write, with parameter names that would have been keywords, with
+  deprecated bound members, a raw operation input or an entity that is an inner class of a generic class, used raw,
+  under `-Xlint:all -Werror`, with a cast whose type annotations name enum constants, beside static overloads of
+  the state and identity accessors, in a set with an accessor named `machineRegistry`, with a constant the source
+  encoding cannot represent, such as one named with a Greek letter in an ISO-8859-1 build, for a machine of
+  hundreds or thousands of cells, whose graph the companion declared as one chain of calls, which overflowed
+  javac's stack on a thread of 1 MiB at a few hundred cells and, at a few thousand, exceeded the code one method
+  may hold, and for a bound member or accessor that declares a checked exception, which is now handled as the same
+  exception thrown undeclared would be. A companion now declares the graph one statement per declaration, in
+  methods of at most a hundred, and holds ASCII only, writing every other character as a `\uXXXX` escape, so a text
+  such as a policy's `otherwise` also keeps a character the source encoding cannot represent, and an unpaired
+  surrogate, which no encoding represents, where `?` used to replace it. The vocabularies and the references
+  containers the generator writes suppress the deprecation and removal warnings of the hosts, machines and enums
+  they name, as the companions do, so deprecating one no longer fails a build under `-Xlint:all -Werror` inside a
+  generated file, nor deprecating one for removal a build under `-Werror` alone.
+- **Generated sources are documented.** Every public member of a vocabulary, a companion and a set carries a
+  documentation comment with the `@param` and `@return` tags its signature calls for, most vocabulary elements in
+  the inline form `{@return ...}`, but the methods a companion or a set implements, whose comments `javadoc`
+  inherits, so a `javadoc` run over the generated sources, under its default doclint or `-Xdoclint:all`, no longer
+  warns about a file the author cannot edit.
+- **Operations keep the facade's parameter names.** A companion's operation declares its parameters under the names
+  the facade's method gives them, and the `NullPointerException` it throws for a null entity names that parameter:
+  `submit(Doc theDocument)` refuses a null with the message `theDocument`, where it used to name the parameter after
+  the entity's type, `doc`. A declared name the companion already uses, such as `stateMachine`, is suffixed in the
+  source only.
+- **An owner reader that returns null is refused.** A watch's `owner` reader declared to return the owner entity
+  itself, rather than an `Optional` of it, that returns null is refused as one declared to return an `Optional` is:
+  the commit of the peer reports the lookup as a `Reaction.Aborted` carrying a `NullPointerException` that says the
+  ownerOf returned null. The companion used to read null as no owner, so the watch silently never reacted; declare an
+  `Optional` reader and return `Optional.empty()` for a peer without an owner.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).
@@ -584,18 +669,24 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 - **The generator reads what javac compiles.** The request carries the compilation's release and source
   encoding: the generator parses at that release, reads and writes in that encoding, and refuses syntax the
-  release does not have with `SG601`. Gradle source-set patterns and Maven `<includes>` and `<excludes>` are
-  honoured, files Ant's default excludes name, such as `._*` copies and `.git` directories, are left out (the
-  build guide says where Maven's longer list differs), and symbolic links are followed. See the
-  [build guide](typed-annotations-build.md).
+  release does not have with `SG601`. Gradle source-set patterns and filters and Maven `<includes>` and
+  `<excludes>` are honoured, files the default excludes name, Ant's such as `._*` copies and `.git` directories,
+  or in Gradle those a settings script sets, are left out, in Gradle with every directory they name, such as
+  `old~`, which Maven's scanner enters (the build guide says where Maven's longer list differs), and symbolic links
+  are followed. See the [build guide](typed-annotations-build.md).
 - **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
+  a marker written in a local or anonymous class, which used to export nothing without a word (`SG604`), or a
+  machine or set declared as a local interface, which used to generate nothing (`SG502`);
   a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or
   like a `java.lang` type (`SG603`); a generated type that an original source declares in a file of another
-  name, or that differs from one only in case where the volume does not tell names apart (`SG603`); and an
-  inventory entry whose file the generator's steps would remove through a symbolic link inside its output root
-  that leads out of it, a generated source that would be written through such a link, and an inventory entry
-  that no path can spell, such as one holding a NUL character (`SG603`).
+  name, or that differs from one, or from another generated type, only in case where the volume does not tell
+  names apart (`SG603`); and an inventory entry whose file the generator's steps would remove through a symbolic
+  link inside its output root that leads out of it, a generated source that would be written through such a link,
+  an inventory entry that no path can spell, such as one holding a NUL character, and one that is not the kind of
+  file its list holds, a binary that is no `.class` file or a source that is no `.java` file (`SG603`). A peer that
+  `@GraphPeers` names twice, by any spelling, is refused with `SG608`, the code the processor reports it with, where
+  the generator used to report two declarations that claim the pair's generated vocabulary (`SG603`).
 - **Declarations the generator misread.** An inner class that extends a sibling inner class, which overflowed the
   stack, a member class of a generic interface, a type named in a declaration's header like a member type the
   declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in
@@ -613,11 +704,15 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Manifests.** A schema 1 manifest is left in place and refused on every build until `clean`; malformed JSON
   in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
   not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
-  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
-  directory itself, such as `.`. A number whose exponent is out of range, such as `1e99999999999`, in the request,
-  a manifest, an index or an inventory a step needs is `SG602` too, where an unchecked `NumberFormatException`
-  used to escape; a processor inventory read only to clean up after an earlier run is then read as listing
-  nothing, as one that cannot be read is.
+  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, that names the
+  directory itself, such as `.`, or that is no `.java` file, such as `x`, and a processor inventory of a manifest that
+  no path can spell, where `complete-compile`, and `prepare-compile` after an interrupted cycle, used to fail with an
+  unchecked `InvalidPathException`. A number whose exponent is out of range,
+  such as `1e99999999999`, and a string or a name that escapes a surrogate that is not half of a pair, such as
+  `\ud800`, which no UTF-8 file can hold, in the request, a manifest, an index or an inventory a step needs are
+  `SG602` too, where an unchecked `NumberFormatException` used to escape and such a surrogate used to be read as it
+  was; a processor inventory read only to clean up after an earlier run is then read as listing nothing, as one that
+  cannot be read is.
 - **A failed pending-manifest write keeps the record.** A `generate` that fails while it first writes its pending
   manifest, on a full disk for instance, leaves `annotation-manifest.json` in place; a later failure deletes it
   but leaves the pending manifest, which still records the previous sources, so either way the next run retires
@@ -653,8 +748,20 @@ observe. Most items refuse up front what used to fail later, in generated code o
   then runs no processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`,
   which drops the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`,
   `<multiReleaseOutput>true` or last `-d` argument that moves the classes, and a last `-s` argument that moves the
-  processor's sources; `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or
-  main `<incrementalExcludes>` pattern that matches the compilation carrier.
+  processor's sources; `<compileSourceRoots>` without the generated directory; a `<testIncrementalExcludes>` or
+  main `<incrementalExcludes>` pattern that matches the compilation carrier; and, with a javac that compiles inside
+  Maven through the `javax.tools` API, a last `-encoding` argument that names another charset than `<encoding>` or
+  `project.build.sourceEncoding`, when this JVM supports both, since javac would read back the sources annotation
+  processors generate in another charset than it wrote them in.
+- **Maven: the compiler execution that runs.** The checks and the request read the execution of the compiler's
+  `compile` or `testCompile` goal that the default lifecycle runs and that compiles the generated vocabulary,
+  whatever its id, where they used to read `default-compile` and `default-testCompile` even when bound to the phase
+  `none`; an execution bound to a phase of another lifecycle, such as `pre-site`, is neither read nor counted; a
+  compilation the default lifecycle runs no execution of the goal for is skipped, where its previous outputs used to
+  be retired; two running executions that both compile the vocabulary are refused, where javac used to fail on the
+  second; and so is a compiling execution that runs before `prepare` or after `complete`, as one of a POM's own does
+  when `graphmaquina-maven-plugin` is declared before `maven-compiler-plugin`, where `complete` used to fail after
+  the preparation retired the previous outputs.
 - **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
   generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
   `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an
@@ -662,11 +769,19 @@ observe. Most items refuse up front what used to fail later, in generated code o
   or `--processor-path` argument, the last one given, that reaches the processor is accepted where
   `<annotationProcessorPaths>`, or without one the dependencies, leave the processor out, which used to be refused;
   an empty `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
-  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]` included;
-  compiler arguments are evaluated as Maven evaluates them, as far as that can be told when the checks run,
+  ignored; include and exclude patterns match as plexus-utils matches them on the platform the build runs on,
+  `%ant[...]` and `%regex[...]` included, and select only the sources its scanner reaches, which, where the file
+  separator is `/`, enters no directory for an include that starts with a separator unless that include matches the
+  directory itself, and, where it is `\`, enters one for such an include as if it had no leading separator; compiler
+  arguments are evaluated as Maven evaluates them, as far as that can be told when the checks run,
   `${settings.localRepository}` for instance, and one that is a single expression Maven turns into nothing, such as
-  `${project.file}`, is left out, as javac never gets it; and on Windows a `javaExecutable` without an extension
-  stands for the `.exe` beside it.
+  `${project.file}`, is left out, as javac never gets it; an
+  `-encoding` compiler argument names the encoding the generator reads in wherever javac reads in it: when no
+  encoding is configured, and when the compiler forks javac or runs it through `com.sun.tools.javac.Main`, as
+  `forceLegacyJavacApi` or `forceJavacCompilerUse` makes it, either of which takes the last `-encoding`; a `--release`
+  compiler argument beside a configured release is the release checked and passed to the generator, as javac
+  takes the last `--release`; and on Windows a
+  `javaExecutable` without an extension stands for the `.exe` beside it.
 - **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
   or, for a forked javac, in the project directory, so a module of a build started from its parent is refused
   up front, where javac used to fail on it after the preparation. Paths are compared with their symbolic links
@@ -693,10 +808,14 @@ observe. Most items refuse up front what used to fail later, in generated code o
   set's patterns do not filter, and the sources jar and javadoc leave out the compilation carrier. The generation
   runs after the tasks that build the source set's other directories. Its locations, launcher and generator
   classpath are conventions that `prepare-compile` and `complete-compile` follow, and `classesOutput`,
-  `processorSourcesOutput` and `annotationManifest` cannot be set. A processor declaration the build removes no
-  longer counts, and the compilation id reads the group the build script settles on, even when something
-  realized the generation task before the group was set. What a generator that completes writes on its error
-  stream is logged as a warning.
+  `processorSourcesOutput` and `annotationManifest` cannot be set. The launcher is by default the JDK javac compiles
+  with, also one the compile task takes from a toolchain of its own or forks javac from, rather than the project's
+  toolchain, and a launcher older than the release the sources are parsed at is refused before the generator runs. A
+  processor declaration the build removes no longer counts, and the compilation id reads the group the build script
+  settles on, even when something realized the generation task before the group was set. What a generator that
+  completes writes on its error stream is logged as a warning. A source moved unchanged to another source directory
+  of its source set puts the generation out of date, so the index publishes the origin a clean build publishes,
+  where the generation used to stay up to date and the index kept the source's previous path.
 
 ### Testing library
 

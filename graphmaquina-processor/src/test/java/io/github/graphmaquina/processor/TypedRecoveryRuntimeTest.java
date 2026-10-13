@@ -120,6 +120,7 @@ class TypedRecoveryRuntimeTest {
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.StateMachine;
             import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.dsl.GraphBuilder;
             import java.util.Objects;
             import java.util.Set;
             import java.util.concurrent.CompletableFuture;
@@ -129,39 +130,50 @@ class TypedRecoveryRuntimeTest {
 
             /** Generated companion of {@link Docs}: builds its graph and implements its facade. Do not edit. */
             @GeneratedCompanion
-            @SuppressWarnings({"deprecation", "removal"})
+            @SuppressWarnings({"deprecation", "removal", "rawtypes"})
             public final class DocsRuntime implements Docs {
 
+                /** The key of the machine: its entity, state and transition classes. */
                 public static final MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class, \
             DocStatus.class, DocTransition.class);
 
                 private final StateMachine<Doc, DocStatus, DocTransition> stateMachine;
 
+                /**
+                 * Implements the facade over the given state machine, which every method of it calls.
+                 *
+                 * @param stateMachine the state machine of the facade
+                 */
                 public DocsRuntime(StateMachine<Doc, DocStatus, DocTransition> stateMachine) {
                     this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
                 }
 
-                /** The definition, built from the annotations of {@link Docs}. One parameter per class with instance \
-            members. */
+                /**
+                 * The definition, built from the annotations of {@link Docs}. One parameter per class with instance
+                 * members.
+                 *
+                 * @param docActions the {@code fx.DocActions} whose instance members the graph calls
+                 * @return the definition
+                 */
                 public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions) {
                     Objects.requireNonNull(docActions, "docActions");
-                    return StateGraph.define(KEY)
-                            .initial(DocStatus.DRAFT)
-                            .terminal(DocStatus.ARCHIVED)
-                            .allowsCycle(DocStatus.REVIEW)
-                            .statePolicy(DocStatus.DRAFT, "a draft is sent to review")
-                            .statePolicy(DocStatus.REVIEW, "a review is published or sent back")
-                            .statePolicy(DocStatus.PUBLISHED, "a published doc can only be archived")
-                            .transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).endTransition()
-                            .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).endTransition()
-                            .transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)\
+                    GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(KEY);
+                    graph = graph.initial(DocStatus.DRAFT);
+                    graph = graph.terminal(DocStatus.ARCHIVED);
+                    graph = graph.allowsCycle(DocStatus.REVIEW);
+                    graph = graph.statePolicy(DocStatus.DRAFT, "a draft is sent to review");
+                    graph = graph.statePolicy(DocStatus.REVIEW, "a review is published or sent back");
+                    graph = graph.statePolicy(DocStatus.PUBLISHED, "a published doc can only be archived");
+                    graph = graph.transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).endTransition();
+                    graph = graph.transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).endTransition();
+                    graph = graph.transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)\
             .action("publish", (context) -> docActions.publish(context)).guard("approved", (context) -> \
             docActions.approved(context)).onFailure(DocTransition.RETURN).afterCommit("notify", (doc) -> \
-            docActions.notify(doc)).endTransition()
-                            .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED)\
+            docActions.notify(doc)).endTransition();
+                    graph = graph.transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED)\
             .asyncAction("archive", (context) -> docActions.archiveAsync(context)).timeout(Duration.parse("PT2S"))\
-            .endTransition()
-                            .build();
+            .endTransition();
+                    return graph.build();
                 }
 
                 @Override
@@ -225,6 +237,8 @@ class TypedRecoveryRuntimeTest {
                      * it, the most specific declared type winning across the rules and {@code failsOn}, and
                      * {@code onFailure} stays the fallback. Each transition is resolved from the edge's origin and
                      * entered without its guards or any recovery of its own.
+                     *
+                     * @return the recovery rules, none by default
                      */
             """;
 
@@ -552,9 +566,10 @@ class TypedRecoveryRuntimeTest {
     }
 
     /**
-     * A machine that declares no rule gets the very companion it got before rules existed: the text below is what the
-     * base of this change generated for {@link Fixtures#validDocs()}, byte for byte. The same machine with two types
-     * in its edge's own failsOn differs only by those two calls: only a rule claims {@code java.util.List}.
+     * A machine that declares no rule gets the very companion it got before rules existed: the text below is the
+     * companion of {@link Fixtures#validDocs()}, byte for byte, as rules left it, with no call and no type a rule
+     * writes. The same machine with two types in its edge's own failsOn differs only by those two calls: only a rule
+     * claims {@code java.util.List}.
      */
     @Test
     void aMachineWithoutRulesGetsTheCompanionItGotBefore() {

@@ -1,7 +1,10 @@
 package io.github.graphmaquina.codegen.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -124,6 +127,87 @@ class BootstrapTest {
 
         assertEquals(List.of("second/bb/Middle.java", "first/aa/First.java", "first/zz/Last.java"),
                 sources.stream().map(Bootstrap.OriginalSource::origin).toList());
+    }
+
+    /**
+     * A machine and a set are top-level interfaces, which the processor demands of a member interface with
+     * {@code SG502}. It never sees a local one, so the walk refuses a local interface marked as either, which would
+     * otherwise generate nothing without a word.
+     */
+    @Test
+    void refusesAMachineOrASetDeclaredAsALocalInterface() {
+        Map<String, String> declarations = Map.of(
+                "GenerateGraphApi", "@GenerateGraphApi interface Notes extends Machine<Object, State, Id> {}",
+                "StateGraphs", "@StateGraphs interface Shelf extends Machines {}");
+        for (Map.Entry<String, String> declaration : declarations.entrySet()) {
+            Path root = project.resolve(declaration.getKey());
+            SourceFiles.write(root, Map.of("fx.Holder", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.*;
+                    import io.github.graphmaquina.api.*;
+                    public final class Holder {
+                        enum State { OPEN }
+                        enum Id { CLOSE }
+                        static void declare() {
+                            %s
+                        }
+                    }
+                    """.formatted(declaration.getValue())));
+
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> Bootstrap.read(request(List.of(root))));
+
+            assertEquals("SG502", failure.code());
+            assertEquals("the marker @" + declaration.getKey() + " is written on a local or anonymous class of"
+                    + " fx.Holder, but a machine or a set must be a top-level interface: the generated companion lives"
+                    + " next to it in the package", failure.getMessage());
+            assertEquals(8L, failure.location().orElseThrow().line());
+        }
+    }
+
+    /**
+     * In the body of a local or anonymous class, javac reads a name as a member type of that class first, declared
+     * or inherited from a supertype it spells. A local interface marked with an annotation that such a member type
+     * names is no machine and no set, however the file's imports read that name, so the walk refuses nothing.
+     */
+    @Test
+    void acceptsALocalInterfaceMarkedWithAMemberTypeNamedLikeAMachineMarker() {
+        Map<String, String> declarations = Map.of(
+                "GenerateGraphApi", """
+                    Object notes = new Lib() {
+                        @GenerateGraphApi interface Notes {}
+                    };
+                    """,
+                "StateGraphs", """
+                    class Local extends Lib {
+                        @StateGraphs interface Shelf {}
+                    }
+                    """);
+        for (Map.Entry<String, String> declaration : declarations.entrySet()) {
+            Path root = project.resolve(declaration.getKey());
+            List<Path> files = SourceFiles.write(root, Map.of(
+                    "fx.Lib", """
+                    package fx;
+                    public class Lib {
+                        public @interface GenerateGraphApi {}
+                        public @interface StateGraphs {}
+                    }
+                    """,
+                    "fx.Holder", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.*;
+                    public final class Holder {
+                        static void declare() {
+                            %s
+                        }
+                    }
+                    """.formatted(declaration.getValue())));
+            SourceFiles.Compilation compilation =
+                    SourceFiles.compileStrict(files, project.resolve("classes-" + declaration.getKey()));
+            assertTrue(compilation.success(), declaration.getKey() + ": " + compilation.messages());
+
+            assertEquals(List.of(), Bootstrap.read(request(List.of(root))).model().graphs(), declaration.getKey());
+        }
     }
 
     /** A request over {@code sources} whose outputs share nothing with them. */

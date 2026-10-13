@@ -21,6 +21,7 @@ import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
@@ -150,12 +151,14 @@ class ResolveFailureTest {
                     () -> watching(failing, boom).reevaluate(new Doc("1", PUBLISHED)));
             assertSame(boom, error.getCause());
             assertEquals(Optional.empty(), error.call().transition());
-            ends.add(failing + ": " + error.phase() + ", from " + error.from() + ", " + error.statesWritten());
+            ends.add(failing + ": " + error.phase() + ", from " + error.from() + ", " + error.statesWritten() + ", "
+                    + error.getMessage().substring(0, error.getMessage().indexOf(':')));
         }
         assertEquals(List.of(
-                "getter: RESOLVE, from Optional.empty, NONE",
-                "peersOf: RESOLVE, from Optional[PUBLISHED], NONE",
-                "condition: RESOLVE, from Optional[PUBLISHED], NONE"), ends);
+                "getter: RESOLVE, from Optional.empty, NONE, transition aborted in Doc/DocStatus ?",
+                "peersOf: RESOLVE, from Optional[PUBLISHED], NONE, transition aborted in Doc/DocStatus PUBLISHED",
+                "condition: RESOLVE, from Optional[PUBLISHED], NONE, transition aborted in Doc/DocStatus PUBLISHED"),
+                ends);
     }
 
     /** A condition that joins another machine's failing call aborts the reevaluation in RESOLVE. */
@@ -330,6 +333,105 @@ class ResolveFailureTest {
             assertSame(b, error.pending().get(2));
         }
         assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), a.status(), b.status()));
+    }
+
+    /** Stages of a {@link Ticket}. */
+    enum Stage { OPEN, WORKING, CLOSED }
+
+    /** Transitions of the stage of a {@link Ticket}. */
+    enum StageStep { START, CLOSE }
+
+    /** Reviews of a {@link Ticket}. */
+    enum Review { PENDING, DONE }
+
+    /** The one transition of the review of a {@link Ticket}. */
+    enum ReviewStep { APPROVE }
+
+    /** An entity two machines govern, one its stage and one its review, whose equals and hashCode throw. */
+    private static final class Ticket {
+
+        private final String id;
+        private Stage stage = Stage.OPEN;
+        private Review review = Review.PENDING;
+
+        Ticket(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            throw new UnsupportedOperationException("a ticket is never compared");
+        }
+
+        @Override
+        public int hashCode() {
+            throw new UnsupportedOperationException("a ticket is never hashed");
+        }
+
+        @Override
+        public String toString() {
+            return "Ticket#" + id;
+        }
+    }
+
+    /**
+     * The state read of the check fails for entities that two machines govern, whose own equals and hashCode throw:
+     * the planned entities are told apart by machine and by reference, so a ticket moved by both machines is pending
+     * once for each, a ticket moved twice by one machine once for it, and none of them is compared or hashed.
+     */
+    @Test
+    void aCheckThatFailsListsEachEntityOnceForEachMachineThatMovesItWithoutComparingIt() {
+        IllegalStateException boom = new IllegalStateException("row locked");
+        AtomicBoolean armed = new AtomicBoolean();
+        MachineKey<Ticket, Stage, StageStep> stages = MachineKey.of(Ticket.class, Stage.class, StageStep.class);
+        MachineKey<Ticket, Review, ReviewStep> reviews = MachineKey.of(Ticket.class, Review.class, ReviewStep.class);
+        Ticket root = new Ticket("t1");
+        Ticket peer = new Ticket("t2");
+        GraphDefinition<Ticket, Stage, StageStep> stageGraph = StateGraph.define(stages).initial(Stage.OPEN)
+                .terminal(Stage.CLOSED).statePolicy(Stage.OPEN, "x").statePolicy(Stage.WORKING, "x")
+                .transition(StageStep.START, Stage.OPEN, Stage.WORKING)
+                    .action("Start", (TransitionContext<Ticket, Stage, StageStep> ctx) -> {
+                        if (ctx.entity() == root) {
+                            ctx.cascade(stages, peer, StageStep.START);
+                            ctx.cascade(reviews, root, ReviewStep.APPROVE);
+                            ctx.cascade(stages, peer, StageStep.CLOSE);
+                            ctx.cascade(reviews, peer, ReviewStep.APPROVE);
+                            armed.set(true);
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(StageStep.CLOSE, Stage.WORKING, Stage.CLOSED).endTransition()
+                .build();
+        GraphDefinition<Ticket, Review, ReviewStep> reviewGraph = StateGraph.define(reviews).initial(Review.PENDING)
+                .terminal(Review.DONE).statePolicy(Review.PENDING, "x")
+                .transition(ReviewStep.APPROVE, Review.PENDING, Review.DONE).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(stageGraph).state((Ticket ticket) -> {
+                    if (armed.get()) {
+                        throw boom;
+                    }
+                    return ticket.stage;
+                }, (Ticket ticket, Stage stage) -> ticket.stage = stage).identity((Ticket ticket) -> ticket.id))
+                .add(StateMachines.from(reviewGraph)
+                        .state((Ticket ticket) -> ticket.review,
+                                (Ticket ticket, Review review) -> ticket.review = review)
+                        .identity((Ticket ticket) -> ticket.id))
+                .build()) {
+            CommitFailedException error = assertThrows(CommitFailedException.class,
+                    () -> registry.of(stages).execute(root, StageStep.START));
+            assertSame(boom, error.getCause());
+            assertEquals(CallPhase.COMMIT, error.phase());
+            assertEquals(StatesWritten.NONE, error.statesWritten());
+            assertEquals(4, error.pending().size());
+            assertSame(root, error.pending().get(0));
+            assertSame(peer, error.pending().get(1));
+            assertSame(root, error.pending().get(2));
+            assertSame(peer, error.pending().get(3));
+        }
+        assertEquals(List.of(Stage.OPEN, Stage.OPEN), List.of(root.stage, peer.stage));
+        assertEquals(List.of(Review.PENDING, Review.PENDING), List.of(root.review, peer.review));
     }
 
     /** A passing guard arms the grouping callback without adding an action to the journal. */

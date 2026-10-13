@@ -32,6 +32,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -44,7 +45,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Verifies that one generation is published as a coherent set: the manifest describes exactly the files on disk,
  * a run that changes nothing rewrites the same bytes, deleting a reference retires the file it owned, a file the
- * generation does not own is left alone, and a type that would overwrite an original source is refused.
+ * generation does not own is left alone, and a type that an original source declares, or whose file would stand where
+ * an original source stands, is refused.
  */
 class GenerationOutputTest {
 
@@ -88,6 +90,37 @@ class GenerationOutputTest {
             """);
         return Map.copyOf(sources);
     }
+
+    /**
+     * Two hosts whose references containers, {@code OuterInnerRefs} and {@code OuterinnerRefs}, differ only in case.
+     */
+    private static final Map<String, String> CASE_TWINS_OF_TYPES = Map.of("fx.Outer", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Outer {
+                public static class Inner {
+                    @GraphAction
+                    public Doc one(Doc doc) { return doc; }
+                }
+            }
+            """, "fx.Outerinner", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Outerinner {
+                @GraphAction
+                public Doc two(Doc doc) { return doc; }
+            }
+            """);
+
+    /** A host whose two members, {@code approveId} and {@code approveID}, differ only in case. */
+    private static final Map<String, String> CASE_TWINS_OF_SYMBOLS = Map.of("fx.Reviews", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Reviews {
+                @GraphAction public Doc approveId(Doc doc) { return doc; }
+                @GraphAction public Doc approveID(Doc doc) { return doc; }
+            }
+            """);
 
     @Test
     void publishesEverySourceAndAManifestThatDescribesThem() throws IOException {
@@ -205,6 +238,11 @@ class GenerationOutputTest {
         assertEquals(originalBefore, Files.readString(sources().resolve("fx/Outer.java")));
     }
 
+    /**
+     * The generated file goes below the generated source root, which never overlaps a source root, so it would
+     * overwrite nothing: javac would compile both files and report a duplicate class. The refusal says where each
+     * file stands.
+     */
     @Test
     void refusesAGeneratedTypeAnOriginalSourceAlreadyDeclares() throws IOException {
         SourceFiles.write(sources(), ORIGINALS);
@@ -214,9 +252,9 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph"), failure.getMessage());
-        assertTrue(failure.getMessage().contains(sources().resolve("fx/DocsGraph.java").toString()),
-                failure.getMessage());
+        assertEquals("the generated type fx.DocsGraph would stand at fx/DocsGraph.java below the generated source"
+                + " root, where the original source " + sources().resolve("fx/DocsGraph.java")
+                + " stands below its own", failure.getMessage());
         assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
     }
 
@@ -298,6 +336,45 @@ class GenerationOutputTest {
             assertEquals("SG603", failure.code());
             assertEquals(handwritten, Files.readString(manual));
         }
+    }
+
+    /**
+     * Deleting the work directory, as deleting {@code build/graphmaquina} or {@code target/graphmaquina} does, while
+     * the generated sources stay takes away every record of the files the previous generation wrote. The next runs
+     * still refuse to overwrite them, since nothing tells them from files somebody else put there, but say that
+     * nothing records them and that clean is the remedy, on every run until the build is cleaned. An inventory of a
+     * compilation in the work directory is a record, so the refusal then says nothing more.
+     */
+    @Test
+    void saysThatNothingRecordsTheGeneratedSourcesOnceTheWorkDirectoryIsDeleted() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        StateGraphCodegen.generate(request());
+        Map<String, String> generated = texts();
+        deleteTree(request().workDirectory());
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> StateGraphCodegen.generate(request()));
+
+            assertEquals("SG603", failure.code());
+            assertEquals("the generated type fx.DocsGraph would overwrite the unowned file "
+                    + output().resolve("fx/DocsGraph.java") + ": nothing in the work directory "
+                    + request().workDirectory() + " records a file a previous generation wrote, as when that directory"
+                    + " was deleted; if one wrote this file, run clean, or delete the generated sources, then build"
+                    + " again", failure.getMessage());
+            assertEquals(generated, texts());
+        }
+        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"),
+                new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        CodegenException recorded = assertThrows(CodegenException.class,
+                () -> StateGraphCodegen.generate(request()));
+        assertEquals("the generated type fx.DocsGraph would overwrite the unowned file "
+                + output().resolve("fx/DocsGraph.java"), recorded.getMessage());
+
+        deleteTree(output());
+        deleteTree(request().workDirectory());
+        StateGraphCodegen.generate(request());
+        assertEquals(generated, texts());
     }
 
     @Test
@@ -598,8 +675,9 @@ class GenerationOutputTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
-                + original.resolveSibling("DocsGraph.java")), failure.getMessage());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
+                + " source root, where the original source " + original.resolveSibling("DocsGraph.java")
+                + " stands below its own"), failure.getMessage());
     }
 
     /** A listed source that stands exactly where a generated source goes is refused, as one of a directory is. */
@@ -615,8 +693,8 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("would overwrite the original source "
-                + sources().resolve("fx/DocsGraph.java")), failure.getMessage());
+        assertTrue(failure.getMessage().contains("where the original source " + sources().resolve("fx/DocsGraph.java")
+                + " stands below its own"), failure.getMessage());
     }
 
     /**
@@ -638,8 +716,9 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
-                + original.toRealPath()), failure.getMessage());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
+                + " source root, where the original source " + original.toRealPath() + " stands below its own on a"
+                + " volume that does not tell names apart by case"), failure.getMessage());
     }
 
     /**
@@ -687,6 +766,95 @@ class GenerationOutputTest {
 
         assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
         assertTrue(Files.isRegularFile(output().resolve("fx/DocRefs.java")));
+    }
+
+    /**
+     * The nested host {@code Outer.Inner} and the top-level host {@code Outerinner} have references containers whose
+     * names differ only in case, {@code OuterInnerRefs} and {@code OuterinnerRefs}, while their own files,
+     * {@code Outer.java} and {@code Outerinner.java}, coexist on any volume. A volume that does not tell names apart
+     * by case holds the two generated files, and the two class files javac compiles from them, as one file, so the
+     * generation refuses them there, naming both, before it publishes anything.
+     */
+    @Test
+    void refusesGeneratedTypesThatDifferOnlyInCaseOnACaseInsensitiveVolume() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume holds two such files as one");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_TYPES);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the generated types fx.OuterInnerRefs and fx.OuterinnerRefs differ only in case, and the volume"
+                + " of the generated sources " + directory.resolve("generated") + " does not tell their files apart",
+                failure.getMessage());
+        assertFalse(Files.exists(output().resolve("fx")));
+        assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
+    }
+
+    /**
+     * Two members of one host whose names differ only in case, {@code approveId} and {@code approveID}, have symbol
+     * types of distinct names, {@code ApproveId} and {@code ApproveID}, in one container, whose class files a class
+     * output that does not tell names apart by case holds as one: javac would keep one of them without a word. The
+     * generation refuses them there, naming both members, in the order of their symbols' names, and anchored at the
+     * second of them.
+     */
+    @Test
+    void refusesSymbolTypesThatDifferOnlyInCaseOnACaseInsensitiveClassOutput() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume holds two such class files as one");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_SYMBOLS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the generated symbols fx.ReviewsRefs.ApproveID, of fx.Reviews#approveID at"
+                + " sources/fx/Reviews.java:5, and fx.ReviewsRefs.ApproveId, of fx.Reviews#approveId at"
+                + " sources/fx/Reviews.java:4, differ only in case, and the volume of the class output "
+                + directory.resolve("classes") + " does not tell their class files apart", failure.getMessage());
+        assertEquals(4, failure.location().orElseThrow().line(), failure.getMessage());
+        assertFalse(Files.exists(output().resolve("fx")));
+    }
+
+    /**
+     * On a volume that tells names apart by case, generated types and symbol types whose names differ only in case
+     * are other files and other class files, so neither pair is a collision.
+     */
+    @Test
+    void acceptsGeneratedNamesThatDifferOnlyInCaseOnACaseSensitiveVolume() throws IOException {
+        assumeFalse(caseInsensitive(directory), "only a case-sensitive volume tells both names apart");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_TYPES);
+        SourceFiles.write(sources(), CASE_TWINS_OF_SYMBOLS);
+
+        StateGraphCodegen.generate(request());
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/OuterInnerRefs.java")));
+        assertTrue(Files.isRegularFile(output().resolve("fx/OuterinnerRefs.java")));
+        String container = Files.readString(output().resolve("fx/ReviewsRefs.java"), StandardCharsets.UTF_8);
+        assertTrue(container.contains("public static final class ApproveId "), container);
+        assertTrue(container.contains("public static final class ApproveID "), container);
+    }
+
+    /**
+     * A manifest the codec cannot write, here because a dependency it carries holds an unpaired surrogate, which no
+     * UTF-8 file can hold, leaves no temporary file behind: the write that failed removes what it began.
+     */
+    @Test
+    void leavesNoTemporaryManifestBehindWhenItCannotBeWritten() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationRequest request = request();
+        GenerationModel model = Bootstrap.inspect(request);
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
+        ExportIndex dependency = new ExportIndex(2, ToolVersion.current(), "other:lib:main",
+                new GenerationModel(List.of(), List.of()), List.of("lib.Orders\ud800.Transition"));
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of(dependency));
+
+        assertThrows(IOException.class, () -> GenerationOutput.publish(request, emitted, manifest));
+
+        try (Stream<Path> files = Files.list(directory.resolve("work"))) {
+            assertEquals(List.of(), files.map((Path file) -> file.getFileName().toString())
+                    .filter((String name) -> name.endsWith(".tmp")).toList());
+        }
     }
 
     /**
@@ -829,6 +997,24 @@ class GenerationOutputTest {
             return walk.filter(Files::isRegularFile)
                     .map(file -> output().relativize(file).toString().replace('\\', '/'))
                     .sorted().toList();
+        }
+    }
+
+    /** Every published file with its text. */
+    private Map<String, String> texts() throws IOException {
+        Map<String, String> texts = new TreeMap<>();
+        for (String name : published()) {
+            texts.put(name, Files.readString(output().resolve(name), StandardCharsets.UTF_8));
+        }
+        return texts;
+    }
+
+    /** Deletes {@code root} and everything below it, deepest entry first, as a build's clean deletes it. */
+    private static void deleteTree(Path root) throws IOException {
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path entry : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(entry);
+            }
         }
     }
 

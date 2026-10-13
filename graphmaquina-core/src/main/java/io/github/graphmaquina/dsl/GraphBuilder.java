@@ -43,7 +43,8 @@ public interface GraphBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     /**
      * Binds the sub-machine {@code child} to {@code state}; {@code exit(...)} on the returned stage maps each terminal
      * state of the child to an identifier of this graph. {@code childOf} reaches the child entity from a parent
-     * entity, and {@code parentOf} the parent entity from a child entity; this stage only stores them.
+     * entity, and {@code parentOf} the parent entity from a child entity; this stage only stores them. An edge that
+     * enters {@code state} while {@code childOf} answers empty aborts its step before the action runs.
      * {@code build()} reports SG801 when a terminal state of the child has no exit or more than one, or an exit names
      * a state that is not terminal in the child; SG802 when an exit names an identifier with no edge from
      * {@code state}; SG803 when {@code state} is terminal or holds a second sub-machine; SG804 when an edge leaving

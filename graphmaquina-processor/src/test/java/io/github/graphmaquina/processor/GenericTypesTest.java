@@ -57,6 +57,54 @@ class GenericTypesTest {
     }
 
     /**
+     * An inner class of a generic class is parameterized through that class: {@code Store<String>.Doc} is refused as
+     * a parameterized entity, as {@code Ticket<String>} is, not with a comparison of its properties' raw host with
+     * it.
+     */
+    @Test
+    void sg601AnEntityParameterizedThroughTheClassItIsAnInnerClassOf() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fx.DocStatus", "package fx;\npublic enum DocStatus { DRAFT, PUBLISHED }\n");
+        sources.put("fx.DocTransition", "package fx;\npublic enum DocTransition { PUBLISH }\n");
+        sources.put("fx.Store", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Store<T> {
+                    public final class Doc {
+                        @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                        @GraphProperty public String id() { return "doc"; }
+                        public DocStatus status() { return status; }
+                        public void status(DocStatus value) { status = value; }
+                    }
+                }
+                """);
+        sources.put("fx.Docs", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
+                    state = StoreDocRefs.Status.class, id = StoreDocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is published")
+                public interface Docs extends Machine<Store<String>.Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED)
+                    Outcome<Store<String>.Doc, DocStatus, DocTransition> publish(Store<String>.Doc doc);
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG601"), result.describe());
+        assertTrue(result.errors().get(0).contains("fx.Store<java.lang.String>.Doc")
+                && result.errors().get(0).contains("parameterized"), result.describe());
+        assertEquals(0, result.countError("SG605"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /**
      * A peer over a parameterized entity is refused at its own header, and a watch of it is refused for that
      * reason too, rather than with a comparison of the raw host of its property symbols with its entity.
      */
@@ -93,12 +141,60 @@ class GenericTypesTest {
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
     }
 
+    /**
+     * An instance member of an inner class of a generic class is called on a parameter of that inner class, which
+     * generated code could only write raw, so it is refused as a member of a generic class is, not as a member whose
+     * signature does not fit.
+     */
+    @Test
+    void sg505AnInstanceMemberOfAnInnerClassOfAGenericClass() {
+        Compilation.Result result = Compilation.compileTyped(book(""));
+
+        assertEquals(1, result.countError("SG505"), result.describe());
+        assertTrue(result.errors().get(0).contains("shop.Ledger.Book")
+                && result.errors().get(0).contains("an inner class of a generic class"), result.describe());
+        assertFalse(result.errors().get(0).contains("has the signature this machine needs"), result.describe());
+        assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
+    }
+
+    /** A static nested class of a generic class is not parameterized by it, so its instance members are bound. */
+    @Test
+    void anInstanceMemberOfAStaticNestedClassOfAGenericClassIsBound() {
+        Compilation.Result result = Compilation.compileTyped(book("static "));
+
+        assertTrue(result.success(), result.describe());
+    }
+
     /** A static member is called through the class itself, whose raw name is all the call needs. */
     @Test
     void aStaticMemberOfAGenericHostIsBound() {
         Compilation.Result result = Compilation.compileTyped(ledger("static "));
 
         assertTrue(result.success(), result.describe());
+    }
+
+    /**
+     * The shop domain paid through {@code post}, an instance member of {@code Book}, a class nested in
+     * {@code Ledger<X>} and declared with {@code modifier} after {@code public}.
+     */
+    private static Map<String, String> book(String modifier) {
+        Map<String, String> sources = ledger("");
+        sources.put("shop.Ledger", """
+                package shop;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public class Ledger<X> {
+                    public %sclass Book {
+                        @GraphAction public ActionOutcome post(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                            return ActionOutcome.ok();
+                        }
+                    }
+                    public X last() { return null; }
+                }
+                """.formatted(modifier));
+        sources.put("shop.Orders", sources.get("shop.Orders").replace("LedgerRefs.Post", "LedgerBookRefs.Post"));
+        return sources;
     }
 
     /** The shop domain paid through {@code Ledger<X>.post}, declared with {@code modifier} after {@code public}. */

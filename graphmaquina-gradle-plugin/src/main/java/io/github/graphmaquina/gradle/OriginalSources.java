@@ -19,14 +19,15 @@ import java.util.stream.Collectors;
 /**
  * The check that the generation and the compilation of one source set read the same original sources.
  *
- * <p>The generation reads the directories of the source set as the include and exclude patterns of the source set and
- * the include and exclude pattern strings of the compilation task filter them. javac compiles whatever the compilation
- * task's own source holds, as all of its filters select it: a filter given to the task as a spec or a closure, or a
- * source added to the task or put in place of the source set's, can make the two differ. A generation that reads a
- * source javac does not compile may generate a vocabulary javac finds no declaration for, or fail on a draft javac
- * never sees, and one that misses a source javac compiles generates nothing for it; when the Java sources the two read
- * differ, the generation is refused before the generator runs, and the preparation refuses the compilation before it
- * retires anything when the generation is up to date.</p>
+ * <p>The generation reads the directories of the source set as the include and exclude patterns and the filter of the
+ * source set's java sources, the include and exclude pattern strings of the compilation task and the default excludes
+ * of the build select them. javac compiles whatever the compilation task's own source holds, as all of its filters
+ * select it: a filter given to the task as a spec or a closure, or a source added to the task or put in place of the
+ * source set's, can make the two differ. A generation that reads a source javac does not compile may generate a
+ * vocabulary javac finds no declaration for, or fail on a draft javac never sees, and one that misses a source javac
+ * compiles generates nothing for it; when the Java sources the two read differ, the generation is refused before the
+ * generator runs, and the preparation refuses the compilation before it retires anything when the generation is up
+ * to date.</p>
  */
 final class OriginalSources {
 
@@ -115,9 +116,10 @@ final class OriginalSources {
                 .map(File::getPath).collect(Collectors.joining(", "));
         return "the StateGraph generation " + generation + " reads " + source + ", which " + compilation + " does not"
                 + " compile. The generation reads the directories of the source set as the include and exclude"
-                + " patterns of the source set and the include and exclude pattern strings of " + compilation
-                + " filter them, so it cannot follow a filter " + compilation + " is given as a spec or a closure, nor"
-                + " a source " + compilation + " is given in place of the source set's. When " + compilation + " is"
+                + " patterns and the filter of the source set's java sources and the include and exclude pattern"
+                + " strings of " + compilation + " select them, so it cannot follow a filter " + compilation
+                + " is given as a spec or a closure, nor a source " + compilation + " is given in place of the source"
+                + " set's. When " + compilation + " is"
                 + " given such a filter, give it to the java sources of the source set instead, where a spec or a"
                 + " closure is followed too, or give it to " + compilation + " as an include or exclude pattern. When "
                 + compilation

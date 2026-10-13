@@ -38,6 +38,13 @@ class ValuesTest {
     }
 
     @Test
+    void machineKeyRefusesAPrimitiveEntityType() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> MachineKey.of(int.class, DayOfWeek.class, Month.class));
+        assertEquals("entity must be a reference type; use its wrapper class", error.getMessage());
+    }
+
+    @Test
     void actionOutcomeFailedRequiresReason() {
         assertEquals(new ActionOutcome.Ok(), ActionOutcome.ok());
         assertEquals(new ActionOutcome.Failed("x"), ActionOutcome.failed("x"));

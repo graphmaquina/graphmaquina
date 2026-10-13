@@ -1,5 +1,6 @@
 package io.github.graphmaquina.gradle;
 
+import org.apache.tools.ant.DirectoryScanner;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.NamedDomainObjectProvider;
@@ -27,13 +28,13 @@ import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.api.tasks.util.PatternFilterable;
-import org.gradle.jvm.toolchain.JavaLauncher;
-import org.gradle.jvm.toolchain.JavaToolchainService;
+import org.gradle.api.tasks.util.PatternSet;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
@@ -64,8 +65,9 @@ import java.util.concurrent.Callable;
  * declaration it is waiting for as its reason.</p>
  *
  * <p>The generation parses the original sources javac compiles: the files of every source directory of the source
- * set but the generated ones, as the include and exclude patterns of the source set and the include and exclude
- * pattern strings of its compilation task filter them, and it runs after every task those directories are built by.
+ * set but the generated ones, as the include and exclude patterns and the filter of the source set's java sources,
+ * the include and exclude pattern strings of its compilation task and the default excludes of the build select
+ * them, and it runs after every task those directories are built by.
  * A compilation task that compiles other original sources than those, through a filter it is given as a spec or a
  * closure, or a source added to it or put in place of the source set's, is refused before the generator runs, and
  * before the preparation when the generation is up to date. The generation parses the sources in the encoding javac
@@ -155,6 +157,25 @@ public final class StateGraphPlugin implements Plugin<Project> {
     /** The package the generator emits the carrier of every compilation into, as a pattern of its sources. */
     private static final String CARRIER_SOURCES = "io/github/graphmaquina/generated/bootstrap/**";
 
+    /** The include the {@code java} plugin gives the filter of the java sources of every source set. */
+    private static final Set<String> JAVA_PLUGIN_INCLUDES = Set.of("**/*.java");
+
+    /**
+     * The default excludes of Ant 1.10, which Gradle leaves out of every source directory unless a settings script
+     * changes them through Ant's {@code DirectoryScanner}. Of the Java sources of a directory, they leave out what
+     * the generator leaves out when it walks that directory whole.
+     */
+    private static final Set<String> ANT_DEFAULT_EXCLUDES = Set.of(
+            "**/*~", "**/#*#", "**/.#*", "**/%*%", "**/._*",
+            "**/CVS", "**/CVS/**", "**/.cvsignore",
+            "**/SCCS", "**/SCCS/**",
+            "**/vssver.scc",
+            "**/.svn", "**/.svn/**",
+            "**/.git", "**/.git/**", "**/.gitattributes", "**/.gitignore", "**/.gitmodules",
+            "**/.hg", "**/.hg/**", "**/.hgignore", "**/.hgsub", "**/.hgsubstate", "**/.hgtags",
+            "**/.bzr", "**/.bzr/**", "**/.bzrignore",
+            "**/.DS_Store");
+
     @Override
     public void apply(Project project) {
         project.getPlugins().withType(JavaPlugin.class, plugin -> configure(project));
@@ -172,13 +193,11 @@ public final class StateGraphPlugin implements Plugin<Project> {
         });
 
         JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
-        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
-        Provider<JavaLauncher> launcher = toolchains.launcherFor(java.getToolchain());
-        java.getSourceSets().configureEach(sourceSet -> wire(project, sourceSet, launcher));
+        java.getSourceSets().configureEach(sourceSet -> wire(project, sourceSet));
     }
 
     /** Registers the generation task of {@code sourceSet} and gives its compilation the lifecycle it needs. */
-    private void wire(Project project, SourceSet sourceSet, Provider<JavaLauncher> launcher) {
+    private void wire(Project project, SourceSet sourceSet) {
         ObjectFactory objects = project.getObjects();
         ProcessorDeclarations declarations = processorDeclarations(project, sourceSet);
         Provider<Boolean> participates = project.provider(declarations::takesPart);
@@ -208,7 +227,12 @@ public final class StateGraphPlugin implements Plugin<Project> {
                     .dir("graphmaquina/" + sourceSet.getName()));
             task.getRequestFile().convention(task.getWorkDirectory().file(REQUEST));
             task.getProjectDirectory().convention(project.getLayout().getProjectDirectory());
-            task.getJavaLauncher().convention(launcher);
+            // The generator parses at the release javac compiles at, which only a JDK of that release or later
+            // supports, so it runs on the very JDK javac compiles with: the installation of the compilation's
+            // javaCompiler, which follows a javaHome or an executable Gradle forks javac from. It is read through a
+            // plain provider, as the release below is.
+            task.getJavaLauncher().convention(project.provider(() ->
+                    CompilerLauncher.of(compile.get().getJavaCompiler().get())));
             task.getCompilationId().convention(project.provider(() -> compilationId(project, sourceSet)));
             // The generator reads the sources in the encoding javac reads them in, and at the release javac compiles
             // at. Both are read through a plain provider: one derived from the compile task would carry that task as
@@ -435,13 +459,16 @@ public final class StateGraphPlugin implements Plugin<Project> {
 
     /**
      * The original sources of {@code sourceSet}, as {@code compilation} reads them: every source directory except
-     * the two this build generates into, filtered by the include and exclude patterns of the source set and by the
-     * include and exclude pattern strings of {@code compilation}. A directory none of them filters is named as a
-     * directory, which the generator walks for its Java sources itself; a directory they filter is named file by
-     * file, as those patterns and the source set's Java filter select them. A filter {@code compilation} is given as
-     * a spec or a closure, and a source it is given beyond the source set, are not followed here. One that changes
-     * the original Java sources javac compiles is refused: by {@link RequireCompiledSources} before the generator
-     * runs, and by the preparation when the generation is up to date.
+     * the two this build generates into, filtered by the include and exclude patterns and the filter of the source
+     * set's java sources, by the include and exclude pattern strings of {@code compilation} and by the default excludes
+     * of the build. A directory is named as a directory, which the generator walks for its Java sources itself, when
+     * Gradle selects in it just what that walk reads: when no pattern of the source set nor of {@code compilation}
+     * filters it, the filter of the java sources is the one the {@code java} plugin gives them, and the default
+     * excludes of the build are Ant's own, which the walk leaves out. Any other directory is named file by file, as
+     * Gradle selects them. A filter {@code compilation} is given as a spec or a closure, and a source it is given
+     * beyond the source set, are not followed here. One that changes the original Java sources javac compiles is
+     * refused: by {@link RequireCompiledSources} before the generator runs, and by the preparation when the
+     * generation is up to date.
      *
      * <p>Each directory is named by its location alone, so the generation task's input never inherits the
      * dependency the source set carries on that very task, which would be a cycle; the generation task depends
@@ -455,14 +482,15 @@ public final class StateGraphPlugin implements Plugin<Project> {
                 generation.getProcessorSourcesOutput().get().getAsFile());
         Set<String> includes = Set.copyOf(compilation.getIncludes());
         Set<String> excludes = Set.copyOf(compilation.getExcludes());
-        boolean compilationFilters = !includes.isEmpty() || !excludes.isEmpty();
+        boolean walkedAlike = includes.isEmpty() && excludes.isEmpty() && javaPluginFilter(java.getFilter())
+                && Set.copyOf(Arrays.asList(DirectoryScanner.getDefaultExcludes())).equals(ANT_DEFAULT_EXCLUDES);
         ConfigurableFileCollection sources = objects.fileCollection();
         for (DirectoryTree tree : java.getSrcDirTrees()) {
             File directory = tree.getDir();
             if (generatedDirectories.contains(directory)) {
                 continue;
             }
-            if (tree.getPatterns().isEmpty() && !compilationFilters) {
+            if (walkedAlike && tree.getPatterns().isEmpty()) {
                 sources.from(directory);
             } else {
                 sources.from(objects.fileTree().from(directory)
@@ -473,6 +501,20 @@ public final class StateGraphPlugin implements Plugin<Project> {
             }
         }
         return sources;
+    }
+
+    /**
+     * Whether {@code filter}, the filter of a source set's java sources, is the one the {@code java} plugin gives
+     * them: the include {@code **}{@code /*.java} alone, matched case-sensitively, which selects in a directory just
+     * the Java sources the generator walks it for.
+     */
+    private static boolean javaPluginFilter(PatternFilterable filter) {
+        return filter instanceof PatternSet patterns
+                && patterns.getIncludes().equals(JAVA_PLUGIN_INCLUDES)
+                && patterns.getExcludes().isEmpty()
+                && patterns.getIncludeSpecs().isEmpty()
+                && patterns.getExcludeSpecs().isEmpty()
+                && patterns.isCaseSensitive();
     }
 
     /**

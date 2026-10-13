@@ -2,7 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.graphmaquina/graphmaquina-core)](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core)
 
-![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket moving from OPEN through REVIEW to DONE or FAILED.](images/graphmaquina-overview.svg)
+![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket that goes from OPEN through REVIEW to DONE, or from OPEN to FAILED through the failure route of SUBMIT.](images/graphmaquina-overview.svg)
 
 Typed, graph-based state machines for Java 21. Declare the transitions your domain allows as identified
 edges, give every state a reason for refusing the rest, and let the build validate the whole graph before the
@@ -413,6 +413,16 @@ For graph declarations under `src/test/java`, add to the same `dependencies` blo
 testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 ```
 
+The build script above compiles every source set under `-Xlint:all` and `-Werror`. The processor claims only
+GraphMaquina's own annotations, so in a test source set that declares it, javac warns that no processor claimed
+JUnit's `@Test`, and that warning fails `compileTestJava`. Turn javac's `processing` lint off there:
+
+```kotlin
+tasks.compileTestJava {
+    options.compilerArgs.add("-Xlint:-processing")
+}
+```
+
 If test entities use Lombok, add its test compile-only and annotation-processor dependencies, preserving order.
 
 | Task | Purpose |
@@ -502,7 +512,7 @@ internal repository, configure both dependency and plugin repositories as shown 
             <configuration>
               <compilerArgs>
                 <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/test/annotation-manifest.json</arg>
-                <arg>-Xlint:all,-serial</arg>
+                <arg>-Xlint:all,-serial,-processing</arg>
                 <arg>-Werror</arg>
               </compilerArgs>
             </configuration>
@@ -550,6 +560,13 @@ internal repository, configure both dependency and plugin repositories as shown 
   </build>
 </project>
 ```
+
+The test compilation turns javac's `processing` lint off. `<annotationProcessorPaths>` applies to both
+compilations, so the GraphMaquina processor runs over the test sources too, and it claims only GraphMaquina's own
+annotations: under `-Xlint:all`, javac warns that no processor claimed JUnit's `@Test`, and `-Werror` fails the
+test compilation as soon as it holds a test. The main compilation keeps the lint, since the processor claims every
+annotation the ticket's main sources carry; turn it off there too once they carry annotations no processor claims,
+such as Spring's or Jakarta's.
 
 Run from the application directory:
 
@@ -599,9 +616,16 @@ to process, debug settings that leave out the `SourceFile` attribute, classes or
 than the project keeps them, as `<outputDirectory>`, `<multiReleaseOutput>`, `-d` or `-s` can,
 `<compileSourceRoots>` without the generated directory, divergent main/test manifests, compiler includes or
 excludes, incremental excludes included, that leave out the compilation carrier the generator emits, and includes
-that hold only empty values. A compilation the build switches off is skipped instead: `maven.main.skip` or
-`<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals,
-and a project packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
+that hold only empty values. It checks the execution of the compiler's `compile` or `testCompile` goal that the
+default lifecycle runs and that compiles the generated vocabulary, whatever its id, so a build may bind
+`default-compile` to the phase `none` and compile through an execution of its own, as `kotlin-maven-plugin` asks a
+mixed Kotlin and Java build to do; declare `maven-compiler-plugin` before this plugin then, since an execution of
+its own runs in declaration order within its phase, and the opposite order, which would run `complete` before that
+javac, is refused. Two running executions that both compile the vocabulary are refused. A compilation the build
+switches off is skipped instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that and do
+nothing, `maven.test.skip` or `<skip>` the three test goals, a compilation the default lifecycle runs no execution
+of the compiler's goal for, as when that goal is bound only to `none` or to phases of other lifecycles, is skipped
+the same way, and a project packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
@@ -1149,7 +1173,11 @@ uppercase acronyms are preserved: `hasTitle` → `HasTitle`, `URL` → `URL`. `G
 Original Java declarations and invocation names remain unchanged. If normalization merges two names, generation
 fails with `SG603` naming both sources: `id` / `_id` and `authorize` / `Authorize` conflict within one references
 container. A conflict with the container itself also fails; there are no underscore escapes or opaque suffixes.
-Names that cannot produce a valid nonempty Java identifier are rejected.
+Names that cannot produce a valid nonempty Java identifier are rejected. Two generated names that differ only in
+case, such as the symbols `ApproveId` / `ApproveID` of the members `approveId` / `approveID`, the containers
+`OuterInnerRefs` / `OuterinnerRefs` of the hosts `Outer.Inner` / `Outerinner` or the companions `LibraryRuntime` /
+`LIBRARYRuntime` of the sets `Library` / `LIBRARY`, fail with `SG603` where a volume that holds their files does not
+tell names apart by case, since it would keep one file of the two.
 
 A generated symbol is a compile-time reference. It is not an action instance, a dependency-injection bean or
 a reflective lookup. The facade calls the selected declaration directly, preserving the marked overload.
@@ -1193,14 +1221,17 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | --- | --- |
 | `Definition.state` | Public instance reader returning the machine's state enum; compatible public instance writer |
 | `Definition.id` | Public instance reader returning an identity value; values must be non-null at runtime |
-| `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` |
-| `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity |
+| `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` or a subtype, such as `List<PeerEntity>`; a raw collection is refused |
+| `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity, never `null` |
 | `Submachine.child` | Parent reader returning `Optional<ChildEntity>` |
 | `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |
 
-Use `Optional.empty()` for a peer with no owner. Keep relationship accessors consistent and return non-null
-collections. If the setter overloads are ambiguous, the processor reports the ambiguity instead of choosing
-based on declaration order.
+Use `Optional.empty()` for a peer with no owner: an `owner` reader that returns the owner entity itself declares that
+every peer has one. Keep relationship accessors consistent and never return null: a `peers` reader, an `owner`
+reader, whichever type it declares, and any other `Optional` reader that returns `null` are refused, as
+[triggering and observing watches](#triggering-and-observing-watches) and
+[finding the parent with a lookup](#find-the-parent-with-a-lookup) say. If the setter overloads are ambiguous, the
+processor reports the ambiguity instead of choosing based on declaration order.
 
 ### Method signatures
 
@@ -1217,12 +1248,18 @@ transition types; `P/Q/U` refer to the peer's: the watched machine's for a condi
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q, U> view)` |
 | `@GraphLookup` | `Optional<E> method(P child)` |
 
+A raw `CompletionStage` is no asynchronous result: an action or a guard that returns one is refused where it is
+declared (`SG604`).
+
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
 using three instance members of `OrderActions` adds one `OrderActions` dependency, not three instances. A class
 used only through static members needs no builder argument.
 
 To expose inherited marked members under a concrete host, use `@GraphBindings` on that host. The processor
-checks the inherited signature with the concrete generic arguments substituted. Generated output and JAR
+checks the inherited signature with the concrete generic arguments substituted. Only what the host inherits is
+exported through it, since a static binding is called through the host: a static method of an interface only through
+the interface's own symbol, and a static method that the host or a superclass between hides with a method of the same
+name and parameter types not at all, the hiding method being exported in its place when it is marked. Generated output and JAR
 exports are checked for collisions; do not manually create classes in generated namespaces or edit symbols.
 
 ## Actions, guards and failure routes
@@ -1244,13 +1281,16 @@ The ticket quickstart shows synchronous actions and a guard. Actions receive `Tr
 Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
 peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
 `GuardResult.reject("reason")`; do not return null. A rejecting guard stops the edge before its action runs
-and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. Guard code should be free of
-mutations and external side effects.
+and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. In a graph the DSL built, the guards of one
+edge have distinct names, so the name tells which one rejected: a generated guard is named by its member's simple name,
+and two guards of one name on an edge are refused with `SG105`. A definition assembled without the DSL is not checked
+for it. Guard code should be free of mutations and external side effects.
 
-Without an input, or when the caller passes null, the optional is empty. A value of an incompatible class
-throws `ClassCastException`; absence and a wrong type are different conditions. Primitive operation
-arguments are boxed; read them with wrapper tokens such as `Integer.class`. Class tokens cannot validate
-erased generic arguments. Input operations do not support method type parameters or varargs.
+Without an input the optional is empty. A null input is refused before the call starts, as a null entity is, with a
+`NullPointerException` that names the parameter. A value of an incompatible class throws `ClassCastException`;
+absence and a wrong type are different conditions. Primitive operation arguments are boxed; read them with wrapper
+tokens such as `Integer.class`. Class tokens cannot validate erased generic arguments. Input operations do not
+support method type parameters or varargs.
 
 The same input reaches the transition's guards, action and handled failure action. Cascades, the exits of
 sub-machines, watch reactions and reevaluation have no input of their own and receive an empty optional. A shared
@@ -1274,8 +1314,8 @@ A failure route is an ordinary edge, declared from the origin of the edge that m
 
 When `register` fails, the runtime discards the `SUBMIT` edge's pending changes, resolves `DECLINE` from
 `OPEN` — the origin, never the destination it was heading for — and commits it. It returns `Outcome.Failed`,
-whose `transition()` is `SUBMIT`, whose `hasTarget` was `REVIEW`, whose `failureTransition()` is `DECLINE`
-and whose `movedTo()` is `FAILED`.
+whose `transition()` is `SUBMIT`, whose `to()` is `REVIEW`, the destination it did not reach, whose
+`failureTransition()` is `DECLINE` and whose `movedTo()` is `FAILED`.
 
 `onFailure` names an identifier, so a route may legitimately reach the same destination as the edge it
 recovers: identity, not the destination, distinguishes them. Naming the failing edge's own key is `SG301`, as
@@ -1329,6 +1369,14 @@ a `CancellationException` or one of its subtypes, which are never domain failure
 their cause. All of these are `SG302`. Declare specific foreign throwable types, usually exceptions. Timeout,
 interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for
 asynchronous actions.
+
+The generated companion declares each edge, from each of its origins, as one chained expression, with one call per
+guard, `failsOn` class and recovery rule, and javac attributes a chain recursively, so the stack of the thread it runs
+on bounds how long one can be. With JDK 21 on a thread with a 1 MiB stack, javac compiled an edge with 400 `failsOn`
+classes and failed with a `StackOverflowError` on one with 800. A statement written by hand with the DSL is bounded
+the same way, by every call it chains, every edge of the graph when one statement declares them all: on that thread,
+one of 400 edges without actions, 803 calls, compiled, and one of 600 edges failed. Keep an edge, or such a statement,
+to a few hundred calls.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
@@ -1484,6 +1532,15 @@ the rule while every other `IOException` goes to the fallback.
   `<getMessage threw <exception class>>`, and the route is taken all the same, with the thread interrupted again when
   what `getMessage()` threw is an `InterruptedException`. `cause()` is the very exception the action threw, once
   unwrapped.
+- Wherever the engine contains an `InterruptedException` that application code throws on the thread the engine called it
+  on, it interrupts that thread again, since the blocking call that threw it cleared the interrupt: one that an action
+  or a guard throws, whatever the engine then does with it, and one that a hook, a state getter or setter, an identity
+  function, the trail's clock, a sub-machine's `childOf` or `parentOf`, a watch's `peersOf`, `ownerOf` or condition, an
+  observer, the logger's backend, a value's `toString()` or a call submitted through `supplyAsync` throws. One that
+  completes a stage leaves the thread as it is. Once the engine interrupts the thread again, the rest of the call runs
+  on an interrupted thread, as an interrupt asks, the recovery of a routed failure included: a later wait of the call
+  for a stage that is still pending, the recovery action's for one, ends at once and aborts the call as interrupted,
+  while a synchronous action, and an asynchronous one whose stage has already completed, complete.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 
@@ -1538,12 +1595,22 @@ move or an action:
 - waits under its own effective timeout, inside the budget of the root call, and runs its own effective hook after
   the commit.
 
-Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery
-fails, because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that
-failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
-that ran, but not the kind or the cause of the first failure. A definition assembled without the DSL whose rule
-names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
-`onFailure` does.
+Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery fails,
+because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that failure
+always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions that ran, but
+not the kind or the cause of the first failure. When the recovery action throws, or completes its stage with, a
+throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also holds
+the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these aborts
+that the engine builds for the recovery step: when its action returns a null outcome or stage, or its wait times out, is
+interrupted or is refused, unless a failed cascade had poisoned the call, which then ends in that poison as it is; when
+a sub-machine that the recovery hop enters cannot start; and when the exit that a terminal state selects after the
+recovery cannot run, because that state maps to no exit or the exit would run deeper than `maxCascadeDepth`. An abort of
+the exit's own step holds no such exception. A recovery that an `InterruptedException` selected, or that runs after the
+engine contained one in the same call, runs on an interrupted thread, since the engine interrupts the thread again: when
+its action has to wait for a stage that is still pending, that wait is interrupted at once and the call aborts as just
+said, while a synchronous recovery action, or one whose stage has already completed, completes. A definition assembled
+without the DSL whose rule names an identifier with no edge from the origin aborts the call when that rule is selected,
+as such an `onFailure` does.
 
 `Outcome.Failed` reports the kind as `failureKind()`, empty when the failure has none, beside
 `failureTransition()`, the identifier of the recovery edge that ran. `status()` is `FAILED` and `code()` is
@@ -1659,7 +1726,9 @@ static int httpStatus(OutcomeCode code) {
 
 The `switch` has no `default`: it is exhaustive, so a code added by a future release fails the build instead of
 falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable`, reactions with their own
-entities, and the call's flow, whose values are whatever the steps and hooks put.
+entities, and the call's flow, whose values are whatever the steps and hooks put. A call failure cannot be serialized
+at all: every `CallFailedException`, whatever its subtype, holds its `MachineCall`, which is not `Serializable`, so
+writing one to an `ObjectOutputStream` throws `NotSerializableException`.
 
 ### Read what only one variant carries
 
@@ -1726,8 +1795,9 @@ read them.
   itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
   `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
   any reevaluation, so the reaction carries what it threw: a `RuntimeException` as it is, and a checked exception or any
-  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`. An
-  `Error` is not caught: it propagates to the caller whose commit triggered the reaction.
+  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`, with
+  the thread interrupted again when what it threw is an `InterruptedException`. An `Error` is not caught: it propagates
+  to the caller whose commit triggered the reaction.
 
 ### Handle a failed call
 
@@ -1754,11 +1824,11 @@ call wrote up to the failure:
   except what a rollback removed earlier. A step whose failure its edge expects, a failure its action returned or a
   throwable of a type the edge declares, is rolled back whether a route takes the failure or not: an
   `UnhandledFailureException` therefore lacks the writes of its step and of the steps that step cascaded to. Each
-  `COLLECT` element that aborted is rolled back too, so a `CascadeException` lacks their writes; an identity whose
-  `equals` or `hashCode` throws stops that rollback, which leaves the writes and hops it had not undone. Once a failed
-  cascade poisoned the call, a step whose action still returns or throws such a failure is not rolled back for it: it
-  ends in the failure that poisoned the call and keeps its writes and its hop, unless a `COLLECT` collects that
-  failure, which rolls back the whole element the step ran in.
+  `COLLECT` element whose abort the cascade collects is rolled back too, so a `CascadeException` lacks their writes; an
+  identity whose `equals` or `hashCode` throws stops that rollback, which leaves the writes and hops it had not undone.
+  Once a failed cascade poisoned the call, a step whose action still returns or throws such a failure is not rolled back
+  for it: it ends in the failure that poisoned the call and keeps its writes and its hop, unless a `COLLECT` collects
+  that failure, which rolls back the whole element the step ran in.
 - A `CommitFailedException` holds everything the steps wrote.
 - An `AfterCommitException` also holds what the hooks wrote, the failing hook's writes before it threw included.
 - When the call records its trail, its flow also lists the hops and starts the call took up to the failure, except
@@ -2071,12 +2141,22 @@ handled.whenComplete((Void unused, Throwable error) -> {
 Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
 `CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
 is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
-that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`'s `statesWritten()` and `journal()`,
-as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
-proof that nothing happened. A request refused before it started ran nothing: one an executor refused
-(`RejectedExecutionException`), one for an identifier of another catalogue (`IllegalArgumentException`), and one made
-where no call may start (`ReentrantTransitionException`, possible with an executor that runs tasks inline). A callback
-you attach can also fail independently of the machine operation.
+that call's `CallFailedException`, or an `Error`. The future fails even when that cause cannot be printed, because
+its `getMessage()` or `toString()` throws: the `CompletionException`'s message is then
+`<toString threw <exception class>>`, naming what printing threw, and `join()` throws it. `get()` throws what a
+`CompletableFuture`'s `get()` throws for such a cause on the JDK it runs on: on JDK 21, what printing the cause
+throws, as it builds its `ExecutionException` from the cause's string; on JDK 25, an `ExecutionException` caused by
+it, whose message is empty and which carries what printing threw as a suppressed exception. Read the
+`CallFailedException`'s `statesWritten()` and `journal()`, as [Handle a failed call](#handle-a-failed-call) shows,
+before deciding whether to retry; an exceptional future is not proof that nothing happened. A request refused before
+it started ran nothing: one an executor refused
+(`RejectedExecutionException`), one with a null argument (`NullPointerException`, whose message names that parameter),
+one for an identifier of another catalogue (`IllegalArgumentException`), and one made where no call may start
+(`ReentrantTransitionException`, possible when the call runs on the thread of the callback that submitted it, through
+an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A null argument fails the
+future only when the operation you submit receives it: `async(null)` itself, and a null argument of a low-level
+`StateMachine`'s `async().execute(...)` or `async().reevaluate(...)`, throw their `NullPointerException` on the calling
+thread before anything is submitted. A callback you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
@@ -2099,7 +2179,8 @@ AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
 
 Close `machines` when its work is finished. The override is accepted only for an asynchronous machine in the
 set; any other class throws `IllegalArgumentException`. A synchronous-only set such as `TicketMachines` has no
-timeout builder argument, even when you use its `async(...)` method to submit a synchronous operation.
+timeout builder argument and no `asyncTimeout(Machine.class, Duration)` method, even when you use its `async(...)`
+method to submit a synchronous operation.
 
 Any positive duration is accepted. One of `Duration.ofNanos(Long.MAX_VALUE)` or more means no limit, for a
 machine's budget and for an action's `@Timeout` alike.
@@ -2153,6 +2234,15 @@ On an engine wait timeout, the operation throws `TransitionAbortedException`, pe
 are discarded, and transaction-aware context operations become invalid. Through `machine.async`, that
 exception completes the operation future exceptionally. Neither a recovery rule nor the declared `onFailure` route
 is used for this timeout. The user's stage and the underlying service request are left running.
+The engine waits through a callback registered on that stage with `handle`, which stays there until the stage
+completes, as the JDK keeps every `handle` dependent; a wait that an interrupt or a pool's refusal ends leaves it
+too. The engine remembers that callback, holding the stage weakly and by its identity alone, and a later wait for
+the same stage, from any machine, waits on it instead of registering another. A stage that a single-flight cache
+hands to every caller therefore carries one callback however many calls give up on it, plus one for each call that
+was already waiting on it when the first gave up. Distinct stage objects are distinct stages: an action that returns
+a new wrapper of a shared future on each call, such as `shared.thenApply(...)`, leaves on each wrapper one callback,
+which the engine remembers too, until the shared future completes. A `CompletionStage` implementation of your own
+keeps whatever its own `handle` keeps.
 
 ![After an engine wait times out, graph state does not commit. The user stage and external service can finish later, but that completion does not resume the aborted graph transaction.](images/async-late-completion.svg)
 
@@ -2190,9 +2280,13 @@ flow.](images/async-context-boundary.svg)
 operation of a context's flow, `get`, `keys`, `entity`, `trail`, `put` and `remove`, require both the original
 operation thread and a live transaction. A wrong thread produces `WrongThreadException`; use after invalidation produces
 `StaleContextException`. After the root commits or aborts, its transaction-aware context is invalidated before
-post-commit hooks run. The flow a hook receives from its `CommitContext` is checked the same way, against the thread
-running the hook and the hook's own run: it goes stale once the hook returns or throws. The flow the caller receives
-once the call ended, in its outcome or its failure, is a frozen copy without these checks.
+post-commit hooks run. Once invalidated, a context, its peer views and its flow let go of the call, so one retained
+after the call keeps in memory nothing of the call but the entity and the input of the context's step, which `entity()`
+and `input()` still answer, and, for a flow, also the root call's entity, with that entity's identity when the call
+logs at `DEBUG`: it keeps a value of the flow only when that value is one of them. The flow a hook receives from its
+`CommitContext` is checked the same way, against the thread running the hook and the hook's own run: it goes stale
+once the hook returns or throws. The flow the caller receives once the call ended, in its outcome or its failure, is a
+frozen copy without these checks.
 
 Cascades also require that the commit has not begun and that no step is being rolled back. A retained action context
 used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or
@@ -2239,10 +2333,17 @@ try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
 
 The example waits before closing. The executor is closed by the application's try-with-resources statement,
 not by the machine set. With the defaults, closing a set closes its owned executors and waits for their
-submitted work. With a custom executor, the caller owns shutdown and must keep the machines and any service
-dependencies alive until operations finish. Closing the registry is not a general cancellation barrier for
-synchronous calls or work submitted through a still-running custom executor. A rejected submission yields an
-exceptionally completed future.
+submitted work. An interrupt of the thread that closes the set, before or while it waits, reaches every owned
+executor the set has not finished closing, not only the one it waits for: each interrupts the threads of its
+operations, so a call waiting for a stage aborts as interrupted, and `close()` still waits for them to end, then
+returns with the thread interrupted. Closing an owned executor from one of its own operations would wait for that
+operation forever, so `close()` throws `IllegalStateException`, before it closes anything, on a thread that runs
+such an operation, an asynchronous call or the supplier given to `async(...)`, whatever calls it there: an action, a
+hook or a watch reaction of the call, a call a hook starts, or a dependent that completing the operation's future runs
+on that thread. The set stays open; close it from another thread. With a custom executor, the caller owns shutdown
+and must keep the machines and any service dependencies alive until operations finish. Closing the registry is not a
+general cancellation barrier for synchronous calls or work submitted through a still-running custom executor. A
+rejected submission yields an exceptionally completed future.
 
 Avoid using the same small fixed executor for operation workers and service completions scheduled by
 those operations. If every worker is blocked waiting for a service stage whose completion is queued behind
@@ -2256,7 +2357,20 @@ the stage's own work is a task queued on that pool, another worker has to take i
 starts, or one that frees up. While every other worker is busy, or blocked where the pool cannot see it, as on a
 lock or a plain latch, the wait goes on, up to its timeout. When every other worker is blocked where the pool
 sees it, as in `CompletableFuture`'s `get` or `join` or in another GraphMaquina wait, the pool starts a spare, if
-its size allows. Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
+its size allows.
+
+A call submitted through `async(...)` is queued as a plain task, never as one of the asynchronous tasks that
+`CompletableFuture`'s `get` and `join` run on a waiting `ForkJoinPool` worker, so a callback that waits there never
+runs it on its own thread. While such a call is queued on the waiting worker, another worker has to take it, as for a
+stage's task, and so has a `CompletableFuture` task queued behind it: a callback that waits for either waits, under no
+timeout but its own, while every other worker is busy or blocked where the pool cannot see it. Two waits can still run
+a queued call on the waiting thread, where the call fails with `ReentrantTransitionException`: a worker that joins a
+`ForkJoinTask` may run a task queued by another worker that stole work from it, and waiting for a pool to quiesce,
+through `ForkJoinTask.helpQuiesce()` or `ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread.
+Given `ForkJoinPool.commonPool()` while the common pool's parallelism is below two, a machine runs each call on a new
+thread instead, as `CompletableFuture.supplyAsync` does with that pool on JDK 21. On JDK 25, `CompletableFuture`
+raises the common pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs
+its calls on the pool. Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
@@ -2301,13 +2415,16 @@ public interface ShopMachines extends Machines {
 ```
 
 The generated builder takes the instance binding hosts used by the machines. Its signature is generated from
-the set's declarations; inspect the generated method or completion when dependencies change. GraphMaquina does
-not instantiate service classes or discover dependency-injection beans.
+the set's declarations; inspect the generated method or completion when dependencies change. It takes the hosts in
+the order of the set's accessors, after the shared timeout when it has one, a host at the first accessor whose machine
+uses it: `ShopMachines` above gets `builder(Duration, OrderActions, ItemActions)`. Reordering the accessors can
+therefore reorder its parameters, a source-incompatible change for every caller of `builder(...)`. GraphMaquina
+does not instantiate service classes or discover dependency-injection beans.
 
 | Builder option | Purpose / default |
 | --- | --- |
-| `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
-| `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
+| `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine; generated only for a set that has one, as is the timeout argument of `builder(...)` |
+| `asyncExecutor(Executor)` | Supply the executor used by `async` calls, where `ForkJoinPool.commonPool()` with a parallelism below two runs each call on a new thread instead; otherwise each machine owns a virtual-thread executor |
 | `recordTrail()` | Record the [trail](#record-the-calls-trail) of every call of the set on `InstantSource.system()`; off by default |
 | `recordTrail(InstantSource)` | Record that trail on the given clock instead |
 | `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
@@ -2319,9 +2436,22 @@ Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain
 `IllegalArgumentException`. The builder is single-use: once `build()` succeeds, every method throws
 `IllegalStateException`.
 
+Both limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
+reaction runs one level deeper, so that stack bounds them too. As a measure, with trivial actions on JDK 21, a thread
+of 1 MiB held between about 250 and 1,800 cascade levels or watch reactions, and one of 8 MiB between about 2,300 and
+16,000: the fewest over the first calls of a JVM, while the JIT is still compiling the engine's code, and the most
+once it has optimized it. How many exactly depends on the JIT, on the platform and on the frames of your own
+callbacks. A call that goes deeper than its thread's stack meets a `StackOverflowError`, which reaches your actions
+on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch chain,
+the root and the reactions before the one that overflowed have committed already. The registry and the thread are not
+left unusable by it: later calls run as before. Keep the limits within what the stacks of your threads hold, or run
+deep calls on threads with a larger stack.
+
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
-owned by the set and waits for submitted operations to finish. An executor you supply remains your
-responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
+owned by the set and waits for submitted operations to finish. An interrupt of the closing thread interrupts the
+operations of every owned executor the set has not finished closing, and `close()` refuses to run on the thread of
+one of those operations, as [executors and machine lifetime](#executors-and-machine-lifetime) says. An executor you
+supply remains your responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
 
 For dependency injection, register the generated set as an application-managed component using your existing
 `OrderActions` and `ItemActions` instances, then inject its facades into services. Arrange for `close()` at
@@ -2384,7 +2514,7 @@ from its pending state like any other.
 | Policy | Behavior |
 | --- | --- |
 | `FAIL_FAST` | Stop when a cascade fails. |
-| `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call, or an identity whose `equals` or `hashCode` throws while a failed element is rolled back. |
+| `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose sub-machine binding check could not read a parent or a child, such as a parent whose state is null, an element whose step a nested cascade poisoned with a failure that is no failure of the call, or an identity whose `equals` or `hashCode` throws while a failed element is rolled back. |
 
 `COLLECT` is not partial commit. A nested transition that is rejected, because no edge carries it, a guard rejected it
 or a sub-machine refused it, is an abort rather than an ordinary root-level `Rejected` result. A handled domain
@@ -2395,7 +2525,13 @@ abort of a nested step goes. Anything else reaches your action as a `TransitionA
 and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
 ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
 function. An `Error` poisons through such an abort too, but reaches your action as itself, with any `Error` that
-printing it threw as suppressed. Catching it in your action
+printing it threw as suppressed. A `VirtualMachineError`, such as a `StackOverflowError` or an `OutOfMemoryError`,
+reaches your action at once, before that abort exists, since building it could need the stack or the memory that ran
+out. If your action catches it and goes on, the engine records the poison on your action's step, once the stack has
+unwound to it: as soon as your action reads a peer or cascades again, which then throws a
+`PoisonedUnitOfWorkException`, and at the latest when it ends, unless an `Error` it throws as itself ends it, which
+propagates. That poison is a `TransitionAbortedException` that names your action's step and carries no cause, and a
+transaction that was poisoned before keeps its first poison. Catching an `Error` in your action
 does not make the transaction safe to commit. Once the engine has your action's outcome, it throws the failure that
 poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
 completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its
@@ -2406,13 +2542,19 @@ transaction. Your action can still end the call in another failure, such as an a
 declared type accepts, or an `Error` it throws as itself. A cascade that names an unknown machine poisons too, by key or
 by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue, and neither does a
-cascade refused because the commit has begun or a step is being rolled back. `cascadeAll` copies its
+cascade refused because the commit has begun or a step is being rolled back. A `VirtualMachineError`, such as a
+`StackOverflowError`, that strikes while these checks run, while `cascadeAll` copies its collection or while a
+cascade by facade type looks its machine up, poisons nothing either: the cascade has not started. `cascadeAll`
+makes these checks before its first element runs: from then on, any failure that ends it poisons the unit of work,
+a `VirtualMachineError` that strikes between two elements too. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
 change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
-reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
-runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless it runs on the
+action's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks,
+as [executors and machine lifetime](#executors-and-machine-lifetime) lists, in which case the returned future fails
+with the `ReentrantTransitionException`.
 
 No declared type accepts an `Error`, a `CancellationException` or a `StateMachineException`. For a throwable that a
 declared type accepts and that an action other than a recovery action throws or completes with, the engine checks the
@@ -2427,7 +2569,8 @@ action throws or completes with is never routed, whatever the recovery edge decl
 propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the failure that
 poisoned the transaction; and on any other throwable the engine aborts the call with a message composed from the
 recovery action's name and the original failure's reason, never from that throwable's string, whether or not the
-transaction is poisoned.
+transaction is poisoned. That abort carries the throwable as cause and holds as suppressed the throwable that selected
+the failure route, when a throwable selected it and is not the same one.
 
 `@GraphPeers` is for generating the vocabulary of a pair: the annotations that declare the owner's watches and
 sub-machines over the peer. A runtime peer read or cascade alone does not require a pair that no watch or
@@ -2521,11 +2664,14 @@ A reaction failure does not roll back the peer commit that triggered it.
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
-as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
-fails with that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
+as a separate call on the executor's thread, unless it runs on the function's own thread, through an executor that
+runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, in which case the returned future fails with
+that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
-its reaction carries the refusal itself.
+its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`
+reader that returns `null`, whether it declares an `Optional` or the owner entity, is refused the same way, with a
+`NullPointerException` that says it returned null, and no condition runs over a `null` collection.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -2559,17 +2705,19 @@ no parent: every binding is declared on the parent's side, so one machine can be
 machines. Three rules make the contract:
 
 - An edge that enters a bound state starts the child at the initial state of the child's graph, in the same unit of
-  work as that edge.
+  work as that edge. Its `childOf` must answer a child then: an empty answer aborts the step that enters before its
+  action runs, with a `TransitionAbortedException` such as `Booking/BookingStatus entered DEPOSIT with no
+  Payment/PaymentStatus`, and the call commits nothing.
 - A parent holds its child while it is in the bound state, or leaving it, and its `childOf` answers that very child.
   A call to a child is refused as `DETACHED` when a binding finds its parent but no parent holds it: the parent has
   left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
   and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
-  in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
-  begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through its action,
-  moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not read again,
-  so replacing the parent's child during the child's own action does not cancel the exit; to keep it from running,
-  move the parent out of the state, or restart it there, from that action.
+  in the same unit of work, one level below that step, and commits with the child. The binding is judged when the
+  child's step begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through
+  its action, moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not
+  read again, so replacing the parent's child during the child's own action does not cancel the exit; to keep it from
+  running, move the parent out of the state, or restart it there, from that action.
 
 ### Declare a sub-machine
 
@@ -2714,7 +2862,8 @@ which binds a payment too. Capturing the balance then exits through `BALANCE_PAI
 the calls that ran them: an observer sees three calls in all, the booking's `book` and the two captures. When an exit
 leaves a parent in a terminal state that a binding of its own parent maps, the next exit runs one more level up. Each
 level counts for `maxCascadeDepth`. A child that ends while its parent is still running the edge that entered the
-state, as when that edge's action captures the payment, exits once that edge's step is over.
+state, as when that edge's action captures the payment, exits once that edge's step is over. That exit runs one level
+below the edge's step, at the same depth as the capture, and counts for `maxCascadeDepth` at that depth.
 
 An exit is an ordinary edge of the parent, so its failure routes apply as on any edge. When the desk answers that no
 room is left, `holdRoom` fails: the booking takes the route `NO_ROOM` to `CANCELLED`, the whole call commits, and the
@@ -2885,7 +3034,7 @@ The runtime's normal root execution follows this sequence:
    edge enters and the exits of those that end, against a shared unit of work.
 3. Begin the commit: verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
-5. Invalidate transition contexts and release the root reentrancy marker.
+5. Release the root reentrancy marker and invalidate transition contexts.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
 8. Freeze the call's flow, notify the observers that the call completed, and return its outcome, which carries the
@@ -2947,7 +3096,11 @@ of the flow throws `StaleContextException`, and on another thread `WrongThreadEx
 threw, its flow no longer holds the call, so a retained context keeps none of the call's values in memory. Each hook
 gets a handle of its own on the flow, so a later hook cannot use the one an earlier hook kept. A hook that takes the
 entity alone does not see the flow. A hook can start a new call: that call has a flow of its own, and once it returns,
-the hook's flow still reads and writes the flow of the call that ran the hook.
+the hook's flow still reads and writes the flow of the call that ran the hook. That call is a new root, which
+`maxWatchChain` never counts: the watch reactions it triggers begin a chain of their own. A hook whose call runs that
+same hook again, directly or through other calls, therefore recurs until the thread's stack overflows, each call having
+committed before its hooks ran, as [build and manage machine sets](#build-and-manage-machine-sets) says of a
+`StackOverflowError`.
 
 To call a contextual hook by hand, in a unit test, build its context with the five-argument constructor,
 `new CommitContext<>(from, transition, to, kind, isTerminal)`. Its flow belongs to no call: it starts empty, has no
@@ -3008,12 +3161,16 @@ An observer watches without taking part. A throwable that is not an `Error` is l
 propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
 contained too, while an `Error` from it propagates unchanged. An `InterruptedException` that the observer or that
 backend throws, once contained, interrupts the thread again. Either `Error`, the observer's own or its warning
-backend's, voids for that call the promise of one `onStarted` and exactly one end event. That warning is the only record
+backend's, voids for that call the promise of one `onStarted` and exactly one end event, and so does a
+`StackOverflowError` or another `VirtualMachineError` that strikes again while the call tells its observers, as it
+can when the call ended in one: telling them can need the stack or the memory that ran out, so they are told best
+effort, and that `Error` propagates. That warning is the only record
 logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
 `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot
 start a transition on its own thread either: an operation called from an observer throws `ReentrantTransitionException`,
-which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless that
-executor runs tasks inline, in which case the returned future fails with that exception as its cause. When a failure
+which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless it
+runs on the observer's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s
+queued tasks, in which case the returned future fails with that exception as its cause. When a failure
 must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
 the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order
 they were added.
@@ -3113,10 +3270,10 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped the hops and starts it took and its writes to the call's flow, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
 | `TRACE` | `call=<id> depth=<d> cascade <ref> <T>[ policy=<policy>]` | An action cascades `<T>` to the peer `<ref>`, at the action's depth; each element of `cascadeAll` adds its `CascadePolicy`. The lines of the cascaded step follow, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> cascade-result <ref> <T> code=<code>` | The cascaded step returned its outcome, with its `code()`. |
-| `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>` and was rolled back. The call stays poisoned while the line is written; then the poison the element left is cleared and the next element runs. An identity whose `equals` or `hashCode` throws during that rollback leaves no such line: the abort of the cascading step that carries what it threw replaces the element's abort as the poison, with a `poison` line, and the cascade stops. |
+| `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the element `<ref>` aborted with `<error>`, in its step or, for a cycle or the depth limit, before its step could run, and was rolled back. The call stays poisoned while the line is written; then the poison the element left is cleared and the next element runs. An identity whose `equals` or `hashCode` throws during that rollback leaves no such line: the abort of the cascading step that carries what it threw replaces the element's abort as the poison, with a `poison` line, and the cascade stops. |
 | `TRACE` | `call=<id> depth=<d> submachine-start <ref> <previous> -> <initial> parent=<ref> node=<node>` | A hop entered `<node>`, which starts its sub-machine: the child moves from `<previous>` to its initial state, at the depth of the entering step. |
 | `TRACE` | `call=<id> depth=<d> submachine-exit <ref> terminal=<state> parent=<ref> exit=<T>` | The child `<ref>` stands in `<state>`, a terminal state of its graph, which selects the exit `<T>` of its parent. The step of the exit follows, one depth deeper. |
-| `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. A failure that finds the call already poisoned logs no line, since the call keeps its first poison. `COLLECT` clears the poison of each element it rolls back, so one call can log the poison of several elements, then that of the aggregate; it clears it too when an identity's `equals` or `hashCode` throws while it rolls an element back, and logs the poison of the abort that carries what it threw. An `Error` that leaves a cascade poisons the call without a line. |
+| `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. A failure that finds the call already poisoned logs no line, since the call keeps its first poison. `COLLECT` clears the poison of each element it rolls back, so one call can log the poison of several elements, then that of the aggregate; it clears it too when an identity's `equals` or `hashCode` throws while it rolls an element back, and logs the poison of the abort that carries what it threw. An `Error` that leaves a cascade poisons the call without a line. A step's own abort logs its line after the lines the step logged before it aborted, its action's end line included, whether the action threw or the step gave up on it: a `poison` line between an action's `start` and end lines comes from a cascade of that action. |
 | `TRACE` | `call=<id> depth=<d> flow-put <key>[=<value>]` | An action put a value in [the call's flow](#the-calls-flow), at the depth of its step. `<key>` is the key as `name:Type`, with the simple name of its class; a key made with `FlowKey.visible` adds `=` and the value's `toString()`. |
 | `TRACE` | `call=<id> depth=<d> flow-remove <key>` | An action removed the value of `<key>` from the call's flow. |
 | `TRACE` | `call=<id> commit-check entities=<n> hops=<n>` / `call=<id> commit-conflict reason="<conflict>"` | The commit checks the original state of each entity the call's hops and starts moved: `entities=` counts them, and `hops=` the hops the call took, starts not counted. A state that changed while the call ran is a conflict: the commit writes nothing and throws `CommitFailedException`. |
@@ -3124,7 +3281,7 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> hook <hook> <ref> <T>` | The hook `<hook>` is about to run for the committed hop `<T>` of `<ref>`. |
 | `TRACE` | `call=<id> hook-flow-put <hook> <key>[=<value>]` | The hook `<hook>` put a value in [the call's flow](#the-calls-flow). `<key>` and `<value>` print as in `flow-put`. |
 | `TRACE` | `call=<id> hook-flow-remove <hook> <key>` | The hook `<hook>` removed the value of `<key>` from the call's flow. |
-| `TRACE` | `call=<id> watch watcher=<machine> moved=<ref> owner=<ref\|none>` / `call=<id> watch-lookup-threw watcher=<machine> moved=<ref> error=<error>` | The watch of `<machine>` looked up the owner of the entity the call moved: the owner it found in the watched state, which a reaction reevaluates, or `none` when it found none; or the lookup threw `<error>`, which aborts that reaction. |
+| `TRACE` | `call=<id> watch watcher=<machine> moved=<ref> owner=<ref\|none>` / `call=<id> watch watcher=<machine> moved=<ref> owner-state=<state>` / `call=<id> watch-lookup-threw watcher=<machine> moved=<ref> error=<error>` | The watch of `<machine>` looked up the owner of the entity the call moved: the owner it found in the watched state, which a reaction reevaluates, or `none` when it found no owner; `owner-state=` and the state of an owner it found in another state, which no reaction reevaluates; or the lookup threw `<error>`, which aborts that reaction. |
 
 The `committed` and `started` lines follow the order the call took its hops and starts, and come after the commit,
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
@@ -3143,8 +3300,10 @@ standalone machine without `identity(...)` prints `#@` and the entity's identity
 The runtime prints the identity it has already computed, so a line never calls the identity function, a getter or
 the entity's `toString()`, unless your code puts the entity in the flow under a visible key: a `flow-put` or
 `hook-flow-put` line of a key made with `FlowKey.visible` prints the value's `toString()`, whatever the value is. The
-`start` line names no entity, and `end` and `failed` name it only once the call computed it: a reevaluation that
-selected no edge, or that failed before its edge ran, names none. The identity may be personal data, such as an e-mail
+`start` line names no entity, and `end` and `failed` name it only once the call computed it, which its step does as it
+begins: a reevaluation that selected no edge names none, and so does one that failed before its step began, while it
+read the state, ran its watch or exceeded the watch chain. A reevaluation whose step began names it, even when the step
+failed before its edge ran, in its binding check for instance. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
 of an exception or of a visible flow value throws anything but an `Error`, a checked exception included, the line prints
@@ -3215,13 +3374,13 @@ current value.
 A cascaded step and the exit of a sub-machine receive no `input()`. When they need a value the caller passed, the
 action that received it copies it into the flow before it cascades. The shop's `Orders` facade declares
 `cancel(Order order, String cancellationId)`, whose identifier names the batch the order's items go back to stock in.
-The order's `cancel` action copies it into the flow, or `manual` when the caller passed none, for each item it
-cancels:
+The order's `cancel` action copies it into the flow for each item it cancels. The operation refuses a null
+identifier before the call starts, so the action always finds one:
 
 ```java
 @GraphAction
 public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
-    ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
+    ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElseThrow());
     ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
     return ActionOutcome.ok();
 }
@@ -3246,13 +3405,13 @@ public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition>
 An action's write is undone with the step that made it. When a step fails with a failure its edge expects, one its
 action returns or a throwable of a type the edge declares, the call drops every write made since that step took its hop,
 its action's and those of the steps it cascaded to, and keeps what earlier steps wrote: the recovery action of its route
-then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element whose step
-aborts is dropped the same way, its writes with it, before the next element runs, unless an identity's `equals` or
-`hashCode` throws while it is dropped, which stops the rollback and leaves what it had not undone. Once a failed cascade
-poisoned the call, a step whose failure its edge expects is not dropped: it ends in the failure that poisoned the call
-and keeps its writes, unless a `COLLECT` collects that failure and drops the whole element. No other abort undoes a
-write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote. A hook writes
-after the commit, and nothing undoes its writes.
+then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element whose abort
+the cascade collects is dropped the same way, its writes with it, before the next element runs, unless an identity's
+`equals` or `hashCode` throws while it is dropped, which stops the rollback and leaves what it had not undone. Once a
+failed cascade poisoned the call, a step whose failure its edge expects is not dropped: it ends in the failure that
+poisoned the call and keeps its writes, unless a `COLLECT` collects that failure and drops the whole element. No other
+abort undoes a write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote.
+A hook writes after the commit, and nothing undoes its writes.
 
 Values are stored by reference, never copied, and a rollback drops the write, not what was done to the object. An
 action that puts a list, adds an element to it and then fails into its route leaves the recovery action without a
@@ -3384,7 +3543,7 @@ and sub-machine starts included:
 | --- | --- | --- |
 | `FlowEntry.Hop` | Each hop the call took | `hop()`, the hop's `TransitionRecord`, which in an outcome, and in an `AfterCommitException`, is the very instance its `records()` lists. On the hop of a failure route, `recovery()` holds what failed: the identifier of the transition whose step failed, the reason, the throwable if one failed the step, and the failure kind the outcome reports, if any: the one a returned failure named, or the one of the recovery rule whose type routed the throwable. |
 | `FlowEntry.Start` | Each sub-machine the call started | `start()`, the start's `SubmachineStart`, which in an outcome, and in an `AfterCommitException`, is the very instance its `starts()` lists. |
-| `FlowEntry.Rejected` | Last, when the call returns `Outcome.Rejected` | The root call's machine key and entity, the state, the requested identifier, the `RejectionKind`, the reason and the guard that rejected, if one did. |
+| `FlowEntry.Rejected` | Last, when the call returns `Outcome.Rejected` | The root call's machine key and entity, the state, the identifier the caller asked for, or the one the watch selected in a reevaluation, whose call requests none, the `RejectionKind`, the reason and the guard that rejected, if one did. |
 | `FlowEntry.Failed` | Last, when the call throws a `CallFailedException`, unless the clock throws as the call reads its instant | `failure()`, a `CallFailure` equal to the one the observers receive: the phase, `statesWritten()`, which says what the call wrote, and the exception. |
 
 Each entry's `at()` is read on the root machine's clock. A hop's or a start's is read right after the call took
@@ -3415,7 +3574,7 @@ static List<String> timeline(FlowView flow) {
 The trail follows the rollbacks of the call:
 
 - A failure route drops the hop of the step that failed, with the hops and starts of the steps it cascaded to, and
-  its recovery hop carries the `Recovery`. A `COLLECT` element whose step aborts leaves no entry either.
+  its recovery hop carries the `Recovery`. A `COLLECT` element whose abort the cascade collects leaves no entry either.
 - A failed call keeps what it took up to the failure, then its `Failed` entry, unless the clock threw as the call
   read that entry's instant, as below. An abort undoes nothing, but the engine rolls back the step of an
   `UnhandledFailureException` first, so its trail lacks that step's entries.
@@ -3433,14 +3592,15 @@ the trail even when no step or hook wrote to it, a rejected call included. Two s
 trails are, `at()` included.
 
 `recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the thread
-running the call, once per entry: a test can pass `InstantSource.fixed(...)`, a `Clock`, or a clock of its own that
-advances on each read. A clock that throws anything but an `Error`, a checked exception included, fails the call, as an
-identity function that throws does: the entry it could not mark stays out of the trail. When it throws while the call
-reads the instant of the `Failed` entry that ends a failed call, whatever failed the call, the call's
-`CallFailedException` carries what it threw as suppressed, unless it threw that very exception, and its trail ends
-without that entry; an `InterruptedException` suppressed there interrupts the thread again. A clock that answers `null`
-counts as one that throws a `NullPointerException`. A call whose root
-machine was built without `recordTrail` reads no clock and stores no time.
+running the call, once per entry the call appends, an entry that a rollback later drops included: a test can pass
+`InstantSource.fixed(...)`, a `Clock`, or a clock of its own that advances on each read, which then leaves a gap for
+each dropped entry, such as the failed hop of a failure route. A clock that throws anything but an `Error`, a checked
+exception included, fails the call, as an identity function that throws does: the entry it could not mark stays out of
+the trail. When it throws while the call reads the instant of the `Failed` entry that ends a failed call, whatever
+failed the call, the call's `CallFailedException` carries what it threw as suppressed, unless it threw that very
+exception, and its trail ends without that entry; an `InterruptedException` suppressed there interrupts the thread
+again. A clock that answers `null` counts as one that throws a `NullPointerException`. A call whose root machine was
+built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its
 guards and its action included. To assert the flow and its trail in a test, see
@@ -3792,8 +3952,9 @@ the original application or require its generated annotation classes. It parses 
 compilation's release and in its source encoding, which the build adapters pass in the request, and it writes
 the generated sources in that encoding too. It resolves the headers and exported members needed for
 generation, then emits vocabulary plus a manifest. The processor verifies that the manifest matches the
-declarations javac accepted, resolves bindings, checks the graph and emits facades. Completion publishes the
-validated export index and records ownership of generated outputs.
+declarations javac accepted, resolves bindings, checks the graph and emits facades, in ASCII only: every other
+character of a name or a text is written as a `\uXXXX` escape, so javac writes them alike in any encoding.
+Completion publishes the validated export index and records ownership of generated outputs.
 
 ### Generated files
 
@@ -3852,7 +4013,9 @@ For a multi-module build:
 3. Package the generated classes and export index together. Avoid assembly steps that silently drop or
    overwrite `META-INF/graphmaquina` metadata.
 4. Regenerate and recompile consumers after changing a producer's exported API. A stale or missing index is a
-   build error.
+   build error: one that is missing, or that does not list a machine or a symbol the classes beside it carry, is
+   reported as `SG602` wherever the consumer uses that machine or symbol, naming the jar or directory of classes
+   that carries it.
 
 Support for published symbols and sets does not imply support for a watch whose pair spans separate
 compilations. Keep watched owner and peer declarations in the same compilation until
@@ -3935,7 +4098,9 @@ that behavior is required.
 
 `submachine(state, child, childOf, parentOf)` binds another machine to a state: `child` is that machine's own
 `GraphDefinition`, `childOf` returns the child entity of a parent and `parentOf` the parent of a child, both as an
-`Optional`. `submachine(state, child)` binds a machine over the same entity, whose lookups return the entity itself.
+`Optional`. An edge that enters `state` while `childOf` answers empty aborts its step before the action runs, as
+[compose machines](#compose-machines) says. `submachine(state, child)` binds a machine over the same entity, whose
+lookups return the entity itself.
 `exit(terminal, id)` maps a terminal state of the child to an identifier of the parent, its exit, and
 `endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
 `submachine(state)` returns the binding of a state. A registry that holds the parent must hold the child's machine
@@ -3947,7 +4112,9 @@ and a terminal initial descendant's exit started by the caller's own entry, as
 annotated example.
 
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
-`afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes
+`afterCommitWith`, watches, sub-machines and cycle allowances. A guard is named by the name given or, without one, by
+the simple name of its class, and `build()` refuses a second guard of one name on an edge with `SG105`, as it refuses
+the same guard declared twice. A low-level `StateMachine` exposes
 `execute(entity, id)`, `execute(entity, id, input)` and `async().execute(...)`; a generated application
 facade intentionally presents the domain operations instead. Keep registry lifetime explicit to close owned
 executors.
@@ -3957,7 +4124,17 @@ executors.
 Read the full compiler message, including the source location and member it identifies. A wrong enum type or
 symbol category may be an ordinary javac error rather than an `SG` diagnostic: writing a state where an
 identifier belongs, or a constant of another machine's catalogue, is refused by javac before any GraphMaquina
-code runs.
+code runs. A mistyped generated symbol, such as `DocActionsRefs.Publsh.class`, is javac's alone to refuse too, as
+`cannot find symbol` once annotation processing is over: the processor still reports every other problem of that
+machine's declarations, but none about its graph as a whole, and generates no companion for it. A class another
+annotation processor generates can still be named, such as an exception in `failsOn`, and so can a constant it
+declares, such as the text of a policy, the reason of a rejection or the seconds of a timeout: the processor builds
+that machine, and a set that holds it, in the round that brings the class, and a constant no round resolves is
+javac's alone to refuse, like a mistyped symbol. javac refuses such a constant before any processor runs, as
+`expression not allowed as annotation value`, in an annotation repeated without its container: list those
+annotations in their container instead, such as `@DocsGraph.StatePolicies({...})`. The values of annotations
+GraphMaquina does not own are left to javac, so an annotation of your own on a facade may even name the machine's
+companion.
 
 ### Graph and declaration diagnostics
 
@@ -3965,7 +4142,7 @@ code runs.
 | --- | --- |
 | `SG102` | Duplicate `(from, id)` key, or a state that declares two policies or rejects one identifier twice. Two edges that merely share endpoints are not a duplicate. |
 | `SG103` | Missing or blank reason on a policy or a rejection. |
-| `SG105` | Duplicate guard declaration: list each guard once per transition. |
+| `SG105` | Duplicate guard: list each guard once per transition, and give the guards of one transition distinct names, which a rejection reports. A generated guard takes its member's simple name, so one transition cannot ask for two hosts' guards whose members share a name; a DSL guard takes the name given or, without one, its class's simple name. |
 | `SG106` | DSL callback has no inferable name: provide the explicit name overload for a lambda. |
 | `SG107` | Blank DSL callback or condition name: supply a nonblank label. |
 | `SG201` | Missing or repeated DSL initial declaration. |
@@ -3981,10 +4158,10 @@ code runs.
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
-| `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
+| `SG502` | Invalid machine or set declaration, such as an unsupported nested or local interface, a machine declared as a class that implements `Machine` instead of as an interface, or a set that is not an interface extending `Machines`. A machine, interface or class, that does not extend `Machine` is `SG601`, unless it is local. |
 | `SG503` | Missing or incompatible public property accessor. |
 | `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes the definition of each machine it binds as a sub-machine, then one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
-| `SG505` | Exported method does not uniquely fit the action, guard, hook, condition or lookup role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
+| `SG505` | Exported method does not uniquely fit the action, guard, hook, condition or lookup role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, or of an inner class of a generic class, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure`, `failsOn` or recovery rules without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
 | `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, a watched peer whose types the watcher's package cannot access, or a sub-machine whose entity, states or transitions its parent's package cannot access. |
@@ -4005,10 +4182,10 @@ code runs.
 | Code | Meaning / corrective action |
 | --- | --- |
 | `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](typed-annotations-build.md#processor-output-failures-sg599). |
-| `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade that declares type parameters, a parameterized entity type, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
-| `SG602` | A manifest, an inventory or an export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Any of these files, or the request, is malformed when it holds a number whose exponent is out of range, such as `1e99999999999`, and a manifest is also malformed when an owned source it lists is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place, or one whose manifest is malformed, needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. The generator also refuses a source encoding that names no charset of the JVM it runs under: name one that JVM supports, such as `UTF-8`. |
-| `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type; or one canonical name names two types, because a class of the unnamed package is named like a package: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
-| `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
+| `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade, interface or class, that does not extend `Machine`, such as `interface Tickets extends Runnable`, unless it is local, which is `SG502`, a facade that declares type parameters, a parameterized entity type, such as `Ticket<String>` or an inner class of a parameterized class, such as `Store<String>.Doc`, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
+| `SG602` | A manifest, an inventory or an export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Any of these files, or the request, is malformed when it holds a number whose exponent is out of range, such as `1e99999999999`, or escapes in a string or a name a surrogate that is not half of a pair, such as `\ud800`, which no UTF-8 file can hold, and a manifest is also malformed when its processor inventory is no path, such as one holding a NUL character, or when an owned source it lists is not a relative path to a Java source: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, one that names the directory itself, such as `.`, or one that is no `.java` file, such as `x`. A dependency, a jar or a directory of classes, that carries no export index, as an assembly step that drops `META-INF/graphmaquina` leaves it, or whose index does not list a machine or a generated symbol its classes carry, because it is stale or another build's, as an assembly step that overwrites `META-INF/graphmaquina` leaves it, is reported where a set holds such a machine or a declaration binds such a symbol, naming that jar or directory: package the index its StateGraph build publishes with its classes, or rebuild the dependency through the complete lifecycle. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place, or one whose manifest is malformed, needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. The generator also refuses a source encoding that names no charset of the JVM it runs under: name one that JVM supports, such as `UTF-8`. |
+| `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in a file at the same path below its source root as the generated file below the generated one, or in another file, which javac would report as a duplicate class, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one, or two generated types or two symbol types of one container differ from one another, only in case where the volume does not tell names apart; an existing type takes a companion's name; a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type; or one canonical name names two types, because a class of the unnamed package is named like a package: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it, and a binary that is no `.class` file or a source that is no `.java` file; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
+| `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class, or cannot name at all: a marker written in a local or anonymous class, on the class or on one of its members. There, as javac reads it, an annotation named like a marker means a member type of a class around it first, such as one inherited from a supertype, and is then no marker; one inside a class whose supertype the generator cannot resolve is let through. Also a static method exported through a `@GraphBindings` host that hides it, which the generator could not tell because a parameter is a type variable. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph vocabulary or the vocabulary of a pair belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
 | `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit`, `When.condition`, or the `child`, `parent` or `parentLookup` of a `Submachine`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
@@ -4057,7 +4234,7 @@ API contract.
 | Generation task skips | That source set does not declare `graphmaquina-processor` on its annotation-processor configuration. |
 | Async graph cannot be built | Supply a positive default timeout through the generated set builder. |
 | Watch never triggers | Check relationship accessors, owner state, first-match rules, the named edge's guards and whether a peer transition actually committed. |
-| Strict lint reports unclaimed third-party annotations | Inspect the application's processor setup. GraphMaquina claims its own declarations; it is not a wildcard processor for Spring, Jakarta or test annotations. It does not claim `javax.annotation.processing.Generated` either, so another tool's `@Generated` that no processor claims gets javac's own `-Xlint:processing` warning that no processor claimed it, which `-Werror` turns into an error. GraphMaquina's companions carry its own `@GeneratedCompanion` instead. |
+| Strict lint reports unclaimed third-party annotations | javac's `processing` lint, which `-Xlint:all` turns on, warns, in a compilation that runs annotation processors, about the annotations of its sources that no processor claims, the platform's own such as `@Override` aside, and `-Werror` turns the warning into an error. GraphMaquina's processor claims only GraphMaquina's own annotations; it is not a wildcard processor for Spring, Jakarta or test annotations, such as JUnit's `@Test` in a test compilation it runs in. It does not claim `javax.annotation.processing.Generated` either, so another tool's `@Generated` that no processor claims gets that warning too; GraphMaquina's companions carry its own `@GeneratedCompanion` instead. Turn the lint off for that compilation with `-Xlint:-processing`, or `-processing` in its `-Xlint:` list, as the [Maven POM](#pomxml) does for its test compilation. |
 | Strict lint reports, in generated code, an auxiliary class accessed from outside its own source file | A host, or the class it is nested in, is declared in a source file named after another type, and generated code, such as the host's references container, names it from another file. javac's `auxiliaryclass` lint, which `-Xlint:all` turns on, warns about that, and `-Werror` turns the warning into an error. Give that class a file of its own, or turn the lint off with `-Xlint:-auxiliaryclass`. |
 
 For a reproducible issue, include JDK/build-tool versions, relevant build configuration, the minimal graph and
@@ -4076,8 +4253,10 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
 | Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
-| Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. |
+| Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. The wait's callback stays registered on that stage until it completes; later waits for the same stage object share it, so the stage carries one however many waits give up on it, plus one per wait already in progress when the first gave up. A new wrapper per call is a new stage. |
 | Preview language features | The generator parses the original sources without `--enable-preview`, whatever javac is given: a source using a preview feature that javac's parser checks is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
+| Kotlin sources | The generator parses Java sources only: a marker on a Kotlin declaration is never read, and in a Gradle source set that mixes Kotlin and Java, a Java machine over an entity or a state enum a Kotlin source declares is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
+| Java modules | `graphmaquina-core` is an automatic module, `io.github.graphmaquina.core`: javac warns about a `requires transitive` of it by default, and about a plain `requires` under `-Xlint:all`. See the [build guide](typed-annotations-build.md#limits) for the lint keys to turn off. |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
 ## Build, verify and release this repository
@@ -4128,12 +4307,13 @@ private release key and `SIGNING_PASSWORD` with its passphrase, then run:
 ./gradlew --no-daemon centralBundle
 ```
 
-Without `-PgraphmaquinaVersion`, that stages the most recent tag's version, which is already published; pass
-the flag to stage a different one. Maintainers using 1Password CLI can inject both secrets for this command
-without copying them into the checkout or shell history. Replace `<vault>` and `<item>` with the vault and
-signing item's names or IDs; the item must have a `Private PGP key` field containing the armored secret key
-and a `password` field. 1Password shows that field under two names, the id `private_key` and the label
-`Private PGP key`; they are one field, and these examples address it by its label:
+Without `-PgraphmaquinaVersion`, the version is the tag of the commit being built, already published once that tag
+is released; on a commit no tag names, it is derived from the most recent tag, as `1.0.2-553-g03952fd`, which
+`centralBundle` refuses. Pass the flag to stage another version. Maintainers using 1Password CLI can inject both
+secrets for this command without copying them into the checkout or shell history. Replace `<vault>` and `<item>`
+with the vault and signing item's names or IDs; the item must have a `Private PGP key` field containing the
+armored secret key and a `password` field. 1Password shows that field under two names, the id `private_key` and
+the label `Private PGP key`; they are one field, and these examples address it by its label:
 
 ```bash
 SIGNING_KEY='op://<vault>/<item>/Private PGP key' \

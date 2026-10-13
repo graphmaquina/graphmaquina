@@ -1,5 +1,6 @@
 package io.github.graphmaquina.gradle;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -217,6 +218,42 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExports());
         assertTrue(published.contains("fx.Orders"));
+    }
+
+    /**
+     * The generator publishes the origin of every declaration relative to the project directory, while the generation
+     * fingerprints each original source relative to its own source directory. A machine's source moved unchanged from
+     * one populated source directory of the source set to another still regenerates, so the incremental build
+     * publishes the origin a clean build publishes, and a build after it changes nothing.
+     */
+    @Test
+    void movingASourceToAnotherSourceDirectoryPublishesItsNewOrigin() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                sourceSets { main { java.srcDir("src/extra/java") } }
+                """);
+        fixture.writeFile("src/extra/java/fx/Extra.java", """
+                package fx;
+
+                /** A plain class that keeps the second source directory populated. */
+                final class Extra {
+
+                    private Extra() {
+                    }
+                }
+                """);
+        fixture.run("jar");
+        assertEquals("src/main/java/fx/Orders.java", fixture.publishedOrigin("fx.Orders"));
+        Path project = fixture.projectDirectory();
+        Files.move(project.resolve("src/main/java/fx/Orders.java"), project.resolve("src/extra/java/fx/Orders.java"));
+
+        BuildResult moved = fixture.run("jar");
+        BuildResult again = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, moved.task(":generateStateGraphApi").getOutcome());
+        assertEquals("src/extra/java/fx/Orders.java", fixture.publishedOrigin("fx.Orders"));
+        assertEquals(TaskOutcome.UP_TO_DATE, again.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.UP_TO_DATE, again.task(":compileJava").getOutcome());
     }
 
     @Test
@@ -486,10 +523,11 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * The generator runs under the launcher the project's Java toolchain selected: the generation task's own
-     * launcher is the one {@code launcherFor(java.toolchain)} reports, of the toolchain's Java 21, and the process
-     * the build started is that very executable. The daemon of the build may run on that same JDK, so this test
-     * cannot tell the toolchain from the daemon's JVM; {@code launchesSelectedToolchainInsteadOfDaemonJdk} can.
+     * The generator runs under the launcher the project's Java toolchain selected, which is the JDK javac compiles
+     * with when the compile task is given no other: the generation task's own launcher is the one
+     * {@code launcherFor(java.toolchain)} reports, of the toolchain's Java 21, and the process the build started is
+     * that very executable. The daemon of the build may run on that same JDK, so this test cannot tell the toolchain
+     * from the daemon's JVM; {@code launchesSelectedToolchainInsteadOfDaemonJdk} can.
      */
     @Test
     void launchesTheLauncherOfTheSelectedToolchain() throws IOException {
@@ -536,6 +574,90 @@ class StateGraphPluginFunctionalTest {
         assertTrue(generation.getOutput().contains("Starting process 'command '" + launcher + "''"),
                 "the generator did not run under the toolchain launcher " + launcher
                         + "; the daemon runs on " + reported.get("DAEMON_JAVA_HOME"));
+    }
+
+    /**
+     * The generator runs on the JDK javac compiles with, also when the compile task does not take it from the
+     * project's toolchain: from a toolchain of its own, or from the {@code forkOptions.javaHome} Gradle starts javac
+     * from. With no release given, javac compiles at the language version of that JDK, above the project's Java 21,
+     * and the generator, on that very JDK, parses the sources at that release, in a build that stores its
+     * configuration cache entry. The test is skipped when Gradle detects no JDK above Java 21.
+     */
+    @Test
+    void runsTheGeneratorOnTheJdkTheCompileTaskCompilesWith() throws IOException {
+        Map<String, String> shapes = new LinkedHashMap<>();
+        shapes.put("toolchain", """
+                tasks.named<JavaCompile>("compileJava") {
+                    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                }
+                """);
+        shapes.put("fork", """
+                tasks.named<JavaCompile>("compileJava") {
+                    options.isFork = true
+                    options.forkOptions.javaHome = javaToolchains
+                        .compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                        .get().metadata.installationPath.asFile
+                }
+                """);
+        Optional<Integer> later = toolchains(PluginFixture.basic(
+                Files.createDirectories(tempDirectory.resolve("detection")), FIXTURE_REPOSITORY)).detected().stream()
+                .filter((Integer version) -> version > 21)
+                .findFirst();
+        assumeTrue(later.isPresent(), "Gradle detects no JDK above Java 21");
+        for (Map.Entry<String, String> shape : shapes.entrySet()) {
+            PluginFixture fixture = PluginFixture.basic(
+                    Files.createDirectories(tempDirectory.resolve(shape.getKey())), FIXTURE_REPOSITORY);
+            fixture.replaceInBuildScript("options.release = 21\n", "");
+            fixture.appendToBuildScript(shape.getValue().formatted(later.get()));
+
+            BuildResult result = fixture.run("jar", "--info", "--configuration-cache");
+            Map<String, String> reported = report(fixture.run("printGeneratorLauncher"));
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), shape.getKey());
+            assertTrue(result.getOutput().contains("Configuration cache entry stored."), result::getOutput);
+            assertEquals(later.get().intValue(), fixture.request("main").get("release").getAsInt(), shape.getKey());
+            String launcher = reported.get("GENERATOR_LAUNCHER");
+            assertEquals(String.valueOf(later.get()), reported.get("GENERATOR_LANGUAGE_VERSION"), shape.getKey());
+            assertTrue(Path.of(launcher).startsWith(Path.of(reported.get("COMPILER_HOME"))), reported::toString);
+            assertTrue(result.getOutput().contains("Starting process 'command '" + launcher + "''"),
+                    shape.getKey() + ": the generator did not run under " + launcher);
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), shape.getKey());
+        }
+    }
+
+    /**
+     * A launcher a build gives the generation task wins over the JDK javac compiles with, but a JDK cannot parse the
+     * sources at a release later than its own: the generation refuses such a launcher before the generator runs,
+     * naming {@code javaLauncher}, instead of failing inside the generator on a release its JDK does not know. The
+     * test is skipped when Gradle detects no JDK above Java 21.
+     */
+    @Test
+    void refusesALauncherOlderThanTheReleaseBeforeTheGeneratorRuns() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Optional<Integer> later = toolchains(fixture).detected().stream()
+                .filter((Integer version) -> version > 21)
+                .findFirst();
+        assumeTrue(later.isPresent(), "Gradle detects no JDK above Java 21");
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                }
+                tasks.named<GenerateGraphApi>("generateStateGraphApi") {
+                    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+                }
+                """.formatted(later.get()));
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":generateStateGraphApi").getOutcome());
+        assertTrue(refused.getOutput().contains("the StateGraph generator cannot parse the sources of task"
+                + " ':generateStateGraphApi' at release " + later.get() + " under its javaLauncher, Java 21 at "),
+                refused::getOutput);
+        assertTrue(refused.getOutput().contains("Give javaLauncher a JDK " + later.get() + " or later"),
+                refused::getOutput);
+        assertFalse(refused.getOutput().contains("not supported"), refused::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
     }
 
     @Test
@@ -822,6 +944,33 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
         assertFalse(fixture.jarContains("fx/legacy/OldOrdersGraph.class"));
         assertFalse(fixture.localExports().contains("fx.legacy.OldOrders"));
+    }
+
+    /**
+     * The java sources of a source set carry a filter of their own beside their patterns, the one the {@code java}
+     * plugin gives its {@code **}{@code /*.java} include, and javac compiles what it selects. The generator reads the
+     * source set that way too, file by file, whether the filter leaves a draft that does not parse out with a pattern
+     * or with a spec, while the source set and the compilation task carry no pattern at all.
+     */
+    @Test
+    void parsesOnlyTheSourcesTheFilterOfTheJavaSourcesSelects() throws IOException {
+        for (String exclusion : List.of("\"**/Draft.java\"", "{ element -> element.file.name == \"Draft.java\" }")) {
+            PluginFixture fixture = PluginFixture.basic(Files.createDirectories(
+                    tempDirectory.resolve(exclusion.startsWith("{") ? "spec" : "pattern")), FIXTURE_REPOSITORY);
+            Map<String, String> sources = PluginFixture.domainSources();
+            sources.put("fx.drafts.Draft", draft("fx.drafts"));
+            fixture.writeSources(sources);
+            fixture.appendToBuildScript("sourceSets.named(\"main\") {\n    java.filter.exclude(" + exclusion
+                    + ")\n}\n");
+
+            BuildResult result = fixture.run("jar");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), exclusion);
+            List<String> requested = requestedSources(fixture.request("main"));
+            assertTrue(requested.contains("fx/Orders.java"), requested::toString);
+            assertFalse(requested.contains("fx/drafts/Draft.java"), requested::toString);
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), exclusion);
+        }
     }
 
     /**
@@ -1997,10 +2146,10 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * Gradle leaves out of every source directory the files the Ant-style default excludes name, such as the
-     * AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside a source, or anything inside
-     * the directory of a version control system. The generator leaves them out too, whether the source set hands
-     * it a filtered directory file by file or a whole directory to walk.
+     * A build that keeps Gradle's default excludes leaves out of every source directory the files the Ant-style
+     * default excludes name, such as the AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside
+     * a source, or anything inside the directory of a version control system. The generator leaves them out too,
+     * whether the source set hands it a filtered directory file by file or a whole directory to walk.
      */
     @Test
     void skipsTheFilesABuildExcludesByDefault() throws IOException {
@@ -2020,6 +2169,59 @@ class StateGraphPluginFunctionalTest {
             assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), filter);
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"), filter);
         }
+    }
+
+    /**
+     * Gradle leaves out of a source directory, with everything inside it, every directory a default exclude names,
+     * not only the directory of a version control system: one named like an editor's backup or lock file, such as
+     * {@code old~} or {@code .#old}, like an AppleDouble companion or like a file of a version control system, such
+     * as {@code .gitignore}. javac never compiles a file inside one, and the generator, handed the source directory
+     * whole, never reads one either.
+     */
+    @Test
+    void skipsTheDirectoriesABuildExcludesByDefault() throws IOException {
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        for (String directory : List.of("~", "old~", "#old#", ".#old", "%old%", "._old", ".DS_Store", ".cvsignore",
+                "vssver.scc", ".gitattributes", ".gitignore", ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
+                ".hgtags", ".bzrignore")) {
+            fixture.writeFile("src/main/java/fx/" + directory + "/Junk.java", junk);
+        }
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        JsonArray requested = fixture.request("main").getAsJsonArray("sources");
+        assertEquals(1, requested.size(), requested::toString);
+        assertTrue(Path.of(requested.get(0).getAsString()).endsWith(Path.of("src", "main", "java")),
+                requested::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+    }
+
+    /**
+     * A settings script may change the default excludes of the build, as Gradle documents, through Ant's
+     * {@code DirectoryScanner}. javac never compiles a file a default exclude the build adds leaves out, and the
+     * generator, which leaves out only Ant's own default excludes when it walks a whole directory, is handed the
+     * files Gradle selects instead, so it never reads a draft that does not parse either.
+     */
+    @Test
+    void leavesOutWhatADefaultExcludeOfTheBuildLeavesOut() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+        Path settings = fixture.projectDirectory().resolve("settings.gradle.kts");
+        Files.writeString(settings, Files.readString(settings)
+                + "\norg.apache.tools.ant.DirectoryScanner.addDefaultExclude(\"**/Draft.java\")\n");
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        List<String> requested = requestedSources(fixture.request("main"));
+        assertTrue(requested.contains("fx/Orders.java"), requested::toString);
+        assertFalse(requested.contains("fx/drafts/Draft.java"), requested::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**

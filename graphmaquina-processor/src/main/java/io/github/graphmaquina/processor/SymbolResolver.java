@@ -41,8 +41,10 @@ final class SymbolResolver {
 
     private static final String UNKNOWN_SYMBOL = "SG605";
     private static final String NO_BINDING = "SG505";
+    private static final String MISSING_INDEX = "SG602";
 
     private final Map<String, SymbolDescriptor> symbols;
+    private final MissingExportIndex missingIndex;
     private final Signatures signatures;
     private final EffectiveMethods effective;
     private final Bindings bindings;
@@ -50,15 +52,16 @@ final class SymbolResolver {
     private final Annotations annotations;
     private final BoundInvocation invocations;
 
-    SymbolResolver(Map<String, SymbolDescriptor> symbols, Signatures signatures, EffectiveMethods effective,
-            Bindings bindings, Diagnostics diagnostics) {
+    SymbolResolver(Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Signatures signatures,
+            EffectiveMethods effective, Bindings bindings, BoundInvocation invocations, Diagnostics diagnostics) {
         this.symbols = symbols;
+        this.missingIndex = missingIndex;
         this.signatures = signatures;
         this.effective = effective;
         this.bindings = bindings;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
-        this.invocations = new BoundInvocation(signatures.elements(), signatures.types());
+        this.invocations = invocations;
     }
 
     /** One symbol type this compilation may use: the manifest entry it belongs to and the host it names. */
@@ -81,22 +84,25 @@ final class SymbolResolver {
     /**
      * The method {@code symbol} names when it is used as {@code role} by {@code machine}, or empty after
      * reporting {@code SG605} when the type is not a symbol of this compilation or does not export that role,
-     * and {@code SG505} when no exported declaration of that role fits the machine, when more than one does, or
-     * when the one that fits makes the machine's companion name a type its package cannot access. An instance
-     * member of a generic host is never a candidate: the symbol names the host by its raw class, and generated
-     * code could only call such a member on a raw parameter, so it is refused as such rather than as a member
-     * whose signature does not fit.
+     * {@code SG602} when it comes from a dependency whose export index is missing or does not list it, and
+     * {@code SG505} when no exported declaration of that role fits the machine, when more than one does, or when the
+     * one that fits makes the machine's companion name a type its package cannot access. An instance member of a
+     * generic host, or of an inner class of a generic class, is never a candidate: the symbol names the host by its
+     * raw class, and generated code could only call such a member on a raw parameter, so it is refused as such rather
+     * than as a member whose signature does not fit.
      */
     Optional<Binding> resolve(TypeMirror symbol, Bindings.Role role, MachineTypes machine,
             Optional<MachineTypes> peer, DiagnosticAnchor anchor) {
         SymbolKind kind = Bindings.kind(role);
-        Optional<Reference> reference = reference(symbol, kind, anchor, symbols, annotations, diagnostics);
+        Optional<Reference> reference = reference(symbol, kind, anchor, symbols, missingIndex, annotations,
+                diagnostics);
         if (reference.isEmpty()) {
             return Optional.empty();
         }
         SymbolDescriptor descriptor = reference.get().descriptor();
         DeclaredType host = reference.get().host();
-        boolean generic = !((TypeElement) host.asElement()).getTypeParameters().isEmpty();
+        TypeElement hostElement = (TypeElement) host.asElement();
+        boolean generic = StructuralChecks.hasTypeArguments(hostElement.asType());
         boolean genericInstance = false;
         List<Binding> fitting = new ArrayList<>();
         for (Binding member : effective.of(host)) {
@@ -115,8 +121,9 @@ final class SymbolResolver {
         }
         if (fitting.isEmpty() && genericInstance) {
             anchor.report(diagnostics, NO_BINDING, "the exported " + role.name().toLowerCase(Locale.ROOT) + " "
-                    + descriptor.member() + " is an instance member of " + descriptor.host() + ", a generic class,"
-                    + " which generated code could only declare and call raw: export it from a non-generic subclass"
+                    + descriptor.member() + " is an instance member of " + descriptor.host() + ", " + (hostElement
+                            .getTypeParameters().isEmpty() ? "an inner class of a generic class" : "a generic class")
+                    + ", which generated code could only declare and call raw: export it from a non-generic subclass"
                     + " marked @GraphBindings, or make it static");
             return Optional.empty();
         }
@@ -156,9 +163,12 @@ final class SymbolResolver {
      * The manifest entry {@code symbol} belongs to, or empty after reporting {@code SG605}. A type that
      * carries the generator's own metadata but is not listed by the manifest of this compilation is refused
      * like any other type: the metadata is a claim, and only the manifest makes it one this compilation owns.
+     * When such a type comes from a dependency whose export index, which is what would list it, is missing or does
+     * not list it, it is refused as {@code SG602} instead, naming that dependency.
      */
     static Optional<Reference> reference(TypeMirror symbol, SymbolKind kind, DiagnosticAnchor anchor,
-            Map<String, SymbolDescriptor> symbols, Annotations annotations, Diagnostics diagnostics) {
+            Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Annotations annotations,
+            Diagnostics diagnostics) {
         if (!(symbol instanceof DeclaredType declared) || !(declared.asElement() instanceof TypeElement element)) {
             anchor.report(diagnostics, UNKNOWN_SYMBOL, symbol + " is not a generated symbol");
             return Optional.empty();
@@ -167,8 +177,13 @@ final class SymbolResolver {
         Optional<AnnotationMirror> metadata = annotations.find(element, GeneratedSymbol.class);
         SymbolDescriptor descriptor = symbols.get(name);
         if (metadata.isEmpty() || descriptor == null) {
-            anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " is not a symbol this compilation exports"
-                    + " or depends on; use one of the generated <Host>Refs types");
+            Optional<String> unlisted = metadata.isEmpty() ? Optional.empty() : missingIndex.unlisted(element);
+            if (unlisted.isPresent()) {
+                anchor.report(diagnostics, MISSING_INDEX, name + unlisted.get());
+            } else {
+                anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " is not a symbol this compilation exports"
+                        + " or depends on; use one of the generated <Host>Refs types");
+            }
             return Optional.empty();
         }
         if (!descriptor.kinds().contains(kind)) {
@@ -213,9 +228,10 @@ final class SymbolResolver {
                 && member.getSimpleName().contentEquals(candidate.name())
                 && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
                 && signatures.elements().overrides(method, (ExecutableElement) member, host);
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
-                overridden);
-        return declaring != null && declaring.getEnclosedElements().stream().anyMatch(overridden);
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, candidate.declaringType(),
+                candidate.name(), overridden);
+        return declaring != null
+                && signatures.members().declared(declaring, candidate.name()).stream().anyMatch(overridden);
     }
 
     private static String describe(SymbolDescriptor descriptor, Bindings.Role role, int fitting) {

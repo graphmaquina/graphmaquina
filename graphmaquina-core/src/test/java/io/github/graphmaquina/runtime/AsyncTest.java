@@ -265,6 +265,87 @@ class AsyncTest {
         assertInstanceOf(RejectedExecutionException.class, error.getCause());
     }
 
+    /**
+     * One interrupt of the thread that closes a registry reaches the waiting calls of every machine whose default
+     * executor that close() has yet to close, not only the one it waits for: an executor closed on an interrupted
+     * thread interrupts its threads, then sets the interrupt flag again once it terminates, so the close of each later
+     * machine does the same. Here the interrupt arrives while close() waits for the order machine's call: that call
+     * and the doc machine's both abort as interrupted while waiting, and close() returns with the thread interrupted.
+     */
+    @Test
+    void anInterruptedCloseInterruptsTheWaitingCallsOfEveryLaterMachine() throws Exception {
+        CompletableFuture<ActionOutcome> never = new CompletableFuture<>();
+        CountDownLatch entered = new CountDownLatch(2);
+        GraphDefinition<Order, OrderStatus, OrderTransition> orders = StateGraph.define(ORDERS)
+                .initial(OrderStatus.NEW).terminal(OrderStatus.SHIPPED).terminal(OrderStatus.CANCELLED)
+                .terminal(OrderStatus.PAID).terminal(OrderStatus.PAYMENT_DECLINED)
+                .statePolicy(OrderStatus.NEW, "x")
+                .transition(OrderTransition.CHARGE, OrderStatus.NEW, OrderStatus.PAID).asyncAction("Charge",
+                        (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
+                            entered.countDown();
+                            return never;
+                        }).endTransition()
+                .transition(OrderTransition.CANCEL, OrderStatus.NEW, OrderStatus.CANCELLED).endTransition()
+                .transition(OrderTransition.SHIP, OrderStatus.NEW, OrderStatus.SHIPPED).endTransition()
+                .transition(OrderTransition.DECLINE, OrderStatus.NEW, OrderStatus.PAYMENT_DECLINED).endTransition()
+                .build();
+        GraphDefinition<Doc, DocStatus, DocTransition> docs = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW).asyncAction("Review",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            entered.countDown();
+                            return never;
+                        }).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(orders).state(Order::status, Order::setStatus).identity(Order::id)
+                        .asyncTimeout(Duration.ofHours(1)))
+                .add(StateMachines.from(docs).state(Doc::status, Doc::setStatus).identity(Doc::id)
+                        .asyncTimeout(Duration.ofHours(1)))
+                .build();
+        AtomicReference<Boolean> interruptedAfterClose = new AtomicReference<>();
+        Thread closer = new Thread(() -> {
+            registry.close();
+            interruptedAfterClose.set(Thread.interrupted());
+        });
+        closer.setDaemon(true);
+        try {
+            List<CompletableFuture<? extends Outcome<?, ?, ?>>> calls = List.of(
+                    registry.of(ORDERS).async().execute(new Order("o1", OrderStatus.NEW), OrderTransition.CHARGE),
+                    registry.of(DOCS).async().execute(new Doc("d1", DRAFT), SUBMIT));
+            assertTrue(entered.await(10, TimeUnit.SECONDS), "the calls did not start");
+            closer.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (closer.getState() != Thread.State.TIMED_WAITING && System.nanoTime() - deadline < 0) {
+                Thread.sleep(1);
+            }
+            assertEquals(Thread.State.TIMED_WAITING, closer.getState(), "close() did not wait for the order call");
+            closer.interrupt();
+            closer.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(closer.isAlive(), "close() did not return");
+            List<String> actions = List.of("Charge", "Review");
+            List<String> ends = new ArrayList<>();
+            for (int call = 0; call < calls.size(); call++) {
+                try {
+                    ends.add(calls.get(call).get(10, TimeUnit.SECONDS).status().name());
+                } catch (ExecutionException e) {
+                    TransitionAbortedException aborted =
+                            assertInstanceOf(TransitionAbortedException.class, e.getCause());
+                    ends.add("aborted by " + aborted.getCause().getClass().getSimpleName()
+                            + (aborted.getMessage().contains("interrupted while waiting for the action "
+                                    + actions.get(call)) ? "" : ": " + aborted.getMessage()));
+                }
+            }
+            assertEquals(List.of("aborted by InterruptedException", "aborted by InterruptedException"), ends);
+            assertEquals(true, interruptedAfterClose.get());
+        } finally {
+            never.complete(ActionOutcome.ok());
+        }
+    }
+
     @Test
     void asyncGuardIsAwaited() {
         GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)

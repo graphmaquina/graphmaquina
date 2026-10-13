@@ -30,11 +30,11 @@ public record StatePolicy<S extends Enum<S>, T extends Enum<T>>(@NonNull S state
                 Objects.requireNonNull(reason, "rejection reason")));
         rejectionReasons = Collections.unmodifiableMap(ordered);
         if (otherwise.isBlank() || ordered.values().stream().anyMatch(String::isBlank)) {
-            throw new IllegalArgumentException("the policy of " + state + " has a blank reason");
+            throw new IllegalArgumentException("the policy of " + state.name() + " has a blank reason");
         }
     }
 
-    public String reasonFor(T transition) {
+    public String reasonFor(@NonNull T transition) {
         return rejectionReasons.getOrDefault(transition, otherwise);
     }
 }

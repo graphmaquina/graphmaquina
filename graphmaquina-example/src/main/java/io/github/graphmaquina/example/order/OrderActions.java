@@ -68,14 +68,15 @@ public final class OrderActions {
 
     /**
      * Single gate for cancellation: the cascade to items lives in one place. A cascaded step receives no input, so
-     * it first copies the batch its caller passed into the call's flow, or {@code manual} when the caller passed
-     * none, for the items' {@code restock}. It names the item's own {@code CANCEL} identifier, not the
-     * {@code CANCELLED} state, because a cascade selects an edge. It uses {@code COLLECT}, so every item is tried
-     * and one that cannot be cancelled aborts the order's cancellation with all the item failures aggregated.
+     * it first copies the batch its caller passed into the call's flow, for the items' {@code restock}: the facade's
+     * {@code cancel} refuses a null batch before the call starts, so there is always one. It names the item's own
+     * {@code CANCEL} identifier, not the {@code CANCELLED} state, because a cascade selects an edge. It uses
+     * {@code COLLECT}, so every item is tried and one that cannot be cancelled aborts the order's cancellation with all
+     * the item failures aggregated.
      */
     @GraphAction
     public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
-        ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
+        ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElseThrow());
         ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
         return ActionOutcome.ok();
     }

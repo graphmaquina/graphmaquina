@@ -20,8 +20,9 @@ public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * Runs {@code call} on the machine's executor through {@link StateMachine#supplyAsync}: a new virtual thread by
-     * default, wherever a supplied executor runs it otherwise, the calling thread included. A call the executor
-     * refuses, as the default one does after close(), returns a failed future.
+     * default, wherever a supplied executor runs it otherwise, the calling thread included, or a new thread when that
+     * executor is ForkJoinPool.commonPool() and its parallelism is below two. A call the executor refuses, as the
+     * default one does after close(), returns a failed future.
      */
     <R> CompletableFuture<R> async(Supplier<R> call);
 }

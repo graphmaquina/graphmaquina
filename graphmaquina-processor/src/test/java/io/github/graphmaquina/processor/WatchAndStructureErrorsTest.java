@@ -3,6 +3,8 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,6 +40,36 @@ class WatchAndStructureErrorsTest {
         Compilation.Result owner = watch(Fixtures.DOCS_WATCH.replace("owner = PageRefs.Doc.class",
                 "owner = PageRefs.Id.class"));
         assertTrue(owner.hasError("SG503"), owner.describe());
+    }
+
+    /**
+     * A raw collection is no {@code Collection<? extends Page>}: only an unchecked conversion would make it one, and
+     * the companion, which reads the peers as pages, would compile against it through unchecked conversions if at
+     * all. The peers reader is refused as a reader of any other type is, and so is a raw {@code Optional} owner
+     * reader.
+     */
+    @Test
+    void sg503RawPeersAndOwnerReaders() {
+        Map<String, String> rawPeers = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY);
+        rawPeers.put("fx.Doc", rawPeers.get("fx.Doc").replace("public List<Page> getPages()",
+                "@SuppressWarnings(\"rawtypes\") public List getPages()"));
+        Compilation.Result peers = Compilation.compileTyped(rawPeers);
+        assertEquals(List.of("[SG503] Doc has no public reader for property 'pages' returning"
+                + " Collection<? extends Page>"), sgErrors(peers), peers.describe());
+
+        Map<String, String> rawOwner = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY);
+        rawOwner.put("fx.Page", rawOwner.get("fx.Page").replace("@GraphProperty public Optional<Doc> doc()",
+                "@SuppressWarnings(\"rawtypes\") @GraphProperty public Optional doc()"));
+        Compilation.Result owner = Compilation.compileTyped(rawOwner);
+        assertEquals(List.of("[SG503] Page has no public reader for property 'doc' returning Optional<Doc> or Doc:"
+                + " the marker names fx.Page.doc()"), sgErrors(owner), owner.describe());
+    }
+
+    /** The errors of {@code result} that carry an SG code. */
+    private static List<String> sgErrors(Compilation.Result result) {
+        return result.errors().stream().filter((String error) -> error.startsWith("[SG")).toList();
     }
 
     @Test
