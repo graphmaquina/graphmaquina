@@ -1595,23 +1595,22 @@ move or an action:
 - waits under its own effective timeout, inside the budget of the root call, and runs its own effective hook after
   the commit.
 
-Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery
-fails, because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that
-failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
-that ran, but not the kind or the cause of the first failure. When the recovery action throws, or completes its stage
-with, a throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also
-holds the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these
-aborts that the engine builds for the
-recovery step: when its action returns a null outcome or stage, or its wait times out, is interrupted or is refused,
-unless a failed cascade had poisoned the call, which then ends in that poison as it is; when a sub-machine that the
-recovery hop enters cannot start; and when the exit that a terminal state selects after the recovery cannot run, because
-that state maps to no exit or the exit would run deeper than `maxCascadeDepth`. An abort of the exit's own step holds no
-such exception. A recovery that an `InterruptedException` selected, or that runs after the engine contained one in the
-same call, runs on an interrupted thread, since the engine interrupts the thread again: when its action has to wait
-for a stage that is still pending, that wait is interrupted at once and the call aborts as just said, while a
-synchronous recovery action, or one whose stage has already completed, completes. A definition assembled without the
-DSL whose rule names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
-`onFailure` does.
+Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery fails,
+because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that failure
+always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions that ran, but
+not the kind or the cause of the first failure. When the recovery action throws, or completes its stage with, a
+throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also holds
+the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these aborts
+that the engine builds for the recovery step: when its action returns a null outcome or stage, or its wait times out, is
+interrupted or is refused, unless a failed cascade had poisoned the call, which then ends in that poison as it is; when
+a sub-machine that the recovery hop enters cannot start; and when the exit that a terminal state selects after the
+recovery cannot run, because that state maps to no exit or the exit would run deeper than `maxCascadeDepth`. An abort of
+the exit's own step holds no such exception. A recovery that an `InterruptedException` selected, or that runs after the
+engine contained one in the same call, runs on an interrupted thread, since the engine interrupts the thread again: when
+its action has to wait for a stage that is still pending, that wait is interrupted at once and the call aborts as just
+said, while a synchronous recovery action, or one whose stage has already completed, completes. A definition assembled
+without the DSL whose rule names an identifier with no edge from the origin aborts the call when that rule is selected,
+as such an `onFailure` does.
 
 `Outcome.Failed` reports the kind as `failureKind()`, empty when the failure has none, beside
 `failureTransition()`, the identifier of the recovery edge that ran. `status()` is `FAILED` and `code()` is
