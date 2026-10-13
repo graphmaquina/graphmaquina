@@ -1595,8 +1595,9 @@ Requested by an ordinary call, the same identifier runs its guards and applies i
 fails, because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that
 failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
 that ran, but not the kind or the cause of the first failure. When the recovery action throws, or completes its stage
-with, an exception that aborts the call, the abort also holds the exception that selected the route, if one did, as
-suppressed, unless the recovery action threw that very exception. So do these aborts that the engine builds for the
+with, a throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also
+holds the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these
+aborts that the engine builds for the
 recovery step: when its action returns a null outcome or stage, or its wait times out, is interrupted or is refused,
 unless a failed cascade had poisoned the call, which then ends in that poison as it is; when a sub-machine that the
 recovery hop enters cannot start; and when the exit that a terminal state selects after the recovery cannot run, because
