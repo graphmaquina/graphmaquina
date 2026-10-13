@@ -974,9 +974,8 @@ logic.
   for a change in machine behavior.
 
 Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header.
-`PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
-removing every graphic-export class from the core JAR; assertions, state observation and structural
-snapshots must still work.
+`PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
+from the core JAR; assertions, state observation and structural snapshots must still work.
 
 From [DiagramsTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/DiagramsTest.java):
 

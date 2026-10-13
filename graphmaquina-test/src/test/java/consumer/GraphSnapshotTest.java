@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
  * and how they survive the line format. The format is pinned character by character on the smallest
  * fixture, because every golden and every future diff is read against it.
  *
- * <p>Version 2 records the declared edges under {@code /transitions/<from>/<id>} and the rejection policies
+ * <p>The snapshot records the declared edges under {@code /transitions/<from>/<id>} and the rejection policies
  * under {@code /policies/<state>}; there is no path for an edge that was never declared. An edge's recovery
  * rules are recorded under its {@code recoveries} path, indexed in declaration order, only when it declares some,
  * and the sub-machine bound to a state under {@code /submachines/<state>}.
