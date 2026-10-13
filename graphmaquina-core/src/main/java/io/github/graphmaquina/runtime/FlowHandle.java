@@ -18,8 +18,9 @@ import java.util.function.Supplier;
  *   <li>{@code unit} is the check of the context that made the handle, which answers the call's unit of work: every
  *       operation, a read as well as a write, runs it first, as {@link DefaultPeerView} does, so a handle used off its
  *       thread throws that context's WrongThreadException and one used after the transaction its
- *       StaleContextException. The handle reaches the unit of work only through it, so it holds nothing of the call
- *       but its root entity once that context is invalidated.</li>
+ *       StaleContextException. The handle reaches the unit of work only through it, so once that context is
+ *       invalidated it holds nothing of the call but its root entity, its {@link CallLog}, and the entity and the
+ *       input of that context's step, which the context keeps.</li>
  *   <li>A handle does not create the call's flow, and neither does a read: before the call's first write,
  *       {@link #get} answers empty and {@link #keys} an empty set, and the entity needs no flow. The first write, a
  *       put or a remove, creates the flow with the root call's entity, unless the call records its trail, whose flow
@@ -145,7 +146,8 @@ final class FlowHandle implements FlowContext {
      *       runs the hook. {@link #invalidate()} ends the lifetime once the hook returned or threw: from then on every
      *       operation throws StaleContextException with the machine key and the entity of the hop, and the handle
      *       lets go of the call's unit of work, so a CommitContext kept after its hook keeps neither the call nor
-     *       its flow reachable.</li>
+     *       its flow reachable: the handle holds nothing of the call but its root entity, its {@link CallLog} and the
+     *       {@link EntityRef} of the hop.</li>
      *   <li>It does not create the call's flow, and neither does a read: before the call's first write, a read
      *       answers empty, and the entity needs no flow. Its first write that passes its checks creates the flow, if
      *       no step of the call wrote and the call does not record its trail. A hook that never writes costs this

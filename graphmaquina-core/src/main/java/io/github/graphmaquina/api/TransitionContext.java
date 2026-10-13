@@ -23,7 +23,9 @@ import java.util.Optional;
  * order. Peer views, cascades and the call's {@link #flow()} work only on the thread that called {@code process()} and
  * only until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
  * {@code StaleContextException}. Once it ends, the context, its peer views and its flow let go of the call: one
- * retained after it keeps neither the call nor the values of its flow in memory.
+ * retained after it keeps in memory nothing of the call but the entity and the input of this step, which
+ * {@link #entity()} and {@link #input()} still answer, and, for a flow, also the root call's entity, with that
+ * entity's identity when the call logs at DEBUG, so it keeps a value of the flow only when that value is one of them.
  * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
  * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
  * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
