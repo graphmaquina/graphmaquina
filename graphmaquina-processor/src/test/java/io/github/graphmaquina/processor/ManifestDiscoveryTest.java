@@ -406,11 +406,7 @@ class ManifestDiscoveryTest {
 
     /** A manifest path under a directory that exists, so only the file itself is missing. */
     private static Path absentManifest() {
-        try {
-            return Files.createTempDirectory("graphmaquina-absent-").resolve("annotation-manifest.json");
-        } catch (IOException failure) {
-            throw new UncheckedIOException(failure);
-        }
+        return Compilation.temporaryDirectory().resolve("annotation-manifest.json");
     }
 
     /** Replaces one original after the generator has already read it, as an edit between the two stages does. */

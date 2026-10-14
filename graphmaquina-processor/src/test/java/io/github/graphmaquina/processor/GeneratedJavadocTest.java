@@ -67,8 +67,8 @@ class GeneratedJavadocTest {
         DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
         StringWriter output = new StringWriter();
         try (StandardJavaFileManager manager = tool.getStandardFileManager(collector, null, request.encoding())) {
-            List<String> options = new ArrayList<>(List.of("-d", Files.createTempDirectory("graphmaquina-javadoc-")
-                    .toString(), "-classpath", String.join(File.pathSeparator, classpath), "-encoding",
+            List<String> options = new ArrayList<>(List.of("-d", Compilation.temporaryDirectory().toString(),
+                    "-classpath", String.join(File.pathSeparator, classpath), "-encoding",
                     request.encoding().name(), "-quiet", "-Xmaxwarns", "10000"));
             if (!doclint.isEmpty()) {
                 options.add(doclint);
