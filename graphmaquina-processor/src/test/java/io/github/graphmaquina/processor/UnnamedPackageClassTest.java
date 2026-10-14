@@ -656,7 +656,7 @@ class UnnamedPackageClassTest {
      */
     private static Path compiledAlone(String name, String source) {
         try {
-            Path root = Files.createTempDirectory("graphmaquina-processor-");
+            Path root = Compilation.temporaryDirectory();
             Path file = root.resolve("src").resolve(name.replace('.', File.separatorChar) + ".java");
             Files.createDirectories(file.getParent());
             Files.writeString(file, source, StandardCharsets.UTF_8);

@@ -40,6 +40,13 @@ final class Compilation {
 
     private static final String COMPILATION_ID = "fx:test:main";
 
+    /**
+     * The one directory under the system's temporary directory that holds every directory this JVM hands out,
+     * removed with everything in it when the JVM shuts down. A JVM killed outright runs no shutdown hook, so it
+     * leaves this one directory behind.
+     */
+    private static final Path TEMPORARY_ROOT = temporaryRoot();
+
     /** One prepared fixture: the request the generator ran for and what it produced, manifest included. */
     record Prepared(GenerationRequest request, GenerationResult generation) { }
 
@@ -130,7 +137,7 @@ final class Compilation {
      * classes: a dependency a build puts on one of the two only is a dependency of neither stage.
      */
     static Prepared prepare(Map<String, String> sources, List<Path> extraClasspath) {
-        return prepare(temporaryProject(), sources, extraClasspath);
+        return prepare(temporaryDirectory(), sources, extraClasspath);
     }
 
     /**
@@ -148,7 +155,7 @@ final class Compilation {
      * and its {@code Filer} writes what the processor generates in it too.
      */
     static Prepared prepare(Map<String, String> sources, Charset encoding) {
-        return prepare(temporaryProject(), sources, List.of(), encoding);
+        return prepare(temporaryDirectory(), sources, List.of(), encoding);
     }
 
     private static Prepared prepare(Path project, Map<String, String> sources, List<Path> extraClasspath) {
@@ -267,7 +274,7 @@ final class Compilation {
      * option, so a test can observe what the processor reports when it has no manifest at all.
      */
     static Result compileRaw(Map<String, String> sources, List<String> extra) {
-        GenerationRequest request = materialize(temporaryProject(), sources, List.of(),
+        GenerationRequest request = materialize(temporaryDirectory(), sources, List.of(),
                 GenerationRequest.DEFAULT_ENCODING);
         List<String> options = new ArrayList<>(standardOptions(request));
         options.addAll(extra);
@@ -292,11 +299,35 @@ final class Compilation {
         }
     }
 
-    private static Path temporaryProject() {
+    /**
+     * A new empty directory under {@link #TEMPORARY_ROOT}, so it lasts as long as this JVM: a test's compilations
+     * and their classes stay readable for as long as the test uses them, and they go with the root.
+     */
+    static Path temporaryDirectory() {
         try {
-            return Files.createTempDirectory("graphmaquina-processor-");
+            return Files.createTempDirectory(TEMPORARY_ROOT, null);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Creates {@link #TEMPORARY_ROOT} and has it removed when the JVM exits. */
+    private static Path temporaryRoot() {
+        try {
+            Path root = Files.createTempDirectory("graphmaquina-processor-");
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> removeAtExit(root)));
+            return root;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Removes {@code root}; what cannot be removed stays where it is, and the standard error says so. */
+    private static void removeAtExit(Path root) {
+        try {
+            deleteRecursively(root);
+        } catch (IOException | UncheckedIOException e) {
+            System.err.println("could not remove the temporary directory " + root + ": " + e);
         }
     }
 
