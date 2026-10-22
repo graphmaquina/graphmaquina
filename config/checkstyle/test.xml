@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+    Size and complexity limits for test code (src/test of every module). Same wall as the production profile in
+    main.xml, with three limits adjusted to how tests are written:
+      - a test class holds one method per behaviour, so many small methods are expected: JavaNCSS allows 500
+        statements per class and per file instead of 400;
+      - tests should be straight-line code, so CyclomaticComplexity allows 5 instead of 15;
+      - tests depend on more types (fixtures, assertions, the domain), so ClassFanOutComplexity allows 40 instead of 30.
+    The method limits (30 statements, 50 lines) and the line length are the same as in production code; the reasons
+    for the limits shared by both profiles are in main.xml.
+
+    Nothing can switch a check off, on purpose: no annotation, no comment and no file is honoured, because no filter
+    module is configured. The only way to pass is to split the code.
+
+    LineLength ignores package and import lines and whole comment lines (those starting with *, // or /*), so
+    Javadoc and explanations are never restricted. A trailing comment on a code line still counts.
+    Every property not set here keeps its Checkstyle default, for example recordMaximum of JavaNCSS.
+-->
+<module name="Checker">
+    <property name="severity" value="error"/>
+    <!-- Fixed to English so the messages read the same under any JVM locale. -->
+    <property name="localeLanguage" value="en"/>
+    <property name="localeCountry" value=""/>
+    <module name="LineLength">
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^(package|import) .*$|^\s*(\*|//|/\*).*$"/>
+    </module>
+    <module name="TreeWalker">
+        <!-- Non-commenting source statements: a statement counts once however many lines it spans. -->
+        <module name="JavaNCSS">
+            <property name="methodMaximum" value="30"/>
+            <property name="classMaximum" value="500"/>
+            <property name="fileMaximum" value="500"/>
+        </module>
+        <!-- Blank lines and comment lines are not counted, so documentation never pushes a method over. -->
+        <module name="MethodLength">
+            <property name="max" value="50"/>
+            <property name="countEmpty" value="false"/>
+        </module>
+        <module name="CyclomaticComplexity">
+            <property name="max" value="5"/>
+        </module>
+        <module name="ClassFanOutComplexity">
+            <property name="max" value="40"/>
+        </module>
+    </module>
+</module>
