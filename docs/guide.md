@@ -4277,7 +4277,8 @@ Every main and test compilation first runs the size and complexity checks in `co
 hand-written `src/main/java` and `src/test/java` of each module and of the Gradle plugin build: `main.xml` for
 production code and `test.xml` for test code. Both profiles limit a method to 30 statements and 50 lines, with
 blank and comment lines not counted, and every line to 120 characters, except `package` and `import` lines and
-lines that begin, after their indentation, with `*`, `//` or `/*`. Production code is also limited to a
+lines that begin, after their indentation, with `*`, `//` or `/*`. A line that begins with a block comment
+followed by code on the same line is checked. Production code is also limited to a
 cyclomatic complexity of 15 per method, a class fan-out of 30 and 400 statements per class and per file; test
 code to 5, 40 and 500. Both profiles also limit a record to 150 statements. A violation stops the build before
 `javac` runs and prints its file and line. The fix is to split the code into smaller methods or classes, or to
@@ -4285,8 +4286,9 @@ wrap a long line: the rules honor no `@SuppressWarnings`, no `// CHECKSTYLE:OFF`
 list.
 
 The Gradle plugin is a separate included build that the root build compiles first, so a violation in its main
-sources stops the root build before any module is checked. The command below lists every violation in that
-build, main and test, at once:
+sources stops the root build before any module is checked. Existing code still violates the checks, so every
+Gradle command of the root build, including `help` and the release commands below, currently stops at the Gradle
+plugin's violations. The command below lists every violation in that build, main and test, at once:
 
 ```bash
 ./gradlew -p graphmaquina-gradle-plugin checkstyleMain checkstyleTest --continue

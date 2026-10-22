@@ -11,11 +11,12 @@
     The method limits (30 statements, 50 lines) and the line length are the same as in production code; the reasons
     for the limits shared by both profiles are in main.xml.
 
-    Nothing can switch a check off, on purpose: no annotation, no comment and no file is honoured, because no filter
-    module is configured. The only way to pass is to split the code.
+    Nothing can switch a check off, on purpose: no annotation, no comment and no file is honored, because no filter
+    module is configured. The only way to pass is to split the code or to wrap a long line.
 
     LineLength ignores package and import lines and whole comment lines (those starting with *, // or /*), so
-    Javadoc and explanations are never restricted. A trailing comment on a code line still counts.
+    Javadoc and explanations are never restricted. A trailing comment on a code line still counts, and so does a line
+    that starts with a block comment and is followed by code on the same line.
     Every property not set here keeps its Checkstyle default, for example recordMaximum of JavaNCSS.
 -->
 <module name="Checker">
@@ -25,7 +26,7 @@
     <property name="localeCountry" value=""/>
     <module name="LineLength">
         <property name="max" value="120"/>
-        <property name="ignorePattern" value="^(package|import) .*$|^\s*(\*|//|/\*).*$"/>
+        <property name="ignorePattern" value="^(package|import) .*$|^\s*(\*|//).*$|^\s*/\*(?!.*\*/\s*\S).*$"/>
     </module>
     <module name="TreeWalker">
         <!-- Non-commenting source statements: a statement counts once however many lines it spans. -->
