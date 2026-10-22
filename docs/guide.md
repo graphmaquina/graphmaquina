@@ -257,7 +257,7 @@ module the same way.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). Compilation currently stops at the size and complexity checks described in that section, because existing code still violates them, so these commands and the local install in [Configure Gradle](#configure-gradle) fail until the violations are fixed. |
 | README quickstart | [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven. |
 | Remaining acceptance work | Manual IntelliJ acceptance, a rerun of the async guide through both build tools, and full strict-lint acceptance of the external payments demo remain pending. |
@@ -4271,6 +4271,24 @@ support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest`, `Read
 plugin, Gradle plugin and its marker into the local file repository.
 The published-artifact task also runs independently with the command above. Its external README consumer
 resolves dependencies offline, so third-party dependencies must already be cached.
+
+Every main and test compilation first runs the size and complexity checks in `config/checkstyle/` on the
+hand-written `src/main/java` and `src/test/java` of each module and of the Gradle plugin build: `main.xml` for
+production code and `test.xml` for test code. Both profiles limit a method to 30 statements and 50 lines, with
+blank and comment lines not counted, and every line to 120 characters, except `package` and `import` lines and
+lines that begin, after their indentation, with `*`, `//` or `/*`. Production code is also limited to a
+cyclomatic complexity of 15 per method, a class fan-out of 30 and 400 statements per class and per file; test
+code to 5, 40 and 500. Both profiles also limit a record to 150 statements. A violation stops the build before
+`javac` runs and prints its file and line. The fix is to split the code into smaller methods or classes: the
+rules honour no `@SuppressWarnings`, no `// CHECKSTYLE:OFF` comment and no exemption list.
+
+The Gradle plugin is a separate included build that the root build compiles first, so a violation in its main
+sources stops the root build before any module is checked. The command below lists every violation in that
+build, main and test, at once:
+
+```bash
+./gradlew -p graphmaquina-gradle-plugin checkstyleMain checkstyleTest --continue
+```
 
 The included Gradle adapter's suite requires the explicit `:graphmaquina-gradle-plugin:test` command;
 `build` does not run it. Ordinary test reports are under each module's `build/reports/tests/test`, and the
