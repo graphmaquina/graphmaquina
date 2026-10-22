@@ -3,6 +3,8 @@ plugins {
     `maven-publish`
     signing
 }
+// This build cannot see buildSrc, so it applies the shared Checkstyle script directly.
+apply(from = "../config/checkstyle/checkstyle.gradle.kts")
 group = "io.github.graphmaquina"
 // Same resolution as the root build's convention plugin; this build is separate and cannot see buildSrc,
 // so the six lines are repeated here for the same reason the POM metadata below is.
