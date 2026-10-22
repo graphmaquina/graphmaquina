@@ -60,7 +60,8 @@ The resulting `build/graphmaquina-central-bundle.zip` contains six modules and t
 The build checks metadata, required files and checksums. Before uploading, independently verify every
 signature with GnuPG. The ZIP contains public artifacts and detached signatures; it must never contain
 private keys or the passphrase. Upload it through Central Portal, wait for validation, then publish and
-confirm the artifacts can be resolved from Maven Central.
+confirm the artifacts can be resolved from Maven Central. While existing code still violates the
+[size and complexity checks](guide.md#build-verify-and-release-this-repository), these commands stop at them.
 
 For key recovery, import the encrypted backup directly from 1Password without writing it into the checkout:
 

@@ -257,7 +257,7 @@ module the same way.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). Compilation currently stops at the size and complexity checks described in that section, because existing code still violates them, so these commands and the local install in [Configure Gradle](#configure-gradle) fail until the violations are fixed. |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). Compilation currently stops at the [size and complexity checks](#build-verify-and-release-this-repository), because existing code still violates them, so these commands and the local install in [Configure Gradle](#configure-gradle) fail until the violations are fixed. |
 | README quickstart | [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven. |
 | Remaining acceptance work | Manual IntelliJ acceptance, a rerun of the async guide through both build tools, and full strict-lint acceptance of the external payments demo remain pending. |
@@ -300,7 +300,8 @@ from a single property:
 That writes the runtime, the generator, the processor, the testing module, the Gradle plugin and the plugin
 marker under `~/.m2/repository`. Gradle does not read that directory unless a build asks it to, which is why
 `settings.gradle.kts` below declares `mavenLocal()`; Maven reads it as its own local repository and needs no
-declaration at all.
+declaration at all. While existing code still violates the
+[size and complexity checks](#build-verify-and-release-this-repository), this command stops at them.
 
 ### gradle.properties
 
@@ -4279,8 +4280,9 @@ blank and comment lines not counted, and every line to 120 characters, except `p
 lines that begin, after their indentation, with `*`, `//` or `/*`. Production code is also limited to a
 cyclomatic complexity of 15 per method, a class fan-out of 30 and 400 statements per class and per file; test
 code to 5, 40 and 500. Both profiles also limit a record to 150 statements. A violation stops the build before
-`javac` runs and prints its file and line. The fix is to split the code into smaller methods or classes: the
-rules honour no `@SuppressWarnings`, no `// CHECKSTYLE:OFF` comment and no exemption list.
+`javac` runs and prints its file and line. The fix is to split the code into smaller methods or classes, or to
+wrap a long line: the rules honor no `@SuppressWarnings`, no `// CHECKSTYLE:OFF` comment and no exemption
+list.
 
 The Gradle plugin is a separate included build that the root build compiles first, so a violation in its main
 sources stops the root build before any module is checked. The command below lists every violation in that
