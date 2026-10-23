@@ -143,34 +143,9 @@ public final class CompilationOutputs {
             union(previous.stream().map(OwnedOutputs::excludedBinaries).toList(), List.of()));
         replace(pendingInventory, retiring);
 
-        Path generatedSources = root(request.sourcesOutput());
-        Set<Object> generated = new HashSet<>();
-        for (String source : manifest.ownedSources()) {
-            identity(resolve(generatedSources, source)).ifPresent(generated::add);
-        }
-        List<String> processorSourceFiles = new ArrayList<>(sourceFiles(processorTypes));
-        for (OwnedOutputs inventory : sealed) {
-            processorSourceFiles.addAll(inventory.sources());
-        }
-        List<Path> retired = new ArrayList<>();
-        for (String source : processorSourceFiles) {
-            Path file = resolve(processorSources, source);
-            Optional<Object> identity = identity(file);
-            if (identity.isEmpty() || !generated.contains(identity.get())) {
-                retired.add(file);
-            }
-        }
-        for (String binary : retiring.binaries()) {
-            retired.add(resolve(classes, binary));
-        }
-        for (String resource : retiring.resources()) {
-            retired.add(resolve(classes, resource));
-        }
-        for (String excluded : retiring.excludedBinaries()) {
-            retired.add(resolve(classes, excluded));
-        }
-        retired.add(resolve(classes, PUBLISHED_INDEX));
-        retired.add(resolve(classes, PENDING_INDEX));
+        List<Path> retired = retiredSources(root(request.sourcesOutput()), manifest.ownedSources(), processorSources,
+                processorTypes, sealed);
+        retired.addAll(retiredClassOutputs(classes, retiring));
         if (interrupted) {
             Set<String> owned = ownedTypes(retiring);
             owned.addAll(processorTypes);
@@ -203,6 +178,90 @@ public final class CompilationOutputs {
         Path processorSources = root(request.processorSourcesOutput());
 
         Path pendingInventory = work.resolve(PENDING_INVENTORY);
+        requirePrepared(request, manifest, work, pendingInventory);
+        Path pendingIndex = resolve(classes, PENDING_INDEX);
+        requireProvisionalIndex(request, pendingIndex);
+        List<String> generatedTypes = requireGeneratedTypes(request, manifest);
+
+        Set<String> owned = new TreeSet<>(generatedTypes);
+        for (String source : manifest.ownedSources()) {
+            owned.add(typeName(source));
+        }
+        List<Path> carrierBinaries = requireCarrierBinaries(request, classes, owned);
+        List<Path> binaries = new ArrayList<>(OwnedClassFiles.enumerate(classes, owned));
+        binaries.removeAll(carrierBinaries);
+
+        OwnedOutputs sealed = new OwnedOutputs(SCHEMA_VERSION,
+            sourceFiles(generatedTypes), relative(classes, binaries), List.of(PUBLISHED_INDEX),
+            relative(classes, carrierBinaries));
+        requireInside(sealed.sources(), processorSources, INVENTORY);
+        for (List<String> removed : List.of(sealed.binaries(), sealed.resources(), sealed.excludedBinaries())) {
+            requireInside(removed, classes, INVENTORY);
+            requireStaysInside(removed, classes, INVENTORY);
+        }
+
+        delete(carrierBinaries, List.of(classes));
+        promote(pendingIndex, classes);
+        replace(work.resolve(INVENTORY), sealed);
+        Files.delete(pendingInventory);
+    }
+
+    /**
+     * The processor's sources {@link #prepare} removes from {@code processorSources}: the sources of
+     * {@code processorTypes}, then those of the {@code sealed} inventory, except each one that is, by its
+     * {@linkplain #identity identity}, one of {@code ownedSources}, which the current generation writes under
+     * {@code generatedSources}.
+     */
+    private static List<Path> retiredSources(Path generatedSources, List<String> ownedSources, Path processorSources,
+            List<String> processorTypes, List<OwnedOutputs> sealed) throws IOException {
+        Set<Object> generated = new HashSet<>();
+        for (String source : ownedSources) {
+            identity(resolve(generatedSources, source)).ifPresent(generated::add);
+        }
+        List<String> processorSourceFiles = new ArrayList<>(sourceFiles(processorTypes));
+        for (OwnedOutputs inventory : sealed) {
+            processorSourceFiles.addAll(inventory.sources());
+        }
+        List<Path> retired = new ArrayList<>();
+        for (String source : processorSourceFiles) {
+            Path file = resolve(processorSources, source);
+            Optional<Object> identity = identity(file);
+            if (identity.isEmpty() || !generated.contains(identity.get())) {
+                retired.add(file);
+            }
+        }
+        return retired;
+    }
+
+    /**
+     * The class outputs {@link #prepare} removes from {@code classes}: the binaries, the resources and the excluded
+     * binaries {@code retiring} lists, then the published and the provisional export index.
+     */
+    private static List<Path> retiredClassOutputs(Path classes, OwnedOutputs retiring) {
+        List<Path> retired = new ArrayList<>();
+        for (String binary : retiring.binaries()) {
+            retired.add(resolve(classes, binary));
+        }
+        for (String resource : retiring.resources()) {
+            retired.add(resolve(classes, resource));
+        }
+        for (String excluded : retiring.excludedBinaries()) {
+            retired.add(resolve(classes, excluded));
+        }
+        retired.add(resolve(classes, PUBLISHED_INDEX));
+        retired.add(resolve(classes, PENDING_INDEX));
+        return retired;
+    }
+
+    /**
+     * Refuses to complete a compilation that was never prepared, which left no pending inventory at
+     * {@code pendingInventory}, or that was prepared for another generation than the one {@code manifest} describes.
+     *
+     * @throws CodegenException {@code SG602} saying that {@code work} holds no pending inventory, or that the pending
+     *     inventory was written for another generation than the one the manifest of {@code request} describes
+     */
+    private static void requirePrepared(GenerationRequest request, CompileManifest manifest, Path work,
+            Path pendingInventory) throws IOException {
         if (!Files.isRegularFile(pendingInventory)) {
             throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
                 + request.compilationId() + ": there is no " + PENDING_INVENTORY + " in " + work
@@ -213,24 +272,51 @@ public final class CompilationOutputs {
                 + request.compilationId() + ": " + pendingInventory
                 + " was written for another generation than the one " + manifestPath(request) + " describes");
         }
-        Path pendingIndex = resolve(classes, PENDING_INDEX);
+    }
+
+    /**
+     * Refuses to complete a compilation whose annotation processor published no provisional index at
+     * {@code pendingIndex}, which leaves javac nothing to promote.
+     *
+     * @throws CodegenException {@code SG602} naming {@code pendingIndex}
+     */
+    private static void requireProvisionalIndex(GenerationRequest request, Path pendingIndex) {
         if (!Files.isRegularFile(pendingIndex)) {
             throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
                 + request.compilationId() + ": " + pendingIndex + " does not exist, so the annotation"
                 + " processor published nothing for javac to promote");
         }
+    }
+
+    /**
+     * The types the annotation processor generated for the compilation of {@code request}, read from the inventory it
+     * wrote at the path {@code manifest} records.
+     *
+     * @throws CodegenException {@code SG602} naming that path if the processor wrote no inventory there
+     * @throws IOException if the processor inventory cannot be read
+     */
+    private static List<String> requireGeneratedTypes(GenerationRequest request, CompileManifest manifest)
+            throws IOException {
         Path processorInventory = Path.of(manifest.processorInventory());
         if (!Files.isRegularFile(processorInventory)) {
             throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
                 + request.compilationId() + ": the annotation processor wrote no inventory at "
                 + processorInventory);
         }
-        List<String> generatedTypes = ManifestCodec.readProcessorInventory(processorInventory);
+        return ManifestCodec.readProcessorInventory(processorInventory);
+    }
 
-        Set<String> owned = new TreeSet<>(generatedTypes);
-        for (String source : manifest.ownedSources()) {
-            owned.add(typeName(source));
-        }
+    /**
+     * The class files in {@code classes} of the carrier, the types of {@code owned} in its package, as
+     * {@link OwnedClassFiles} enumerates them.
+     *
+     * @throws CodegenException {@code SG602} if there is none, although every compilation of this generator produces
+     *     the carrier, as happens when javac's debug setting leaves out the {@code SourceFile} attribute the
+     *     enumeration reads
+     * @throws IOException if a class file cannot be read
+     */
+    private static List<Path> requireCarrierBinaries(GenerationRequest request, Path classes, Set<String> owned)
+            throws IOException {
         Set<String> carrier = new TreeSet<>();
         for (String name : owned) {
             if (CARRIER_PACKAGE.equals(packageOf(name))) {
@@ -247,25 +333,17 @@ public final class CompilationOutputs {
                 + " or under a -g: list without source such as -g:lines,vars. Compile with javac's default"
                 + " setting, -g, or a -g: list that includes source, such as -g:source,lines");
         }
-        List<Path> binaries = new ArrayList<>(OwnedClassFiles.enumerate(classes, owned));
-        binaries.removeAll(carrierBinaries);
+        return carrierBinaries;
+    }
 
-        OwnedOutputs sealed = new OwnedOutputs(SCHEMA_VERSION,
-            sourceFiles(generatedTypes), relative(classes, binaries), List.of(PUBLISHED_INDEX),
-            relative(classes, carrierBinaries));
-        requireInside(sealed.sources(), processorSources, INVENTORY);
-        for (List<String> removed : List.of(sealed.binaries(), sealed.resources(), sealed.excludedBinaries())) {
-            requireInside(removed, classes, INVENTORY);
-            requireStaysInside(removed, classes, INVENTORY);
-        }
-
-        delete(carrierBinaries, List.of(classes));
+    /**
+     * Copies the provisional index {@code pendingIndex} to the published one under {@code classes}, then removes it.
+     */
+    private static void promote(Path pendingIndex, Path classes) throws IOException {
         Path published = resolve(classes, PUBLISHED_INDEX);
         Files.createDirectories(published.getParent());
         Files.copy(pendingIndex, published, StandardCopyOption.REPLACE_EXISTING);
         Files.delete(pendingIndex);
-        replace(work.resolve(INVENTORY), sealed);
-        Files.delete(pendingInventory);
     }
 
     /** One output root of a request, as an absolute path with no redundant segment left in it. */

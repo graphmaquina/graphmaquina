@@ -81,13 +81,7 @@ final class MachineVocabularyEmitter {
         String machine = graph.facade();
         String state = graph.stateType();
         String transition = graph.transitionType();
-        String unit = "the vocabulary " + simpleName;
-        Map<String, String> meanings = ApiEmitter.meanings(simpleName, graph.packageName(), ANNOTATIONS, generated);
-        ApiEmitter.requireNameable(unit, meanings, "the machine " + machine, machine, graph.origin());
-        ApiEmitter.requireNameable(unit, meanings, "the state type " + state + " of " + machine, state,
-            graph.origin());
-        ApiEmitter.requireNameable(unit, meanings, "the transition type " + transition + " of " + machine,
-            transition, graph.origin());
+        requireMachineTypesNameable(graph, simpleName, generated);
 
         JavaSource source = new JavaSource();
         source.header(graph.packageName(), List.of());
@@ -113,6 +107,27 @@ final class MachineVocabularyEmitter {
         source.outdent();
         source.line("}");
         return new GeneratedSource(vocabulary, source.toString());
+    }
+
+    /**
+     * Applies {@link ApiEmitter#requireNameable} to the three types the vocabulary {@code simpleName} of
+     * {@code graph} names: the machine, its state enum and its transition enum. It refuses one whose first segment a
+     * nested annotation of the vocabulary, or a top-level type generated in its package, takes over.
+     *
+     * @param generated the simple names of the top-level types generated in each package
+     */
+    private static void requireMachineTypesNameable(GraphDescriptor graph, String simpleName,
+            Map<String, Set<String>> generated) {
+        String machine = graph.facade();
+        String state = graph.stateType();
+        String transition = graph.transitionType();
+        String unit = "the vocabulary " + simpleName;
+        Map<String, String> meanings = ApiEmitter.meanings(simpleName, graph.packageName(), ANNOTATIONS, generated);
+        ApiEmitter.requireNameable(unit, meanings, "the machine " + machine, machine, graph.origin());
+        ApiEmitter.requireNameable(unit, meanings, "the state type " + state + " of " + machine, state,
+            graph.origin());
+        ApiEmitter.requireNameable(unit, meanings, "the transition type " + transition + " of " + machine,
+            transition, graph.origin());
     }
 
     private static void definition(JavaSource source, String machine, String state) {

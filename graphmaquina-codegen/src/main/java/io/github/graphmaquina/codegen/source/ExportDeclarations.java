@@ -150,6 +150,17 @@ public final class ExportDeclarations {
         if (exported.isEmpty()) {
             return exported;
         }
+        requireDistinctNames(host, exported);
+        return exported;
+    }
+
+    /**
+     * Refuses a symbol of {@code host} whose simple name is the one of its references container, or whose qualified
+     * name an earlier symbol of {@code exported} already claims.
+     *
+     * @throws CodegenException {@code SG603} naming the symbol and what it collides with
+     */
+    private static void requireDistinctNames(TypeHeader host, List<SymbolDescriptor> exported) {
         Map<String, SymbolDescriptor> names = new LinkedHashMap<>();
         String container = container(host);
         String simpleContainer = container.substring(container.lastIndexOf('.') + 1);
@@ -169,7 +180,6 @@ public final class ExportDeclarations {
                     + at(symbol.origin()), symbol.origin());
             }
         }
-        return exported;
     }
 
     /**
@@ -347,8 +357,8 @@ public final class ExportDeclarations {
             candidates.add(candidate(index, host, declaration));
             kinds.add(declaration.role());
         }
-        return new SymbolDescriptor(qualifiedName(host, member, candidates.get(0).origin()), host.canonicalName(), member, kinds,
-                candidates, Optional.empty(), candidates.get(0).origin());
+        return new SymbolDescriptor(qualifiedName(host, member, candidates.get(0).origin()), host.canonicalName(),
+                member, kinds, candidates, Optional.empty(), candidates.get(0).origin());
     }
 
     /**

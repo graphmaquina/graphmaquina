@@ -40,8 +40,8 @@ public final class ToolVersion {
         }
         String version = properties.getProperty("version");
         if (version == null || version.isBlank()) {
-            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/" + RESOURCE
-                + " declares no version; this tool jar is incomplete");
+            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"
+                + RESOURCE + " declares no version; this tool jar is incomplete");
         }
         if (version.contains("${")) {
             throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"

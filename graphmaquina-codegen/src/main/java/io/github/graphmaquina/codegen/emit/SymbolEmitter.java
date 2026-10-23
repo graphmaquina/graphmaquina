@@ -120,8 +120,8 @@ final class SymbolEmitter {
         String name = simpleName(symbol);
         source.line("");
         source.javadoc(documentation(symbol));
-        source.line("@io.github.graphmaquina.annotation.internal.GeneratedSymbol(host = " + symbol.host() + ".class, member = \"" + symbol.member()
-            + "\", kinds = " + kinds(symbol) + ")");
+        source.line("@io.github.graphmaquina.annotation.internal.GeneratedSymbol(host = " + symbol.host()
+            + ".class, member = \"" + symbol.member() + "\", kinds = " + kinds(symbol) + ")");
         source.line("public static final class " + name + " implements " + implemented(symbol) + " {");
         source.indent();
         source.line("");
