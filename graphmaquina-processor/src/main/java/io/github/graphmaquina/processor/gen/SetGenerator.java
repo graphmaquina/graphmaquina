@@ -47,18 +47,12 @@ import javax.lang.model.type.TypeMirror;
  */
 public final class SetGenerator {
 
-    private static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
     private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
     private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
-    private static final String DURATION = "java.time.Duration";
-    private static final String OBJECTS = "java.util.Objects";
     private static final String EXECUTOR = "java.util.concurrent.Executor";
     private static final String INSTANT_SOURCE = "java.time.InstantSource";
-    private static final String GENERATED = "io.github.graphmaquina.annotation.internal.GeneratedCompanion";
-    private static final String SUPPRESS_WARNINGS = "java.lang.SuppressWarnings";
-    private static final String OVERRIDE = "java.lang.Override";
     private static final String CLASS = "java.lang.Class";
     private static final String ILLEGAL_ARGUMENT = "java.lang.IllegalArgumentException";
     private static final String ILLEGAL_STATE = "java.lang.IllegalStateException";
@@ -153,19 +147,28 @@ public final class SetGenerator {
         Written rendered = rendered(model, invocations);
         Variables variables = variables(model, names.written().and(rendered), invocations);
         String set = names.of(model.type().getQualifiedName().toString());
-        String registry = variables.registry();
         SourceWriter out = new SourceWriter();
-        out.packageDeclaration(model.packageName());
-        for (String type : names.imports()) {
-            out.line("import " + type + ";");
+        MachineGenerator.openCompanion(out, names, model.packageName(), "Generated set of {@link " + set
+                + "}: builds the registry once and hands out the facades.", companion, set);
+        fieldsAndConstructor(model, names, variables, companion, out);
+        List<String> parameters = parameters(names, variables);
+        builderFactory(model, variables, parameters, out);
+        builder(model, names, invocations, variables, parameters, out);
+        overrides(model, names, variables, out);
+        if (!variables.rethrow().isEmpty()) {
+            MachineGenerator.rethrower(out, names, variables.rethrow());
         }
-        out.blank();
-        out.line("/** Generated set of {@link " + set
-                + "}: builds the registry once and hands out the facades. Do not edit. */");
-        out.line("@" + names.of(GENERATED));
-        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\", \"rawtypes\"})");
-        out.open("public final class " + companion + " implements " + set);
-        out.blank();
+        out.close();
+        return new Emitted(out.toString(), names.written().and(rendered));
+    }
+
+    /**
+     * The fields that keep the registry and the facade of each machine, and the private constructor that creates
+     * each facade, the machine's companion, over the registry's machine of the companion's {@code KEY}.
+     */
+    private static void fieldsAndConstructor(SetModel model, Names names, Variables variables, String companion,
+                                             SourceWriter out) {
+        String registry = variables.registry();
         out.line("private final " + names.of(MACHINE_REGISTRY) + " " + registry + ";");
         for (MachineAccessor accessor : model.machines()) {
             out.line("private final " + facadeName(accessor, names) + " " + variables.fields().get(accessor.method())
@@ -180,10 +183,25 @@ public final class SetGenerator {
         }
         out.close();
         out.blank();
+    }
+
+    /**
+     * The parameters of {@code builder(...)}, which the {@code Builder}'s constructor declares as well, each with its
+     * type: the shared timeout first when the set has one, then every class with instance members.
+     */
+    private static List<String> parameters(Names names, Variables variables) {
         List<String> parameters = new ArrayList<>();
-        List<String> tags = new ArrayList<>();
         for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             parameters.add(names.of(parameter.getKey()) + " " + parameter.getValue());
+        }
+        return parameters;
+    }
+
+    /** The static {@code builder(...)}, which declares {@code parameters} and starts a {@code Builder} over them. */
+    private static void builderFactory(SetModel model, Variables variables, List<String> parameters,
+                                       SourceWriter out) {
+        List<String> tags = new ArrayList<>();
+        for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             tags.add("@param " + parameter.getValue() + (parameter.getValue().equals(variables.timeout())
                     ? " the timeout shared by the asynchronous machines"
                     : " the {@code " + parameter.getKey() + "} whose instance members the machines call"));
@@ -195,29 +213,31 @@ public final class SetGenerator {
         out.line("return new Builder(" + String.join(", ", variables.parameters().values()) + ");");
         out.close();
         out.blank();
-        builder(model, names, invocations, variables, parameters, out);
+    }
+
+    /**
+     * The methods of the set that the companion implements: each accessor, which hands out its machine's facade, and
+     * {@code close()}, which closes the registry.
+     */
+    private static void overrides(SetModel model, Names names, Variables variables, SourceWriter out) {
         for (MachineAccessor accessor : model.machines()) {
             out.blank();
-            out.line("@" + names.of(OVERRIDE));
+            out.line("@" + names.of(MachineGenerator.OVERRIDE));
             out.line("public " + facadeName(accessor, names) + " " + accessor.method() + "() { return "
                     + variables.fields().get(accessor.method()) + "; }");
         }
         out.blank();
-        out.line("@" + names.of(OVERRIDE));
-        out.line("public void close() { " + registry + ".close(); }");
-        if (!variables.rethrow().isEmpty()) {
-            MachineGenerator.rethrower(out, names, variables.rethrow());
-        }
-        out.close();
-        return new Emitted(out.toString(), names.written().and(rendered));
+        out.line("@" + names.of(MachineGenerator.OVERRIDE));
+        out.line("public void close() { " + variables.registry() + ".close(); }");
     }
 
+    /**
+     * The public {@code Builder}: its fields, its constructor, which takes {@code parameters}, and its methods, in
+     * the order the companion declares them.
+     */
     private static void builder(SetModel model, Names names, BoundInvocation invocations, Variables variables,
                                 List<String> parameters, SourceWriter out) {
-        String objects = names.qualifier(OBJECTS);
-        String registry = variables.registryBuilder();
-        String used = variables.used();
-        Map<String, String> setters = variables.setters();
+        String objects = names.qualifier(MachineGenerator.OBJECTS);
         out.line("/**");
         out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and "
                 + "hands");
@@ -227,66 +247,118 @@ public final class SetGenerator {
         out.line(" */");
         out.open("public static final class Builder");
         out.blank();
-        out.line("private final " + names.of(MACHINE_REGISTRY) + ".Builder " + registry + " = "
+        builderFields(model, names, variables, out);
+        builderConstructor(model, names, invocations, variables, objects, parameters, out);
+        if (model.hasAsync()) {
+            asyncTimeout(model, names, variables, objects, out);
+        }
+        asyncExecutor(model, names, variables, objects, out);
+        recordTrail(model, names, variables, objects, out);
+        registrySettings(names, variables, out);
+        buildAndCheckUnused(model, names, variables, out);
+        out.close();
+    }
+
+    /**
+     * The fields of the {@code Builder}: the registry's builder, the builder of each machine, and whether
+     * {@code build()} has succeeded.
+     */
+    private static void builderFields(SetModel model, Names names, Variables variables, SourceWriter out) {
+        out.line("private final " + names.of(MACHINE_REGISTRY) + ".Builder " + variables.registryBuilder() + " = "
                 + names.qualifier(MACHINE_REGISTRY) + ".builder();");
         for (MachineAccessor accessor : model.machines()) {
             out.line("private final " + machineBuilder(accessor.machine(), names) + " "
                     + variables.builders().get(accessor.method()) + ";");
         }
-        out.line("private boolean " + used + ";");
+        out.line("private boolean " + variables.used() + ";");
         out.blank();
+    }
+
+    /**
+     * The constructor of the {@code Builder}, which declares {@code parameters} and refuses a null one through
+     * {@code objects}, builds the definition of each machine another machine binds, children first, and then the
+     * builder of each machine.
+     */
+    private static void builderConstructor(SetModel model, Names names, BoundInvocation invocations,
+                                           Variables variables, String objects, List<String> parameters,
+                                           SourceWriter out) {
         out.open("private Builder(" + String.join(", ", parameters) + ")");
         for (String name : variables.parameters().values()) {
             out.line(objects + ".requireNonNull(" + name + ", " + MachineGenerator.quote(name) + ");");
         }
         for (MachineAccessor child : children(model)) {
-            out.line(definitionType(child.machine(), names) + " " + variables.definitions().get(child.method()) + " = "
-                    + graph(model, child, names, variables) + ";");
+            out.line(MachineGenerator.definitionType(child.machine().types(), names) + " "
+                    + variables.definitions().get(child.method()) + " = " + graph(model, child, names, variables)
+                    + ";");
         }
         for (MachineAccessor accessor : model.machines()) {
-            MachineModel machine = accessor.machine();
-            String builder = variables.builders().get(accessor.method());
-            String definition = variables.definitions().containsKey(accessor.method())
-                    ? variables.definitions().get(accessor.method()) : graph(model, accessor, names, variables);
-            out.line("this." + builder + " = " + names.qualifier(STATE_MACHINES) + ".from(" + definition + ")");
-            out.indent().indent();
-            out.line(".state(" + accessors(machine, names, invocations, variables) + ")");
-            out.line(".identity(" + reader(machine, machine.idGetter(), names, invocations, variables) + ")");
-            out.line(".as(" + facadeName(accessor, names) + ".class);");
-            out.outdent().outdent();
-            if (model.asynchronous(machine)) {
-                out.line(builder + ".asyncTimeout(" + variables.timeout() + ");");
-            }
-            out.line(registry + ".add(" + builder + ");");
+            machineBuilderStatements(model, accessor, names, invocations, variables, out);
         }
         out.close();
         out.blank();
-        if (model.hasAsync()) {
-            String machine = setters.get("machine");
-            String timeout = setters.get("timeout");
-            out.javadoc("Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
-                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.",
-                    List.of("@param " + machine + " the facade class of an asynchronous machine of the set",
-                            "@param " + timeout + " the timeout of that machine", THIS_BUILDER));
-            out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
-                    + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
-            out.line("checkUnused();");
-            out.line(objects + ".requireNonNull(" + machine + ", \"machine\");");
-            out.line(objects + ".requireNonNull(" + timeout + ", \"timeout\");");
-            for (MachineAccessor accessor : model.machines()) {
-                if (model.asynchronous(accessor.machine())) {
-                    out.open("if (" + machine + ".equals(" + facadeName(accessor, names) + ".class))");
-                    out.line(variables.builders().get(accessor.method()) + ".asyncTimeout(" + timeout + ");");
-                    out.line("return this;");
-                    out.close();
-                }
-            }
-            out.line("throw new " + names.of(ILLEGAL_ARGUMENT) + "(" + machine + ".getSimpleName() + "
-                    + MachineGenerator.quote(" is not an asynchronous machine of " + model.setName()) + ");");
-            out.close();
-            out.blank();
+    }
+
+    /**
+     * The statements of the {@code Builder}'s constructor that create the builder of the machine of
+     * {@code accessor} over its definition and its state and identity lambdas, hand it the shared timeout when the
+     * machine is asynchronous, and add it to the registry's builder.
+     */
+    private static void machineBuilderStatements(SetModel model, MachineAccessor accessor, Names names,
+                                                 BoundInvocation invocations, Variables variables, SourceWriter out) {
+        MachineModel machine = accessor.machine();
+        String builder = variables.builders().get(accessor.method());
+        String definition = variables.definitions().containsKey(accessor.method())
+                ? variables.definitions().get(accessor.method()) : graph(model, accessor, names, variables);
+        out.line("this." + builder + " = " + names.qualifier(STATE_MACHINES) + ".from(" + definition + ")");
+        out.indent().indent();
+        out.line(".state(" + accessors(machine, names, invocations, variables) + ")");
+        out.line(".identity(" + reader(machine, machine.idGetter(), names, invocations, variables) + ")");
+        out.line(".as(" + facadeName(accessor, names) + ".class);");
+        out.outdent().outdent();
+        if (model.asynchronous(machine)) {
+            out.line(builder + ".asyncTimeout(" + variables.timeout() + ");");
         }
-        String executor = setters.get("executor");
+        out.line(variables.registryBuilder() + ".add(" + builder + ");");
+    }
+
+    /**
+     * The {@code Builder}'s {@code asyncTimeout(Class, Duration)}, which overrides the shared timeout for the
+     * asynchronous machine it names and refuses, through {@code objects}, a null argument.
+     */
+    private static void asyncTimeout(SetModel model, Names names, Variables variables, String objects,
+                                     SourceWriter out) {
+        String machine = variables.setters().get("machine");
+        String timeout = variables.setters().get("timeout");
+        out.javadoc("Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
+                + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.",
+                List.of("@param " + machine + " the facade class of an asynchronous machine of the set",
+                        "@param " + timeout + " the timeout of that machine", THIS_BUILDER));
+        out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
+                + "<?, ?, ?>> " + machine + ", " + names.of(MachineGenerator.DURATION) + " " + timeout + ")");
+        out.line("checkUnused();");
+        out.line(objects + ".requireNonNull(" + machine + ", \"machine\");");
+        out.line(objects + ".requireNonNull(" + timeout + ", \"timeout\");");
+        for (MachineAccessor accessor : model.machines()) {
+            if (model.asynchronous(accessor.machine())) {
+                out.open("if (" + machine + ".equals(" + facadeName(accessor, names) + ".class))");
+                out.line(variables.builders().get(accessor.method()) + ".asyncTimeout(" + timeout + ");");
+                out.line("return this;");
+                out.close();
+            }
+        }
+        out.line("throw new " + names.of(ILLEGAL_ARGUMENT) + "(" + machine + ".getSimpleName() + "
+                + MachineGenerator.quote(" is not an asynchronous machine of " + model.setName()) + ");");
+        out.close();
+        out.blank();
+    }
+
+    /**
+     * The {@code Builder}'s {@code asyncExecutor(Executor)}, which hands the executor to the builder of every machine
+     * and refuses, through {@code objects}, a null one.
+     */
+    private static void asyncExecutor(SetModel model, Names names, Variables variables, String objects,
+                                      SourceWriter out) {
+        String executor = variables.setters().get("executor");
         out.javadoc("Hands the given executor to the StateMachines.Builder of every machine of the set, whose calls"
                 + " submitted through async(...) then run on it, as StateMachines.Builder.asyncExecutor(Executor)"
                 + " describes.",
@@ -300,6 +372,15 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
+    }
+
+    /**
+     * The {@code Builder}'s {@code recordTrail()} and {@code recordTrail(InstantSource)}, which hand the recording of
+     * the trail to the builder of every machine, on the system clock or on the given one, which the second refuses,
+     * through {@code objects}, when null.
+     */
+    private static void recordTrail(SetModel model, Names names, Variables variables, String objects,
+                                    SourceWriter out) {
         out.javadoc("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
                 + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
                 + " recordTrail(InstantSource) describes.", List.of(THIS_BUILDER));
@@ -311,7 +392,7 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        String clock = setters.get("clock");
+        String clock = variables.setters().get("clock");
         out.javadoc(RECORD_TRAIL, List.of("@param " + clock + " the clock the trail is read on", THIS_BUILDER));
         out.open("public Builder recordTrail(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
         out.line("checkUnused();");
@@ -322,6 +403,15 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
+    }
+
+    /**
+     * The settings the {@code Builder} hands to the registry's builder: the deepest cascade, the longest chain of
+     * watch reactions, and the observers.
+     */
+    private static void registrySettings(Names names, Variables variables, SourceWriter out) {
+        String registry = variables.registryBuilder();
+        Map<String, String> setters = variables.setters();
         forward(out, "Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at"
                 + " its own depth: one level below the step that ended the child or, when the child stood in a terminal"
                 + " state while its parent was still running the step that entered the bound state, one level below"
@@ -340,13 +430,22 @@ public final class SetGenerator {
                 + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
                 "@param " + setters.get("observer") + " the observer to add",
                 registry + ".observer(" + setters.get("observer") + ");");
-        String built = setters.get("built");
+    }
+
+    /**
+     * The {@code Builder}'s {@code build()}, which builds the registry and the set over it, and its private
+     * {@code checkUnused()}, which every other method calls first and which refuses any use once {@code build()} has
+     * succeeded.
+     */
+    private static void buildAndCheckUnused(SetModel model, Names names, Variables variables, SourceWriter out) {
+        String built = variables.setters().get("built");
+        String used = variables.used();
         String companion = names.of(qualifiedName(model));
         out.javadoc("Builds the registry of the machines and the set over it, which hands out their facades. Once it"
                 + " succeeds, the builder accepts nothing more.", List.of("@return the set"));
         out.open("public " + names.of(model.type().getQualifiedName().toString()) + " build()");
         out.line("checkUnused();");
-        out.line(companion + " " + built + " = new " + companion + "(" + registry + ".build());");
+        out.line(companion + " " + built + " = new " + companion + "(" + variables.registryBuilder() + ".build());");
         out.line(used + " = true;");
         out.line("return " + built + ";");
         out.close();
@@ -357,7 +456,6 @@ public final class SetGenerator {
         out.line("throw new " + names.of(ILLEGAL_STATE) + "("
                 + MachineGenerator.quote("this " + SymbolNames.runtimeName(model.setName())
                         + ".Builder was already used") + ");");
-        out.close();
         out.close();
         out.close();
     }
@@ -428,14 +526,6 @@ public final class SetGenerator {
         return companionQualifier(accessor, names) + ".graph(" + String.join(", ", arguments) + ")";
     }
 
-    /** {@code GraphDefinition<E, S, T>} for {@code machine}, as this file writes it. */
-    private static String definitionType(MachineModel machine, Names names) {
-        return names.of(GRAPH_DEFINITION) + "<"
-                + names.of(machine.types().entityElement().getQualifiedName().toString()) + ", "
-                + names.of(machine.types().statesElement().getQualifiedName().toString()) + ", "
-                + names.of(machine.types().transitionsElement().getQualifiedName().toString()) + ">";
-    }
-
     /**
      * The state reader and writer of {@code machine} as two lambdas, each calling the accessor the property
      * selected; the writer's argument is pinned, as {@link BoundInvocation} decides, to the parameter type that
@@ -492,10 +582,7 @@ public final class SetGenerator {
 
     /** {@code StateMachines.Builder<E, S, T>} for {@code machine}, as this file writes it. */
     private static String machineBuilder(MachineModel machine, Names names) {
-        return names.of(STATE_MACHINES) + ".Builder<"
-                + names.of(machine.types().entityElement().getQualifiedName().toString()) + ", "
-                + names.of(machine.types().statesElement().getQualifiedName().toString()) + ", "
-                + names.of(machine.types().transitionsElement().getQualifiedName().toString()) + ">";
+        return names.of(STATE_MACHINES) + ".Builder" + MachineGenerator.typeArguments(machine.types(), names);
     }
 
     /**
@@ -521,7 +608,7 @@ public final class SetGenerator {
         String timeout = "";
         if (model.hasAsync()) {
             timeout = MachineGenerator.unique("asyncTimeout", taken);
-            parameters.put(DURATION, timeout);
+            parameters.put(MachineGenerator.DURATION, timeout);
         }
         Map<String, String> dependencies = MachineGenerator.parameterNames(model.dependencies(), taken);
         parameters.putAll(dependencies);
@@ -535,12 +622,21 @@ public final class SetGenerator {
         boolean catches = !caught(model, invocations).isEmpty();
         String failure = catches ? MachineGenerator.unique("failure", taken) : "";
         String rethrow = catches ? MachineGenerator.rethrowName(model.type(), invocations.elements()) : "";
+        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, definitions,
+                entity, state, setterNames(taken), rethrow, failure);
+    }
+
+    /**
+     * The names of the parameters of the {@code Builder}'s methods and of the local variable of its {@code build()},
+     * by role: each is its role, suffixed as it takes to be free of what {@code taken} holds, which none of them
+     * joins.
+     */
+    private static Map<String, String> setterNames(Set<String> taken) {
         Map<String, String> setters = new LinkedHashMap<>();
         for (String role : SETTER_PARAMETERS) {
             setters.put(role, MachineGenerator.unique(role, new LinkedHashSet<>(taken)));
         }
-        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, definitions,
-                entity, state, setters, rethrow, failure);
+        return setters;
     }
 
     /**
@@ -577,24 +673,23 @@ public final class SetGenerator {
         Names.claim(types, model.type());
         Names.claim(types, qualifiedName(model));
         if (!children(model).isEmpty()) {
-            Names.claim(types, GRAPH_DEFINITION);
+            Names.claim(types, MachineGenerator.GRAPH_DEFINITION);
         }
         if (model.hasAsync()) {
-            for (String fixed : List.of(MACHINE, DURATION, CLASS, ILLEGAL_ARGUMENT)) {
+            for (String fixed : List.of(MACHINE, MachineGenerator.DURATION, CLASS, ILLEGAL_ARGUMENT)) {
                 Names.claim(types, fixed);
             }
         }
-        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR,
-                INSTANT_SOURCE, GENERATED, SUPPRESS_WARNINGS, OVERRIDE, ILLEGAL_STATE)) {
+        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, MachineGenerator.OBJECTS,
+                EXECUTOR, INSTANT_SOURCE, MachineGenerator.GENERATED, MachineGenerator.SUPPRESS_WARNINGS,
+                MachineGenerator.OVERRIDE, ILLEGAL_STATE)) {
             Names.claim(types, fixed);
         }
         for (MachineAccessor accessor : model.machines()) {
             MachineModel machine = accessor.machine();
             Names.claim(types, machine.types().facade());
             Names.claim(types, MachineGenerator.qualifiedName(machine));
-            Names.claim(types, machine.types().entityElement());
-            Names.claim(types, machine.types().statesElement());
-            Names.claim(types, machine.types().transitionsElement());
+            MachineGenerator.claimMachineTypes(types, machine.types());
         }
         for (TypeElement dependency : model.dependencies()) {
             Names.claim(types, dependency);

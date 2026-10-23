@@ -60,6 +60,13 @@ final class SetModelBuilder {
     private final BoundInvocation invocations;
 
     /**
+     * What the accessors a set declares itself hold: the machines they return that the set can hold, in declaration
+     * order, whether the set declares any accessor at all, refused or not, and whether one of them returns a machine
+     * that failed, whose reason was reported already.
+     */
+    private record DeclaredAccessors(List<MachineAccessor> accessors, boolean any, boolean silent) { }
+
+    /**
      * {@code machines} resolves a machine to its model, or empty, with the reason already reported: when that type
      * has errors, or as {@code SG602} at the set when the index of this compilation names it but no round handed it
      * to the processor.
@@ -67,45 +74,50 @@ final class SetModelBuilder {
     Optional<SetModel> build(TypeElement type, Function<TypeElement, Optional<MachineModel>> machines) {
         int before = diagnostics.errors();
         AnnotationMirror set = annotations.find(type, StateGraphs.class).orElseThrow();
-        if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
-            diagnostics.error("SG502", type.getSimpleName() + " must be a top-level interface extending Machines: the generated companion"
-                    + " lives next to it in the package", type, set);
+        if (!isTopLevelMachines(type, set)) {
             return Optional.empty();
         }
-        if (type.getKind() != ElementKind.INTERFACE || !signatures.subtype(type.asType(), MACHINES)) {
-            diagnostics.error("SG502", type.getSimpleName() + " must be an interface extending Machines", type, set);
+        Set<String> seen = new LinkedHashSet<>();
+        DeclaredAccessors declared = declaredAccessors(type, machines, seen);
+        boolean anyAccessor = declared.any();
+        if (refuseInheritedAccessors(type, set, seen)) {
+            anyAccessor = true;
+        }
+        if (!anyAccessor) {
+            // An accessor that was declared and refused has said why already; only a set without one says this.
+            diagnostics.error("SG510", type.getSimpleName() + " declares no machine: add one accessor per"
+                    + " @GenerateGraphApi interface", type, set);
+        }
+        checkPeersInSet(type, set, declared.accessors(), seen);
+        String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
+        SetModel model = new SetModel(type, packageName, declared.accessors());
+        if (declared.silent() || diagnostics.errors() > before) {
             return Optional.empty();
         }
+        checkBuilder(type, set, model);
+        return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
+    }
+
+    /**
+     * Reads every accessor the set {@code type} declares itself, noting in {@code seen} each machine one of them
+     * returns, which {@code machines} resolves: an accessor whose machine the set cannot hold is refused as
+     * {@code SG510}.
+     */
+    private DeclaredAccessors declaredAccessors(TypeElement type,
+                                                Function<TypeElement, Optional<MachineModel>> machines,
+                                                Set<String> seen) {
         List<MachineAccessor> accessors = new ArrayList<>();
         Map<String, ExecutableElement> writers = new LinkedHashMap<>();
-        Set<String> seen = new LinkedHashSet<>();
         boolean silent = false;
         boolean anyAccessor = false;
         for (Element member : type.getEnclosedElements()) {
-            if (member.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) member;
-            if (method.isDefault() || method.getModifiers().contains(Modifier.STATIC) || method.getModifiers().contains(Modifier.PRIVATE)) {
-                continue;
-            }
-            if (signatures.overridden(method, type, BUILT_IN).isPresent()) {
-                // A redeclaration of close(), toString(), equals or hashCode, which the companion writes or inherits.
+            if (!isAccessorCandidate(member, type)) {
                 continue;
             }
             anyAccessor = true;
-            TypeMirror returned = method.getReturnType();
-            Optional<TypeElement> machineType = Optional.empty();
-            if (returned instanceof DeclaredType declared && isMachine(declared.asElement())) {
-                machineType = Optional.of((TypeElement) declared.asElement());
-            }
-            if (!method.getParameters().isEmpty() || machineType.isEmpty()) {
-                diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a"
-                        + " @GenerateGraphApi interface", method);
-                continue;
-            }
-            if (!seen.add(machineType.get().getQualifiedName().toString())) {
-                diagnostics.error("SG510", machineType.get().getSimpleName() + " appears twice in " + type.getSimpleName(), method);
+            ExecutableElement method = (ExecutableElement) member;
+            Optional<TypeElement> machineType = accessedMachine(method, type, seen);
+            if (machineType.isEmpty()) {
                 continue;
             }
             Optional<MachineModel> model = machines.apply(machineType.get());
@@ -113,15 +125,83 @@ final class SetModelBuilder {
                 silent = true;
                 continue;
             }
-            if (!writesItsOwnState(method, model.get(), writers) || !reachable(method, model.get(), type)) {
-                continue;
+            if (writesItsOwnState(method, model.get(), writers) && reachable(method, model.get(), type)) {
+                accessors.add(new MachineAccessor(method.getSimpleName().toString(), model.get()));
             }
-            accessors.add(new MachineAccessor(method.getSimpleName().toString(), model.get()));
         }
+        return new DeclaredAccessors(accessors, anyAccessor, silent);
+    }
+
+    /**
+     * Whether {@code type} is a top-level interface extending {@code Machines}; {@code SG502} at {@code set}, its
+     * {@code @StateGraphs}, otherwise.
+     */
+    private boolean isTopLevelMachines(TypeElement type, AnnotationMirror set) {
+        if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
+            diagnostics.error("SG502", type.getSimpleName() + " must be a top-level interface extending Machines:"
+                    + " the generated companion lives next to it in the package", type, set);
+            return false;
+        }
+        if (type.getKind() != ElementKind.INTERFACE || !signatures.subtype(type.asType(), MACHINES)) {
+            diagnostics.error("SG502", type.getSimpleName() + " must be an interface extending Machines", type, set);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Whether {@code member} of the set {@code type} is to be read as an accessor: an abstract instance method that
+     * redeclares no method of {@code Machines}, {@code AutoCloseable} or {@code Object}.
+     */
+    private boolean isAccessorCandidate(Element member, TypeElement type) {
+        if (member.getKind() != ElementKind.METHOD) {
+            return false;
+        }
+        ExecutableElement method = (ExecutableElement) member;
+        if (method.isDefault() || method.getModifiers().contains(Modifier.STATIC)
+                || method.getModifiers().contains(Modifier.PRIVATE)) {
+            return false;
+        }
+        // A redeclaration of close(), toString(), equals or hashCode, which the companion writes or inherits.
+        return signatures.overridden(method, type, BUILT_IN).isEmpty();
+    }
+
+    /**
+     * The machine the accessor {@code method} of the set {@code type} returns, noted in {@code seen}; empty after
+     * {@code SG510} when the accessor takes a parameter or returns no {@code @GenerateGraphApi} interface, or when an
+     * earlier accessor returns the same machine.
+     */
+    private Optional<TypeElement> accessedMachine(ExecutableElement method, TypeElement type, Set<String> seen) {
+        TypeMirror returned = method.getReturnType();
+        Optional<TypeElement> machineType = Optional.empty();
+        if (returned instanceof DeclaredType declared && isMachine(declared.asElement())) {
+            machineType = Optional.of((TypeElement) declared.asElement());
+        }
+        if (!method.getParameters().isEmpty() || machineType.isEmpty()) {
+            diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a"
+                    + " @GenerateGraphApi interface", method);
+            return Optional.empty();
+        }
+        if (!seen.add(machineType.get().getQualifiedName().toString())) {
+            diagnostics.error("SG510", machineType.get().getSimpleName() + " appears twice in "
+                    + type.getSimpleName(), method);
+            return Optional.empty();
+        }
+        return machineType;
+    }
+
+    /**
+     * {@code SG510} at {@code set} for every abstract method the set {@code type} inherits rather than declares,
+     * which the companion would not implement, and whether there is any. The machine such a method returns is noted
+     * in {@code seen} all the same.
+     */
+    private boolean refuseInheritedAccessors(TypeElement type, AnnotationMirror set, Set<String> seen) {
+        boolean any = false;
         for (ExecutableElement inherited : signatures.inheritedAbstract(type, BUILT_IN)) {
-            anyAccessor = true;
-            diagnostics.error("SG510", type.getSimpleName() + " inherits the abstract method " + inherited.getSimpleName()
-                    + " from " + ((TypeElement) inherited.getEnclosingElement()).getQualifiedName() + ", which the"
+            any = true;
+            diagnostics.error("SG510", type.getSimpleName() + " inherits the abstract method "
+                    + inherited.getSimpleName() + " from "
+                    + ((TypeElement) inherited.getEnclosingElement()).getQualifiedName() + ", which the"
                     + " generated companion would not implement: declare every accessor on " + type.getSimpleName()
                     + " itself", type, set);
             if (inherited.getReturnType() instanceof DeclaredType returned && isMachine(returned.asElement())) {
@@ -129,17 +209,23 @@ final class SetModelBuilder {
                 seen.add(((TypeElement) returned.asElement()).getQualifiedName().toString());
             }
         }
-        if (!anyAccessor) {
-            // An accessor that was declared and refused has said why already; only a set without one says this.
-            diagnostics.error("SG510", type.getSimpleName() + " declares no machine: add one accessor per"
-                    + " @GenerateGraphApi interface", type, set);
-        }
+        return any;
+    }
+
+    /**
+     * {@code SG510} at {@code set} for every watch of a machine of {@code accessors} whose peer is not in the set
+     * {@code type}, and {@code SG806} for every sub-machine whose child is not; {@code seen} holds the machines the
+     * set names.
+     */
+    private void checkPeersInSet(TypeElement type, AnnotationMirror set, List<MachineAccessor> accessors,
+                                 Set<String> seen) {
         for (MachineAccessor accessor : accessors) {
             for (WatchModel watch : accessor.machine().watches()) {
                 String peer = watch.peer().facade().getQualifiedName().toString();
                 if (!seen.contains(peer)) {
-                    diagnostics.error("SG510", "the watch of " + accessor.machine().facadeName() + "." + watch.state() + " points to "
-                            + watch.peer().facade().getSimpleName() + ", which is not in " + type.getSimpleName(), type, set);
+                    diagnostics.error("SG510", "the watch of " + accessor.machine().facadeName() + "." + watch.state()
+                            + " points to " + watch.peer().facade().getSimpleName() + ", which is not in "
+                            + type.getSimpleName(), type, set);
                 }
             }
             for (SubmachineModel submachine : accessor.machine().submachines()) {
@@ -150,13 +236,6 @@ final class SetModelBuilder {
                 }
             }
         }
-        String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
-        SetModel model = new SetModel(type, packageName, accessors);
-        if (silent || diagnostics.errors() > before) {
-            return Optional.empty();
-        }
-        checkBuilder(type, set, model);
-        return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }
 
     /**
@@ -165,15 +244,17 @@ final class SetModelBuilder {
      * catalogue is another one or the same, so a set that holds both could never be built. {@code writers} maps
      * each entity and state enum already written to the accessor that writes them.
      */
-    private boolean writesItsOwnState(ExecutableElement method, MachineModel machine, Map<String, ExecutableElement> writers) {
+    private boolean writesItsOwnState(ExecutableElement method, MachineModel machine,
+                                      Map<String, ExecutableElement> writers) {
         String written = machine.types().entityElement().getQualifiedName() + "/"
                 + machine.types().statesElement().getQualifiedName();
         ExecutableElement previous = writers.putIfAbsent(written, method);
         if (previous == null) {
             return true;
         }
-        diagnostics.error("SG510", method.getSimpleName() + " holds " + machine.facadeName() + ", which writes the state of "
-                + machine.types().entityName() + " with " + machine.types().statesName() + " as "
+        diagnostics.error("SG510", method.getSimpleName() + " holds " + machine.facadeName()
+                + ", which writes the state of " + machine.types().entityName() + " with "
+                + machine.types().statesName() + " as "
                 + previous.getSimpleName() + " already does: a registry holds one machine per entity and state enum,"
                 + " whatever its transitions", method);
         return false;
@@ -188,7 +269,8 @@ final class SetModelBuilder {
     private boolean reachable(ExecutableElement method, MachineModel machine, TypeElement set) {
         String packageName = Accessibility.packageOf(set);
         Set<String> inaccessible = new LinkedHashSet<>();
-        for (TypeMirror type : List.of(machine.types().entity(), machine.types().states(), machine.types().transitions())) {
+        for (TypeMirror type
+                : List.of(machine.types().entity(), machine.types().states(), machine.types().transitions())) {
             inaccessible.addAll(Accessibility.inaccessible(type, packageName));
         }
         for (TypeElement dependency : machine.instanceDependencies()) {
@@ -201,9 +283,10 @@ final class SetModelBuilder {
             return true;
         }
         diagnostics.error("SG510", method.getSimpleName() + " holds " + machine.types().facade().getQualifiedName()
-                + ", which the companion of " + set.getSimpleName() + " builds with " + String.join(" and ", inaccessible)
-                + ", which " + Accessibility.describe(packageName) + ", where that companion is generated, cannot access:"
-                + " make " + (inaccessible.size() == 1 ? "it" : "them") + " public, or declare the set in the package of "
+                + ", which the companion of " + set.getSimpleName() + " builds with "
+                + String.join(" and ", inaccessible) + ", which " + Accessibility.describe(packageName)
+                + ", where that companion is generated, cannot access: make "
+                + (inaccessible.size() == 1 ? "it" : "them") + " public, or declare the set in the package of "
                 + machine.facadeName(), method);
         return false;
     }
@@ -250,14 +333,15 @@ final class SetModelBuilder {
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(type)) {
                 diagnostics.error("SG510", builder + " is the static " + builder + " " + companion + " declares, which"
-                        + " takes " + takes + ": give the " + (method.isDefault() ? "method" : "accessor") + " another name",
-                        method);
+                        + " takes " + takes + ": give the " + (method.isDefault() ? "method" : "accessor")
+                        + " another name", method);
                 return;
             }
         }
         diagnostics.error("SG510", type.getSimpleName() + " inherits " + builder + " from "
                 + ((TypeElement) clashing.get(0).getEnclosingElement()).getQualifiedName() + ", but " + companion
-                + " declares a static " + builder + ", which takes " + takes + ": give that method another name", type, set);
+                + " declares a static " + builder + ", which takes " + takes + ": give that method another name",
+                type, set);
     }
 
     /** Whether {@code element} declares a graph this library generates an API for. */

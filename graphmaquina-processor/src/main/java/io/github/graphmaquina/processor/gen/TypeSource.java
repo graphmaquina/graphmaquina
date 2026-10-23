@@ -128,7 +128,8 @@ final class TypeSource {
 
     private String value(AnnotationValue value) {
         return switch (value.getValue()) {
-            case VariableElement constant -> read((TypeElement) constant.getEnclosingElement()) + "." + constant.getSimpleName();
+            case VariableElement constant -> read((TypeElement) constant.getEnclosingElement()) + "."
+                    + constant.getSimpleName();
             case TypeMirror type -> source(type) + ".class";
             case AnnotationMirror annotation -> annotation(annotation);
             case List<?> values -> "{" + String.join(", ", values.stream()

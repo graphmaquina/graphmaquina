@@ -116,17 +116,7 @@ public record SetModel(TypeElement type, String packageName, List<MachineAccesso
             }
             String reached = edge.transition().to();
             if (edge.machine().terminals().contains(reached)) {
-                for (MachineAccessor accessor : machines) {
-                    for (SubmachineModel submachine : accessor.machine().submachines()) {
-                        if (isMachine(submachine.child(), edge.machine())) {
-                            for (SubmachineModel.Exit exit : submachine.exits()) {
-                                if (exit.on().equals(reached)) {
-                                    enqueue(accessor.machine(), submachine.state(), exit.transition(), queue, visited);
-                                }
-                            }
-                        }
-                    }
-                }
+                enqueueExitsOn(edge.machine(), reached, queue, visited);
             }
             for (SubmachineModel held : edge.machine().submachines()) {
                 if (held.state().equals(reached)) {
@@ -136,6 +126,24 @@ public record SetModel(TypeElement type, String packageName, List<MachineAccesso
             }
         }
         return false;
+    }
+
+    /**
+     * The exit edges on {@code terminal} of every sub-machine of the set whose child is {@code child}, which its
+     * parent takes once the child reaches that terminal state.
+     */
+    private void enqueueExitsOn(MachineModel child, String terminal, Deque<Edge> queue, Set<String> visited) {
+        for (MachineAccessor accessor : machines) {
+            for (SubmachineModel submachine : accessor.machine().submachines()) {
+                if (isMachine(submachine.child(), child)) {
+                    for (SubmachineModel.Exit exit : submachine.exits()) {
+                        if (exit.on().equals(terminal)) {
+                            enqueue(accessor.machine(), submachine.state(), exit.transition(), queue, visited);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** The selected exits of terminal initial descendants when an edge enters {@code state}, without a cascade. */

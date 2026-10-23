@@ -31,7 +31,8 @@ final class Annotations {
     }
 
     /** Direct occurrences and the ones inside the container, in source order. */
-    List<AnnotationMirror> findAll(Element element, Class<? extends Annotation> single, Class<? extends Annotation> container) {
+    List<AnnotationMirror> findAll(Element element, Class<? extends Annotation> single,
+                                   Class<? extends Annotation> container) {
         List<AnnotationMirror> found = new ArrayList<>();
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
             if (is(mirror, single)) {
@@ -53,7 +54,8 @@ final class Annotations {
      * that omits an element without a default, and it leaves that element out of the mirror it hands over.
      */
     Optional<AnnotationValue> find(AnnotationMirror mirror, String name) {
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : elements.getElementValuesWithDefaults(mirror).entrySet()) {
+        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry
+                : elements.getElementValuesWithDefaults(mirror).entrySet()) {
             if (entry.getKey().getSimpleName().contentEquals(name)) {
                 return Optional.of(entry.getValue());
             }

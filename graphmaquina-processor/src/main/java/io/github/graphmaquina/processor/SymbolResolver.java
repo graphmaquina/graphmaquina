@@ -134,7 +134,8 @@ final class SymbolResolver {
         }
         Binding chosen = fitting.get(0);
         Binding selected = new Binding(chosen.owner(), chosen.method(), chosen.effectiveType(), kind,
-                bindings.arguments(role, machine, peer, chosen.effectiveType().getParameterTypes().size()), chosen.isStatic(), chosen.async());
+                bindings.arguments(role, machine, peer, chosen.effectiveType().getParameterTypes().size()),
+                chosen.isStatic(), chosen.async());
         return reachable(selected, descriptor, machine, anchor) ? Optional.of(selected) : Optional.empty();
     }
 
@@ -143,7 +144,8 @@ final class SymbolResolver {
      * call to {@code binding} makes it write: the host, every class enclosing it, and the parameter types it pins
      * the arguments with. {@code SG505} otherwise, naming each type it cannot access.
      */
-    private boolean reachable(Binding binding, SymbolDescriptor descriptor, MachineTypes machine, DiagnosticAnchor anchor) {
+    private boolean reachable(Binding binding, SymbolDescriptor descriptor, MachineTypes machine,
+            DiagnosticAnchor anchor) {
         String packageName = Accessibility.packageOf(machine.facade());
         Set<String> inaccessible = new LinkedHashSet<>(Accessibility.inaccessible(binding.owner(), packageName));
         for (TypeMirror cast : invocations.casts(binding)) {

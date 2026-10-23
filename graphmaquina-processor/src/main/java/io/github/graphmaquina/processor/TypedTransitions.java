@@ -59,7 +59,10 @@ final class TypedTransitions {
         this.diagnostics = diagnostics;
     }
 
-    /** The identifier {@code mirror} declares, or empty when javac could not read it as a constant of {@code machine}. */
+    /**
+     * The identifier {@code mirror} declares, or empty when javac could not read it as a constant of
+     * {@code machine}.
+     */
     Optional<String> identifier(AnnotationMirror mirror, MachineTypes machine) {
         return annotations.find(mirror, "id")
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
@@ -82,9 +85,7 @@ final class TypedTransitions {
             return Optional.empty();
         }
         Optional<String> id = TypedValues.constantName(declaredId.get(), machine.transitionsElement());
-        List<AnnotationValue> fromValues = annotations.array(mirror, "from");
-        structure.checkFrom(!fromValues.isEmpty(), DiagnosticAnchor.of(element, mirror, declaredFrom.get()));
-        Optional<List<String>> from = TypedValues.constantNames(fromValues, machine.statesElement());
+        Optional<List<String>> from = origins(element, mirror, declaredFrom.get(), machine);
         Optional<String> to = TypedValues.constantName(declaredTo.get(), machine.statesElement());
         if (id.isEmpty() || from.isEmpty() || to.isEmpty()) {
             return Optional.empty();
@@ -95,7 +96,8 @@ final class TypedTransitions {
                 resolve(value, Bindings.Role.ACTION, element, mirror, machine));
         List<Binding> guards = guards(element, mirror, machine);
         Optional<AnnotationValue> declaredTimeout = single(element, mirror, "timeout");
-        Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) -> duration(value, element, mirror));
+        Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) ->
+                duration(value, element, mirror));
         Optional<String> onFailure = single(element, mirror, "onFailure")
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
         List<AnnotationValue> failsOnValues = classValues(annotations.array(mirror, "failsOn"));
@@ -118,6 +120,18 @@ final class TypedTransitions {
         return Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
                 action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
                 action, guards, onFailure, failsOn, timeout, afterCommit, recoveries));
+    }
+
+    /**
+     * The origins {@code mirror} declares on {@code element}, as constants of the states of {@code machine}, or
+     * empty when one of them is not, which javac has refused; {@code SG507} at {@code declaredFrom}, the value of
+     * its {@code from}, when it declares none.
+     */
+    private Optional<List<String>> origins(Element element, AnnotationMirror mirror, AnnotationValue declaredFrom,
+            MachineTypes machine) {
+        List<AnnotationValue> fromValues = annotations.array(mirror, "from");
+        structure.checkFrom(!fromValues.isEmpty(), DiagnosticAnchor.of(element, mirror, declaredFrom));
+        return TypedValues.constantNames(fromValues, machine.statesElement());
     }
 
     /** Resolves the optional hook on a definition or transition at its own declaration. */
@@ -234,7 +248,10 @@ final class TypedTransitions {
         return classes;
     }
 
-    /** The label of the edge: the operation's own name, the selected action's for a type-level edge, empty for a move. */
+    /**
+     * The label of the edge: the operation's own name, the selected action's for a type-level edge, empty for a
+     * move.
+     */
     private static String label(Optional<Binding> action, String operation) {
         if (action.isEmpty()) {
             return "";

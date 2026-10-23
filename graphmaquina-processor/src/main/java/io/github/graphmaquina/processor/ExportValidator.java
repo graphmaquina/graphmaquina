@@ -242,12 +242,8 @@ final class ExportValidator {
         List<? extends Element> parameters = method.getParameters();
         TypeMirror returned = method.getReturnType();
         return switch (role) {
-            case ACTION -> parameters.size() == 1
-                    && signatures.erasureIs(parameters.get(0).asType(), TRANSITION_CONTEXT)
-                    && result(returned, ACTION_OUTCOME);
-            case GUARD -> parameters.size() == 1
-                    && signatures.erasureIs(parameters.get(0).asType(), GUARD_CONTEXT)
-                    && result(returned, GUARD_RESULT);
+            case ACTION -> shapedAsVerdict(parameters, returned, TRANSITION_CONTEXT, ACTION_OUTCOME);
+            case GUARD -> shapedAsVerdict(parameters, returned, GUARD_CONTEXT, GUARD_RESULT);
             case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
                     && signatures.erasureIs(parameters.get(1).asType(), COMMIT_CONTEXT)))
                     && returned.getKind() == TypeKind.VOID;
@@ -257,6 +253,17 @@ final class ExportValidator {
             case PROPERTY -> false;
             case LOOKUP -> parameters.size() == 1 && signatures.erasureIs(returned, OPTIONAL);
         };
+    }
+
+    /**
+     * Whether a method taking {@code parameters} and returning {@code returned} is shaped like an action or a guard:
+     * one parameter, whose erasure is {@code context}, and a result the engine understands as {@code verdict}.
+     */
+    private boolean shapedAsVerdict(List<? extends Element> parameters, TypeMirror returned, String context,
+                                    String verdict) {
+        return parameters.size() == 1
+                && signatures.erasureIs(parameters.get(0).asType(), context)
+                && result(returned, verdict);
     }
 
     /**
