@@ -58,7 +58,7 @@ public final class PluginFixture {
     private static final String TEST_COMPILER_ARG = "TEST_COMPILER_ARG=";
 
     /** The published index a compilation leaves beside its classes. */
-    private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
+    static final String EXPORTS = "META-INF/graphmaquina/exports.json";
 
     /** The manifest and index schema this release of the tool reads. */
     private static final int SCHEMA_VERSION = 2;

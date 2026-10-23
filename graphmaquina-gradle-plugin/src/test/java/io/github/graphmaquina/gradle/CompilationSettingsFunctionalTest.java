@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static io.github.graphmaquina.gradle.PluginFixture.EXPORTS;
 import static io.github.graphmaquina.gradle.PluginFixture.FIXTURE_REPOSITORY;
 import static io.github.graphmaquina.gradle.PluginFixture.MAIN_EXPORTS;
 import static io.github.graphmaquina.gradle.PluginFixture.MAIN_PENDING_INVENTORY;
@@ -40,9 +41,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * generation task.
  */
 class CompilationSettingsFunctionalTest {
-
-    /** Where a compilation publishes its index, relative to whatever class output it was given. */
-    private static final String EXPORTS_ENTRY = "META-INF/graphmaquina/exports.json";
 
     /** The two annotation processors Lombok registers, as a {@code -processor} list names them. */
     private static final String LOMBOK_PROCESSORS = "lombok.launch.AnnotationProcessorHider$AnnotationProcessor,"
@@ -126,7 +124,7 @@ class CompilationSettingsFunctionalTest {
         assertEquals(TaskOutcome.SUCCESS, movedClasses.task(":generateStateGraphApi").getOutcome());
         String classesOutput = fixture.request("main").get("classesOutput").getAsString();
         assertTrue(classesOutput.endsWith("/build/elsewhere/classes"), classesOutput);
-        assertTrue(fixture.exists("build/elsewhere/classes/" + EXPORTS_ENTRY), classesOutput);
+        assertTrue(fixture.exists("build/elsewhere/classes/" + EXPORTS), classesOutput);
     }
 
     /**
@@ -357,7 +355,7 @@ class CompilationSettingsFunctionalTest {
         assertTrue(fixture.mainSourceRoots().stream()
                 .anyMatch((String root) -> root.endsWith("/build/custom/generated")));
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
-        assertTrue(fixture.jarContains(EXPORTS_ENTRY));
+        assertTrue(fixture.jarContains(EXPORTS));
     }
 
     /**
