@@ -43,9 +43,9 @@ final class Reevaluation {
      * then, as OutcomeFlows.endWith says. When the clock throws anything but an Error or answers null, the entry is
      * omitted; a distinct clock failure is suppressed on the call's failure. Without a trail it carries the empty
      * flow, and an Error carries none. An Error the clock throws while it reads that entry's instant propagates in
-     * place of the failure, and the observers hear of
-     * that Error. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
-     * reaction, when that call logged, and empty for a reevaluation the application made.
+     * place of the failure, and the observers hear of that Error. The log's start line names {@code trigger}: the id of
+     * the call whose commit triggered this watch reaction, when that call logged, and empty for a reevaluation the
+     * application made.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> reevaluate(DefaultStateMachine<E, S, T> machine,
                                                                                E entity, int chain,

@@ -159,20 +159,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * for the overload that takes no input.
      */
     private Outcome<E, S, T> executeRoot(E entity, T transition, Optional<Object> operationInput) {
-        requireTransition(transition);
+        Transaction.requireTransition(key(), transition);
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
         CallLog log = CallLog.open(Optional.empty());
         Optional<Observed> observed = RootCall.observe(this, entity, requested, false, log);
         return RootCall.run(this, entity, requested, false, observed, log,
                 (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
-    }
-
-    void requireTransition(T transition) {
-        if (!key().transitions().isInstance(transition)) {
-            throw new IllegalArgumentException(
-                    "transition must belong to " + key().transitions().getName() + ": " + transition.name());
-        }
     }
 
     @Override

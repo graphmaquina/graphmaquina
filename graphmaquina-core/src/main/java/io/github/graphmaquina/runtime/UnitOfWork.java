@@ -32,11 +32,10 @@ import java.util.Optional;
  * actually ran and is never reverted; the call's failures share its entries, as {@link #journal()} says. flow is the
  * call's flow, created at the start of the call when its root machine records its trail, and otherwise by the first
  * write, a put or a remove, that a step or a hook of the call makes; a read never creates it. A call that writes
- * nothing and records no trail
- * pays two empty fields, and every rollback reverts the flow's writes with the log. No rollback follows the commit,
- * so nothing reverts what a hook writes. A call that records its trail marks each entry of the log on its clock,
- * right after the entry is in the log, and every rollback truncates the marks with the log; a call that does not
- * reads no clock and keeps no mark.
+ * nothing and records no trail pays two empty fields, and every rollback reverts the flow's writes with the log. No
+ * rollback follows the commit, so nothing reverts what a hook writes. A call that records its trail marks each entry of
+ * the log on its clock, right after the entry is in the log, and every rollback truncates the marks with the log; a
+ * call that does not reads no clock and keeps no mark.
  */
 final class UnitOfWork {
 

@@ -44,7 +44,7 @@ final class Steps {
         if (machine.hasBindings()) {
             return step(tx, machine, entity, id, depth, input, Optional.empty());
         }
-        machine.requireTransition(id);
+        Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
         S from = stateOf(tx, machine, ref, entity, id, depth, Optional.empty());
         try {
@@ -74,17 +74,17 @@ final class Steps {
      * {@link Submachines#exits} says. {@code exitOf} is the captured bound node whose exit this step runs, with the
      * child whose terminal state selected it: the node supplies the source instead of rereading the parent's getter,
      * and grants reserved-exit privilege only at that source; the child is what the step's resolved line names. It is
-     * empty for any other step. For a machine that no graph binds as a sub-machine, the binding check
-     * is one test of an empty list, and for one whose own graph binds none, the reserved-exit check is one field read.
-     * When the root's own step throws once it has read its state, it records that state and its edge for
-     * {@link Transaction#classify}. The root's own step hands the reference it registered to the call's log, which
-     * prints it. A call that logs at TRACE logs what the binding check found, the binding that holds the child or the
-     * reason it is detached, then the edge the step resolved, or that it found none, at the step's depth.
+     * empty for any other step. For a machine that no graph binds as a sub-machine, the binding check is one test of an
+     * empty list, and for one whose own graph binds none, the reserved-exit check is one field read. When the root's
+     * own step throws once it has read its state, it records that state and its edge for {@link Transaction#classify}.
+     * The root's own step hands the reference it registered to the call's log, which prints it. A call that logs at
+     * TRACE logs what the binding check found, the binding that holds the child or the reason it is detached, then the
+     * edge the step resolved, or that it found none, at the step's depth.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
             Optional<ExitOf> exitOf) {
-        machine.requireTransition(id);
+        Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
         S from = stateOf(tx, machine, ref, entity, id, depth, exitOf);
         try {

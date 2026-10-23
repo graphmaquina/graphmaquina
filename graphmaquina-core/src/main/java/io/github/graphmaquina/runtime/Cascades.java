@@ -100,13 +100,12 @@ final class Cascades {
      * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
      * exception of another call or an Error other than a VirtualMachineError, which the cascades let through before
      * they call this, poisons through an abort of the caller's step that names the cascade and carries it as cause;
-     * COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
-     * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort
-     * prints the failure and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so
-     * one that cannot be printed shows a marker; when printing them throws an Error, the transaction is first poisoned
-     * by an abort that names the failure's class and each entity's machine alone, and then that Error propagates,
-     * unless the failure is itself an Error: that failure then propagates as itself, with the Error of printing it as
-     * suppressed.
+     * COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons without a TRACE line:
+     * the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort prints the failure
+     * and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so one that cannot be
+     * printed shows a marker; when printing them throws an Error, the transaction is first poisoned by an abort that
+     * names the failure's class and each entity's machine alone, and then that Error propagates, unless the failure is
+     * itself an Error: that failure then propagates as itself, with the Error of printing it as suppressed.
      */
     static CallFailedException poisonWith(Transaction tx, ContextHandle caller, String target, Throwable error) {
         if (error instanceof CallFailedException own && tx.owns(own)) {
@@ -156,7 +155,7 @@ final class Cascades {
             Transaction tx, ContextHandle caller, MachineKey<P, Q, U> key, P peer, U id,
             Optional<CascadePolicy> policy) {
         DefaultStateMachine<P, Q, U> machine = tx.registry().machineFor(key);
-        machine.requireTransition(id);
+        Transaction.requireTransition(machine.key(), id);
         return cascadeTo(tx, caller, machine, tx.uow().register(machine.refOf(peer)), peer, id, policy);
     }
 

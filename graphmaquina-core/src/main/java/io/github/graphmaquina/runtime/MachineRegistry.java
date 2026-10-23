@@ -130,8 +130,8 @@ public final class MachineRegistry implements AutoCloseable {
             builder.validate();
             checkWatches(builder.definition(), byKey.keySet());
             indexBindings(builder.definition(), byKey, bindings, exitsByChild);
-            // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key,
-            // so a typed caller cannot reach this collision.
+            // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key, so a typed caller
+            // cannot reach this collision.
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent() && !facadeTypes.add(facade.get())) {
                 throw new IllegalStateException(
