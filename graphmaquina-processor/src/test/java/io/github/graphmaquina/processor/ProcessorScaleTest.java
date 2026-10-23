@@ -73,17 +73,16 @@ class ProcessorScaleTest {
     }
 
     private static void machine(Map<String, String> sources, int i, int transitions) {
-        StringBuilder states = new StringBuilder("package scale;\npublic enum M" + i + "Status { ");
-        for (int s = 0; s < STATES; s++) {
-            states.append(s == 0 ? "" : ", ").append('S').append(s);
-        }
-        sources.put("scale.M" + i + "Status", states.append(" }\n").toString());
-        StringBuilder identifiers = new StringBuilder("package scale;\npublic enum M" + i + "Transition { ");
-        for (int t = 0; t < transitions; t++) {
-            identifiers.append(t == 0 ? "" : ", ").append('T').append(t);
-        }
-        sources.put("scale.M" + i + "Transition", identifiers.append(" }\n").toString());
-        sources.put("scale.E" + i, """
+        sources.put("scale.M" + i + "Status", EnumSources.numbered("scale", "M" + i + "Status", 'S', STATES));
+        sources.put("scale.M" + i + "Transition",
+                EnumSources.numbered("scale", "M" + i + "Transition", 'T', transitions));
+        sources.put("scale.E" + i, entity(i));
+        sources.put("scale.H" + i, host(i, transitions));
+        sources.put("scale.M" + i, facade(i, transitions));
+    }
+
+    private static String entity(int i) {
+        return """
                 package scale;
                 import io.github.graphmaquina.annotation.GraphProperty;
                 public final class E%1$d {
@@ -92,7 +91,10 @@ class ProcessorScaleTest {
                     public M%1$dStatus status() { return status; }
                     public void status(M%1$dStatus value) { status = value; }
                 }
-                """.formatted(i));
+                """.formatted(i);
+    }
+
+    private static String host(int i, int transitions) {
         StringBuilder host = new StringBuilder("""
                 package scale;
                 import io.github.graphmaquina.annotation.GraphAction;
@@ -105,7 +107,10 @@ class ProcessorScaleTest {
                     .append(", M").append(i).append("Status, M").append(i)
                     .append("Transition> context) { return ActionOutcome.ok(); }\n");
         }
-        sources.put("scale.H" + i, host.append("}\n").toString());
+        return host.append("}\n").toString();
+    }
+
+    private static String facade(int i, int transitions) {
         StringBuilder facade = new StringBuilder("""
                 package scale;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -128,6 +133,6 @@ class ProcessorScaleTest {
         }
         facade.append("public interface M").append(i).append(" extends Machine<E").append(i).append(", M")
                 .append(i).append("Status, M").append(i).append("Transition> {\n}\n");
-        sources.put("scale.M" + i, facade.toString());
+        return facade.toString();
     }
 }

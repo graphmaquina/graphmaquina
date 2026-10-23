@@ -53,14 +53,16 @@ class DeclaredCheckedExceptionTest {
                         throws IOException {
                     throw failure;
                 }
-                @GraphGuard public CompletionStage<GuardResult> reviewed(GuardContext<Doc, DocStatus, DocTransition> context)
+                @GraphGuard public CompletionStage<GuardResult> reviewed(GuardContext<Doc, DocStatus, DocTransition> \
+            context)
                         throws IOException {
                     throw failure;
                 }
                 @GraphHook public void notified(Doc doc) throws IOException {
                     throw failure;
                 }
-                @GraphHook public void recorded(Doc doc, CommitContext<DocStatus, DocTransition> commit) throws Throwable {
+                @GraphHook public void recorded(Doc doc, CommitContext<DocStatus, DocTransition> commit) \
+            throws Throwable {
                     throw failure;
                 }
             }
@@ -159,7 +161,8 @@ class DeclaredCheckedExceptionTest {
 
     @Test
     void anActionThatDeclaresACheckedExceptionTakesTheFailureRouteWhenFailsOnListsIt() throws Exception {
-        Map<String, String> sources = docs("", ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
+        Map<String, String> sources = docs("",
+                ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
                 + " onFailure = RETURN");
 
         assertEquals("failed by it, DRAFT", run(sources, """
@@ -168,7 +171,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     library.docs().submit(doc);
                     Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
-                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() == actions.failure
+                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() \
+                == actions.failure
                             ? "failed by it, " + doc.status() : String.valueOf(outcome);
                 }
                 """));
@@ -195,7 +199,8 @@ class DeclaredCheckedExceptionTest {
     /** Thrown by the method itself, before any stage exists, it is classified like a stage that failed with it. */
     @Test
     void anAsynchronousActionThatDeclaresACheckedExceptionTakesTheFailureRouteWhenFailsOnListsIt() throws Exception {
-        Map<String, String> sources = docs("", ", action = DocActionsRefs.Archive.class, failsOn = java.io.IOException.class,"
+        Map<String, String> sources = docs("",
+                ", action = DocActionsRefs.Archive.class, failsOn = java.io.IOException.class,"
                 + " onFailure = RETURN");
 
         assertEquals("failed by it, DRAFT", run(sources, """
@@ -204,7 +209,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     library.docs().submit(doc);
                     Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
-                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() == actions.failure
+                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() \
+                == actions.failure
                             ? "failed by it, " + doc.status() : String.valueOf(outcome);
                 }
                 """));
@@ -225,7 +231,8 @@ class DeclaredCheckedExceptionTest {
                     review.status(DocStatus.REVIEW);
                     for (Doc doc : List.of(draft, review)) {
                         try {
-                            ends.add("returned " + (doc == draft ? library.docs().submit(doc) : library.docs().publish(doc)));
+                            ends.add("returned " + (doc == draft ? library.docs().submit(doc) \
+                : library.docs().publish(doc)));
                         } catch (TransitionAbortedException aborted) {
                             ends.add(aborted(aborted, actions.failure) + ", " + doc.status());
                         }
@@ -252,7 +259,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     for (int call = 0; call < 2; call++) {
                         try {
-                            ends.add("returned " + (call == 0 ? library.docs().submit(doc) : library.docs().publish(doc)));
+                            ends.add("returned " + (call == 0 ? library.docs().submit(doc) \
+                : library.docs().publish(doc)));
                         } catch (AfterCommitException failed) {
                             ends.add(failed.hook() + (failed.getCause() == actions.failure ? " threw it, "
                                     : " threw " + failed.getCause() + ", ") + doc.status());
@@ -266,7 +274,8 @@ class DeclaredCheckedExceptionTest {
         String docs = result.generated("fx.DocsRuntime");
         assertTrue(docs.contains(".afterCommit(\"notified\", (doc) -> { try { docActions.notified(doc); }"
                 + " catch (Exception failure) { throw rethrow(failure); } })"), docs);
-        assertTrue(docs.contains(".afterCommitWith(\"recorded\", (doc, commit) -> { try { docActions.recorded(doc, commit); }"
+        assertTrue(docs.contains(".afterCommitWith(\"recorded\", (doc, commit) ->"
+                + " { try { docActions.recorded(doc, commit); }"
                 + " catch (Throwable failure) { throw rethrow(failure); } })"), docs);
     }
 
@@ -285,7 +294,8 @@ class DeclaredCheckedExceptionTest {
                 import java.util.Collection;
                 public final class DocActions {
                     public final IOException failure = new IOException("rules down");
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                     @GraphCondition public boolean ready(Doc doc, Collection<? extends Page> pages,
@@ -382,7 +392,8 @@ class DeclaredCheckedExceptionTest {
                         try {
                             ends.add(failing + ": returned " + library.docs().publish(doc));
                         } catch (CommitFailedException failed) {
-                            ends.add(failing + ": commit failed " + (failed.getCause() == doc.failure ? "by it" : "by " + failed.getCause()));
+                            ends.add(failing + ": commit failed " + (failed.getCause() == doc.failure ? "by it" \
+                : "by " + failed.getCause()));
                         } catch (TransitionAbortedException aborted) {
                             ends.add(failing + ": " + aborted(aborted, doc.failure));
                         } catch (Exception thrown) {
@@ -402,9 +413,11 @@ class DeclaredCheckedExceptionTest {
     void aMemberThatDeclaresOnlyUncheckedExceptionsIsCalledAsBefore() {
         Map<String, String> sources = TypedFixtures.minimal();
         sources.put("fx.DocActions", sources.get("fx.DocActions")
-                .replace("@GraphAction public ActionOutcome", "@GraphAction public <X extends RuntimeException> ActionOutcome")
+                .replace("@GraphAction public ActionOutcome",
+                        "@GraphAction public <X extends RuntimeException> ActionOutcome")
                 .replace("TransitionContext<Doc, DocStatus, DocTransition> context) {",
-                        "TransitionContext<Doc, DocStatus, DocTransition> context) throws IllegalStateException, AssertionError, X {"));
+                        "TransitionContext<Doc, DocStatus, DocTransition> context) throws IllegalStateException,"
+                        + " AssertionError, X {"));
         sources.put("fx.Doc", sources.get("fx.Doc").replace("public void status(DocStatus value) {",
                 "public void status(DocStatus value) throws java.io.UncheckedIOException {"));
         sources.put("fx.Library", LIBRARY);
@@ -427,7 +440,8 @@ class DeclaredCheckedExceptionTest {
      */
     @Test
     void aThrownTypeVariableBoundedByACheckedExceptionIsThrownOnLikeTheBound() throws Exception {
-        Map<String, String> sources = docs("", ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
+        Map<String, String> sources = docs("",
+                ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
                 + " onFailure = RETURN");
         sources.put("fx.DocActions", """
                 package fx;
@@ -450,7 +464,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     library.docs().submit(doc);
                     Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
-                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() == DocActions.FAILURE
+                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() \
+                == DocActions.FAILURE
                             ? "failed by it, " + doc.status() : String.valueOf(outcome);
                 }
                 """);
@@ -467,7 +482,8 @@ class DeclaredCheckedExceptionTest {
      */
     @Test
     void aThrownTypeVariableBoundedByAnIntersectionCountsAsTheClassAmongItsBounds() throws Exception {
-        Map<String, String> sources = docs(", action = DocActionsRefs.Submit.class", ", action = DocActionsRefs.Publish.class,"
+        Map<String, String> sources = docs(", action = DocActionsRefs.Submit.class",
+                ", action = DocActionsRefs.Publish.class,"
                 + " failsOn = java.io.IOException.class, onFailure = RETURN");
         sources.put("fx.DocActions", """
                 package fx;
@@ -500,7 +516,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     Outcome<Doc, DocStatus, DocTransition> submitted = library.docs().submit(doc);
                     Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
-                    return submitted instanceof Outcome.Applied<?, ?, ?> && outcome instanceof Outcome.Failed<?, ?, ?> failed
+                    return submitted instanceof Outcome.Applied<?, ?, ?> \
+                && outcome instanceof Outcome.Failed<?, ?, ?> failed
                             && failed.cause().orElseThrow() == DocActions.FAILURE
                             ? "failed by it, " + doc.status() : submitted + " then " + outcome;
                 }
@@ -522,7 +539,8 @@ class DeclaredCheckedExceptionTest {
     void theCatchParameterTakesANameNoOtherVariableInScopeHas() {
         Map<String, String> sources = docs("", ", action = FailureRefs.Publish.class");
         sources.remove("fx.DocActions");
-        sources.put("fx.Failure", THROWING_ACTIONS.replace("public final class DocActions {", "public final class Failure {"));
+        sources.put("fx.Failure", THROWING_ACTIONS.replace("public final class DocActions {",
+                "public final class Failure {"));
         sources.put("fx.Doc", sources.get("fx.Doc").replace("public void status(DocStatus value) {",
                 "public void status(DocStatus value) throws java.io.IOException {"));
 
@@ -540,9 +558,11 @@ class DeclaredCheckedExceptionTest {
      */
     @Test
     void theMethodThatThrowsOnTakesANameTheFacadeOrTheSetLeavesFree() throws Exception {
-        Map<String, String> sources = docs("", ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
+        Map<String, String> sources = docs("",
+                ", action = DocActionsRefs.Publish.class, failsOn = java.io.IOException.class,"
                 + " onFailure = RETURN");
-        sources.put("fx.Docs", sources.get("fx.Docs").replace("    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n",
+        sources.put("fx.Docs", sources.get("fx.Docs").replace(
+                "    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n",
                 "    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n"
                 + "    default String rethrow(Exception failure) { return \"facade\"; }\n"));
         sources.put("fx.Doc", sources.get("fx.Doc").replace("public void status(DocStatus value) {",
@@ -557,7 +577,8 @@ class DeclaredCheckedExceptionTest {
                     Doc doc = new Doc();
                     library.docs().submit(doc);
                     Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
-                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() == actions.failure
+                    return outcome instanceof Outcome.Failed<?, ?, ?> failed && failed.cause().orElseThrow() \
+                == actions.failure
                             ? "failed by it, " + doc.status() : String.valueOf(outcome);
                 }
                 """));

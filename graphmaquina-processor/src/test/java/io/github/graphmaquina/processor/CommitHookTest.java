@@ -20,6 +20,25 @@ class CommitHookTest {
 
     private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus, DocTransition> context";
 
+    /** Runs the machine through SUBMIT and PUBLISH and answers the calls the hook recorded. */
+    private static final String PROBE = """
+            package fx;
+            import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import java.time.Duration;
+            public final class Probe {
+                public static String run() {
+                    DocActions actions = new DocActions();
+                    StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(DocsRuntime.graph(actions))
+                            .state(Doc::status, Doc::status).asyncTimeout(Duration.ofSeconds(5)).build();
+                    Doc doc = new Doc();
+                    machine.execute(doc, DocTransition.SUBMIT);
+                    machine.execute(doc, DocTransition.PUBLISH);
+                    return actions.calls.toString();
+                }
+            }
+            """;
+
     @Test
     void generatedHooksReceiveEachCommittedTransitionAndItsGraphTerminality() throws Exception {
         Compilation.Result result = Compilation.compileTyped(fixture(CONTEXTUAL, """
@@ -42,10 +61,13 @@ class CommitHookTest {
 
     @Test
     void deliversTheContextAfterAnAsynchronousActionCommits() throws Exception {
-        Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to() + \":\" + context.kind() + \":\" + context.isTerminal());");
+        Map<String, String> sources = fixture(CONTEXTUAL,
+                "calls.add(context.to() + \":\" + context.kind() + \":\" + context.isTerminal());");
         sources.put("fx.DocActions", edit(sources.get("fx.DocActions"),
-                "public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) { return ActionOutcome.ok(); }",
-                "public java.util.concurrent.CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus, DocTransition> context) {"
+                "public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {"
+                        + " return ActionOutcome.ok(); }",
+                "public java.util.concurrent.CompletionStage<ActionOutcome> publish("
+                        + "TransitionContext<Doc, DocStatus, DocTransition> context) {"
                         + " return java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()); }"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
@@ -119,17 +141,20 @@ class CommitHookTest {
     void disambiguatesTheEntityAndContextLambdaParameterNames() throws Exception {
         Map<String, String> sources = new LinkedHashMap<>();
         fixture(CONTEXTUAL, "calls.add(context.to().name());")
-                .forEach((String name, String source) -> sources.put(name.replace("Doc", "Commit"), source.replace("Doc", "Commit")));
+                .forEach((String name, String source) ->
+                        sources.put(name.replace("Doc", "Commit"), source.replace("Doc", "Commit")));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
         String runtime = result.generated("fx.CommitsRuntime");
-        assertTrue(runtime.contains(".afterCommitWith(\"notified\", (commit, commit2) -> commitActions.notified(commit, commit2))"), runtime);
+        assertTrue(runtime.contains(".afterCommitWith(\"notified\", (commit, commit2) ->"
+                + " commitActions.notified(commit, commit2))"), runtime);
         assertEquals("[REVIEW, PUBLISHED]", run(result));
     }
 
     @Test
     void rejectsRawAndWildcardContextsAtBinding() {
-        for (String parameters : new String[] {"Doc doc, CommitContext context", "Doc doc, CommitContext<?, ?> context"}) {
+        for (String parameters : new String[] {"Doc doc, CommitContext context",
+                "Doc doc, CommitContext<?, ?> context"}) {
             Compilation.Result result = Compilation.compileTyped(fixture(parameters, ""));
             assertFalse(result.success(), result.describe());
             assertTrue(result.hasError("SG505"), result.describe());
@@ -165,9 +190,11 @@ class CommitHookTest {
                 @DocsGraph.StatePolicy(state = DRAFT, otherwise = "submit first")
                 @DocsGraph.StatePolicy(state = REVIEW, otherwise = "publish next")
                 """, """
-                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW, afterCommit = DocActionsRefs.Notified.class)
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW, \
+                afterCommit = DocActionsRefs.Notified.class)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         afterCommit = DocActionsRefs.Notified.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """);
@@ -182,27 +209,12 @@ class CommitHookTest {
                 import java.util.List;
                 public final class DocActions {
                     public final List<String> calls = new ArrayList<>();
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) { return ActionOutcome.ok(); }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) { return ActionOutcome.ok(); }
                     @GraphHook public void notified(%s) { %s }
                 }
                 """.formatted(parameters, body));
-        sources.put("fx.Probe", """
-                package fx;
-                import io.github.graphmaquina.api.StateMachine;
-                import io.github.graphmaquina.runtime.StateMachines;
-                import java.time.Duration;
-                public final class Probe {
-                    public static String run() {
-                        DocActions actions = new DocActions();
-                        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(DocsRuntime.graph(actions))
-                                .state(Doc::status, Doc::status).asyncTimeout(Duration.ofSeconds(5)).build();
-                        Doc doc = new Doc();
-                        machine.execute(doc, DocTransition.SUBMIT);
-                        machine.execute(doc, DocTransition.PUBLISH);
-                        return actions.calls.toString();
-                    }
-                }
-                """);
+        sources.put("fx.Probe", PROBE);
         return sources;
     }
 }

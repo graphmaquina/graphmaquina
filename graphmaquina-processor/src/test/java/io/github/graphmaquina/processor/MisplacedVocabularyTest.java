@@ -15,10 +15,24 @@ import org.junit.jupiter.api.Test;
  */
 class MisplacedVocabularyTest {
 
+    /** The facade of Orders, which declares no operation. */
+    private static final String ORDERS = """
+            package shop;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            @OrdersGraph.Definition(initial = OrderStatus.NEW, terminals = OrderStatus.PAID, \
+            state = OrderRefs.Status.class, id = OrderRefs.Id.class)
+            @OrdersGraph.StatePolicy(state = OrderStatus.NEW, otherwise = "a new order is paid")
+            public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
+            }
+            """;
+
     /** A default, static or private method is no operation: the edge declared on it would silently be missing. */
     @Test
     void sg504VocabularyOnADefaultStaticOrPrivateMethodOfTheFacade() {
-        Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY + """
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
+                Fixtures.DOCS_BODY + """
                     @DocsGraph.Transition(id = RETURN, from = PUBLISHED, to = REVIEW)
                     default Outcome<Doc, DocStatus, DocTransition> reopen(Doc doc) { return submit(doc); }
                     @DocsGraph.Transition(id = SUBMIT, from = ARCHIVED, to = DRAFT)
@@ -28,11 +42,14 @@ class MisplacedVocabularyTest {
                 """));
 
         assertEquals(3, result.countError("SG504"), result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("reopen") && error.contains("default")),
+        assertTrue(result.errors().stream().anyMatch(
+                (String error) -> error.contains("reopen") && error.contains("default")),
                 result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("revive") && error.contains("static")),
+        assertTrue(result.errors().stream().anyMatch(
+                (String error) -> error.contains("revive") && error.contains("static")),
                 result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("rush") && error.contains("private")),
+        assertTrue(result.errors().stream().anyMatch(
+                (String error) -> error.contains("rush") && error.contains("private")),
                 result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
@@ -46,7 +63,8 @@ class MisplacedVocabularyTest {
     void drawsNoConclusionFromAGraphThatMissesAMisplacedEdge() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
                 Fixtures.DOCS_BODY.replace("""
-                            @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
+                            @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, \
+                        action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
                             Outcome<Doc, DocStatus, DocTransition> archive(Doc doc);
                         """, """
                             @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED)
@@ -65,7 +83,8 @@ class MisplacedVocabularyTest {
     @Test
     void theMachineWhoseVocabularyIsOnAnotherFacadeDrawsNoConclusionFromItsGraph() {
         Compilation.Result result = Compilation.compileTyped(crossed("""
-                    @RefundsGraph.Transition(id = RefundTransition.CLOSE, from = RefundStatus.OPEN, to = RefundStatus.DONE)
+                    @RefundsGraph.Transition(id = RefundTransition.CLOSE, from = RefundStatus.OPEN, \
+                to = RefundStatus.DONE)
                     @OrdersGraph.Transition(id = OrderTransition.PAY, from = OrderStatus.NEW, to = OrderStatus.PAID)
                     Outcome<Refund, RefundStatus, RefundTransition> close(Refund refund);
                 """));
@@ -83,10 +102,12 @@ class MisplacedVocabularyTest {
     @Test
     void sg606ForAnotherMachinesVocabularyOnADefaultMethodPointsToThatMachine() {
         Compilation.Result result = Compilation.compileTyped(crossed("""
-                    @RefundsGraph.Transition(id = RefundTransition.CLOSE, from = RefundStatus.OPEN, to = RefundStatus.DONE)
+                    @RefundsGraph.Transition(id = RefundTransition.CLOSE, from = RefundStatus.OPEN, \
+                to = RefundStatus.DONE)
                     Outcome<Refund, RefundStatus, RefundTransition> close(Refund refund);
                     @OrdersGraph.Transition(id = OrderTransition.PAY, from = OrderStatus.NEW, to = OrderStatus.PAID)
-                    default Outcome<Refund, RefundStatus, RefundTransition> settle(Refund refund) { return close(refund); }
+                    default Outcome<Refund, RefundStatus, RefundTransition> settle(Refund refund) \
+                { return close(refund); }
                 """));
 
         assertEquals(1, result.countError("SG606"), result.describe());
@@ -123,23 +144,15 @@ class MisplacedVocabularyTest {
                     public void status(RefundStatus value) { status = value; }
                 }
                 """);
-        sources.put("shop.Orders", """
-                package shop;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                @GenerateGraphApi
-                @OrdersGraph.Definition(initial = OrderStatus.NEW, terminals = OrderStatus.PAID, state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @OrdersGraph.StatePolicy(state = OrderStatus.NEW, otherwise = "a new order is paid")
-                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
-                }
-                """);
+        sources.put("shop.Orders", ORDERS);
         sources.put("shop.Refunds", """
                 package shop;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 @GenerateGraphApi
-                @RefundsGraph.Definition(initial = RefundStatus.OPEN, terminals = RefundStatus.DONE, state = RefundRefs.Status.class, id = RefundRefs.Id.class)
+                @RefundsGraph.Definition(initial = RefundStatus.OPEN, terminals = RefundStatus.DONE, \
+                state = RefundRefs.Status.class, id = RefundRefs.Id.class)
                 @RefundsGraph.StatePolicy(state = RefundStatus.OPEN, otherwise = "an open refund is closed")
                 public interface Refunds extends Machine<Refund, RefundStatus, RefundTransition> {
                 %s}
@@ -177,7 +190,8 @@ class MisplacedVocabularyTest {
                 && error.contains("Transitions")), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocService")
                 && error.contains("Reject")), result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.Docs.Nested")), result.describe());
+        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.Docs.Nested")),
+                result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 }

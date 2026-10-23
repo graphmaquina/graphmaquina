@@ -19,6 +19,235 @@ import org.junit.jupiter.api.Test;
  */
 class SubmachineGenerationTest {
 
+    /** The entity {@code Payment} of the billing fixture. */
+    private static final String PAYMENT = """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphProperty;
+            import java.util.Optional;
+            /** Payment of the billing fixture. */
+            public final class Payment {
+                private final String id;
+                @GraphProperty private PaymentStatus status = PaymentStatus.PENDING;
+                private Optional<Order> order = Optional.empty();
+                public Payment(String id) { this.id = id; }
+                @GraphProperty public String id() { return id; }
+                public PaymentStatus status() { return status; }
+                public void status(PaymentStatus value) { status = value; }
+                @GraphProperty public Optional<Order> order() { return order; }
+                void attach(Order value) { order = Optional.of(value); }
+            }
+            """;
+
+    /** The entity {@code Booking}, whose payments are its deposit and its balance. */
+    private static final String BOOKING = """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphProperty;
+            import java.util.Optional;
+            /** Booking of the billing fixture. */
+            public final class Booking {
+                private final String id;
+                @GraphProperty private BookingStatus status = BookingStatus.REQUESTED;
+                private final Payment deposit;
+                private final Payment balance;
+                public Booking(String id, Payment deposit, Payment balance) {
+                    this.id = id;
+                    this.deposit = deposit;
+                    this.balance = balance;
+                }
+                @GraphProperty public String id() { return id; }
+                public BookingStatus status() { return status; }
+                public void status(BookingStatus value) { status = value; }
+                @GraphProperty public Optional<Payment> deposit() { return Optional.of(deposit); }
+                @GraphProperty public Optional<Payment> balance() { return Optional.of(balance); }
+            }
+            """;
+
+    /** The entity {@code Order}, which owns a payment and a review. */
+    private static final String ORDER = """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphProperty;
+            import java.util.Optional;
+            /** Order of the billing fixture. */
+            public final class Order {
+                private final String id;
+                @GraphProperty private OrderStatus status = OrderStatus.NEW;
+                @GraphProperty private ReviewStatus review = ReviewStatus.PENDING;
+                private final Payment payment;
+                public Order(String id, Payment payment) {
+                    this.id = id;
+                    this.payment = payment;
+                    payment.attach(this);
+                }
+                @GraphProperty public String id() { return id; }
+                public OrderStatus status() { return status; }
+                public void status(OrderStatus value) { status = value; }
+                public ReviewStatus review() { return review; }
+                public void review(ReviewStatus value) { review = value; }
+                @GraphProperty public Optional<Payment> payment() { return Optional.of(payment); }
+            }
+            """;
+
+    /** The static lookup of the booking of a deposit. */
+    private static final String BOOKING_LOOKUPS = """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphLookup;
+            import java.util.HashMap;
+            import java.util.Map;
+            import java.util.Optional;
+            /** BookingLookups of the billing fixture. */
+            public final class BookingLookups {
+                private static final Map<String, Booking> DEPOSITS = new HashMap<>();
+                public static void register(Booking booking) {
+                    DEPOSITS.put(booking.deposit().orElseThrow().id(), booking);
+                }
+                @GraphLookup public static Optional<Booking> depositOf(Payment payment) {
+                    return Optional.ofNullable(DEPOSITS.get(payment.id()));
+                }
+            }
+            """;
+
+    /** The instance lookup of the booking of a balance. */
+    private static final String LEDGER = """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphLookup;
+            import java.util.HashMap;
+            import java.util.Map;
+            import java.util.Optional;
+            /** Ledger of the billing fixture. */
+            public final class Ledger {
+                private final Map<String, Booking> balances = new HashMap<>();
+                public void register(Booking booking) {
+                    balances.put(booking.balance().orElseThrow().id(), booking);
+                }
+                @GraphLookup public Optional<Booking> balanceOf(Payment payment) {
+                    return Optional.ofNullable(balances.get(payment.id()));
+                }
+            }
+            """;
+
+    /** The machine of the payments, the child of two parents. */
+    private static final String PAYMENTS = """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.Outcome;
+            import static fx.PaymentStatus.*;
+            import static fx.PaymentTransition.*;
+            /** Machine of the billing fixture. */
+            @GenerateGraphApi
+            @PaymentsGraph.Definition(initial = PENDING, terminals = {CAPTURED, DECLINED},
+                state = PaymentRefs.Status.class, id = PaymentRefs.Id.class)
+            @PaymentsGraph.StatePolicy(state = PENDING, otherwise = "a payment is captured or declined")
+            public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransition> {
+                @PaymentsGraph.Transition(id = CAPTURE, from = PENDING, to = CAPTURED)
+                Outcome<Payment, PaymentStatus, PaymentTransition> capture(Payment payment);
+                @PaymentsGraph.Transition(id = DECLINE, from = PENDING, to = DECLINED)
+                Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);
+            }
+            """;
+
+    /** The machine of the bookings: two states bind the payments. */
+    private static final String BOOKINGS = """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.annotation.GraphPeers;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.Outcome;
+            import static fx.BookingStatus.*;
+            import static fx.BookingTransition.*;
+            /** Machine of the billing fixture. */
+            @GenerateGraphApi
+            @GraphPeers(Payments.class)
+            @BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
+                state = BookingRefs.Status.class, id = BookingRefs.Id.class)
+            @BookingsGraph.StatePolicy(state = REQUESTED, otherwise = "a booking is requested first")
+            @BookingsGraph.StatePolicy(state = DEPOSIT, otherwise = "the deposit decides")
+            @BookingsGraph.StatePolicy(state = BALANCE, otherwise = "the balance decides")
+            @BookingsGraph.Transition(id = DEPOSIT_PAID, from = DEPOSIT, to = BALANCE)
+            @BookingsGraph.Transition(id = BALANCE_PAID, from = BALANCE, to = CONFIRMED)
+            @BookingsGraph.Transition(id = DECLINE, from = {DEPOSIT, BALANCE}, to = CANCELLED)
+            @BookingsPayments.Submachine(state = DEPOSIT, child = BookingRefs.Deposit.class,
+                parentLookup = BookingLookupsRefs.DepositOf.class,
+                exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = DEPOSIT_PAID),
+                         @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
+            @BookingsPayments.Submachine(state = BALANCE, child = BookingRefs.Balance.class,
+                parentLookup = LedgerRefs.BalanceOf.class,
+                exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BALANCE_PAID),
+                         @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
+            public interface Bookings extends Machine<Booking, BookingStatus, BookingTransition> {
+                @BookingsGraph.Transition(id = BOOK, from = REQUESTED, to = DEPOSIT)
+                Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
+                @BookingsGraph.Transition(id = CANCEL, from = {DEPOSIT, BALANCE}, to = CANCELLED)
+                Outcome<Booking, BookingStatus, BookingTransition> cancel(Booking booking);
+            }
+            """;
+
+    /** The machine of the reviews, a child of the orders. */
+    private static final String REVIEWS = """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.Outcome;
+            import static fx.ReviewStatus.*;
+            import static fx.ReviewTransition.*;
+            /** Machine of the billing fixture. */
+            @GenerateGraphApi
+            @ReviewsGraph.Definition(initial = PENDING, terminals = APPROVED,
+                state = OrderRefs.Review.class, id = OrderRefs.Id.class)
+            @ReviewsGraph.StatePolicy(state = PENDING, otherwise = "an order is approved")
+            public interface Reviews extends Machine<Order, ReviewStatus, ReviewTransition> {
+                @ReviewsGraph.Transition(id = APPROVE, from = PENDING, to = APPROVED)
+                Outcome<Order, ReviewStatus, ReviewTransition> approve(Order order);
+            }
+            """;
+
+    /** The machine of the orders: a review, then a payment. */
+    private static final String ORDERS = """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.annotation.GraphPeers;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.Outcome;
+            import static fx.OrderStatus.*;
+            import static fx.OrderTransition.*;
+            /** Machine of the billing fixture. */
+            @GenerateGraphApi
+            @GraphPeers({Reviews.class, Payments.class})
+            @OrdersGraph.Definition(initial = NEW, terminals = {SETTLED, UNPAID},
+                state = OrderRefs.Status.class, id = OrderRefs.Id.class)
+            @OrdersGraph.StatePolicy(state = NEW, otherwise = "an order is submitted first")
+            @OrdersGraph.StatePolicy(state = REVIEW, otherwise = "the review decides")
+            @OrdersGraph.StatePolicy(state = PAYING, otherwise = "the payment decides")
+            @OrdersGraph.Transition(id = ACCEPT, from = REVIEW, to = PAYING)
+            @OrdersGraph.Transition(id = SETTLE, from = PAYING, to = SETTLED)
+            @OrdersGraph.Transition(id = FAIL, from = PAYING, to = UNPAID)
+            @OrdersReviews.Submachine(state = REVIEW,
+                exits = @OrdersReviews.Exit(on = ReviewStatus.APPROVED, transition = ACCEPT))
+            @OrdersPayments.Submachine(state = PAYING, child = OrderRefs.Payment.class,
+                parent = PaymentRefs.Order.class,
+                exits = {@OrdersPayments.Exit(on = PaymentStatus.CAPTURED, transition = SETTLE),
+                         @OrdersPayments.Exit(on = PaymentStatus.DECLINED, transition = FAIL)})
+            public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
+                @OrdersGraph.Transition(id = SUBMIT, from = NEW, to = REVIEW)
+                Outcome<Order, OrderStatus, OrderTransition> submit(Order order);
+            }
+            """;
+
+    /** The set that holds the four machines, the children after their parents. */
+    private static final String BILLING = """
+            package fx;
+            import io.github.graphmaquina.annotation.StateGraphs;
+            import io.github.graphmaquina.api.Machines;
+            /** Generated set of the billing fixture. */
+            @StateGraphs
+            public interface Billing extends Machines {
+                Bookings bookings();
+                Orders orders();
+                Payments payments();
+                Reviews reviews();
+            }
+            """;
+
     @Test
     void theParentsCompanionTakesEachChildsDefinitionAndBindsIt() {
         Compilation.Result result = Compilation.compileTyped(billing());
@@ -29,8 +258,9 @@ class SubmachineGenerationTest {
         assertTrue(bookings.contains("/**" + comment + "The definition, built from the annotations of {@link Bookings}."
                 + " One parameter per machine it binds" + comment + "as a sub-machine, which takes its definition, then"
                 + " one per class with instance members.\n" + " ".repeat(5) + "*" + comment + "@param paymentsGraph the"
-                + " definition of {@code fx.Payments}, which the graph binds as a sub-machine" + comment + "@param ledger"
-                + " the {@code fx.Ledger} whose instance members the graph calls" + comment + "@return the definition\n"
+                + " definition of {@code fx.Payments}, which the graph binds as a sub-machine" + comment
+                + "@param ledger the {@code fx.Ledger} whose instance members the graph calls" + comment
+                + "@return the definition\n"
                 + " ".repeat(5) + "*/\n"), bookings);
         assertTrue(bookings.contains("public static GraphDefinition<Booking, BookingStatus, BookingTransition> graph("
                 + "GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph, Ledger ledger)"),
@@ -449,15 +679,41 @@ class SubmachineGenerationTest {
     /** A synchronous root and starter that can reach the intermediate child's asynchronous initial-descendant exit. */
     private static Map<String, String> initialDescendants(boolean terminal) {
         Map<String, String> sources = new LinkedHashMap<>();
+        putDescendantEnums(sources);
+        putDescendantEntityAndHost(sources);
+        putDescendantParents(sources);
+        putFiniteDescendants(sources, terminal);
+        sources.put("fx.Flows", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                /** Set deliberately declaring parents before children. */
+                @StateGraphs
+                public interface Flows extends Machines {
+                    Root root();
+                    Mid mid();
+                    Leaf leaf();
+                    Starter starter();
+                }
+                """);
+        return sources;
+    }
+
+    /** The states and the identifiers of the four machines of {@link #initialDescendants}. */
+    private static void putDescendantEnums(Map<String, String> sources) {
         for (String machine : List.of("Root", "Mid", "Leaf", "Starter")) {
             String states = machine.equals("Root") ? "OPEN, BOUND, DONE"
                     : machine.equals("Mid") ? "WAIT, DONE" : "OPEN, DONE";
             String ids = machine.equals("Root") ? "ENTER, ACCEPT, FINISH" : "FINISH";
-            sources.put("fx." + machine + "State", "package fx;\n/** States of the descendant fixture. */\npublic enum "
-                    + machine + "State { " + states + " }\n");
-            sources.put("fx." + machine + "Id", "package fx;\n/** Identifiers of the descendant fixture. */\npublic enum "
-                    + machine + "Id { " + ids + " }\n");
+            sources.put("fx." + machine + "State", "package fx;\n/** States of the descendant fixture. */\n"
+                    + "public enum " + machine + "State { " + states + " }\n");
+            sources.put("fx." + machine + "Id", "package fx;\n/** Identifiers of the descendant fixture. */\n"
+                    + "public enum " + machine + "Id { " + ids + " }\n");
         }
+    }
+
+    /** The entity the four machines share, and the host whose action stays unresolved. */
+    private static void putDescendantEntityAndHost(Map<String, String> sources) {
         sources.put("fx.Flow", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -495,6 +751,10 @@ class SubmachineGenerationTest {
                     }
                 }
                 """);
+    }
+
+    /** The root, which starts the intermediate child, and the intermediate child, which starts the leaf. */
+    private static void putDescendantParents(Map<String, String> sources) {
         sources.put("fx.Root", """
                 package fx;
                 import io.github.graphmaquina.annotation.*;
@@ -536,6 +796,10 @@ class SubmachineGenerationTest {
                     exits = @MidLeaf.Exit(on = LeafState.DONE, transition = FINISH))
                 public interface Mid extends Machine<Flow, MidState, MidId> { }
                 """);
+    }
+
+    /** The leaf and the starter, children that finish at once; with {@code terminal} the leaf begins finished. */
+    private static void putFiniteDescendants(Map<String, String> sources, boolean terminal) {
         for (String machine : List.of("Leaf", "Starter")) {
             String initial = machine.equals("Leaf") && terminal ? "DONE" : "OPEN";
             sources.put("fx." + machine, """
@@ -564,25 +828,49 @@ class SubmachineGenerationTest {
                     .replace("    @LeafGraph.Transition(id = FINISH, from = OPEN, to = DONE)\n"
                             + "    Outcome<Flow, LeafState, LeafId> finish(Flow entity);\n", ""));
         }
-        sources.put("fx.Flows", """
-                package fx;
-                import io.github.graphmaquina.annotation.StateGraphs;
-                import io.github.graphmaquina.api.Machines;
-                /** Set deliberately declaring parents before children. */
-                @StateGraphs
-                public interface Flows extends Machines {
-                    Root root();
-                    Mid mid();
-                    Leaf leaf();
-                    Starter starter();
-                }
-                """);
-        return sources;
     }
 
     /** Two distinct qualified parents have equal simple entity/state/id names but distinct exit semantics. */
     private static Map<String, String> qualifiedParents() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putSharedChild(sources);
+        for (String pkg : List.of("a", "b")) {
+            putParentDomain(sources, pkg);
+            putParentMachine(sources, pkg);
+        }
+        sources.put("fx.Actions", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.*;
+                import java.util.concurrent.*;
+                /** Completed asynchronous exit of only the second qualified parent. */
+                public final class Actions {
+                    public int calls;
+                    @GraphAction public CompletionStage<ActionOutcome> finish(
+                            TransitionContext<fx.b.Entity, fx.b.State, fx.b.Id> context) {
+                        calls++;
+                        return CompletableFuture.completedFuture(ActionOutcome.ok());
+                    }
+                }
+                """);
+        sources.put("fx.Flows", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                /** Set whose first equal-label exit is synchronous and second is asynchronous. */
+                @StateGraphs
+                public interface Flows extends Machines {
+                    fx.a.Parents first();
+                    fx.b.Parents second();
+                    Children children();
+                }
+                """);
+        putQualifiedScenario(sources);
+        return sources;
+    }
+
+    /** The synchronous child both qualified parents share, and its entity. */
+    private static void putSharedChild(Map<String, String> sources) {
         sources.put("fx.ChildState", "package fx;\n/** Child states. */\npublic enum ChildState { OPEN, DONE }\n");
         sources.put("fx.ChildId", "package fx;\n/** Child identifiers. */\npublic enum ChildId { FINISH }\n");
         sources.put("fx.Child", """
@@ -615,82 +903,65 @@ class SubmachineGenerationTest {
                     Outcome<Child, ChildState, ChildId> finish(Child child);
                 }
                 """);
-        for (String pkg : List.of("a", "b")) {
-            sources.put("fx." + pkg + ".State", "package fx." + pkg
-                    + ";\n/** Parent states with equal simple names. */\npublic enum State { BOUND, DONE }\n");
-            sources.put("fx." + pkg + ".Id", "package fx." + pkg
-                    + ";\n/** Parent identifiers with equal simple names. */\npublic enum Id { FINISH }\n");
-            sources.put("fx." + pkg + ".Entity", """
-                    package fx.%s;
-                    import io.github.graphmaquina.annotation.GraphProperty;
-                    import java.util.Optional;
-                    /** Parent entity with the same simple name in each package. */
-                    public final class Entity {
-                        @GraphProperty private State state = State.BOUND;
-                        private final fx.Child child;
-                        public Entity(fx.Child child) { this.child = child; }
-                        @GraphProperty public String id() { return "parent"; }
-                        public State state() { return state; }
-                        public void state(State value) { state = value; }
-                        @GraphProperty public Optional<fx.Child> child() { return Optional.of(child); }
-                    }
-                    """.formatted(pkg));
-            sources.put("fx." + pkg + ".Lookups", """
-                    package fx.%s;
-                    import io.github.graphmaquina.annotation.GraphLookup;
-                    import java.util.Optional;
-                    /** Qualified inverse lookup for one parent's binding. */
-                    public final class Lookups {
-                        @GraphLookup public static Optional<Entity> parent(fx.Child child) { return child.%s; }
-                    }
-                    """.formatted(pkg, pkg.equals("a") ? "first" : "second"));
-            sources.put("fx." + pkg + ".Parents", """
-                    package fx.%s;
-                    import fx.Children;
-                    import io.github.graphmaquina.annotation.*;
-                    import io.github.graphmaquina.api.*;
-                    import static fx.%s.State.*;
-                    import static fx.%s.Id.*;
-                    /** Qualified parent whose shared label must not define semantic edge identity. */
-                    @GenerateGraphApi
-                    @GraphPeers(Children.class)
-                    @ParentsGraph.Definition(initial = BOUND, terminals = DONE, state = EntityRefs.State.class,
-                        id = EntityRefs.Id.class)
-                    @ParentsGraph.StatePolicy(state = BOUND, otherwise = "the child decides")
-                    @ParentsGraph.Transition(id = FINISH, from = BOUND, to = DONE%s)
-                    @ParentsChildren.Submachine(state = BOUND, child = EntityRefs.Child.class,
-                        parentLookup = LookupsRefs.Parent.class,
-                        exits = @ParentsChildren.Exit(on = fx.ChildState.DONE, transition = FINISH))
-                    public interface Parents extends Machine<Entity, State, Id> { }
-                    """.formatted(pkg, pkg, pkg, pkg.equals("b") ? ", action = fx.ActionsRefs.Finish.class" : ""));
-        }
-        sources.put("fx.Actions", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphAction;
+    }
+
+    /** The states, the identifiers, the entity and the lookup of the parent in package {@code fx.<pkg>}. */
+    private static void putParentDomain(Map<String, String> sources, String pkg) {
+        sources.put("fx." + pkg + ".State", "package fx." + pkg
+                + ";\n/** Parent states with equal simple names. */\npublic enum State { BOUND, DONE }\n");
+        sources.put("fx." + pkg + ".Id", "package fx." + pkg
+                + ";\n/** Parent identifiers with equal simple names. */\npublic enum Id { FINISH }\n");
+        sources.put("fx." + pkg + ".Entity", """
+                package fx.%s;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                import java.util.Optional;
+                /** Parent entity with the same simple name in each package. */
+                public final class Entity {
+                    @GraphProperty private State state = State.BOUND;
+                    private final fx.Child child;
+                    public Entity(fx.Child child) { this.child = child; }
+                    @GraphProperty public String id() { return "parent"; }
+                    public State state() { return state; }
+                    public void state(State value) { state = value; }
+                    @GraphProperty public Optional<fx.Child> child() { return Optional.of(child); }
+                }
+                """.formatted(pkg));
+        sources.put("fx." + pkg + ".Lookups", """
+                package fx.%s;
+                import io.github.graphmaquina.annotation.GraphLookup;
+                import java.util.Optional;
+                /** Qualified inverse lookup for one parent's binding. */
+                public final class Lookups {
+                    @GraphLookup public static Optional<Entity> parent(fx.Child child) { return child.%s; }
+                }
+                """.formatted(pkg, pkg.equals("a") ? "first" : "second"));
+    }
+
+    /** The machine of the parent in package {@code fx.<pkg>}, the second of which runs an asynchronous exit. */
+    private static void putParentMachine(Map<String, String> sources, String pkg) {
+        sources.put("fx." + pkg + ".Parents", """
+                package fx.%s;
+                import fx.Children;
+                import io.github.graphmaquina.annotation.*;
                 import io.github.graphmaquina.api.*;
-                import java.util.concurrent.*;
-                /** Completed asynchronous exit of only the second qualified parent. */
-                public final class Actions {
-                    public int calls;
-                    @GraphAction public CompletionStage<ActionOutcome> finish(
-                            TransitionContext<fx.b.Entity, fx.b.State, fx.b.Id> context) {
-                        calls++;
-                        return CompletableFuture.completedFuture(ActionOutcome.ok());
-                    }
-                }
-                """);
-        sources.put("fx.Flows", """
-                package fx;
-                import io.github.graphmaquina.annotation.StateGraphs;
-                import io.github.graphmaquina.api.Machines;
-                /** Set whose first equal-label exit is synchronous and second is asynchronous. */
-                @StateGraphs
-                public interface Flows extends Machines {
-                    fx.a.Parents first();
-                    fx.b.Parents second();
-                    Children children();
-                }
-                """);
+                import static fx.%s.State.*;
+                import static fx.%s.Id.*;
+                /** Qualified parent whose shared label must not define semantic edge identity. */
+                @GenerateGraphApi
+                @GraphPeers(Children.class)
+                @ParentsGraph.Definition(initial = BOUND, terminals = DONE, state = EntityRefs.State.class,
+                    id = EntityRefs.Id.class)
+                @ParentsGraph.StatePolicy(state = BOUND, otherwise = "the child decides")
+                @ParentsGraph.Transition(id = FINISH, from = BOUND, to = DONE%s)
+                @ParentsChildren.Submachine(state = BOUND, child = EntityRefs.Child.class,
+                    parentLookup = LookupsRefs.Parent.class,
+                    exits = @ParentsChildren.Exit(on = fx.ChildState.DONE, transition = FINISH))
+                public interface Parents extends Machine<Entity, State, Id> { }
+                """.formatted(pkg, pkg, pkg, pkg.equals("b") ? ", action = fx.ActionsRefs.Finish.class" : ""));
+    }
+
+    /** The scenario that runs the second parent's asynchronous exit through its synchronous child. */
+    private static void putQualifiedScenario(Map<String, String> sources) {
         sources.put("fx.Scenario", """
                 package fx;
                 import io.github.graphmaquina.api.*;
@@ -716,7 +987,6 @@ class SubmachineGenerationTest {
                     }
                 }
                 """);
-        return sources;
     }
 
     /**
@@ -800,227 +1070,32 @@ class SubmachineGenerationTest {
      */
     static Map<String, String> billing() {
         Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("fx.PaymentStatus", "package fx;\n/** PaymentStatus of the billing fixture. */\npublic enum PaymentStatus { PENDING, CAPTURED, DECLINED }\n");
-        sources.put("fx.PaymentTransition", "package fx;\n/** PaymentTransition of the billing fixture. */\npublic enum PaymentTransition { CAPTURE, DECLINE }\n");
-        sources.put("fx.BookingStatus",
-                "package fx;\n/** BookingStatus of the billing fixture. */\npublic enum BookingStatus { REQUESTED, DEPOSIT, BALANCE, CONFIRMED, CANCELLED }\n");
-        sources.put("fx.BookingTransition",
-                "package fx;\n/** BookingTransition of the billing fixture. */\npublic enum BookingTransition { BOOK, DEPOSIT_PAID, BALANCE_PAID, DECLINE, CANCEL }\n");
-        sources.put("fx.OrderStatus",
-                "package fx;\n/** OrderStatus of the billing fixture. */\npublic enum OrderStatus { NEW, REVIEW, PAYING, SETTLED, UNPAID }\n");
-        sources.put("fx.OrderTransition",
-                "package fx;\n/** OrderTransition of the billing fixture. */\npublic enum OrderTransition { SUBMIT, ACCEPT, SETTLE, FAIL }\n");
-        sources.put("fx.ReviewStatus", "package fx;\n/** ReviewStatus of the billing fixture. */\npublic enum ReviewStatus { PENDING, APPROVED }\n");
-        sources.put("fx.ReviewTransition", "package fx;\n/** ReviewTransition of the billing fixture. */\npublic enum ReviewTransition { APPROVE }\n");
-        sources.put("fx.Payment", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                import java.util.Optional;
-                /** Payment of the billing fixture. */
-                public final class Payment {
-                    private final String id;
-                    @GraphProperty private PaymentStatus status = PaymentStatus.PENDING;
-                    private Optional<Order> order = Optional.empty();
-                    public Payment(String id) { this.id = id; }
-                    @GraphProperty public String id() { return id; }
-                    public PaymentStatus status() { return status; }
-                    public void status(PaymentStatus value) { status = value; }
-                    @GraphProperty public Optional<Order> order() { return order; }
-                    void attach(Order value) { order = Optional.of(value); }
-                }
-                """);
-        sources.put("fx.Booking", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                import java.util.Optional;
-                /** Booking of the billing fixture. */
-                public final class Booking {
-                    private final String id;
-                    @GraphProperty private BookingStatus status = BookingStatus.REQUESTED;
-                    private final Payment deposit;
-                    private final Payment balance;
-                    public Booking(String id, Payment deposit, Payment balance) {
-                        this.id = id;
-                        this.deposit = deposit;
-                        this.balance = balance;
-                    }
-                    @GraphProperty public String id() { return id; }
-                    public BookingStatus status() { return status; }
-                    public void status(BookingStatus value) { status = value; }
-                    @GraphProperty public Optional<Payment> deposit() { return Optional.of(deposit); }
-                    @GraphProperty public Optional<Payment> balance() { return Optional.of(balance); }
-                }
-                """);
-        sources.put("fx.Order", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                import java.util.Optional;
-                /** Order of the billing fixture. */
-                public final class Order {
-                    private final String id;
-                    @GraphProperty private OrderStatus status = OrderStatus.NEW;
-                    @GraphProperty private ReviewStatus review = ReviewStatus.PENDING;
-                    private final Payment payment;
-                    public Order(String id, Payment payment) {
-                        this.id = id;
-                        this.payment = payment;
-                        payment.attach(this);
-                    }
-                    @GraphProperty public String id() { return id; }
-                    public OrderStatus status() { return status; }
-                    public void status(OrderStatus value) { status = value; }
-                    public ReviewStatus review() { return review; }
-                    public void review(ReviewStatus value) { review = value; }
-                    @GraphProperty public Optional<Payment> payment() { return Optional.of(payment); }
-                }
-                """);
-        sources.put("fx.BookingLookups", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphLookup;
-                import java.util.HashMap;
-                import java.util.Map;
-                import java.util.Optional;
-                /** BookingLookups of the billing fixture. */
-                public final class BookingLookups {
-                    private static final Map<String, Booking> DEPOSITS = new HashMap<>();
-                    public static void register(Booking booking) {
-                        DEPOSITS.put(booking.deposit().orElseThrow().id(), booking);
-                    }
-                    @GraphLookup public static Optional<Booking> depositOf(Payment payment) {
-                        return Optional.ofNullable(DEPOSITS.get(payment.id()));
-                    }
-                }
-                """);
-        sources.put("fx.Ledger", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphLookup;
-                import java.util.HashMap;
-                import java.util.Map;
-                import java.util.Optional;
-                /** Ledger of the billing fixture. */
-                public final class Ledger {
-                    private final Map<String, Booking> balances = new HashMap<>();
-                    public void register(Booking booking) {
-                        balances.put(booking.balance().orElseThrow().id(), booking);
-                    }
-                    @GraphLookup public Optional<Booking> balanceOf(Payment payment) {
-                        return Optional.ofNullable(balances.get(payment.id()));
-                    }
-                }
-                """);
-        sources.put("fx.Payments", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.PaymentStatus.*;
-                import static fx.PaymentTransition.*;
-                /** Machine of the billing fixture. */
-                @GenerateGraphApi
-                @PaymentsGraph.Definition(initial = PENDING, terminals = {CAPTURED, DECLINED},
-                    state = PaymentRefs.Status.class, id = PaymentRefs.Id.class)
-                @PaymentsGraph.StatePolicy(state = PENDING, otherwise = "a payment is captured or declined")
-                public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransition> {
-                    @PaymentsGraph.Transition(id = CAPTURE, from = PENDING, to = CAPTURED)
-                    Outcome<Payment, PaymentStatus, PaymentTransition> capture(Payment payment);
-                    @PaymentsGraph.Transition(id = DECLINE, from = PENDING, to = DECLINED)
-                    Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);
-                }
-                """);
-        sources.put("fx.Bookings", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.annotation.GraphPeers;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.BookingStatus.*;
-                import static fx.BookingTransition.*;
-                /** Machine of the billing fixture. */
-                @GenerateGraphApi
-                @GraphPeers(Payments.class)
-                @BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
-                    state = BookingRefs.Status.class, id = BookingRefs.Id.class)
-                @BookingsGraph.StatePolicy(state = REQUESTED, otherwise = "a booking is requested first")
-                @BookingsGraph.StatePolicy(state = DEPOSIT, otherwise = "the deposit decides")
-                @BookingsGraph.StatePolicy(state = BALANCE, otherwise = "the balance decides")
-                @BookingsGraph.Transition(id = DEPOSIT_PAID, from = DEPOSIT, to = BALANCE)
-                @BookingsGraph.Transition(id = BALANCE_PAID, from = BALANCE, to = CONFIRMED)
-                @BookingsGraph.Transition(id = DECLINE, from = {DEPOSIT, BALANCE}, to = CANCELLED)
-                @BookingsPayments.Submachine(state = DEPOSIT, child = BookingRefs.Deposit.class,
-                    parentLookup = BookingLookupsRefs.DepositOf.class,
-                    exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = DEPOSIT_PAID),
-                             @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
-                @BookingsPayments.Submachine(state = BALANCE, child = BookingRefs.Balance.class,
-                    parentLookup = LedgerRefs.BalanceOf.class,
-                    exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BALANCE_PAID),
-                             @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
-                public interface Bookings extends Machine<Booking, BookingStatus, BookingTransition> {
-                    @BookingsGraph.Transition(id = BOOK, from = REQUESTED, to = DEPOSIT)
-                    Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
-                    @BookingsGraph.Transition(id = CANCEL, from = {DEPOSIT, BALANCE}, to = CANCELLED)
-                    Outcome<Booking, BookingStatus, BookingTransition> cancel(Booking booking);
-                }
-                """);
-        sources.put("fx.Reviews", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.ReviewStatus.*;
-                import static fx.ReviewTransition.*;
-                /** Machine of the billing fixture. */
-                @GenerateGraphApi
-                @ReviewsGraph.Definition(initial = PENDING, terminals = APPROVED,
-                    state = OrderRefs.Review.class, id = OrderRefs.Id.class)
-                @ReviewsGraph.StatePolicy(state = PENDING, otherwise = "an order is approved")
-                public interface Reviews extends Machine<Order, ReviewStatus, ReviewTransition> {
-                    @ReviewsGraph.Transition(id = APPROVE, from = PENDING, to = APPROVED)
-                    Outcome<Order, ReviewStatus, ReviewTransition> approve(Order order);
-                }
-                """);
-        sources.put("fx.Orders", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.annotation.GraphPeers;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.OrderStatus.*;
-                import static fx.OrderTransition.*;
-                /** Machine of the billing fixture. */
-                @GenerateGraphApi
-                @GraphPeers({Reviews.class, Payments.class})
-                @OrdersGraph.Definition(initial = NEW, terminals = {SETTLED, UNPAID},
-                    state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @OrdersGraph.StatePolicy(state = NEW, otherwise = "an order is submitted first")
-                @OrdersGraph.StatePolicy(state = REVIEW, otherwise = "the review decides")
-                @OrdersGraph.StatePolicy(state = PAYING, otherwise = "the payment decides")
-                @OrdersGraph.Transition(id = ACCEPT, from = REVIEW, to = PAYING)
-                @OrdersGraph.Transition(id = SETTLE, from = PAYING, to = SETTLED)
-                @OrdersGraph.Transition(id = FAIL, from = PAYING, to = UNPAID)
-                @OrdersReviews.Submachine(state = REVIEW,
-                    exits = @OrdersReviews.Exit(on = ReviewStatus.APPROVED, transition = ACCEPT))
-                @OrdersPayments.Submachine(state = PAYING, child = OrderRefs.Payment.class,
-                    parent = PaymentRefs.Order.class,
-                    exits = {@OrdersPayments.Exit(on = PaymentStatus.CAPTURED, transition = SETTLE),
-                             @OrdersPayments.Exit(on = PaymentStatus.DECLINED, transition = FAIL)})
-                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
-                    @OrdersGraph.Transition(id = SUBMIT, from = NEW, to = REVIEW)
-                    Outcome<Order, OrderStatus, OrderTransition> submit(Order order);
-                }
-                """);
-        sources.put("fx.Billing", """
-                package fx;
-                import io.github.graphmaquina.annotation.StateGraphs;
-                import io.github.graphmaquina.api.Machines;
-                /** Generated set of the billing fixture. */
-                @StateGraphs
-                public interface Billing extends Machines {
-                    Bookings bookings();
-                    Orders orders();
-                    Payments payments();
-                    Reviews reviews();
-                }
-                """);
+        sources.put("fx.PaymentStatus", "package fx;\n/** PaymentStatus of the billing fixture. */\n"
+                + "public enum PaymentStatus { PENDING, CAPTURED, DECLINED }\n");
+        sources.put("fx.PaymentTransition", "package fx;\n/** PaymentTransition of the billing fixture. */\n"
+                + "public enum PaymentTransition { CAPTURE, DECLINE }\n");
+        sources.put("fx.BookingStatus", "package fx;\n/** BookingStatus of the billing fixture. */\n"
+                + "public enum BookingStatus { REQUESTED, DEPOSIT, BALANCE, CONFIRMED, CANCELLED }\n");
+        sources.put("fx.BookingTransition", "package fx;\n/** BookingTransition of the billing fixture. */\n"
+                + "public enum BookingTransition { BOOK, DEPOSIT_PAID, BALANCE_PAID, DECLINE, CANCEL }\n");
+        sources.put("fx.OrderStatus", "package fx;\n/** OrderStatus of the billing fixture. */\n"
+                + "public enum OrderStatus { NEW, REVIEW, PAYING, SETTLED, UNPAID }\n");
+        sources.put("fx.OrderTransition", "package fx;\n/** OrderTransition of the billing fixture. */\n"
+                + "public enum OrderTransition { SUBMIT, ACCEPT, SETTLE, FAIL }\n");
+        sources.put("fx.ReviewStatus", "package fx;\n/** ReviewStatus of the billing fixture. */\n"
+                + "public enum ReviewStatus { PENDING, APPROVED }\n");
+        sources.put("fx.ReviewTransition", "package fx;\n/** ReviewTransition of the billing fixture. */\n"
+                + "public enum ReviewTransition { APPROVE }\n");
+        sources.put("fx.Payment", PAYMENT);
+        sources.put("fx.Booking", BOOKING);
+        sources.put("fx.Order", ORDER);
+        sources.put("fx.BookingLookups", BOOKING_LOOKUPS);
+        sources.put("fx.Ledger", LEDGER);
+        sources.put("fx.Payments", PAYMENTS);
+        sources.put("fx.Bookings", BOOKINGS);
+        sources.put("fx.Reviews", REVIEWS);
+        sources.put("fx.Orders", ORDERS);
+        sources.put("fx.Billing", BILLING);
         return sources;
     }
 }

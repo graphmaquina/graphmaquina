@@ -42,7 +42,8 @@ class GeneratedNamingTest {
             import io.github.graphmaquina.api.TransitionContext;
             public final class Hosts {
                 public static final class Payments {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+            context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -53,7 +54,8 @@ class GeneratedNamingTest {
     void machineAndSetNamesNormalizeWithoutChangingTheirHandwrittenInterfaces() {
         Map<String, String> sources = TypedFixtures.minimal();
         sources.put("fx._Docs", sources.remove("fx.Docs").replace("interface Docs ", "interface _Docs "));
-        sources.put("fx._Library", LIBRARY.replace("interface Library ", "interface _Library ").replace("Docs docs()", "_Docs docs()"));
+        sources.put("fx._Library",
+                LIBRARY.replace("interface Library ", "interface _Library ").replace("Docs docs()", "_Docs docs()"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime").contains("implements _Docs"));
@@ -293,7 +295,8 @@ class GeneratedNamingTest {
 
         assertTrue(result.success(), result.describe());
         String cases = result.generated("fx.CasesRuntime");
-        assertTrue(cases.contains("public static GraphDefinition<Case, CaseStatus, CaseTransition> graph(Default default2)"), cases);
+        assertTrue(cases.contains(
+                "public static GraphDefinition<Case, CaseStatus, CaseTransition> graph(Default default2)"), cases);
         assertTrue(cases.contains("reevaluate(Case caseEntity)"), cases);
         assertTrue(cases.contains("(Interface interface2) -> interface2.owner()"), cases);
     }
@@ -304,6 +307,34 @@ class GeneratedNamingTest {
      */
     private static Map<String, String> keywordNamedDomain() {
         Map<String, String> sources = new java.util.LinkedHashMap<>();
+        putKeywordEntities(sources);
+        sources.put("fx.Default", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphCondition;
+                import io.github.graphmaquina.annotation.GraphHook;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.PeerView;
+                import io.github.graphmaquina.api.TransitionContext;
+                import java.util.Collection;
+                public final class Default {
+                    @GraphAction public ActionOutcome close(TransitionContext<Case, CaseStatus, CaseTransition> \
+                context) {
+                        return ActionOutcome.ok();
+                    }
+                    @GraphHook public void closed(Case closed) { }
+                    @GraphCondition public boolean done(Case owner, Collection<? extends Interface> parts,
+                            PeerView<Interface, InterfaceStatus, InterfaceTransition> view) {
+                        return view.allIn(parts, InterfaceStatus.DONE);
+                    }
+                }
+                """);
+        putKeywordMachines(sources);
+        return sources;
+    }
+
+    /** The states and the entities of {@link #keywordNamedDomain()}: {@code Case} owning parts, {@code Interface}. */
+    private static void putKeywordEntities(Map<String, String> sources) {
         sources.put("fx.CaseStatus", "package fx;\npublic enum CaseStatus { OPEN, CLOSED }\n");
         sources.put("fx.CaseTransition", "package fx;\npublic enum CaseTransition { CLOSE }\n");
         sources.put("fx.InterfaceStatus", "package fx;\npublic enum InterfaceStatus { OPEN, DONE }\n");
@@ -334,26 +365,10 @@ class GeneratedNamingTest {
                     @GraphProperty public Optional<Case> owner() { return Optional.empty(); }
                 }
                 """);
-        sources.put("fx.Default", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.annotation.GraphCondition;
-                import io.github.graphmaquina.annotation.GraphHook;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.PeerView;
-                import io.github.graphmaquina.api.TransitionContext;
-                import java.util.Collection;
-                public final class Default {
-                    @GraphAction public ActionOutcome close(TransitionContext<Case, CaseStatus, CaseTransition> context) {
-                        return ActionOutcome.ok();
-                    }
-                    @GraphHook public void closed(Case closed) { }
-                    @GraphCondition public boolean done(Case owner, Collection<? extends Interface> parts,
-                            PeerView<Interface, InterfaceStatus, InterfaceTransition> view) {
-                        return view.allIn(parts, InterfaceStatus.DONE);
-                    }
-                }
-                """);
+    }
+
+    /** The machine of the interfaces, the watching machine of the cases, and the set holding both. */
+    private static void putKeywordMachines(Map<String, String> sources) {
         sources.put("fx.Interfaces", """
                 package fx;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -364,7 +379,8 @@ class GeneratedNamingTest {
                     state = InterfaceRefs.Status.class, id = InterfaceRefs.Id.class)
                 @InterfacesGraph.StatePolicy(state = InterfaceStatus.OPEN, otherwise = "an interface is finished")
                 public interface Interfaces extends Machine<Interface, InterfaceStatus, InterfaceTransition> {
-                    @InterfacesGraph.Transition(id = InterfaceTransition.FINISH, from = InterfaceStatus.OPEN, to = InterfaceStatus.DONE)
+                    @InterfacesGraph.Transition(id = InterfaceTransition.FINISH, from = InterfaceStatus.OPEN, \
+                to = InterfaceStatus.DONE)
                     Outcome<Interface, InterfaceStatus, InterfaceTransition> finish(Interface part);
                 }
                 """);
@@ -379,8 +395,10 @@ class GeneratedNamingTest {
                 @CasesGraph.Definition(initial = CaseStatus.OPEN, terminals = CaseStatus.CLOSED,
                     state = CaseRefs.Status.class, id = CaseRefs.Id.class, afterCommit = DefaultRefs.Closed.class)
                 @CasesGraph.StatePolicy(state = CaseStatus.OPEN, otherwise = "an open case is closed")
-                @CasesInterfaces.Watch(state = CaseStatus.OPEN, peers = CaseRefs.Parts.class, owner = InterfaceRefs.Owner.class,
-                    rules = @CasesInterfaces.When(condition = DefaultRefs.Done.class, transition = CaseTransition.CLOSE))
+                @CasesInterfaces.Watch(state = CaseStatus.OPEN, peers = CaseRefs.Parts.class, \
+                owner = InterfaceRefs.Owner.class,
+                    rules = @CasesInterfaces.When(condition = DefaultRefs.Done.class, \
+                transition = CaseTransition.CLOSE))
                 public interface Cases extends Machine<Case, CaseStatus, CaseTransition> {
                     @CasesGraph.Transition(id = CaseTransition.CLOSE, from = CaseStatus.OPEN, to = CaseStatus.CLOSED,
                         action = DefaultRefs.Close.class)
@@ -393,7 +411,6 @@ class GeneratedNamingTest {
                 import io.github.graphmaquina.api.Machines;
                 @StateGraphs public interface Docket extends Machines { Cases cases(); Interfaces interfaces(); }
                 """);
-        return sources;
     }
 
     /**
@@ -426,7 +443,8 @@ class GeneratedNamingTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Objects {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }

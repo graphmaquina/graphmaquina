@@ -19,7 +19,8 @@ class TypedBindingsTest {
     @Test
     void resolvesTheEffectiveOverrideOfAnInheritedConcreteHost() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.method("fx.ConcreteActionsRefs.Publish", Bindings.Role.ACTION, "fx.Doc/fx.DocStatus/fx.DocTransition");
+        TypedProcessors.Resolving.method("fx.ConcreteActionsRefs.Publish", Bindings.Role.ACTION,
+                "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(hosts());
 
@@ -65,9 +66,12 @@ class TypedBindingsTest {
     @Test
     void picksTheOverloadOfTheRequestedRoleAndKeepsAStaticOneOffTheBuilder() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.ACTION, "fx.Doc/fx.DocStatus/fx.DocTransition");
-        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.GUARD, "fx.Doc/fx.DocStatus/fx.DocTransition");
-        TypedProcessors.Resolving.method("fx.OverloadsRefs.Ready", Bindings.Role.GUARD, "fx.Doc/fx.DocStatus/fx.DocTransition");
+        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.ACTION,
+                "fx.Doc/fx.DocStatus/fx.DocTransition");
+        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.GUARD,
+                "fx.Doc/fx.DocStatus/fx.DocTransition");
+        TypedProcessors.Resolving.method("fx.OverloadsRefs.Ready", Bindings.Role.GUARD,
+                "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(hosts());
 
@@ -125,7 +129,8 @@ class TypedBindingsTest {
     @Test
     void refusesACandidateThatDoesNotFitTheEntityOfTheMachineUsingIt() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.ACTION, "fx.Note/fx.NoteStatus/fx.NoteTransition");
+        TypedProcessors.Resolving.method("fx.OverloadsRefs.Run", Bindings.Role.ACTION,
+                "fx.Note/fx.NoteStatus/fx.NoteTransition");
 
         Compilation.Result result = resolve(hosts());
 
@@ -211,10 +216,12 @@ class TypedBindingsTest {
                 import java.util.Collection;
                 public final class Conditions {
                     @GraphCondition
-                    public boolean ready(Doc doc, Iterable<? extends Page> pages, PeerView<Page, PageStatus, PageTransition> view) {
+                    public boolean ready(Doc doc, Iterable<? extends Page> pages, \
+                PeerView<Page, PageStatus, PageTransition> view) {
                         return true;
                     }
-                    public boolean ready(Doc doc, Collection<? extends Page> pages, PeerView<Page, PageStatus, PageTransition> view) {
+                    public boolean ready(Doc doc, Collection<? extends Page> pages, \
+                PeerView<Page, PageStatus, PageTransition> view) {
                         return false;
                     }
                 }
@@ -282,9 +289,8 @@ class TypedBindingsTest {
                 List.of("-processor", TypedProcessors.Resolving.class.getName()));
     }
 
-    /** Two entities with their states, a marked generic base with a concrete host, and an overload family. */
-    private static Map<String, String> hosts() {
-        Map<String, String> sources = new LinkedHashMap<>();
+    /** The two entities of {@link #hosts()}, each with its states and its transitions. */
+    private static void putEntities(Map<String, String> sources) {
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
@@ -309,6 +315,12 @@ class TypedBindingsTest {
                 package fx;
                 public final class Note { }
                 """);
+    }
+
+    /** Two entities with their states, a marked generic base with a concrete host, and an overload family. */
+    private static Map<String, String> hosts() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        putEntities(sources);
         sources.put("fx.BaseActions", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphAction;

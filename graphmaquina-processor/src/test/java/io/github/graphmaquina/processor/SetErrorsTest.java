@@ -29,14 +29,15 @@ class SetErrorsTest {
 
     @Test
     void sg502NotAnInterfaceOrNotMachines() {
-        assertTrue(library(Fixtures.LIBRARY.replace("public interface Library extends Machines", "public abstract class Library implements Machines"))
-                .hasError("SG502"));
+        assertTrue(library(Fixtures.LIBRARY.replace("public interface Library extends Machines",
+                "public abstract class Library implements Machines")).hasError("SG502"));
         assertTrue(library(Fixtures.LIBRARY.replace(" extends Machines", "")).hasError("SG502"));
     }
 
     @Test
     void sg502NestedSetIsRejectedAndGeneratesNothing() {
-        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY);
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY);
         sources.put("fx.Holder", """
                 package fx;
                 import io.github.graphmaquina.annotation.StateGraphs;
@@ -58,7 +59,8 @@ class SetErrorsTest {
     void sg510AccessorShapeDuplicatesAndMissingPeer() {
         assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();", "Docs docs(String name);")).hasError("SG510"));
         assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();", "String docs();")).hasError("SG510"));
-        assertTrue(library(Fixtures.LIBRARY.replace("Pages pages();", "Pages pages();\n    Pages more();")).hasError("SG510"));
+        assertTrue(library(Fixtures.LIBRARY.replace("Pages pages();", "Pages pages();\n    Pages more();"))
+                .hasError("SG510"));
         Compilation.Result missingPeer = library(Fixtures.LIBRARY.replace("    Pages pages();\n", ""));
         assertTrue(missingPeer.hasError("SG510"), missingPeer.describe());
         assertTrue(missingPeer.errors().get(0).contains("Pages"), missingPeer.describe());
@@ -82,7 +84,8 @@ class SetErrorsTest {
                 import static fx.DocStatus.*;
                 import static fx.ReviewTransition.*;
                 @GenerateGraphApi
-                @ReviewsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @ReviewsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, \
+                state = DocRefs.Status.class, id = DocRefs.Id.class)
                 @ReviewsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent")
                 @ReviewsGraph.StatePolicy(state = REVIEW, otherwise = "a review is accepted")
                 @ReviewsGraph.StatePolicy(state = PUBLISHED, otherwise = "a published doc is shelved")
@@ -145,7 +148,8 @@ class SetErrorsTest {
     /** A set holding only Pages, a synchronous machine without dependencies, under {@code accessor}. */
     private static Compilation.Result synchronousLibrary(String accessor) {
         Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
-        sources.put("fx.Library", Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n", "    " + accessor + "\n"));
+        sources.put("fx.Library",
+                Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n", "    " + accessor + "\n"));
         return Compilation.compileTyped(sources);
     }
 
@@ -156,7 +160,8 @@ class SetErrorsTest {
      */
     @Test
     void aMachineWithErrorsDoesNotAddSetErrors() {
-        String blankPolicy = Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"");
+        String blankPolicy = Fixtures.DOCS_HEADER
+                .replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"");
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(blankPolicy + Fixtures.DOCS_WATCH,
                 Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertEquals(1, result.errors().size(), result.describe());

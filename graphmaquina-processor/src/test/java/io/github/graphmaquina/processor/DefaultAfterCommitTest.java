@@ -82,7 +82,8 @@ class DefaultAfterCommitTest {
 
     @Test void staticDefaultNeedsNoRecorderInstance() {
         Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
-        sources.compute("fx.Recorder", (key, text) -> text.replace("public void persist", "public static void persist"));
+        sources.compute("fx.Recorder",
+            (key, text) -> text.replace("public void persist", "public static void persist"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result::describe);
         assertEquals(3, hooks(result, "persist"));
@@ -116,7 +117,8 @@ class DefaultAfterCommitTest {
         sources.compute("fx.Recorder", (key, text) -> text.replace(
             "@GraphHook public void persist(Doc doc) { }", """
             @GraphHook public void persist(Doc doc) { }
-            @GraphHook public void persist(Doc doc, io.github.graphmaquina.api.CommitContext<DocStatus, DocTransition> commit) { }
+            @GraphHook public void persist(Doc doc, \
+            io.github.graphmaquina.api.CommitContext<DocStatus, DocTransition> commit) { }
             """));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success());

@@ -42,30 +42,32 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class AnnotationSourcesTest {
 
+    /** Two annotation types of one simple name, used on a field, on a method and on a parameter. */
+    private static final String SAME_NAMED_FLAGS = """
+            package fx;
+            /** Two distinct annotation types share the same simple name. */
+            public class Sample {
+                /** First annotation namespace. */ public static class A {
+                    /** An annotation with one optional class array. */ public @interface Flag {
+                        Class<?>[] value() default String.class;
+                    }
+                }
+                /** Second annotation namespace. */ public static class B {
+                    /** A separate annotation with the same simple name. */ public @interface Flag {
+                        Class<?>[] value();
+                    }
+                }
+                @A.Flag(Integer.class) @B.Flag({Long.class, Double.class}) int field;
+                @A.Flag void omitted(@B.Flag(Float.class) int argument) { }
+                @A.Flag(String.class) void explicit() { }
+            }
+            """;
+
     @TempDir
     Path directory;
 
     @Test
     void resolvedAnnotationTypesDefaultsAndVariableDeclarationsKeepTheirOwnSpans() throws IOException {
-        String source = """
-                package fx;
-                /** Two distinct annotation types share the same simple name. */
-                public class Sample {
-                    /** First annotation namespace. */ public static class A {
-                        /** An annotation with one optional class array. */ public @interface Flag {
-                            Class<?>[] value() default String.class;
-                        }
-                    }
-                    /** Second annotation namespace. */ public static class B {
-                        /** A separate annotation with the same simple name. */ public @interface Flag {
-                            Class<?>[] value();
-                        }
-                    }
-                    @A.Flag(Integer.class) @B.Flag({Long.class, Double.class}) int field;
-                    @A.Flag void omitted(@B.Flag(Float.class) int argument) { }
-                    @A.Flag(String.class) void explicit() { }
-                }
-                """;
         Probe processor = new Probe((ProcessingEnvironment environment) -> {
             AnnotationSources sources = new AnnotationSources(Trees.instance(environment));
             Annotations annotations = new Annotations(environment.getElementUtils());
@@ -84,10 +86,10 @@ class AnnotationSourcesTest {
                             String literal = ((TypeMirror) value.getValue()).toString().replace("java.lang.", "")
                                     + ".class";
                             AnnotationSources.Location position = location.orElseThrow();
-                            assertEquals(source.lastIndexOf(literal), position.start());
+                            assertEquals(SAME_NAMED_FLAGS.lastIndexOf(literal), position.start());
                             long end = Trees.instance(environment).getSourcePositions()
                                     .getEndPosition(position.unit(), position.tree());
-                            assertEquals(literal, source.substring((int) position.start(), (int) end));
+                            assertEquals(literal, SAME_NAMED_FLAGS.substring((int) position.start(), (int) end));
                             found[0]++;
                         }
                     }
@@ -95,7 +97,7 @@ class AnnotationSourcesTest {
             });
             assertEquals(5, found[0]);
         });
-        Run result = compile("Sample", source, processor);
+        Run result = compile("Sample", SAME_NAMED_FLAGS, processor);
         assertTrue(result.success(), result.diagnostics().toString());
         assertTrue(processor.visited);
     }

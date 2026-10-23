@@ -58,37 +58,54 @@ class GeneratedJavadocTest {
         List<Path> generated = new ArrayList<>(javaFiles(request.sourcesOutput()));
         generated.addAll(javaFiles(request.processorSourcesOutput()));
         assertTrue(generated.size() > 1, generated.toString());
-        List<String> classpath = new ArrayList<>();
-        for (Path entry : request.classpath()) {
-            classpath.add(entry.toString());
-        }
-        classpath.add(request.classesOutput().toString());
+        List<String> classpath = classpath(request);
         DocumentationTool tool = ToolProvider.getSystemDocumentationTool();
         DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
         StringWriter output = new StringWriter();
         try (StandardJavaFileManager manager = tool.getStandardFileManager(collector, null, request.encoding())) {
-            List<String> options = new ArrayList<>(List.of("-d", Compilation.temporaryDirectory().toString(),
-                    "-classpath", String.join(File.pathSeparator, classpath), "-encoding",
-                    request.encoding().name(), "-quiet", "-Xmaxwarns", "10000"));
-            if (!doclint.isEmpty()) {
-                options.add(doclint);
-            }
+            List<String> options = options(request, classpath, doclint);
             boolean success = Boolean.TRUE.equals(tool.getTask(output, manager, collector, null, options,
                     manager.getJavaFileObjectsFromPaths(generated)).call());
-            StringBuilder reported = new StringBuilder();
-            for (Diagnostic<? extends JavaFileObject> diagnostic : collector.getDiagnostics()) {
-                if (diagnostic.getKind() != Diagnostic.Kind.NOTE) {
-                    reported.append(diagnostic.getKind()).append(' ')
-                            .append(diagnostic.getSource() == null ? "" : diagnostic.getSource().getName())
-                            .append(':').append(diagnostic.getLineNumber()).append(": ")
-                            .append(diagnostic.getMessage(null)).append('\n');
-                }
-            }
+            StringBuilder reported = reported(collector);
             assertTrue(success || reported.length() > 0, output.toString());
             return reported.toString();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The classpath the consumer compiled with, and the classes it produced. */
+    private static List<String> classpath(GenerationRequest request) {
+        List<String> classpath = new ArrayList<>();
+        for (Path entry : request.classpath()) {
+            classpath.add(entry.toString());
+        }
+        classpath.add(request.classesOutput().toString());
+        return classpath;
+    }
+
+    private static List<String> options(GenerationRequest request, List<String> classpath, String doclint) {
+        List<String> options = new ArrayList<>(List.of("-d", Compilation.temporaryDirectory().toString(),
+                "-classpath", String.join(File.pathSeparator, classpath), "-encoding",
+                request.encoding().name(), "-quiet", "-Xmaxwarns", "10000"));
+        if (!doclint.isEmpty()) {
+            options.add(doclint);
+        }
+        return options;
+    }
+
+    /** Every warning and error the run reported, one per line; notes are left out. */
+    private static StringBuilder reported(DiagnosticCollector<JavaFileObject> collector) {
+        StringBuilder reported = new StringBuilder();
+        for (Diagnostic<? extends JavaFileObject> diagnostic : collector.getDiagnostics()) {
+            if (diagnostic.getKind() != Diagnostic.Kind.NOTE) {
+                reported.append(diagnostic.getKind()).append(' ')
+                        .append(diagnostic.getSource() == null ? "" : diagnostic.getSource().getName())
+                        .append(':').append(diagnostic.getLineNumber()).append(": ")
+                        .append(diagnostic.getMessage(null)).append('\n');
+            }
+        }
+        return reported;
     }
 
     private static List<Path> javaFiles(Path root) {

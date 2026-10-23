@@ -235,7 +235,8 @@ class ManifestDiscoveryTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context, String note) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context, String note) {
                         return ActionOutcome.ok();
                     }
                 }

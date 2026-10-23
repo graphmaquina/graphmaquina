@@ -89,8 +89,8 @@ class TypedSubmachineTest {
                     exits = @DocsReviews.Exit(on = ReviewStatus.APPROVED, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG806] Docs.REVIEW: Reviews governs Doc itself, so child, parent and parentLookup must be"
-                + " empty"), result.errors(), result.describe());
+        assertEquals(List.of("[SG806] Docs.REVIEW: Reviews governs Doc itself, so child, parent and parentLookup must"
+                + " be empty"), result.errors(), result.describe());
     }
 
     @Test
@@ -162,19 +162,25 @@ class TypedSubmachineTest {
     @Test
     void sg509AChildOverAParameterizedEntity() {
         Map<String, String> sources = bound(BOUND);
-        sources.put("fx.Page", sources.get("fx.Page").replace("public final class Page {", "/** The parameterized page entity fixture. */ public final class Page<T> {"));
+        sources.put("fx.Page", sources.get("fx.Page").replace("public final class Page {",
+                "/** The parameterized page entity fixture. */ public final class Page<T> {"));
         sources.put("fx.Doc", sources.get("fx.Doc").replace("List<Page>", "List<Page<String>>")
                 .replace("Collection<Page>", "Collection<Page<String>>")
                 .replace("Optional<Page>", "Optional<Page<String>>")
                 .replace("void attach(Page page)", "void attach(Page<String> page)"));
-        sources.put("fx.Pages", sources.get("fx.Pages").replace("@GenerateGraphApi", "/** The parameterized page machine fixture. */ @GenerateGraphApi").replace("Machine<Page, PageStatus, PageTransition>",
-                "Machine<Page<String>, PageStatus, PageTransition>").replace(
-                "Outcome<Page, PageStatus, PageTransition> finish(Page page)",
-                "Outcome<Page<String>, PageStatus, PageTransition> finish(Page<String> page)"));
-        sources.put("fx.DocActions", sources.get("fx.DocActions").replace("public final class DocActions", "/** Actions of the parameterized page fixture. */ public final class DocActions").replace("Iterable<? extends Page>",
-                        "Iterable<? extends Page<String>>").replace("Collection<? extends Page>",
-                        "Collection<? extends Page<String>>")
-                .replace("PeerView<Page, PageStatus, PageTransition>", "PeerView<Page<String>, PageStatus, PageTransition>"));
+        sources.put("fx.Pages", sources.get("fx.Pages")
+                .replace("@GenerateGraphApi", "/** The parameterized page machine fixture. */ @GenerateGraphApi")
+                .replace("Machine<Page, PageStatus, PageTransition>",
+                        "Machine<Page<String>, PageStatus, PageTransition>")
+                .replace("Outcome<Page, PageStatus, PageTransition> finish(Page page)",
+                        "Outcome<Page<String>, PageStatus, PageTransition> finish(Page<String> page)"));
+        sources.put("fx.DocActions", sources.get("fx.DocActions")
+                .replace("public final class DocActions",
+                        "/** Actions of the parameterized page fixture. */ public final class DocActions")
+                .replace("Iterable<? extends Page>", "Iterable<? extends Page<String>>")
+                .replace("Collection<? extends Page>", "Collection<? extends Page<String>>")
+                .replace("PeerView<Page, PageStatus, PageTransition>",
+                        "PeerView<Page<String>, PageStatus, PageTransition>"));
         sources.put("fx.DocLookups", sources.get("fx.DocLookups").replace("(Page page)", "(Page<String> page)"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
@@ -210,7 +216,8 @@ class TypedSubmachineTest {
         sources.remove("fx.Library");
         sources.remove("fx.Pages");
         sources.remove("fx.PageTransition");
-        sources.put("fx.pages.PageTransition", "package fx.pages;\n/** Transitions of the inaccessible child fixture. */\nenum PageTransition { FINISH }\n");
+        sources.put("fx.pages.PageTransition", "package fx.pages;\n"
+                + "/** Transitions of the inaccessible child fixture. */\nenum PageTransition { FINISH }\n");
         sources.put("fx.pages.Pages", """
                 package fx.pages;
                 import fx.Page;
@@ -259,8 +266,8 @@ class TypedSubmachineTest {
     void sg608APairNeitherAWatchNorASubmachineUses() {
         Compilation.Result result = Compilation.compileTyped(bound(""));
 
-        assertEquals(List.of("[SG608] fx.Pages is declared as a peer of Docs but no watch or sub-machine of it uses that"
-                + " pair; declare the peers this machine watches or binds, and only those"), result.errors(),
+        assertEquals(List.of("[SG608] fx.Pages is declared as a peer of Docs but no watch or sub-machine of it uses"
+                + " that pair; declare the peers this machine watches or binds, and only those"), result.errors(),
                 result.describe());
     }
 
@@ -301,15 +308,18 @@ class TypedSubmachineTest {
      */
     static Map<String, String> bound(String header) {
         Map<String, String> sources = TypedFixtures.watching(TypedFixtures.PEERS, header + COMPLETE);
-        sources.put("fx.Docs", sources.get("fx.Docs").replace("@GenerateGraphApi", "/** The parent document machine fixture. */ @GenerateGraphApi"));
+        sources.put("fx.Docs", sources.get("fx.Docs").replace("@GenerateGraphApi",
+                "/** The parent document machine fixture. */ @GenerateGraphApi"));
         sources.put("fx.DocTransition", """
                 package fx;
                 /** Identifiers of the document fixture. */
                 public enum DocTransition { SUBMIT, PUBLISH, COMPLETE }
                 """);
-        sources.put("fx.Doc", sources.get("fx.Doc").replace("public final class Doc", "/** The document entity fixture. */ public final class Doc").replace("import java.util.List;\n",
-                "import java.util.List;\nimport java.util.Optional;\n").replace("    void attach(Page page)",
-                "    @GraphProperty public Optional<Page> current() { return pages.stream().findFirst(); }\n"
+        sources.put("fx.Doc", sources.get("fx.Doc")
+                .replace("public final class Doc", "/** The document entity fixture. */ public final class Doc")
+                .replace("import java.util.List;\n", "import java.util.List;\nimport java.util.Optional;\n")
+                .replace("    void attach(Page page)",
+                        "    @GraphProperty public Optional<Page> current() { return pages.stream().findFirst(); }\n"
                         + "    void attach(Page page)"));
         sources.put("fx.DocLookups", """
                 package fx;
@@ -330,7 +340,8 @@ class TypedSubmachineTest {
      */
     private static Map<String, String> reviewed(String header) {
         Map<String, String> sources = bound(header);
-        sources.put("fx.Docs", sources.get("fx.Docs").replace("@GraphPeers(Pages.class)", "@GraphPeers(Reviews.class)"));
+        sources.put("fx.Docs", sources.get("fx.Docs")
+                .replace("@GraphPeers(Pages.class)", "@GraphPeers(Reviews.class)"));
         sources.put("fx.ReviewStatus", """
                 package fx;
                 /** States of the review fixture. */
@@ -363,8 +374,9 @@ class TypedSubmachineTest {
                     Outcome<Doc, ReviewStatus, ReviewTransition> approve(Doc doc);
                 }
                 """);
-        sources.put("fx.Library", sources.get("fx.Library").replace("@StateGraphs", "/** The machine set of the review fixture. */ @StateGraphs").replace("    Pages pages();\n",
-                "    Pages pages();\n    Reviews reviews();\n"));
+        sources.put("fx.Library", sources.get("fx.Library")
+                .replace("@StateGraphs", "/** The machine set of the review fixture. */ @StateGraphs")
+                .replace("    Pages pages();\n", "    Pages pages();\n    Reviews reviews();\n"));
         return sources;
     }
 

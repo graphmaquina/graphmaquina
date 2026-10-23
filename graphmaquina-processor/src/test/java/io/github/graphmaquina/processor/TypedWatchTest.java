@@ -140,7 +140,8 @@ class TypedWatchTest {
         assertFalse(result.success(), result.describe());
         assertEquals(1, result.countError("SG505"), result::describe);
         assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG505]")
-                && error.contains("boolean stale(Doc, Collection<? extends Page>, PeerView<Page, PageStatus, PageTransition>)")),
+                && error.contains("boolean stale(Doc, Collection<? extends Page>, "
+                        + "PeerView<Page, PageStatus, PageTransition>)")),
                 result::describe);
     }
 

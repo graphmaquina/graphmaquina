@@ -21,6 +21,94 @@ import org.junit.jupiter.api.Test;
  */
 class OperationInputProcessorTest {
 
+    /** The host of {@code twoOperations}: its guard and its action record the payload they are handed. */
+    private static final String PAYLOAD_HOST = """
+            package fx;
+            import external.Verdict;
+            import io.github.graphmaquina.annotation.GraphAction;
+            import io.github.graphmaquina.annotation.GraphGuard;
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.GuardContext;
+            import io.github.graphmaquina.api.GuardResult;
+            import io.github.graphmaquina.api.TransitionContext;
+            import java.util.Optional;
+            public final class DocActions {
+                public boolean guardHadInput;
+                public Object guardSeen;
+                public Object actionSeen;
+                @GraphGuard public GuardResult eligible(GuardContext<Doc, DocStatus, DocTransition> ctx) {
+                    Optional<Verdict> value = ctx.input(Verdict.class);
+                    guardHadInput = value.isPresent();
+                    guardSeen = value.orElse(null);
+                    return value.map((Verdict v) -> v.accepted() ? GuardResult.pass() : GuardResult.reject("no"))
+                            .orElseGet(GuardResult::pass);
+                }
+                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
+                    actionSeen = ctx.input(Verdict.class).orElse(null);
+                    return ActionOutcome.ok();
+                }
+            }
+            """;
+
+    /** The consumer that runs both operations of {@code twoOperations} and says whether the payload arrived. */
+    private static final String PAYLOAD_CONSUMER = """
+            package fx;
+            import external.Verdict;
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import java.util.concurrent.CompletableFuture;
+            import java.util.concurrent.ExecutorService;
+            import java.util.concurrent.Executors;
+            import java.util.concurrent.TimeUnit;
+            import java.util.concurrent.atomic.AtomicReference;
+            public final class Consumer {
+                public static boolean check(boolean move) throws Exception {
+                    DocActions actions = new DocActions();
+                    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                        Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
+                                .state(Doc::status, Doc::status).asyncExecutor(executor).build());
+                        // An operation that declares no payload carries none.
+                        Doc plain = new Doc();
+                        if (!(docs.announce(plain) instanceof Outcome.Applied) || actions.guardHadInput
+                                || actions.guardSeen != null || actions.actionSeen != null) { return false; }
+
+                        // The payload reaches guard and action from a worker thread of async(...).
+                        Verdict value = new Verdict(true);
+                        Doc carried = new Doc();
+                        Thread caller = Thread.currentThread();
+                        AtomicReference<Thread> worker = new AtomicReference<>();
+                        CompletableFuture<Outcome<Doc, DocStatus, DocTransition>> future = docs.async(() -> {
+                            worker.set(Thread.currentThread());
+                            return docs.publish(carried, value);
+                        });
+                        if (!(future.get(5, TimeUnit.SECONDS) instanceof Outcome.Applied)
+                                || worker.get() == caller || carried.status() != DocStatus.PUBLISHED
+                                || !actions.guardHadInput || actions.guardSeen != value
+                                || (move ? actions.actionSeen != null : actions.actionSeen != value)) { return false; }
+
+                        // An explicit null is refused before the call starts: no guard or action runs.
+                        actions.guardHadInput = false;
+                        actions.guardSeen = null;
+                        actions.actionSeen = null;
+                        Doc nulled = new Doc();
+                        try {
+                            docs.publish(nulled, null);
+                            return false;
+                        } catch (NullPointerException refused) {
+                            if (!"value".equals(refused.getMessage()) || actions.guardHadInput
+                                    || actions.guardSeen != null || actions.actionSeen != null
+                                    || nulled.status() != DocStatus.DRAFT) { return false; }
+                        }
+
+                        // A guard that reads the payload can still refuse it.
+                        Doc denied = new Doc();
+                        return docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected
+                                && denied.status() == DocStatus.DRAFT;
+                    }
+                }
+            }
+            """;
+
     /**
      * The minimal fixture, with two payload types to draw from, a second transition identifier and
      * {@code declaration} as its operation.
@@ -102,94 +190,13 @@ class OperationInputProcessorTest {
                 .replace("action = DocActionsRefs.Publish.class)",
                         "action = DocActionsRefs.Publish.class, guards = DocActionsRefs.Eligible.class)")
                 .replace("    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n",
-                        "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n" + announce);
+                        "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n"
+                                + announce);
         src.put("fx.Docs", move
                 ? docs.replace("action = DocActionsRefs.Publish.class, guards = ", "guards = ")
                 : docs);
-        src.put("fx.DocActions", """
-                package fx;
-                import external.Verdict;
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.annotation.GraphGuard;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.GuardContext;
-                import io.github.graphmaquina.api.GuardResult;
-                import io.github.graphmaquina.api.TransitionContext;
-                import java.util.Optional;
-                public final class DocActions {
-                    public boolean guardHadInput;
-                    public Object guardSeen;
-                    public Object actionSeen;
-                    @GraphGuard public GuardResult eligible(GuardContext<Doc, DocStatus, DocTransition> ctx) {
-                        Optional<Verdict> value = ctx.input(Verdict.class);
-                        guardHadInput = value.isPresent();
-                        guardSeen = value.orElse(null);
-                        return value.map((Verdict v) -> v.accepted() ? GuardResult.pass() : GuardResult.reject("no"))
-                                .orElseGet(GuardResult::pass);
-                    }
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
-                        actionSeen = ctx.input(Verdict.class).orElse(null);
-                        return ActionOutcome.ok();
-                    }
-                }
-                """);
-        src.put("fx.Consumer", """
-                package fx;
-                import external.Verdict;
-                import io.github.graphmaquina.api.Outcome;
-                import io.github.graphmaquina.runtime.StateMachines;
-                import java.util.concurrent.CompletableFuture;
-                import java.util.concurrent.ExecutorService;
-                import java.util.concurrent.Executors;
-                import java.util.concurrent.TimeUnit;
-                import java.util.concurrent.atomic.AtomicReference;
-                public final class Consumer {
-                    public static boolean check(boolean move) throws Exception {
-                        DocActions actions = new DocActions();
-                        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                            Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
-                                    .state(Doc::status, Doc::status).asyncExecutor(executor).build());
-                            // An operation that declares no payload carries none.
-                            Doc plain = new Doc();
-                            if (!(docs.announce(plain) instanceof Outcome.Applied) || actions.guardHadInput
-                                    || actions.guardSeen != null || actions.actionSeen != null) { return false; }
-
-                            // The payload reaches guard and action from a worker thread of async(...).
-                            Verdict value = new Verdict(true);
-                            Doc carried = new Doc();
-                            Thread caller = Thread.currentThread();
-                            AtomicReference<Thread> worker = new AtomicReference<>();
-                            CompletableFuture<Outcome<Doc, DocStatus, DocTransition>> future = docs.async(() -> {
-                                worker.set(Thread.currentThread());
-                                return docs.publish(carried, value);
-                            });
-                            if (!(future.get(5, TimeUnit.SECONDS) instanceof Outcome.Applied)
-                                    || worker.get() == caller || carried.status() != DocStatus.PUBLISHED
-                                    || !actions.guardHadInput || actions.guardSeen != value
-                                    || (move ? actions.actionSeen != null : actions.actionSeen != value)) { return false; }
-
-                            // An explicit null is refused before the call starts: no guard or action runs.
-                            actions.guardHadInput = false;
-                            actions.guardSeen = null;
-                            actions.actionSeen = null;
-                            Doc nulled = new Doc();
-                            try {
-                                docs.publish(nulled, null);
-                                return false;
-                            } catch (NullPointerException refused) {
-                                if (!"value".equals(refused.getMessage()) || actions.guardHadInput
-                                        || actions.guardSeen != null || actions.actionSeen != null
-                                        || nulled.status() != DocStatus.DRAFT) { return false; }
-                            }
-
-                            // A guard that reads the payload can still refuse it.
-                            Doc denied = new Doc();
-                            return docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected
-                                    && denied.status() == DocStatus.DRAFT;
-                        }
-                    }
-                }
-                """);
+        src.put("fx.DocActions", PAYLOAD_HOST);
+        src.put("fx.Consumer", PAYLOAD_CONSUMER);
         return src;
     }
 
@@ -198,8 +205,8 @@ class OperationInputProcessorTest {
         Map<String, String> src = annotatedSource("@external.Mark(mode = external.Mode.YES) String");
         Compilation.Result result = Compilation.compileTyped(src);
         assertTrue(result.success(), result.describe());
-        AnnotatedType parameter = result.load("fx.DocsRuntime").getMethod("publish", result.load("fx.Doc"), String.class)
-                .getAnnotatedParameterTypes()[1];
+        AnnotatedType parameter = result.load("fx.DocsRuntime")
+                .getMethod("publish", result.load("fx.Doc"), String.class).getAnnotatedParameterTypes()[1];
         Object annotation = parameter.getAnnotations()[0];
         assertEquals("YES", result.load("external.Mark").getMethod("mode").invoke(annotation).toString());
     }
@@ -275,7 +282,8 @@ class OperationInputProcessorTest {
         }
         Map<String, String> generic = source("publish(Doc doc, I input)");
         generic.put("fx.Docs", generic.get("fx.Docs")
-                .replace("Outcome<Doc, DocStatus, DocTransition> publish", "<I> Outcome<Doc, DocStatus, DocTransition> publish"));
+                .replace("Outcome<Doc, DocStatus, DocTransition> publish",
+                        "<I> Outcome<Doc, DocStatus, DocTransition> publish"));
         Compilation.Result result = Compilation.compileTyped(generic);
         assertTrue(result.hasError("SG504"), result.describe());
     }

@@ -23,12 +23,14 @@ class MachineTransitionErrorsTest {
             """;
 
     static final String ARCHIVE = """
-                @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
+                @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, \
+            action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
                 Outcome<Doc, DocStatus, DocTransition> archive(Doc doc);
             """;
 
     private static String publish(String elements) {
-        return "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class"
+        return "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,"
+                + " action = DocActionsRefs.Publish.class"
                 + elements + ")\n    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);\n";
     }
 
@@ -42,12 +44,18 @@ class MachineTransitionErrorsTest {
     void sg504OperationSignatureAndMissingAnnotation() {
         assertTrue(body(SUBMIT + "    Outcome<Doc, DocStatus, DocTransition> orphan(Doc doc);\n"
                 + publish("") + ARCHIVE).hasError("SG504"));
-        assertTrue(body(SUBMIT + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
-                + "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, String reason, String extra);\n" + ARCHIVE).hasError("SG504"));
-        assertTrue(body(SUBMIT + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
+        assertTrue(body(SUBMIT
+                + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,"
+                + " action = DocActionsRefs.Publish.class)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, String reason, String extra);\n"
+                + ARCHIVE).hasError("SG504"));
+        assertTrue(body(SUBMIT
+                + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,"
+                + " action = DocActionsRefs.Publish.class)\n"
                 + "    void publish(Doc doc);\n" + ARCHIVE).hasError("SG504"));
         Compilation.Result defaults = body(SUBMIT + publish("") + ARCHIVE
-                + "    default Outcome<Doc, DocStatus, DocTransition> publishTwice(Doc doc) { publish(doc); return publish(doc); }\n");
+                + "    default Outcome<Doc, DocStatus, DocTransition> publishTwice(Doc doc) {"
+                + " publish(doc); return publish(doc); }\n");
         assertTrue(defaults.success(), defaults.describe());
     }
 
@@ -59,12 +67,14 @@ class MachineTransitionErrorsTest {
     @Test
     void sg504ForAnOperationOverridingAMachineMethodButRedeclarationsAreNoOperations() {
         Compilation.Result redeclared = body(SUBMIT + publish("") + ARCHIVE
-                + "    @Override io.github.graphmaquina.api.GraphDefinition<Doc, DocStatus, DocTransition> definition();\n"
+                + "    @Override io.github.graphmaquina.api.GraphDefinition<Doc, DocStatus, DocTransition>"
+                + " definition();\n"
                 + "    @Override String toString();\n"
                 + "    @Override boolean equals(Object other);\n");
         assertTrue(redeclared.success(), redeclared.describe());
 
-        Compilation.Result overriding = body(SUBMIT + publish("") + ARCHIVE.replace("archive(Doc doc)", "reevaluate(Doc doc)"));
+        Compilation.Result overriding = body(SUBMIT + publish("")
+                + ARCHIVE.replace("archive(Doc doc)", "reevaluate(Doc doc)"));
         assertEquals(1, overriding.countError("SG504"), overriding.describe());
         assertTrue(overriding.errors().get(0).contains("reevaluate") && overriding.errors().get(0).contains("Machine"),
                 overriding.describe());
@@ -112,7 +122,8 @@ class MachineTransitionErrorsTest {
     void sg302RefusesWhatTheRuntimeNeverMatchesAsADomainFailure() {
         java.util.Map<String, String> refused = Fixtures.withDocs(Fixtures.DOCS_HEADER, SUBMIT
                 + publish(", failsOn = {java.util.concurrent.CancellationException.class, Halted.class,"
-                        + " java.util.concurrent.CompletionException.class, java.util.concurrent.ExecutionException.class}")
+                        + " java.util.concurrent.CompletionException.class,"
+                        + " java.util.concurrent.ExecutionException.class}")
                 + ARCHIVE);
         refused.put("fx.Halted", """
                 package fx;
@@ -126,7 +137,8 @@ class MachineTransitionErrorsTest {
                 + " an Error or a CancellationException, which are never domain failures, nor CompletionException or"
                 + " ExecutionException, which are unwrapped before matching: declare the type of their cause"),
                 result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.startsWith("[SG302] failsOn does not allow fx.Halted;")),
+        assertTrue(result.errors().stream().anyMatch(
+                (String error) -> error.startsWith("[SG302] failsOn does not allow fx.Halted;")),
                 result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.startsWith(
                 "[SG302] failsOn does not allow java.util.concurrent.ExecutionException;")), result.describe());
@@ -152,11 +164,13 @@ class MachineTransitionErrorsTest {
     void staticGuardsSeveralGuardsAndRejectAreAccepted() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER
-                        + "@DocsGraph.Reject(from = DRAFT, transition = ARCHIVE, reason = \"a draft is never archived\")\n",
+                        + "@DocsGraph.Reject(from = DRAFT, transition = ARCHIVE,"
+                        + " reason = \"a draft is never archived\")\n",
                 SUBMIT + publish(", guards = {DocActionsRefs.Ready.class, DocActionsRefs.Approved.class},"
                         + " failsOn = IOException.class") + ARCHIVE));
         assertTrue(result.success(), result.describe());
-        Compilation.Result guardedMove = body("    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW, guards = DocActionsRefs.Ready.class)\n"
+        Compilation.Result guardedMove = body("    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW,"
+                + " guards = DocActionsRefs.Ready.class)\n"
                 + "    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n" + publish("") + ARCHIVE);
         assertTrue(guardedMove.success(), guardedMove.describe());
     }

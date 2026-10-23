@@ -40,7 +40,8 @@ class MachineGenerationTest {
         assertTrue(source.contains("public final class DocsRuntime implements Docs"), source);
         assertTrue(source.contains("MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class,"
                 + " DocStatus.class, DocTransition.class)"), source);
-        assertTrue(source.contains("public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions)"), source);
+        assertTrue(source.contains(
+                "public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions)"), source);
         assertTrue(source.contains(".statePolicy(DocStatus.DRAFT, \"a draft is sent to review\")"), source);
         assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"
                 + ".action(\"publish\", (context) -> docActions.publish(context))"), source);
@@ -68,7 +69,8 @@ class MachineGenerationTest {
         sources.put("fx.DocActions", sources.get("fx.DocActions")
                 .replace("@GraphAction public ActionOutcome publish(",
                         "@Deprecated(since = \"2\", forRemoval = true) @GraphAction public ActionOutcome publish(")
-                .replace("@GraphGuard public GuardResult approved(", "@Deprecated @GraphGuard public GuardResult approved("));
+                .replace("@GraphGuard public GuardResult approved(",
+                        "@Deprecated @GraphGuard public GuardResult approved("));
         sources.put("fx.Doc", sources.get("fx.Doc")
                 .replace("public void setStatus(", "@Deprecated public void setStatus("));
 
@@ -240,14 +242,16 @@ class MachineGenerationTest {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withPages(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH
                         + "@DocsGraph.Reject(from = DRAFT, transition = ARCHIVE, reason = \"never\")\n",
-                Fixtures.DOCS_BODY.replace("guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Ready.class")));
+                Fixtures.DOCS_BODY.replace("guards = DocActionsRefs.Approved.class",
+                        "guards = DocActionsRefs.Ready.class")));
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains(".guard(\"ready\", (context) -> DocActions.ready(context))"), source);
         assertTrue(source.contains(".reject(DocStatus.DRAFT, DocTransition.ARCHIVE, \"never\")"), source);
         assertTrue(source.contains(".watch(DocStatus.REVIEW, MachineKey.of(Page.class, PageStatus.class,"
                 + " PageTransition.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
-        assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)"), source);
+        assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)"),
+                source);
         assertTrue(source.contains(".endWatch()"), source);
         assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
@@ -334,6 +338,51 @@ class MachineGenerationTest {
      */
     private static Map<String, String> watched(String entity) {
         Map<String, String> sources = new LinkedHashMap<>();
+        putWatchedStates(sources);
+        putWatchedEntities(sources, entity);
+        sources.put("fx.Parts", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.PartStatus.DONE;
+                import static fx.PartStatus.OPEN;
+                import static fx.PartTransition.FINISH;
+                @GenerateGraphApi
+                @PartsGraph.Definition(initial = OPEN, terminals = DONE, state = PartRefs.Status.class, \
+                id = PartRefs.Id.class)
+                @PartsGraph.StatePolicy(state = OPEN, otherwise = "a part is finished")
+                public interface Parts extends Machine<Part, PartStatus, PartTransition> {
+                    @PartsGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                    Outcome<Part, PartStatus, PartTransition> finish(Part part);
+                }
+                """);
+        sources.put("fx.Mains", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.annotation.GraphPeers;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.MainStatus.CLOSED;
+                import static fx.MainStatus.OPEN;
+                import static fx.MainTransition.CLOSE;
+                @GenerateGraphApi
+                @GraphPeers(Parts.class)
+                @MainsGraph.Definition(initial = OPEN, terminals = CLOSED, state = %1$sRefs.Status.class, \
+                id = %1$sRefs.Id.class)
+                @MainsGraph.StatePolicy(state = OPEN, otherwise = "the parts decide")
+                @MainsParts.Watch(state = OPEN, peers = %1$sRefs.Parts.class, owner = PartRefs.Owner.class,
+                        rules = @MainsParts.When(condition = RulesRefs.Ready.class, transition = CLOSE))
+                public interface Mains extends Machine<%1$s, MainStatus, MainTransition> {
+                    @MainsGraph.Transition(id = CLOSE, from = OPEN, to = CLOSED)
+                    Outcome<%1$s, MainStatus, MainTransition> close(%1$s entity);
+                }
+                """.formatted(entity));
+        return sources;
+    }
+
+    /** The states and the transitions of the watching machine and of its peer. */
+    private static void putWatchedStates(Map<String, String> sources) {
         sources.put("fx.MainStatus", """
                 package fx;
                 public enum MainStatus { OPEN, CLOSED }
@@ -350,6 +399,10 @@ class MachineGenerationTest {
                 package fx;
                 public enum PartTransition { FINISH }
                 """);
+    }
+
+    /** The entity named {@code entity}, its peer and the host of the condition that reads them both. */
+    private static void putWatchedEntities(Map<String, String> sources, String entity) {
         sources.put("fx." + entity, """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -389,43 +442,6 @@ class MachineGenerationTest {
                     }
                 }
                 """.formatted(entity));
-        sources.put("fx.Parts", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.PartStatus.DONE;
-                import static fx.PartStatus.OPEN;
-                import static fx.PartTransition.FINISH;
-                @GenerateGraphApi
-                @PartsGraph.Definition(initial = OPEN, terminals = DONE, state = PartRefs.Status.class, id = PartRefs.Id.class)
-                @PartsGraph.StatePolicy(state = OPEN, otherwise = "a part is finished")
-                public interface Parts extends Machine<Part, PartStatus, PartTransition> {
-                    @PartsGraph.Transition(id = FINISH, from = OPEN, to = DONE)
-                    Outcome<Part, PartStatus, PartTransition> finish(Part part);
-                }
-                """);
-        sources.put("fx.Mains", """
-                package fx;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.annotation.GraphPeers;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import static fx.MainStatus.CLOSED;
-                import static fx.MainStatus.OPEN;
-                import static fx.MainTransition.CLOSE;
-                @GenerateGraphApi
-                @GraphPeers(Parts.class)
-                @MainsGraph.Definition(initial = OPEN, terminals = CLOSED, state = %1$sRefs.Status.class, id = %1$sRefs.Id.class)
-                @MainsGraph.StatePolicy(state = OPEN, otherwise = "the parts decide")
-                @MainsParts.Watch(state = OPEN, peers = %1$sRefs.Parts.class, owner = PartRefs.Owner.class,
-                        rules = @MainsParts.When(condition = RulesRefs.Ready.class, transition = CLOSE))
-                public interface Mains extends Machine<%1$s, MainStatus, MainTransition> {
-                    @MainsGraph.Transition(id = CLOSE, from = OPEN, to = CLOSED)
-                    Outcome<%1$s, MainStatus, MainTransition> close(%1$s entity);
-                }
-                """.formatted(entity));
-        return sources;
     }
 
     @Test

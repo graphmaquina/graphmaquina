@@ -66,7 +66,8 @@ class ExactInvocationTest {
                 }
                 """);
         sources.put("fx.DocActions", sources.get("fx.DocActions").replace("Iterable<? extends Page> pages",
-                "@Tag(value = \"packed\", unit = java.util.concurrent.TimeUnit.DAYS) Iterable<? extends @Tag(\"page\") Page> pages"));
+                "@Tag(value = \"packed\", unit = java.util.concurrent.TimeUnit.DAYS) "
+                        + "Iterable<? extends @Tag(\"page\") Page> pages"));
 
         assertEquals("marked", publishThroughTheWatch(sources));
     }

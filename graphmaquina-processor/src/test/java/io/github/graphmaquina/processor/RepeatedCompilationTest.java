@@ -76,23 +76,7 @@ class RepeatedCompilationTest {
 
         Compilation.Result emptied = Compilation.compilePrepared(Compilation.prepare(project, unrelated()));
         assertTrue(emptied.success(), emptied.describe());
-        ExportIndex index = ManifestCodec.readExports(request.classesOutput().resolve(PUBLISHED));
-        assertEquals(List.of(), graphs(index));
-        assertEquals(List.of(), index.model().symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
-        assertEquals(List.of(), index.annotationTypes());
-        assertEquals(List.of(), classFiles(request, "fx/DocRefs"));
-        assertEquals(List.of(), classFiles(request, "fx/DocActionsRefs"));
-        assertEquals(List.of(), classFiles(request, "fx/DocsGraph"));
-        assertEquals(List.of(), classFiles(request, "fx/DocsRuntime"));
-        assertEquals(List.of(), classFiles(request, CARRIER_PACKAGE));
-        assertTrue(exists(request, "fx/Unrelated.class"));
-
-        OwnedOutputs owned = ManifestCodec.readOwned(request.workDirectory().resolve("owned-outputs.json"));
-        assertEquals(List.of(), owned.sources());
-        assertEquals(List.of(), owned.binaries());
-        assertEquals(List.of(PUBLISHED), owned.resources());
-        assertEquals(1, owned.excludedBinaries().size(), owned.excludedBinaries().toString());
-        assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
+        assertNothingLeftOfTheGraph(request);
     }
 
     /**
@@ -248,7 +232,8 @@ class RepeatedCompilationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome release(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction public ActionOutcome release(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -287,6 +272,27 @@ class RepeatedCompilationTest {
                     public String name() { return "unrelated"; }
                 }
                 """);
+    }
+
+    /** The published index, the class files and the inventory once the last export is gone. */
+    private static void assertNothingLeftOfTheGraph(GenerationRequest request) throws IOException {
+        ExportIndex index = ManifestCodec.readExports(request.classesOutput().resolve(PUBLISHED));
+        assertEquals(List.of(), graphs(index));
+        assertEquals(List.of(), index.model().symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
+        assertEquals(List.of(), index.annotationTypes());
+        assertEquals(List.of(), classFiles(request, "fx/DocRefs"));
+        assertEquals(List.of(), classFiles(request, "fx/DocActionsRefs"));
+        assertEquals(List.of(), classFiles(request, "fx/DocsGraph"));
+        assertEquals(List.of(), classFiles(request, "fx/DocsRuntime"));
+        assertEquals(List.of(), classFiles(request, CARRIER_PACKAGE));
+        assertTrue(exists(request, "fx/Unrelated.class"));
+
+        OwnedOutputs owned = ManifestCodec.readOwned(request.workDirectory().resolve("owned-outputs.json"));
+        assertEquals(List.of(), owned.sources());
+        assertEquals(List.of(), owned.binaries());
+        assertEquals(List.of(PUBLISHED), owned.resources());
+        assertEquals(1, owned.excludedBinaries().size(), owned.excludedBinaries().toString());
+        assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
     }
 
     private static boolean exists(GenerationRequest request, String relative) {

@@ -100,7 +100,8 @@ class WatchAndStructureErrorsTest {
                 Fixtures.DOCS_BODY.replace("onFailure = RETURN", "onFailure = ARCHIVE")));
         assertTrue(badRoute.hasError("SG301"), badRoute.describe());
 
-        assertTrue(watch(Fixtures.DOCS_WATCH.replace("transition = PUBLISH", "transition = ARCHIVE")).hasError("SG401"));
+        assertTrue(watch(Fixtures.DOCS_WATCH.replace("transition = PUBLISH", "transition = ARCHIVE"))
+                .hasError("SG401"));
         assertTrue(watch(Fixtures.DOCS_WATCH.replace("state = REVIEW", "state = ARCHIVED")).hasError("SG402"));
     }
 }

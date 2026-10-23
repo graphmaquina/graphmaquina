@@ -35,7 +35,8 @@ class SubmachineStructureTest {
                 """));
 
         assertEquals(List.of("[SG801] Docs.REVIEW: the terminal DONE of Pages has more than one exit",
-                "[SG801] Docs.REVIEW: the exit on OPEN names no terminal of Pages"), result.errors(), result.describe());
+                "[SG801] Docs.REVIEW: the exit on OPEN names no terminal of Pages"), result.errors(),
+                result.describe());
         assertEquals(DEFINITION_LINE, result.lineOf("SG801"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
@@ -70,8 +71,10 @@ class SubmachineStructureTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG802] Docs.PUBLISHED: the exit on DONE names COMPLETE, which has no edge from PUBLISHED",
-                "[SG803] Docs.PUBLISHED is terminal and cannot hold a sub-machine"), result.errors(), result.describe());
+        assertEquals(List.of(
+                "[SG802] Docs.PUBLISHED: the exit on DONE names COMPLETE, which has no edge from PUBLISHED",
+                "[SG803] Docs.PUBLISHED is terminal and cannot hold a sub-machine"), result.errors(),
+                result.describe());
     }
 
     @Test
@@ -79,7 +82,8 @@ class SubmachineStructureTest {
         Compilation.Result result = Compilation.compileTyped(TypedSubmachineTest.bound(
                 TypedSubmachineTest.BOUND + TypedSubmachineTest.BOUND));
 
-        assertEquals(List.of("[SG803] Docs.REVIEW holds more than one sub-machine"), result.errors(), result.describe());
+        assertEquals(List.of("[SG803] Docs.REVIEW holds more than one sub-machine"), result.errors(),
+                result.describe());
         assertEquals(DEFINITION_LINE, result.lineOf("SG803"), result.describe());
     }
 
@@ -130,7 +134,8 @@ class SubmachineStructureTest {
                 public enum PageTransition { FINISH, CLOSE }
                 """);
         sources.put("fx.Pages", sources.get("fx.Pages")
-                .replace("@GenerateGraphApi", "/** The page machine in the composition cycle fixture. */ @GenerateGraphApi")
+                .replace("@GenerateGraphApi",
+                        "/** The page machine in the composition cycle fixture. */ @GenerateGraphApi")
                 .replace("import io.github.graphmaquina.annotation.GenerateGraphApi;\n",
                         "import io.github.graphmaquina.annotation.GenerateGraphApi;\n"
                                 + "import io.github.graphmaquina.annotation.GraphPeers;\n")

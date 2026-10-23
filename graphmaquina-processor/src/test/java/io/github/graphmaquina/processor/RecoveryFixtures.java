@@ -75,6 +75,15 @@ final class RecoveryFixtures {
     /** The whole machine, its facade declaring the {@code publish} operation as {@code publish} spells it. */
     static Map<String, String> sources(String publish) {
         Map<String, String> sources = new LinkedHashMap<>();
+        putDomain(sources);
+        putFailures(sources);
+        putActions(sources);
+        sources.put("fx.Tickets", HEADER + publish + "}\n");
+        return sources;
+    }
+
+    /** The states, the changes and the ticket the machine runs on. */
+    private static void putDomain(Map<String, String> sources) {
         sources.put("fx.TicketState", """
                 package fx;
                 /** Fixture declaration for recovery diagnostics. */ public enum TicketState {
@@ -99,6 +108,10 @@ final class RecoveryFixtures {
                     public void status(TicketState value) { status = value; }
                 }
                 """);
+    }
+
+    /** The failure kinds of the publication and the exceptions it recovers from. */
+    private static void putFailures(Map<String, String> sources) {
         sources.put("fx.PublicationFailures", """
                 package fx;
                 import io.github.graphmaquina.api.FailureKind;
@@ -146,6 +159,10 @@ final class RecoveryFixtures {
                     }
                 }
                 """);
+    }
+
+    /** The host {@code TicketActions} a test sets to publish, or to fail. */
+    private static void putActions(Map<String, String> sources) {
         sources.put("fx.TicketActions", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphAction;
@@ -191,7 +208,5 @@ final class RecoveryFixtures {
                     public void published(Ticket ticket) { }
                 }
                 """);
-        sources.put("fx.Tickets", HEADER + publish + "}\n");
-        return sources;
     }
 }

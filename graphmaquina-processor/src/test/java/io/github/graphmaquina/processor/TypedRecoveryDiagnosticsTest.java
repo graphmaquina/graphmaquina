@@ -455,28 +455,7 @@ class TypedRecoveryDiagnosticsTest {
                     + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
             sources.put("fx.Open", "package fx; /** Nonfinal candidate rejected by SG303. */ "
                     + "public class Open implements io.github.graphmaquina.api.FailureKind {}\n");
-            String source = sources.get("fx.Tickets");
-            if (form.equals("repeated-type")) {
-                source = source.replace("public interface Tickets", edge + "public interface Tickets")
-                        .replace(edge + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n", "");
-            } else if (form.equals("container-type")) {
-                List<String> transitions = source.lines()
-                        .filter((String line) -> line.startsWith("@TicketsGraph.Transition(")
-                                && !line.contains("id = PUBLISH"))
-                        .toList();
-                for (String transition : transitions) {
-                    source = source.replace(transition + "\n", "");
-                }
-                source = source.replace("public interface Tickets", "@TicketsGraph.Transitions({"
-                        + String.join(",\n", transitions) + ",\n" + edge.strip()
-                        + "})\npublic interface Tickets")
-                        .replace(edge + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n", "");
-            } else if (form.equals("container-method")) {
-                source = source.replace(edge, "@TicketsGraph.Transitions(" + edge.strip() + ")\n");
-            } else if (form.equals("repeated-method")) {
-                source = source.replace(edge,
-                        "@TicketsGraph.Transition(id = PUBLISH, from = RETRY_PENDING, to = READY)\n" + edge);
-            }
+            String source = declaredAs(form, sources.get("fx.Tickets"), edge);
             sources.put("fx.Tickets", source);
             Compilation.Result result = Compilation.compileTyped(sources);
             assertEquals(5, result.errors().size(), form + "\n" + result.describe());
@@ -493,16 +472,7 @@ class TypedRecoveryDiagnosticsTest {
     void duplicateThrowableAnchorsFollowBothSourceOrders() {
         for (boolean fallbackFirst : List.of(false, true)) {
             for (boolean duplicateFallback : List.of(false, true)) {
-                String fallback = "failsOn = {ServiceUnavailableException.class"
-                        + (duplicateFallback ? ", ServiceUnavailableException.class" : "") + "},\n";
-                String rule = "recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,"
-                        + " transition = SCHEDULE_RETRY, failsOn = ServiceUnavailableException.class),\n";
-                Map<String, String> sources = RecoveryFixtures.sources(
-                        "@TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,\n"
-                        + "action = TicketActionsRefs.Publish.class,\n"
-                        + (fallbackFirst ? fallback + rule : rule + fallback)
-                        + "onFailure = MARK_INTEGRATION_FAILED)\n"
-                        + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
+                Map<String, String> sources = ruleAndFallback(fallbackFirst, duplicateFallback);
                 Compilation.Result result = Compilation.compileTyped(sources);
                 assertEquals(List.of("[SG304] fx.ServiceUnavailableException" + REPEATED), result.errors(),
                         result.describe());
@@ -697,6 +667,55 @@ class TypedRecoveryDiagnosticsTest {
         assertEquals(start, diagnostic.getStartPosition(), result.describe());
         assertEquals(start + literal.length(), diagnostic.getEndPosition(), result.describe());
         assertEquals(literal, source.substring((int) diagnostic.getStartPosition(), (int) diagnostic.getEndPosition()));
+    }
+
+    /** The facade {@code source}, whose publication {@code edge} declares, rewritten the way {@code form} says. */
+    private static String declaredAs(String form, String source, String edge) {
+        if (form.equals("repeated-type")) {
+            return source.replace("public interface Tickets", edge + "public interface Tickets")
+                    .replace(edge + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n", "");
+        } else if (form.equals("container-type")) {
+            return containerType(source, edge);
+        } else if (form.equals("container-method")) {
+            return source.replace(edge, "@TicketsGraph.Transitions(" + edge.strip() + ")\n");
+        } else if (form.equals("repeated-method")) {
+            return source.replace(edge,
+                    "@TicketsGraph.Transition(id = PUBLISH, from = RETRY_PENDING, to = READY)\n" + edge);
+        }
+        return source;
+    }
+
+    /** The facade {@code source} with every transition, {@code edge} included, in one container on the type. */
+    private static String containerType(String source, String edge) {
+        List<String> transitions = source.lines()
+                .filter((String line) -> line.startsWith("@TicketsGraph.Transition(")
+                        && !line.contains("id = PUBLISH"))
+                .toList();
+        String remaining = source;
+        for (String transition : transitions) {
+            remaining = remaining.replace(transition + "\n", "");
+        }
+        return remaining.replace("public interface Tickets", "@TicketsGraph.Transitions({"
+                + String.join(",\n", transitions) + ",\n" + edge.strip()
+                + "})\npublic interface Tickets")
+                .replace(edge + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n", "");
+    }
+
+    /**
+     * The sources of the machine whose publication declares a rule and a fallback, in the order {@code fallbackFirst}
+     * says; with {@code duplicateFallback} the fallback names its type twice.
+     */
+    private static Map<String, String> ruleAndFallback(boolean fallbackFirst, boolean duplicateFallback) {
+        String fallback = "failsOn = {ServiceUnavailableException.class"
+                + (duplicateFallback ? ", ServiceUnavailableException.class" : "") + "},\n";
+        String rule = "recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,"
+                + " transition = SCHEDULE_RETRY, failsOn = ServiceUnavailableException.class),\n";
+        return RecoveryFixtures.sources(
+                "@TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,\n"
+                + "action = TicketActionsRefs.Publish.class,\n"
+                + (fallbackFirst ? fallback + rule : rule + fallback)
+                + "onFailure = MARK_INTEGRATION_FAILED)\n"
+                + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
     }
 
     /** {@code sources} compiled on their own, without annotation processing, and packaged as a jar. */

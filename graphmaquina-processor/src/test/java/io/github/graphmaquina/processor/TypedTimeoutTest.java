@@ -40,13 +40,15 @@ class TypedTimeoutTest {
                 archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 999999999)")));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT2562047788015215H30M7.999999999S\"))"),
+        assertTrue(result.generated("fx.DocsRuntime")
+                .contains(".timeout(Duration.parse(\"PT2562047788015215H30M7.999999999S\"))"),
                 result.generated("fx.DocsRuntime"));
     }
 
     @Test
     void refusesATimeoutOfZero() {
-        Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, archive(", timeout = @Timeout")));
+        Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
+                archive(", timeout = @Timeout")));
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG511"), result.describe());
@@ -99,7 +101,8 @@ class TypedTimeoutTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         timeout = @Timeout(seconds = 1))
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
@@ -113,7 +116,8 @@ class TypedTimeoutTest {
         return """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Archive.class%s)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """.formatted(extra);
     }

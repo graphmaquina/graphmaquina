@@ -27,7 +27,8 @@ class InheritedStaticBindingsTest {
             import io.github.graphmaquina.api.TransitionContext;
             public class BaseActions {
                 public static String ran = "none";
-                @GraphAction public static ActionOutcome archive(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                @GraphAction public static ActionOutcome archive(TransitionContext<Doc, DocStatus, DocTransition> \
+            context) {
                     ran = "BaseActions.archive";
                     return ActionOutcome.ok();
                 }
@@ -46,7 +47,8 @@ class InheritedStaticBindingsTest {
                     ran = "Host.archive";
                     return ActionOutcome.ok();
                 }
-                @GraphAction public static ActionOutcome keep(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                @GraphAction public static ActionOutcome keep(TransitionContext<Doc, DocStatus, DocTransition> \
+            context) {
                     return ActionOutcome.ok();
                 }
             }
@@ -60,7 +62,8 @@ class InheritedStaticBindingsTest {
                 private Scenario() { }
                 public static String run() {
                     Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph())
-                            .state((Doc doc) -> doc.status(), (Doc doc, DocStatus status) -> doc.status(status)).build());
+                            .state((Doc doc) -> doc.status(), \
+            (Doc doc, DocStatus status) -> doc.status(status)).build());
                     docs.publish(new Doc());
                     return BaseActions.ran;
                 }
@@ -143,7 +146,8 @@ class InheritedStaticBindingsTest {
                 import io.github.graphmaquina.api.TransitionContext;
                 public class BaseActions {
                     @GraphAction
-                    public static <C extends TransitionContext<Doc, DocStatus, DocTransition>> ActionOutcome archive(C context) {
+                    public static <C extends TransitionContext<Doc, DocStatus, DocTransition>> ActionOutcome \
+                archive(C context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -155,10 +159,12 @@ class InheritedStaticBindingsTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 @GraphBindings public final class Host extends BaseActions {
-                    public static <X extends TransitionContext<Doc, DocStatus, DocTransition>> ActionOutcome archive(X context) {
+                    public static <X extends TransitionContext<Doc, DocStatus, DocTransition>> ActionOutcome \
+                archive(X context) {
                         return ActionOutcome.ok();
                     }
-                    @GraphAction public static ActionOutcome keep(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction public static ActionOutcome keep(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }

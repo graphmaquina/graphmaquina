@@ -83,18 +83,23 @@ final class Fixtures {
             public class DocActions {
                 public final List<String> calls = new ArrayList<>();
                 public boolean approved = true;
-                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { calls.add("publish"); return ActionOutcome.ok(); }
-                @GraphAction public ActionOutcome autoPublish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { calls.add("autoPublish"); return ActionOutcome.ok(); }
-                @GraphAction public CompletionStage<ActionOutcome> archiveAsync(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
+                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { \
+            calls.add("publish"); return ActionOutcome.ok(); }
+                @GraphAction public ActionOutcome autoPublish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { \
+            calls.add("autoPublish"); return ActionOutcome.ok(); }
+                @GraphAction public CompletionStage<ActionOutcome> \
+            archiveAsync(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
                     calls.add("archive");
                     return CompletableFuture.completedFuture(ActionOutcome.ok());
                 }
                 @GraphGuard public GuardResult approved(GuardContext<Doc, DocStatus, DocTransition> ctx) {
                     return approved ? GuardResult.pass() : GuardResult.reject("not approved");
                 }
-                @GraphGuard public static GuardResult ready(GuardContext<Doc, DocStatus, DocTransition> ctx) { return GuardResult.pass(); }
+                @GraphGuard public static GuardResult ready(GuardContext<Doc, DocStatus, DocTransition> ctx) { \
+            return GuardResult.pass(); }
                 @GraphHook public void notify(Doc doc) { calls.add("notify:" + doc.getId()); }
-                @GraphCondition public boolean allPagesDone(Doc doc, Collection<? extends Page> pages, PeerView<Page, PageStatus, PageTransition> view) {
+                @GraphCondition public boolean allPagesDone(Doc doc, Collection<? extends Page> pages, \
+            PeerView<Page, PageStatus, PageTransition> view) {
                     return view.allIn(pages, PageStatus.DONE);
                 }
             }
@@ -109,7 +114,8 @@ final class Fixtures {
             import static fx.PageStatus.OPEN;
             import static fx.PageTransition.FINISH;
             @GenerateGraphApi
-            @PagesGraph.Definition(initial = OPEN, terminals = DONE, state = PageRefs.Status.class, id = PageRefs.Id.class)
+            @PagesGraph.Definition(initial = OPEN, terminals = DONE, state = PageRefs.Status.class, \
+            id = PageRefs.Id.class)
             @PagesGraph.StatePolicy(state = OPEN, otherwise = "a page is finished")
             public interface Pages extends Machine<Page, PageStatus, PageTransition> {
                 @PagesGraph.Transition(id = FINISH, from = OPEN, to = DONE)
@@ -135,7 +141,8 @@ final class Fixtures {
     static final int HEADER_LINE = 11;
 
     static final String DOCS_HEADER = """
-            @DocsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, allowsCycle = REVIEW, state = DocRefs.Status.class, id = DocRefs.Id.class)
+            @DocsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, allowsCycle = REVIEW, \
+            state = DocRefs.Status.class, id = DocRefs.Id.class)
             @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
             @DocsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published or sent back")
             @DocsGraph.StatePolicy(state = PUBLISHED, otherwise = "a published doc can only be archived")
@@ -145,16 +152,20 @@ final class Fixtures {
     static final String DOCS_BODY = """
                 @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                 Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
-                        guards = DocActionsRefs.Approved.class, onFailure = RETURN, afterCommit = DocActionsRefs.Notify.class)
+                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+            action = DocActionsRefs.Publish.class,
+                        guards = DocActionsRefs.Approved.class, onFailure = RETURN, \
+            afterCommit = DocActionsRefs.Notify.class)
                 Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
-                @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
+                @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, \
+            action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
                 Outcome<Doc, DocStatus, DocTransition> archive(Doc doc);
             """;
 
     /** A second operation reaching PUBLISHED from REVIEW through its own identifier, never through PUBLISH's. */
     static final String AUTO_PUBLISH = """
-                @DocsGraph.Transition(id = AUTO_PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.AutoPublish.class)
+                @DocsGraph.Transition(id = AUTO_PUBLISH, from = REVIEW, to = PUBLISHED, \
+            action = DocActionsRefs.AutoPublish.class)
                 Outcome<Doc, DocStatus, DocTransition> autoPublish(Doc doc);
             """;
 

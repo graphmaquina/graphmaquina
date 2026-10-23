@@ -36,7 +36,8 @@ import org.junit.jupiter.api.Test;
 class GeneratedScopeTest {
 
     /** The first line of the body of the shop domain's facade, after which a test adds members. */
-    private static final String FACADE = "public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {";
+    private static final String FACADE =
+            "public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {";
 
     /** The set of the shop domain, holding its one machine. */
     private static final String SHOP = """
@@ -64,7 +65,8 @@ class GeneratedScopeTest {
                 package shop;
                 public record Override(String reason, long cents) { }
                 """);
-        sources.put("shop.Orders", sources.get("shop.Orders").replace("public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {",
+        sources.put("shop.Orders", sources.get("shop.Orders").replace(
+                "public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {",
                 "public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {\n"
                         + "    interface Payments { void settled(Order order); }"));
 
@@ -85,6 +87,24 @@ class GeneratedScopeTest {
     @Test
     void theTypesOfTheSetsPackageAndItsOwnBuilderCaptureNothing() throws Exception {
         Map<String, String> sources = shop("app.BuilderRefs.Charge.class", "");
+        putAppTypes(sources);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        Class<?> host = result.load("app.Builder");
+        Object builder = result.load("app.ShopRuntime").getMethod("builder", Duration.class, host)
+                .invoke(null, Duration.ofSeconds(1), host.getConstructor().newInstance());
+        InvocationTargetException refused = assertThrows(InvocationTargetException.class, () -> builder.getClass()
+                .getMethod("asyncTimeout", Class.class, Duration.class)
+                .invoke(builder, Machine.class, Duration.ofSeconds(1)));
+        assertEquals(java.lang.IllegalArgumentException.class, refused.getCause().getClass());
+        assertEquals(builder, builder.getClass().getMethod("recordTrail", java.time.InstantSource.class)
+                .invoke(builder, java.time.InstantSource.system()));
+    }
+
+    /** The types of the set's package {@code app}: the host {@code Builder}, three simple names the JDK has, the set. */
+    private static void putAppTypes(Map<String, String> sources) {
         sources.put("app.Builder", """
                 package app;
                 import io.github.graphmaquina.annotation.GraphAction;
@@ -96,7 +116,8 @@ class GeneratedScopeTest {
                 import shop.OrderStatus;
                 import shop.OrderTransition;
                 public final class Builder {
-                    @GraphAction public CompletionStage<ActionOutcome> charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public CompletionStage<ActionOutcome> \
+                charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
                         return CompletableFuture.completedFuture(ActionOutcome.ok());
                     }
                 }
@@ -126,18 +147,6 @@ class GeneratedScopeTest {
                     Orders orders();
                 }
                 """);
-
-        Compilation.Result result = Compilation.compileTyped(sources);
-
-        assertTrue(result.success(), result.describe());
-        Class<?> host = result.load("app.Builder");
-        Object builder = result.load("app.ShopRuntime").getMethod("builder", Duration.class, host)
-                .invoke(null, Duration.ofSeconds(1), host.getConstructor().newInstance());
-        InvocationTargetException refused = assertThrows(InvocationTargetException.class, () -> builder.getClass()
-                .getMethod("asyncTimeout", Class.class, Duration.class).invoke(builder, Machine.class, Duration.ofSeconds(1)));
-        assertEquals(java.lang.IllegalArgumentException.class, refused.getCause().getClass());
-        assertEquals(builder, builder.getClass().getMethod("recordTrail", java.time.InstantSource.class)
-                .invoke(builder, java.time.InstantSource.system()));
     }
 
     /**
@@ -186,7 +195,8 @@ class GeneratedScopeTest {
         packageType.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
         packageType.put("shop.billing", "package shop;\npublic final class billing { }\n");
         packageType.put("shop.Orders", packageType.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
         Compilation.Result typed = Compilation.compileTyped(packageType);
         assertEquals(1, typed.countError("SG603"), typed.describe());
@@ -239,7 +249,8 @@ class GeneratedScopeTest {
         sources.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
         sources.put("shop.billing", "package shop;\npublic final class billing { }\n");
         sources.put("shop.Orders", sources.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
         List<String> withoutTaker = new ArrayList<>(sources.keySet());
         withoutTaker.remove("shop.billing");
@@ -259,9 +270,11 @@ class GeneratedScopeTest {
     /** A constant of the facade, which the companion inherits, hides a package in every expression of its body. */
     @Test
     void sg603AConstantOfTheFacadeNamedLikeAPackageTheCompanionWrites() {
-        Compilation.Result constant = Compilation.compileTyped(guardedBy("billing", "    String billing = \"audit\";\n"));
+        Compilation.Result constant = Compilation.compileTyped(
+                guardedBy("billing", "    String billing = \"audit\";\n"));
         assertEquals(1, constant.countError("SG603"), constant.describe());
-        assertTrue(constant.errors().get(0).contains("billing.Checks") && constant.errors().get(0).contains("Orders.billing"),
+        assertTrue(constant.errors().get(0).contains("billing.Checks")
+                && constant.errors().get(0).contains("Orders.billing"),
                 constant.describe());
         assertFalse(constant.hasGenerated("shop.OrdersRuntime"), constant.describe());
     }
@@ -276,7 +289,8 @@ class GeneratedScopeTest {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
         sources.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
         sources.put("shop.Orders", sources.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace(FACADE, FACADE + "\n    String billing = \"audit\";\n    String Order = \"order\";"
                         + "\n    String Set = \"set\";\n    String Supplier = \"supplier\";")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
@@ -321,14 +335,16 @@ class GeneratedScopeTest {
                 """);
         sources.put("shop.Orders", sources.get("shop.Orders")
                 .replace("import static shop.OrderStatus.*;",
-                        "import billing.Audited;\nimport billing.Level;\nimport billing.Payment;\nimport static shop.OrderStatus.*;")
+                        "import billing.Audited;\nimport billing.Level;\nimport billing.Payment;\n"
+                                + "import static shop.OrderStatus.*;")
                 .replace(FACADE, FACADE + "\n    String billing = \"audit\";")
                 .replace("pay(Order order);", "pay(Order order, @Audited(level = Level.HIGH) Payment payment);"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(1, result.countError("SG603"), result.describe());
-        assertTrue(result.errors().get(0).contains("the companion OrdersRuntime of shop.Orders writes billing.Level, but"
+        assertTrue(result.errors().get(0).contains(
+                "the companion OrdersRuntime of shop.Orders writes billing.Level, but"
                 + " in its expressions billing names the constant Orders.billing, not a package: rename that constant"
                 + " or the package billing"), result.describe());
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
@@ -365,7 +381,8 @@ class GeneratedScopeTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(1, result.countError("SG603"), result.describe());
-        assertTrue(result.errors().get(0).contains("fx.b") && result.errors().get(0).contains("Both"), result.describe());
+        assertTrue(result.errors().get(0).contains("fx.b") && result.errors().get(0).contains("Both"),
+                result.describe());
         assertFalse(result.hasGenerated("fx.BothRuntime"), result.describe());
         assertTrue(result.hasGenerated("b.ThingsRuntime"), result.describe());
     }
@@ -533,7 +550,8 @@ class GeneratedScopeTest {
                 import shop.OrderStatus;
                 import shop.OrderTransition;
                 public final class Executor {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -545,7 +563,8 @@ class GeneratedScopeTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(1, result.countError("SG603"), result.describe());
-        assertTrue(result.errors().get(0).contains("the companion ShopRuntime of shop.Shop writes OrdersRuntime.Executor,"
+        assertTrue(result.errors().get(0).contains(
+                "the companion ShopRuntime of shop.Shop writes OrdersRuntime.Executor,"
                 + " but in its scope OrdersRuntime names the companion shop.OrdersRuntime this processor reserves for"
                 + " shop.Orders, not a package: rename the package OrdersRuntime"), result.describe());
         assertEquals(1, result.errors().size(), result.describe());
@@ -564,7 +583,8 @@ class GeneratedScopeTest {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
         sources.put("ShopRuntime.Reason", "package ShopRuntime;\npublic record Reason(String text) { }\n");
         sources.put("shop.Orders", sources.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import ShopRuntime.Reason;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import ShopRuntime.Reason;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Reason reason);"));
 
         Compilation.Result result = withAnotherProcessor(sources, Map.of("shop.Shop", SHOP));
@@ -590,7 +610,8 @@ class GeneratedScopeTest {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
         sources.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
         sources.put("shop.Orders", sources.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
 
         Compilation.Result result = withAnotherProcessor(sources, Map.of(
@@ -599,12 +620,12 @@ class GeneratedScopeTest {
 
         assertEquals(2, result.countError("SG603"), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("the companion OrdersRuntime of"
-                + " shop.Orders, written in an earlier round, writes billing.Payment, but in its scope billing now names"
-                + " the type shop.billing, new in a later round, not a package: rename that type or the package"
+                + " shop.Orders, written in an earlier round, writes billing.Payment, but in its scope billing now"
+                + " names the type shop.billing, new in a later round, not a package: rename that type or the package"
                 + " billing")), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("the companion OrdersRuntime of"
-                + " shop.Orders, written in an earlier round, writes the type java.lang.Override as Override, but in its"
-                + " scope Override now names the type shop.Override, new in a later round: rename that type")),
+                + " shop.Orders, written in an earlier round, writes the type java.lang.Override as Override, but in"
+                + " its scope Override now names the type shop.Override, new in a later round: rename that type")),
                 result.describe());
         assertEquals("Orders.java", source(result, "SG603"), result.describe());
     }
@@ -619,7 +640,8 @@ class GeneratedScopeTest {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
         sources.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
         sources.put("shop.Orders", sources.get("shop.Orders")
-                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("import static shop.OrderStatus.*;",
+                        "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
         AnotherProcessor.generates(Map.of(
                 "shop.OrdersRuntime", "package shop;\npublic final class OrdersRuntime { }\n",
@@ -629,7 +651,8 @@ class GeneratedScopeTest {
                 "-processor", AnotherProcessor.class.getName() + "," + StateGraphProcessor.class.getName()));
 
         assertEquals(1, result.countError("SG599"), result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("could not write shop.OrdersRuntime")),
+        assertTrue(result.errors().stream()
+                .anyMatch((String error) -> error.contains("could not write shop.OrdersRuntime")),
                 result.describe());
         assertEquals(0, result.countError("SG603"), result.describe());
     }
@@ -644,7 +667,8 @@ class GeneratedScopeTest {
     /** The file name of the source the first error carrying {@code code} is reported in. */
     private static String source(Compilation.Result result, String code) {
         for (Diagnostic<? extends JavaFileObject> diagnostic : result.diagnostics()) {
-            if (diagnostic.getKind() == Diagnostic.Kind.ERROR && diagnostic.getMessage(null).contains("[" + code + "]")) {
+            if (diagnostic.getKind() == Diagnostic.Kind.ERROR
+                    && diagnostic.getMessage(null).contains("[" + code + "]")) {
                 return Path.of(diagnostic.getSource().getName()).getFileName().toString();
             }
         }
@@ -667,7 +691,8 @@ class GeneratedScopeTest {
                 import shop.OrderStatus;
                 import shop.OrderTransition;
                 public final class Checks {
-                    @GraphGuard public static GuardResult ok(GuardContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphGuard public static GuardResult ok(GuardContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return GuardResult.pass();
                     }
                 }
@@ -731,7 +756,8 @@ class GeneratedScopeTest {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 @GenerateGraphApi
-                @DocsGraph.Definition(initial = DRAFT, terminals = {LIVE}, state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @DocsGraph.Definition(initial = DRAFT, terminals = {LIVE}, state = DocRefs.Status.class, \
+                id = DocRefs.Id.class)
                 @DocsGraph.StatePolicy(state = DRAFT, otherwise = "only publish")
                 public interface Docs extends Machine<Doc, fx.Status, Step>%s {
                 %s
@@ -773,7 +799,8 @@ class GeneratedScopeTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Payments {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -826,7 +853,8 @@ class GeneratedScopeTest {
                 import static %1$s.Status.OPEN;
                 import static %1$s.Step.FINISH;
                 @GenerateGraphApi
-                @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, id = ThingRefs.Id.class%2$s)
+                @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, \
+                id = ThingRefs.Id.class%2$s)
                 @ThingsGraph.StatePolicy(state = OPEN, otherwise = "a thing is finished")
                 public interface Things extends Machine<Thing, Status, Step> {
                     @ThingsGraph.Transition(id = FINISH, from = OPEN, to = DONE)

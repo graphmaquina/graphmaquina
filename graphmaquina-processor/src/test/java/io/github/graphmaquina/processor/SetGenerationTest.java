@@ -68,7 +68,8 @@ class SetGenerationTest {
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(async.success(), async.describe());
         String source = async.generated("fx.LibraryRuntime");
-        assertTrue(source.contains("public static Builder builder(Duration asyncTimeout, DocActions docActions)"), source);
+        assertTrue(source.contains("public static Builder builder(Duration asyncTimeout, DocActions docActions)"),
+                source);
         assertTrue(source.contains("public final class LibraryRuntime implements Library"), source);
         assertTrue(source.contains(".as(Docs.class)"), source);
         assertTrue(source.contains(".as(Pages.class)"), source);
@@ -92,7 +93,8 @@ class SetGenerationTest {
         Compilation.Result redeclared = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY.replace(
                         "    Pages pages();\n", "    Pages pages();\n    @Override void close();\n"
-                                + "    @Override String toString();\n    boolean equals(Object other);\n    int hashCode();\n")));
+                                + "    @Override String toString();\n    boolean equals(Object other);\n"
+                                + "    int hashCode();\n")));
         assertTrue(redeclared.success(), redeclared.describe());
         assertTrue(redeclared.generated("fx.LibraryRuntime").contains("public void close()"),
                 redeclared.generated("fx.LibraryRuntime"));
@@ -112,48 +114,65 @@ class SetGenerationTest {
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
         Class<?> companion = result.load("fx.LibraryRuntime");
-        Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
+        Object builder = companion.getMethod("builder", Duration.class, docActions)
+                .invoke(null, Duration.ofSeconds(5), actions);
         List<String> seen = new ArrayList<>();
+        List<String> events = new ArrayList<>();
+        registerObservers(builder, seen, events);
+        Object library = builder.getClass().getMethod("build").invoke(builder);
+        assertInstanceOf(Machines.class, library);
+        try {
+            assertFinishingAPagePublishesItsDocument(result, companion, library);
+            @SuppressWarnings("unchecked")
+            List<String> calls = (List<String>) docActions.getField("calls").get(actions);
+            assertEquals(List.of("publish", "notify:d1"), calls);
+            assertEachObserverSawEachCall(seen, events);
+        } finally {
+            ((Machines) library).close();
+        }
+    }
+
+    /** Registers on {@code builder} an observer that lists what it completed in {@code seen}, then two that record. */
+    private static void registerObservers(Object builder, List<String> seen, List<String> events) throws Exception {
         MachineObserver observer = new MachineObserver() {
             @Override
             public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
                 seen.add(call.key().entity().getSimpleName() + ":" + outcome.status().name());
             }
         };
-        List<String> events = new ArrayList<>();
         Method register = builder.getClass().getMethod("observer", MachineObserver.class);
         register.invoke(builder, observer);
         register.invoke(builder, recording("first", events));
         register.invoke(builder, recording("second", events));
-        Object library = builder.getClass().getMethod("build").invoke(builder);
-        assertInstanceOf(Machines.class, library);
-        try {
-            Object docs = companion.getMethod("docs").invoke(library);
-            Object pages = companion.getMethod("pages").invoke(library);
-            assertInstanceOf(Machine.class, docs);
-            Class<?> docClass = result.load("fx.Doc");
-            Class<?> pageClass = result.load("fx.Page");
-            Object doc = docClass.getConstructor(String.class).newInstance("d1");
-            Object page = pageClass.getConstructor(String.class, docClass).newInstance("p1", doc);
-            assertInstanceOf(Outcome.Applied.class, docs.getClass().getMethod("submit", docClass).invoke(docs, doc));
-            Object finished = pages.getClass().getMethod("finish", pageClass).invoke(pages, page);
-            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class, finished);
-            Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().get(0));
-            assertInstanceOf(Outcome.Applied.class, reaction.outcome());
-            assertEquals("PUBLISHED", docClass.getMethod("getStatus").invoke(doc).toString());
-            @SuppressWarnings("unchecked")
-            List<String> calls = (List<String>) docActions.getField("calls").get(actions);
-            assertEquals(List.of("publish", "notify:d1"), calls);
-            assertEquals(List.of("Doc:APPLIED", "Doc:APPLIED", "Page:APPLIED"), seen);
-            assertEquals(12, events.size(), events.toString());
-            for (int index = 0; index < events.size(); index += 2) {
-                assertTrue(events.get(index).startsWith("first "), events.toString());
-                assertEquals(events.get(index).replaceFirst("^first ", "second "), events.get(index + 1));
-            }
-            assertEquals(3, events.stream().filter((String event) -> event.startsWith("first completed")).count());
-        } finally {
-            ((Machines) library).close();
+    }
+
+    /** Submits a doc, finishes its page, and asserts the page's watch reacted by publishing the doc. */
+    private static void assertFinishingAPagePublishesItsDocument(Compilation.Result result, Class<?> companion,
+            Object library) throws Exception {
+        Object docs = companion.getMethod("docs").invoke(library);
+        Object pages = companion.getMethod("pages").invoke(library);
+        assertInstanceOf(Machine.class, docs);
+        Class<?> docClass = result.load("fx.Doc");
+        Class<?> pageClass = result.load("fx.Page");
+        Object doc = docClass.getConstructor(String.class).newInstance("d1");
+        Object page = pageClass.getConstructor(String.class, docClass).newInstance("p1", doc);
+        assertInstanceOf(Outcome.Applied.class, docs.getClass().getMethod("submit", docClass).invoke(docs, doc));
+        Object finished = pages.getClass().getMethod("finish", pageClass).invoke(pages, page);
+        Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class, finished);
+        Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().get(0));
+        assertInstanceOf(Outcome.Applied.class, reaction.outcome());
+        assertEquals("PUBLISHED", docClass.getMethod("getStatus").invoke(doc).toString());
+    }
+
+    /** Asserts that every call was seen once, and that the two recorders saw the same events, one after the other. */
+    private static void assertEachObserverSawEachCall(List<String> seen, List<String> events) {
+        assertEquals(List.of("Doc:APPLIED", "Doc:APPLIED", "Page:APPLIED"), seen);
+        assertEquals(12, events.size(), events.toString());
+        for (int index = 0; index < events.size(); index += 2) {
+            assertTrue(events.get(index).startsWith("first "), events.toString());
+            assertEquals(events.get(index).replaceFirst("^first ", "second "), events.get(index + 1));
         }
+        assertEquals(3, events.stream().filter((String event) -> event.startsWith("first completed")).count());
     }
 
     /** An observer that appends "name event" to the shared list for every start and completion it is told of. */
@@ -176,9 +195,7 @@ class SetGenerationTest {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
-        Class<?> docActions = result.load("fx.DocActions");
-        Object actions = docActions.getConstructor().newInstance();
-        Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
+        Object builder = libraryBuilder(result);
         Method override = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
         override.invoke(builder, result.load("fx.Docs"), Duration.ofSeconds(1));
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
@@ -212,9 +229,7 @@ class SetGenerationTest {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
-        Class<?> docActions = result.load("fx.DocActions");
-        Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions)
-                .invoke(null, Duration.ofSeconds(5), docActions.getConstructor().newInstance());
+        Object builder = libraryBuilder(result);
         Method observer = builder.getClass().getMethod("observer", MachineObserver.class);
         Method depth = builder.getClass().getMethod("maxCascadeDepth", int.class);
         Method chain = builder.getClass().getMethod("maxWatchChain", int.class);
@@ -229,13 +244,7 @@ class SetGenerationTest {
 
         observer.invoke(builder, first);
         observer.invoke(builder, second);
-        assertInstanceOf(IllegalArgumentException.class,
-                assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 0)).getCause());
-        assertInstanceOf(IllegalArgumentException.class,
-                assertThrows(InvocationTargetException.class, () -> chain.invoke(builder, -3)).getCause());
-        NullPointerException noClock = assertInstanceOf(NullPointerException.class,
-                assertThrows(InvocationTargetException.class, () -> clock.invoke(builder, (Object) null)).getCause());
-        assertEquals("clock", noClock.getMessage());
+        assertRefusedWhenGiven(builder, depth, chain, clock);
 
         try (Machines library = (Machines) build.invoke(builder)) {
             assertInstanceOf(Machine.class, library.getClass().getMethod("docs").invoke(library));
@@ -367,6 +376,17 @@ class SetGenerationTest {
         return hops;
     }
 
+    /** Asserts that the builder refuses, as it is given them, a depth and a chain that are no use and a null clock. */
+    private static void assertRefusedWhenGiven(Object builder, Method depth, Method chain, Method clock) {
+        assertInstanceOf(IllegalArgumentException.class,
+                assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 0)).getCause());
+        assertInstanceOf(IllegalArgumentException.class,
+                assertThrows(InvocationTargetException.class, () -> chain.invoke(builder, -3)).getCause());
+        NullPointerException noClock = assertInstanceOf(NullPointerException.class,
+                assertThrows(InvocationTargetException.class, () -> clock.invoke(builder, (Object) null)).getCause());
+        assertEquals("clock", noClock.getMessage());
+    }
+
     /** Asserts that {@code call}, a call of the generated LibraryRuntime.Builder, is refused because it was used. */
     private static void refusedAsUsed(Executable call) {
         IllegalStateException refused = assertInstanceOf(IllegalStateException.class,
@@ -398,7 +418,8 @@ class SetGenerationTest {
             Object pages = library.getClass().getMethod("pages").invoke(library);
             Class<?> pageClass = result.load("fx.Page");
             Object page = pageClass.getConstructor(String.class, result.load("fx.Doc")).newInstance("p1", null);
-            assertInstanceOf(Outcome.Applied.class, pages.getClass().getMethod("finish", pageClass).invoke(pages, page));
+            assertInstanceOf(Outcome.Applied.class,
+                    pages.getClass().getMethod("finish", pageClass).invoke(pages, page));
             assertEquals("DONE", pageClass.getMethod("status").invoke(page).toString());
         }
     }
@@ -431,7 +452,8 @@ class SetGenerationTest {
                 import static %1$s.Status.OPEN;
                 import static %1$s.Step.FINISH;
                 @GenerateGraphApi
-                @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, id = ThingRefs.Id.class)
+                @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, \
+                id = ThingRefs.Id.class)
                 @ThingsGraph.StatePolicy(state = OPEN, otherwise = "a thing is finished")
                 public interface Things extends Machine<Thing, Status, Step> {
                     @ThingsGraph.Transition(id = FINISH, from = OPEN, to = DONE)
@@ -473,7 +495,8 @@ class SetGenerationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public class Executor {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { return ActionOutcome.ok(); }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { \
+                return ActionOutcome.ok(); }
                 }
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);

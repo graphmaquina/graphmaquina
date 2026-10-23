@@ -96,16 +96,8 @@ class LargeMachineTest {
      */
     private static Map<String, String> machine(int edges, String modifier) {
         Map<String, String> sources = new LinkedHashMap<>();
-        StringBuilder states = new StringBuilder("package big;\npublic enum ItemStatus { ");
-        for (int s = 0; s < STATES; s++) {
-            states.append(s == 0 ? "" : ", ").append('S').append(s);
-        }
-        sources.put("big.ItemStatus", states.append(" }\n").toString());
-        StringBuilder transitions = new StringBuilder("package big;\npublic enum ItemTransition { ");
-        for (int t = 0; t < edges; t++) {
-            transitions.append(t == 0 ? "" : ", ").append('T').append(t);
-        }
-        sources.put("big.ItemTransition", transitions.append(" }\n").toString());
+        sources.put("big.ItemStatus", EnumSources.numbered("big", "ItemStatus", 'S', STATES));
+        sources.put("big.ItemTransition", EnumSources.numbered("big", "ItemTransition", 'T', edges));
         sources.put("big.Item", """
                 package big;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -136,6 +128,15 @@ class LargeMachineTest {
                     }
                 }
                 """.formatted(modifier));
+        sources.put("big.Items", facade(edges));
+        return sources;
+    }
+
+    /**
+     * The facade {@code big.Items}: the definition, its rejection, a policy per state but the last, and one
+     * declaration per edge.
+     */
+    private static String facade(int edges) {
         StringBuilder facade = new StringBuilder("""
                 package big;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -157,9 +158,8 @@ class LargeMachineTest {
                     .append(", to = S").append(from + 1).append(", action = ItemActionsRefs.Advance.class")
                     .append(t % 10 == 0 ? ", guards = ItemActionsRefs.Allowed.class)\n" : ")\n");
         }
-        sources.put("big.Items", facade.append(
-                "public interface Items extends Machine<Item, ItemStatus, ItemTransition> {\n}\n").toString());
-        return sources;
+        return facade.append("public interface Items extends Machine<Item, ItemStatus, ItemTransition> {\n}\n")
+                .toString();
     }
 
     /** The definition of {@link #machine} of {@code edges} edges written with the DSL, one declaration at a time. */
