@@ -782,11 +782,15 @@ class ManifestCodecTest {
         Matcher matcher = Pattern.compile("\"([a-zA-Z]+)\":").matcher(
             json.substring(json.indexOf("\"graphs\""), json.indexOf("\"symbols\"")));
         while (matcher.find()) {
-            if (!"path".equals(matcher.group(1)) && !"line".equals(matcher.group(1))
-                    && !"column".equals(matcher.group(1)) && !"graphs".equals(matcher.group(1))) {
+            if (isMemberName(matcher.group(1))) {
                 names.add(matcher.group(1));
             }
         }
         return names;
+    }
+
+    /** Whether {@code key} names a member, and is neither the {@code graphs} key nor a coordinate of an origin. */
+    private static boolean isMemberName(String key) {
+        return !"path".equals(key) && !"line".equals(key) && !"column".equals(key) && !"graphs".equals(key);
     }
 }

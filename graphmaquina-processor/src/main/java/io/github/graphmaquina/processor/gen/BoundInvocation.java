@@ -191,7 +191,8 @@ public final class BoundInvocation {
         }
         TypeMirror current = type;
         while (current instanceof DeclaredType declared && declared.asElement() instanceof TypeElement element) {
-            if (element.getSimpleName().contentEquals(simple) && element.getEnclosingElement() instanceof PackageElement owner
+            if (element.getSimpleName().contentEquals(simple)
+                    && element.getEnclosingElement() instanceof PackageElement owner
                     && owner.getQualifiedName().contentEquals("java.lang")) {
                 return true;
             }

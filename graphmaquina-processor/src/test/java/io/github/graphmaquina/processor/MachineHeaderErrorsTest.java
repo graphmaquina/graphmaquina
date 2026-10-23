@@ -241,7 +241,8 @@ class MachineHeaderErrorsTest {
     void sg701MissingPolicySg102DuplicatePolicyAndSg103BlankReason() {
         Compilation.Result missing = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace(
-                        "@DocsGraph.StatePolicy(state = PUBLISHED, otherwise = \"a published doc can only be archived\")\n", ""),
+                        "@DocsGraph.StatePolicy(state = PUBLISHED, otherwise = "
+                                + "\"a published doc can only be archived\")\n", ""),
                 Fixtures.DOCS_BODY));
         assertTrue(missing.hasError("SG701"), missing.describe());
         assertTrue(missing.errors().get(0).contains("PUBLISHED"), missing.describe());
@@ -261,7 +262,8 @@ class MachineHeaderErrorsTest {
     @Test
     void terminalMayCarryAPolicyWithACustomReason() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(
-                Fixtures.DOCS_HEADER + "@DocsGraph.StatePolicy(state = ARCHIVED, otherwise = \"archived docs are frozen\")\n",
+                Fixtures.DOCS_HEADER
+                        + "@DocsGraph.StatePolicy(state = ARCHIVED, otherwise = \"archived docs are frozen\")\n",
                 Fixtures.DOCS_BODY));
         assertTrue(result.success(), result.describe());
     }

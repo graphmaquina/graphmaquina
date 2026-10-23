@@ -62,37 +62,9 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         for (S state : definition.graph().nodes()) {
             states.add(state.name());
         }
-        List<TransitionView> transitions = new ArrayList<>();
-        for (TransitionSpec<E, S, T> spec : definition.transitions()) {
-            List<String> guards = new ArrayList<>();
-            for (GuardRef<E, S, T> guard : spec.guards()) {
-                guards.add(guard.name());
-            }
-            transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(),
-                    spec.kind(), spec.action().map(ActionRef::name), guards, spec.isAsync(),
-                    spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules())));
-        }
-        List<PolicyView> policies = new ArrayList<>();
-        for (S state : definition.graph().nodes()) {
-            StatePolicy<S, T> policy = definition.policy(state);
-            List<String> rejections = new ArrayList<>();
-            for (Map.Entry<T, String> rejection : policy.rejectionReasons().entrySet()) {
-                rejections.add(rejection.getKey().name() + ": " + rejection.getValue());
-            }
-            policies.add(new PolicyView(state.name(), policy.otherwise(), rejections));
-        }
-        List<WatchView> watches = new ArrayList<>();
-        for (S state : definition.graph().nodes()) {
-            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
-            if (watch.isEmpty()) {
-                continue;
-            }
-            List<String> rules = new ArrayList<>();
-            for (WatchRule<E, S, T, ?, ?, ?> rule : watch.get().rules()) {
-                rules.add(rule.condition().name() + " → " + rule.transition().name());
-            }
-            watches.add(new WatchView(state.name(), watch.get().peer().entity().getSimpleName(), rules));
-        }
+        List<TransitionView> transitions = transitions(definition);
+        List<PolicyView> policies = policies(definition);
+        List<WatchView> watches = watches(definition);
         List<SubmachineView> submachines = new ArrayList<>();
         for (S state : definition.graph().nodes()) {
             Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine = definition.submachine(state);
@@ -108,6 +80,55 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         }
         return new GraphView(definition.key().toString(), definition.initial().name(), terminals, states, transitions,
                 policies, watches, submachines);
+    }
+
+    /** Every declared edge of {@code definition} in its order, with its guards and recovery rules by names. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<TransitionView> transitions(
+            GraphDefinition<E, S, T> definition) {
+        List<TransitionView> transitions = new ArrayList<>();
+        for (TransitionSpec<E, S, T> spec : definition.transitions()) {
+            List<String> guards = new ArrayList<>();
+            for (GuardRef<E, S, T> guard : spec.guards()) {
+                guards.add(guard.name());
+            }
+            transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(),
+                    spec.kind(), spec.action().map(ActionRef::name), guards, spec.isAsync(),
+                    spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules())));
+        }
+        return transitions;
+    }
+
+    /** The policy of each state of {@code definition}, in node order, with its rejections by names. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<PolicyView> policies(
+            GraphDefinition<E, S, T> definition) {
+        List<PolicyView> policies = new ArrayList<>();
+        for (S state : definition.graph().nodes()) {
+            StatePolicy<S, T> policy = definition.policy(state);
+            List<String> rejections = new ArrayList<>();
+            for (Map.Entry<T, String> rejection : policy.rejectionReasons().entrySet()) {
+                rejections.add(rejection.getKey().name() + ": " + rejection.getValue());
+            }
+            policies.add(new PolicyView(state.name(), policy.otherwise(), rejections));
+        }
+        return policies;
+    }
+
+    /** The watch of each state of {@code definition} that has one, in node order, with its rules by names. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<WatchView> watches(
+            GraphDefinition<E, S, T> definition) {
+        List<WatchView> watches = new ArrayList<>();
+        for (S state : definition.graph().nodes()) {
+            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
+            if (watch.isEmpty()) {
+                continue;
+            }
+            List<String> rules = new ArrayList<>();
+            for (WatchRule<E, S, T, ?, ?, ?> rule : watch.get().rules()) {
+                rules.add(rule.condition().name() + " → " + rule.transition().name());
+            }
+            watches.add(new WatchView(state.name(), watch.get().peer().entity().getSimpleName(), rules));
+        }
+        return watches;
     }
 
     /** The view of one binding: its state, the child's view and the exits by names, in declaration order. */
@@ -137,8 +158,8 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         return views;
     }
 
-    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<String> watchLabel(GraphDefinition<E, S, T> definition,
-                                                                                         TransitionSpec<E, S, T> spec) {
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<String> watchLabel(
+            GraphDefinition<E, S, T> definition, TransitionSpec<E, S, T> spec) {
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(spec.from());
         if (watch.isEmpty()) {
             return Optional.empty();

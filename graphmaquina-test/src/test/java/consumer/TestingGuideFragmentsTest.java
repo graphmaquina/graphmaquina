@@ -481,6 +481,20 @@ class TestingGuideFragmentsTest {
         assertBlockCount(page, FLOW, 4);
 
         StringBuilder source = new StringBuilder(HEADER);
+        appendRecoverySamples(source, page);
+        appendSubmachineSamples(source, page);
+        appendFlowSample(source, page);
+
+        Path classes = Files.createDirectories(workDir.resolve("classes"));
+        List<String> diagnostics = compile(workDir, source.toString(), jars, classes);
+        assertTrue(diagnostics.isEmpty(), "the testing guide's samples must compile against the published "
+                + "jars:\n" + String.join("\n", diagnostics) + "\n--- generated TestingFragments.java ---\n" + source);
+
+        runSamples(workDir, jars, classes, source);
+    }
+
+    /** Appends the samples of the failure kinds and recovery rules section, wrapped in one method per run. */
+    private static void appendRecoverySamples(StringBuilder source, List<String> page) {
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
         source.append("    static void syncRouting() {\n");
         source.append(blockAfter(page, RECOVERY, 1)).append(blockAfter(page, RECOVERY, 2)).append("    }\n\n");
@@ -490,6 +504,10 @@ class TestingGuideFragmentsTest {
         source.append("    // --- block 4: the routes an asynchronous action took\n");
         source.append("    static void asyncRouting() {\n");
         source.append(blockAfter(page, RECOVERY, 4)).append("    }\n\n");
+    }
+
+    /** Appends the samples of the sub-machines section, wrapped in one method per block. */
+    private static void appendSubmachineSamples(StringBuilder source, List<String> page) {
         source.append("    // --- sub-machines, block 1: the binding of a state\n");
         source.append("    static void submachineDefinition() {\n");
         source.append(blockAfter(page, SUBMACHINES, 1)).append("    }\n\n");
@@ -511,16 +529,19 @@ class TestingGuideFragmentsTest {
         source.append("    // --- sub-machines, block 7: a child over its parent's own entity\n");
         source.append("    static void sameEntity() {\n");
         source.append(blockAfter(page, SUBMACHINES, 7)).append("    }\n\n");
+    }
+
+    /** Appends the samples of the call's flow and trail section, wrapped in one method, and closes the class. */
+    private static void appendFlowSample(StringBuilder source, List<String> page) {
         source.append("    // --- the call's flow, blocks 1 to 4: an outcome's, a failure's, a hook's, a bare trail\n");
         source.append("    static void flowAndTrail() {\n");
         source.append(blockAfter(page, FLOW, 1)).append(blockAfter(page, FLOW, 2)).append(blockAfter(page, FLOW, 3))
                 .append(blockAfter(page, FLOW, 4)).append("    }\n}\n");
+    }
 
-        Path classes = Files.createDirectories(workDir.resolve("classes"));
-        List<String> diagnostics = compile(workDir, source.toString(), jars, classes);
-        assertTrue(diagnostics.isEmpty(), "the testing guide's samples must compile against the published "
-                + "jars:\n" + String.join("\n", diagnostics) + "\n--- generated TestingFragments.java ---\n" + source);
-
+    /** Runs the compiled samples in a separate JVM and expects them to reach their marker before they end. */
+    private static void runSamples(Path workDir, String jars, Path classes, StringBuilder source)
+            throws IOException, InterruptedException {
         Path transcript = workDir.resolve("samples-output.txt");
         Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 "-classpath", classes + File.pathSeparator + jars, "TestingFragments")
@@ -529,80 +550,30 @@ class TestingGuideFragmentsTest {
                 .start();
         Optional<Throwable> originalFailure = Optional.empty();
         try {
-            if (!process.waitFor(2, TimeUnit.MINUTES)) {
-                fail("the testing guide's samples did not terminate; transcript: " + transcript);
-            }
-            String output = Files.readString(transcript, UTF_8);
-            assertEquals(0, process.exitValue(), "the testing guide's samples failed: " + output
-                    + "\n--- generated TestingFragments.java ---\n" + source);
-            assertTrue(output.contains("TESTING_GUIDE_OK"), "the samples did not reach their last line: " + output);
+            assertSamplesPrintTheirMarker(process, transcript, source);
         } catch (IOException | InterruptedException | RuntimeException | Error failure) {
             originalFailure = Optional.of(failure);
             throw failure;
         } finally {
-            try {
-                if (process.isAlive()) {
-                    process.destroyForcibly();
-                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                    boolean reaped = false;
-                    boolean cleanupInterrupted = false;
-                    while (!reaped) {
-                        long remaining = deadline - System.nanoTime();
-                        if (remaining <= 0) {
-                            break;
-                        }
-                        try {
-                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
-                        } catch (InterruptedException interrupted) {
-                            cleanupInterrupted = true;
-                        }
-                    }
-                    if (cleanupInterrupted) {
-                        Thread.currentThread().interrupt();
-                    }
-                    if (!reaped) {
-                        throw new AssertionError("the testing guide child remained alive; transcript: " + transcript);
-                    }
-                }
-            } catch (RuntimeException | Error cleanupFailure) {
-                if (originalFailure.isEmpty()) {
-                    throw cleanupFailure;
-                }
-                originalFailure.get().addSuppressed(cleanupFailure);
-            }
+            ChildProcesses.reap(process, originalFailure,
+                    "the testing guide child remained alive; transcript: " + transcript);
         }
     }
 
-    /**
-     * Counts the java blocks after {@code heading} and before the next heading of any level. Headings are matched
-     * outside code fences only.
-     */
-    private static int javaBlockCount(List<String> page, String heading) {
-        boolean inside = false;
-        Optional<MarkdownFence> fence = Optional.empty();
-        int count = 0;
-        for (String line : page) {
-            if (fence.isPresent()) {
-                fence = fence.get().closes(line) ? Optional.empty() : fence;
-                continue;
-            }
-            fence = MarkdownFence.opening(line);
-            if (fence.isPresent()) {
-                if (inside && fence.get().language("java")) {
-                    count++;
-                }
-            } else if (!inside) {
-                inside = line.equals(heading);
-            } else if (line.startsWith("#")) {
-                break;
-            }
+    private static void assertSamplesPrintTheirMarker(Process process, Path transcript, StringBuilder source)
+            throws IOException, InterruptedException {
+        if (!process.waitFor(2, TimeUnit.MINUTES)) {
+            fail("the testing guide's samples did not terminate; transcript: " + transcript);
         }
-        return count;
+        String output = Files.readString(transcript, UTF_8);
+        assertEquals(0, process.exitValue(), "the testing guide's samples failed: " + output
+                + "\n--- generated TestingFragments.java ---\n" + source);
+        assertTrue(output.contains("TESTING_GUIDE_OK"), "the samples did not reach their last line: " + output);
     }
 
     /** Fails unless the section under {@code heading} holds exactly {@code expected} java blocks. */
     private static void assertBlockCount(List<String> page, String heading, int expected) {
-        int actual = javaBlockCount(page, heading);
+        int actual = javaBlocksAfter(page, heading).size();
         assertEquals(expected, actual, "the testing guide's section '" + heading + "' has " + actual
                 + " java blocks; this test covers exactly " + expected + ": update the test to match the section");
     }
@@ -612,38 +583,19 @@ class TestingGuideFragmentsTest {
      * are matched outside code fences only. Fails when the block is missing or blank.
      */
     private static String blockAfter(List<String> page, String heading, int n) {
-        boolean inside = false;
-        boolean taking = false;
-        Optional<MarkdownFence> fence = Optional.empty();
-        int count = 0;
-        StringBuilder block = new StringBuilder();
-        for (String line : page) {
-            if (fence.isPresent()) {
-                if (fence.get().closes(line)) {
-                    if (taking) {
-                        break;
-                    }
-                    fence = Optional.empty();
-                } else if (taking) {
-                    block.append(line).append('\n');
-                }
-                continue;
-            }
-            fence = MarkdownFence.opening(line);
-            if (fence.isPresent()) {
-                if (inside && fence.get().language("java")) {
-                    count++;
-                    taking = count == n;
-                }
-            } else if (!inside) {
-                inside = line.equals(heading);
-            } else if (line.startsWith("#")) {
-                break;
-            }
-        }
-        assertFalse(block.toString().isBlank(), "no non-blank java block number " + n + " after the heading '"
+        List<MarkdownPage.Block> blocks = javaBlocksAfter(page, heading);
+        String block = n <= blocks.size() ? blocks.get(n - 1).content() : "";
+        assertFalse(block.isBlank(), "no non-blank java block number " + n + " after the heading '"
                 + heading + "' of the testing guide");
-        return block.toString();
+        return block;
+    }
+
+    /**
+     * Returns the java blocks after {@code heading} and before the next heading of any level. Headings are matched
+     * outside code fences only.
+     */
+    private static List<MarkdownPage.Block> javaBlocksAfter(List<String> page, String heading) {
+        return MarkdownPage.blocksAfter(page, heading, (String line) -> line.startsWith("#"), "java");
     }
 
     /** Compiles the samples with the published jars as their entire class path; returns what javac reported. */

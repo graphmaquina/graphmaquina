@@ -213,15 +213,20 @@ class GraphExportTest {
                 .transition(AUTO_APPROVE, REVIEW, DONE).endTransition()
                 .transition(FAIL, REVIEW, DONE).endTransition()
                 .watch(REVIEW, KEY, (Ticket ticket) -> List.of(peer), (Ticket owner) -> Optional.empty())
-                    .when("r0", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                    .when("r0", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
                         .execute(APPROVE)
-                    .when("r1", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                    .when("r1", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
                         .execute(AUTO_APPROVE)
-                    .when("r2", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                    .when("r2", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
                         .execute(APPROVE)
-                    .when("r3", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                    .when("r3", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
                         .execute(AUTO_APPROVE)
-                    .when("r4", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                    .when("r4", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
                         .execute(APPROVE)
                 .endWatch().build();
     }
@@ -231,7 +236,8 @@ class GraphExportTest {
      * the states passed to {@link #watch}. It changes no production code and exposes no counters there; the
      * sequence it records is the causal evidence for T11 (issue #9, F12).
      */
-    private static final class WatchCountingDefinition<E, S extends Enum<S>, T extends Enum<T>> implements GraphDefinition<E,S,T> {
+    private static final class WatchCountingDefinition<E, S extends Enum<S>, T extends Enum<T>>
+            implements GraphDefinition<E,S,T> {
         private final GraphDefinition<E,S,T> delegate;
         private final List<S> watchCalls = new ArrayList<>();
 

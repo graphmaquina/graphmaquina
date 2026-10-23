@@ -257,7 +257,7 @@ module the same way.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). Compilation currently stops at the [size and complexity checks](#build-verify-and-release-this-repository), because existing code still violates them, so these commands and the local install in [Configure Gradle](#configure-gradle) fail until the violations are fixed. |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). These commands and the local install in [Configure Gradle](#configure-gradle) first run the [size and complexity checks](#build-verify-and-release-this-repository), which the code passes. |
 | README quickstart | [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven. |
 | Remaining acceptance work | Manual IntelliJ acceptance, a rerun of the async guide through both build tools, and full strict-lint acceptance of the external payments demo remain pending. |
@@ -300,8 +300,7 @@ from a single property:
 That writes the runtime, the generator, the processor, the testing module, the Gradle plugin and the plugin
 marker under `~/.m2/repository`. Gradle does not read that directory unless a build asks it to, which is why
 `settings.gradle.kts` below declares `mavenLocal()`; Maven reads it as its own local repository and needs no
-declaration at all. While existing code still violates the
-[size and complexity checks](#build-verify-and-release-this-repository), this command stops at them.
+declaration at all.
 
 ### gradle.properties
 
@@ -2926,7 +2925,8 @@ status in two fields, and a payment graph over `Stay` governs the second one:
 
 ```java
 /** Built once: the payment machine must be built from the very definition the stay binds. */
-static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRAPH = StateGraph.define(STAY_PAYMENTS)
+static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRAPH =
+        StateGraph.define(STAY_PAYMENTS)
         .initial(PaymentStatus.AUTHORIZING)
         .terminal(PaymentStatus.CAPTURED)
         .terminal(PaymentStatus.DECLINED)
@@ -4252,7 +4252,8 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
 ./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
-./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
+./gradlew --no-daemon test
+./gradlew --no-daemon :graphmaquina-gradle-plugin:test
 ./gradlew --no-daemon :graphmaquina-test:publishedArtifactTest --offline
 ./gradlew :graphmaquina-example:test
 ./gradlew :graphmaquina-codegen:test :graphmaquina-processor:test
@@ -4261,8 +4262,11 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
 
 Stage the sibling artifacts before running the Gradle adapter's TestKit suite, especially in a fresh checkout
 or after changing versions. This uses a file repository under `build/adapter-test-repository`.
-The combined `test` command explicitly includes that suite. Its plugin is a separate included
-build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
+Run that suite in an invocation of its own, never together with `test` or `build`. The Maven adapter's suite,
+which `test` runs, and `:graphmaquina-test:publishedArtifactTest`, which `build` reaches, first republish core, the
+generator and the processor into that repository, rewriting their files in place while the TestKit builds of that
+suite read them. The Gradle adapter's plugin is a separate included build, while the Maven adapter's integration
+suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
 `./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
@@ -4286,9 +4290,9 @@ wrap a long line: the rules honor no `@SuppressWarnings`, no `// CHECKSTYLE:OFF`
 list.
 
 The Gradle plugin is a separate included build that the root build compiles first, so a violation in its main
-sources stops the root build before any module is checked. Existing code still violates the checks, so every
-Gradle command of the root build, including `help` and the release commands below, currently stops at the Gradle
-plugin's violations. The command below lists every violation in that build, main and test, at once:
+sources stops the root build before any module is checked. While such a violation stands, every Gradle command of
+the root build, including `help` and the release commands below, stops at the Gradle plugin's violations. The
+command below lists every violation in that build, main and test, at once:
 
 ```bash
 ./gradlew -p graphmaquina-gradle-plugin checkstyleMain checkstyleTest --continue

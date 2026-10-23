@@ -127,12 +127,7 @@ public final class GenerationOutput {
         Path staging = work.resolve(STAGING);
         // Read outside the failure path below: a previous manifest this run cannot read stays where it is, so the
         // refusal repeats until the user cleans the build instead of the files it owned turning unowned.
-        Set<String> previouslyOwned = new TreeSet<>();
-        for (Path inventory : List.of(manifestPath, pending)) {
-            if (Files.isRegularFile(inventory)) {
-                previouslyOwned.addAll(ManifestCodec.readCompile(inventory).ownedSources());
-            }
-        }
+        Set<String> previouslyOwned = ownedSources(List.of(manifestPath, pending));
         // Every generation the generator publishes owns its carrier, so a manifest that owns nothing records none: at
         // most a run that failed before it published, as each run after the work directory was deleted does.
         boolean recorded = !previouslyOwned.isEmpty() || CompilationOutputs.holdsInventory(work);
@@ -149,15 +144,7 @@ public final class GenerationOutput {
             publishing.addAll(manifest.ownedSources());
             // Only claim new targets after stage has established that none belongs to somebody else.
             remember(pending, manifest, publishing);
-            Path root = output.normalize();
-            for (String owned : previouslyOwned) {
-                Path target = output.resolve(owned);
-                Path resolved = target.normalize();
-                if (resolved.startsWith(root) && !resolved.equals(root)
-                        && CompilationOutputs.standsUnder(target, output)) {
-                    Files.deleteIfExists(target);
-                }
-            }
+            deletePreviouslyOwned(output, previouslyOwned);
             List<Path> published = publish(staging, staged, output);
             replace(manifestPath, manifest);
             Files.delete(pending);
@@ -176,6 +163,35 @@ public final class GenerationOutput {
      */
     static Path manifestPath(GenerationRequest request) {
         return request.workDirectory().toAbsolutePath().resolve(MANIFEST);
+    }
+
+    /** The sources the manifests at {@code manifests} own, sorted; a manifest that is not a regular file owns none. */
+    private static Set<String> ownedSources(List<Path> manifests) throws IOException {
+        Set<String> owned = new TreeSet<>();
+        for (Path manifest : manifests) {
+            if (Files.isRegularFile(manifest)) {
+                owned.addAll(ManifestCodec.readCompile(manifest).ownedSources());
+            }
+        }
+        return owned;
+    }
+
+    /**
+     * Removes the sources the previous generation owned from {@code output}: each one that, once resolved, lands
+     * below {@code output} rather than on it or outside it, and whose directory
+     * {@linkplain CompilationOutputs#standsUnder stands under} it, so a symbolic link inside the output never takes
+     * a removal out of it.
+     */
+    private static void deletePreviouslyOwned(Path output, Set<String> previouslyOwned) throws IOException {
+        Path root = output.normalize();
+        for (String owned : previouslyOwned) {
+            Path target = output.resolve(owned);
+            Path resolved = target.normalize();
+            if (resolved.startsWith(root) && !resolved.equals(root)
+                    && CompilationOutputs.standsUnder(target, output)) {
+                Files.deleteIfExists(target);
+            }
+        }
     }
 
     /**

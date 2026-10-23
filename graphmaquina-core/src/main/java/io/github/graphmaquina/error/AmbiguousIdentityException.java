@@ -19,7 +19,8 @@ public final class AmbiguousIdentityException extends StateMachineException {
     private final Object first;
     private final Object second;
 
-    public AmbiguousIdentityException(MachineKey<?, ?, ?> key, Object id, @NonNull Object first, @NonNull Object second) {
+    public AmbiguousIdentityException(MachineKey<?, ?, ?> key, Object id, @NonNull Object first,
+                                      @NonNull Object second) {
         super("two distinct objects with the identity " + Objects.requireNonNull(key, "key") + "#"
                 + Texts.identity(Objects.requireNonNull(id, "id")) + " within the same transaction");
         this.key = key;

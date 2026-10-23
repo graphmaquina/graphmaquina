@@ -1,15 +1,19 @@
 package io.github.graphmaquina.runtime;
 
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
+import static io.github.graphmaquina.fixtures.DocMachines.registry;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
-import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
-import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
+import static io.github.graphmaquina.fixtures.LogLines.lines;
+import static io.github.graphmaquina.fixtures.Thrown.describe;
+import static io.github.graphmaquina.fixtures.Thrown.thrownBy;
+import static io.github.graphmaquina.fixtures.Thrown.thrownOnAnotherThread;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -26,8 +30,6 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.GraphBuilder;
-import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Billing;
@@ -45,7 +47,6 @@ import io.github.graphmaquina.fixtures.LibraryLog;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,11 +56,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.UnaryOperator;
 import java.util.logging.Level;
-import java.util.logging.LogRecord;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -69,9 +66,6 @@ import org.junit.jupiter.api.Test;
  * check first. Each write is logged at TRACE.
  */
 class FlowBagTest {
-
-    private static final Pattern CALL_ID = Pattern.compile("(call|trigger)=(\\d+)");
-    private static final Pattern ELAPSED = Pattern.compile(" elapsed=\\d+us$");
 
     private static final FlowKey<String> BATCH = FlowKey.of("batch", String.class);
     private static final FlowKey<String> NOTE = FlowKey.visible("note", String.class);
@@ -96,73 +90,6 @@ class FlowBagTest {
             printed.incrementAndGet();
             return "counted";
         }
-    }
-
-    /**
-     * DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED, shaped by {@code discard};
-     * REVIEW -PUBLISH-> PUBLISHED and PUBLISHED -ARCHIVE-> ARCHIVED are plain moves.
-     */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
-        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "a draft is submitted or discarded")
-                .statePolicy(REVIEW, "a review is published")
-                .statePolicy(PUBLISHED, "a publication is archived");
-        graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
-        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return docs(submit, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity());
-    }
-
-    private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .build();
-    }
-
-    /** {@link #registry(GraphDefinition)} for a graph with an async action, which needs an asyncTimeout. */
-    private static MachineRegistry asyncRegistry(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                        .asyncTimeout(Duration.ofSeconds(5)))
-                .build();
-    }
-
-    /** What {@code call} throws, or empty when it returns. */
-    private static Optional<RuntimeException> thrownBy(Runnable call) {
-        try {
-            call.run();
-            return Optional.empty();
-        } catch (RuntimeException error) {
-            return Optional.of(error);
-        }
-    }
-
-    /** What {@link #thrownBy} reports for {@code call} run on a thread of its own. */
-    private static Optional<RuntimeException> thrownOnAnotherThread(Runnable call) {
-        AtomicReference<Optional<RuntimeException>> thrown = new AtomicReference<>(Optional.empty());
-        Thread other = new Thread(() -> thrown.set(thrownBy(call)));
-        other.start();
-        try {
-            other.join();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
-        }
-        return thrown.get();
-    }
-
-    /** {@code Class: message} of what was thrown, or "nothing". */
-    private static String describe(Optional<RuntimeException> thrown) {
-        return thrown.map((RuntimeException error) -> error.getClass().getSimpleName() + ": " + error.getMessage())
-                .orElse("nothing");
     }
 
     /** Every operation of {@code flow}, by name: its reads, and its writes when it is writable. */
@@ -705,7 +632,7 @@ class FlowBagTest {
                             Thread.ofPlatform().start(() -> fetched.complete("b-1"));
                             return stage;
                         }));
-        try (MachineRegistry registry = asyncRegistry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(doc, SUBMIT));
             WrongThreadException cause = assertInstanceOf(WrongThreadException.class, error.getCause());
@@ -737,7 +664,7 @@ class FlowBagTest {
                             recovered.add(ctx.flow().get(BATCH));
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = asyncRegistry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertEquals(OutcomeCode.FAILURE_ROUTED, registry.of(DOCS).execute(doc, SUBMIT).code());
         }
         assertEquals(List.of(Optional.<String>empty()), recovered);
@@ -781,7 +708,7 @@ class FlowBagTest {
                             seen.add(ctx.flow().get(BATCH));
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = asyncRegistry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(parent, DISCARD));
         }
         assertEquals(List.of(Optional.of("requested"), Optional.empty()), seen);
@@ -789,29 +716,6 @@ class FlowBagTest {
             assertEquals(1, refusals.size());
         }
         assertEquals(REVIEW, child.status());
-    }
-
-    /**
-     * Each record as {@code LEVEL message}, every call id replaced by a letter in order of first appearance, A for the
-     * first, so the lines of another call never read as this call's, and the elapsed time that ends a line by us.
-     */
-    private static List<String> lines(LibraryLog log) {
-        Map<String, String> letters = new HashMap<>();
-        List<String> lines = new ArrayList<>();
-        for (LogRecord record : log.records()) {
-            Matcher ids = CALL_ID.matcher(record.getMessage());
-            StringBuilder line = new StringBuilder(record.getLevel().getName()).append(' ');
-            while (ids.find()) {
-                String id = ids.group(2);
-                if (!letters.containsKey(id)) {
-                    letters.put(id, String.valueOf((char) ('A' + letters.size())));
-                }
-                ids.appendReplacement(line, ids.group(1) + "=" + letters.get(id));
-            }
-            ids.appendTail(line);
-            lines.add(ELAPSED.matcher(line).replaceFirst(" elapsed=<us>"));
-        }
-        return lines;
     }
 
     /**

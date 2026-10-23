@@ -309,12 +309,7 @@ public final class CompilationLifecycle {
         protected void verify(Task compilation) {
             JavaCompile javaCompile = (JavaCompile) compilation;
             CompileOptions options = javaCompile.getOptions();
-            if (!options.isFailOnError()) {
-                throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
-                        + " options.failOnError = false: javac could reject its sources while the task still"
-                        + " succeeds, and the completion step would then publish classes javac never wrote."
-                        + " Remove options.failOnError = false from " + compilation + ".");
-            }
+            requireFailOnError(compilation, options);
             List<String> arguments = options.getAllCompilerArgs();
             String processing = "";
             for (String argument : arguments) {
@@ -322,6 +317,34 @@ public final class CompilationLifecycle {
                     processing = argument;
                 }
             }
+            requireClassesAndProcessors(compilation, processing);
+            requireProcessorPath(compilation, options, processing);
+            requireProcessorList(compilation, arguments);
+            requireOneCharset(compilation, options, arguments);
+            List<String> declared = CompilerSettings.declaredArguments(options);
+            requireGenerationRelease(javaCompile, options, arguments, declared);
+            requireGenerationEncoding(javaCompile, arguments, declared);
+            requireSourceFile(compilation, options, arguments);
+            Map<File, File> compiled = OriginalSources.withRoots(javaCompile.getSource());
+            requireOriginalSources(compilation, options, compiled);
+            requireGeneratedSources(compilation, compiled);
+        }
+
+        /** Refuses a compilation that sets {@code options.failOnError = false}. */
+        private static void requireFailOnError(Task compilation, CompileOptions options) {
+            if (!options.isFailOnError()) {
+                throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
+                        + " options.failOnError = false: javac could reject its sources while the task still"
+                        + " succeeds, and the completion step would then publish classes javac never wrote."
+                        + " Remove options.failOnError = false from " + compilation + ".");
+            }
+        }
+
+        /**
+         * Refuses {@code -proc:only} or {@code -proc:none} as {@code processing}, the last {@code -proc:} compiler
+         * argument: javac would then write no class, or run no annotation processor.
+         */
+        private static void requireClassesAndProcessors(Task compilation, String processing) {
             if (processing.equals("-proc:only")) {
                 throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
                         + " -proc:only: javac would run the annotation processors and write no class, so the"
@@ -334,6 +357,13 @@ public final class CompilationLifecycle {
                         + " write no index for the completion step to publish. Remove -proc:none from the compiler"
                         + " arguments of " + compilation + ".");
             }
+        }
+
+        /**
+         * Refuses an {@code options.annotationProcessorPath} that is empty or null, unless javac runs from the command
+         * line with {@code processing}, a {@code -proc:} compiler argument after Gradle's own {@code -proc:none}.
+         */
+        private static void requireProcessorPath(Task compilation, CompileOptions options, String processing) {
             FileCollection processorPath = options.getAnnotationProcessorPath();
             boolean noProcessorPath = processorPath == null || processorPath.isEmpty();
             if (noProcessorPath && processing.isEmpty()) {
@@ -344,6 +374,13 @@ public final class CompilationLifecycle {
                         + " its compiler daemon, runs only the annotation processors of"
                         + " options.annotationProcessorPath, whatever the compiler argument " + processing + " asks"));
             }
+        }
+
+        /**
+         * Refuses a last {@code -processor} list among {@code arguments} that holds a name that is not a valid
+         * qualified class name, or that leaves out the StateGraph processor.
+         */
+        private static void requireProcessorList(Task compilation, List<String> arguments) {
             int option = arguments.lastIndexOf("-processor");
             if (option >= 0 && option + 1 < arguments.size()) {
                 String list = arguments.get(option + 1);
@@ -368,6 +405,14 @@ public final class CompilationLifecycle {
                             + " list from the compiler arguments of " + compilation + ".");
                 }
             }
+        }
+
+        /**
+         * Refuses a last {@code -encoding} among {@code arguments} that names another charset than
+         * {@code options.encoding}, when this JVM supports both and Gradle's own Java compiler runs javac in process or
+         * in its compiler daemon.
+         */
+        private static void requireOneCharset(Task compilation, CompileOptions options, List<String> arguments) {
             String declaredEncoding = options.getEncoding();
             Optional<String> lastEncoding = CompilerSettings.lastValue(arguments, "-encoding", false);
             if (declaredEncoding != null && lastEncoding.isPresent() && !CompilerSettings.commandLine(options)
@@ -383,9 +428,17 @@ public final class CompilationLifecycle {
                         + " compilation. Remove that -encoding from the compiler arguments"
                         + " of " + compilation + ", or set options.encoding to the charset it names.");
             }
-            List<String> declared = CompilerSettings.declaredArguments(options);
-            Integer release = CompilerSettings.release(javaCompile, arguments);
-            Integer declaredRelease = CompilerSettings.release(javaCompile, declared);
+        }
+
+        /**
+         * Refuses argument providers that change the release javac compiles at: the one all the compiler arguments,
+         * {@code arguments}, give must be the one the generation was given from {@code declared}, the arguments of
+         * {@code options.compilerArgs}, unless javac refuses the last {@code --release}.
+         */
+        private static void requireGenerationRelease(JavaCompile compilation, CompileOptions options,
+                List<String> arguments, List<String> declared) {
+            Integer release = CompilerSettings.release(compilation, arguments);
+            Integer declaredRelease = CompilerSettings.release(compilation, declared);
             if (!CompilerSettings.refusesLastRelease(arguments) && !Objects.equals(release, declaredRelease)) {
                 String origin;
                 if (CompilerSettings.releaseArgument(declared).isPresent()) {
@@ -399,8 +452,17 @@ public final class CompilationLifecycle {
                 throw new GradleException(changedByProviders(compilation, "make javac compile at release " + release
                         + " instead of release " + declaredRelease + ", " + origin, "--release", "options.release"));
             }
-            String encoding = CompilerSettings.encoding(javaCompile, arguments);
-            String generationEncoding = CompilerSettings.encoding(javaCompile, declared);
+        }
+
+        /**
+         * Refuses argument providers that change the encoding javac reads the sources in: the one all the compiler
+         * arguments, {@code arguments}, give must be the one the generation was given from {@code declared}, the
+         * arguments of {@code options.compilerArgs}.
+         */
+        private static void requireGenerationEncoding(JavaCompile compilation, List<String> arguments,
+                List<String> declared) {
+            String encoding = CompilerSettings.encoding(compilation, arguments);
+            String generationEncoding = CompilerSettings.encoding(compilation, declared);
             if (!CompilerSettings.sameEncoding(generationEncoding, encoding)) {
                 throw new GradleException(changedByProviders(compilation, "make javac read the sources in " + encoding
                         + " instead of " + (generationEncoding == null
@@ -409,6 +471,10 @@ public final class CompilationLifecycle {
                                 : generationEncoding + ", the one options.encoding and options.compilerArgs give and"
                                         + " the generation reads"), "-encoding", "options.encoding"));
             }
+        }
+
+        /** Refuses a debug setting that leaves the {@code SourceFile} attribute out of every class file. */
+        private static void requireSourceFile(Task compilation, CompileOptions options, List<String> arguments) {
             List<String> debugSettings = sourceFileDroppedBy(options, arguments);
             if (!debugSettings.isEmpty()) {
                 throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with "
@@ -419,7 +485,14 @@ public final class CompilationLifecycle {
                         + ", or add a -g: list that names source, such as -g:source,lines,vars, to its compiler"
                         + " arguments.");
             }
-            Map<File, File> compiled = OriginalSources.withRoots(javaCompile.getSource());
+        }
+
+        /**
+         * Refuses a compilation whose original sources, those of {@code compiled} outside the generated directory and
+         * the processor's source output, are not the ones the generation task of this source set reads; nothing is
+         * checked when no one gave this step those sources.
+         */
+        private void requireOriginalSources(Task compilation, CompileOptions options, Map<File, File> compiled) {
             if (originalSources != null) {
                 List<File> generatedDirectories = new ArrayList<>(getGeneratedSources().getFiles());
                 File processorSources = options.getGeneratedSourceOutputDirectory().getAsFile().getOrNull();
@@ -429,6 +502,10 @@ public final class CompilationLifecycle {
                 OriginalSources.requireSame(originalSources.getAsFileTree().getFiles(), compiled,
                         generatedDirectories, getGenerationTask().get(), compilation.toString());
             }
+        }
+
+        /** Refuses a compilation whose sources, {@code compiled}, leave out a source of the generated directory. */
+        private void requireGeneratedSources(Task compilation, Map<File, File> compiled) {
             for (File directory : getGeneratedSources().getFiles()) {
                 for (File generated : javaSources(directory)) {
                     if (!compiled.containsKey(generated)) {

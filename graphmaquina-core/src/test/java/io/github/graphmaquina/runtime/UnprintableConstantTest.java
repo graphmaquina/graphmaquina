@@ -251,7 +251,8 @@ class UnprintableConstantTest {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(PAPERS).execute(root, Move.SUBMIT));
             assertEquals("transition aborted in Paper/Stage DRAFT -SUBMIT-> REVIEW: the cascade to Paper/Stage failed:"
-                    + " java.lang.IllegalArgumentException: the state of failing cannot be read [route Paper/Stage#root]",
+                    + " java.lang.IllegalArgumentException: the state of failing cannot be read"
+                    + " [route Paper/Stage#root]",
                     thrown.getMessage());
         }
     }

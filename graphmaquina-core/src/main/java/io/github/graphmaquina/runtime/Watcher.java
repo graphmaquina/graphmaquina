@@ -52,7 +52,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
     Reaction react(Object instance, int chain, Optional<Long> trigger) {
         E entity = machine.key().entity().cast(instance);
         try {
-            return new Reaction.Done(machine.key(), entity, machine.reevaluate(entity, chain, trigger));
+            return new Reaction.Done(machine.key(), entity, Reevaluation.reevaluate(machine, entity, chain, trigger));
         } catch (RuntimeException e) {
             return new Reaction.Aborted(machine.key(), entity, e);
         }

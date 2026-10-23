@@ -28,7 +28,8 @@ class StaticFactoryClashTest {
     /** {@code Pages}, which binds nothing, with {@code members} added to its body. */
     private static Map<String, String> pages(String members) {
         Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
-        sources.put("fx.Pages", Fixtures.PAGES.replace("    Outcome<Page, PageStatus, PageTransition> finish(Page page);\n",
+        sources.put("fx.Pages", Fixtures.PAGES.replace(
+                "    Outcome<Page, PageStatus, PageTransition> finish(Page page);\n",
                 "    Outcome<Page, PageStatus, PageTransition> finish(Page page);\n" + members));
         return sources;
     }
@@ -54,7 +55,8 @@ class StaticFactoryClashTest {
     /** {@code file:line} of the first error of {@code code}, the simple name of its source file. */
     private static String at(Compilation.Result result, String code) {
         for (Diagnostic<? extends JavaFileObject> diagnostic : result.diagnostics()) {
-            if (diagnostic.getKind() == Diagnostic.Kind.ERROR && diagnostic.getMessage(null).contains("[" + code + "]")) {
+            if (diagnostic.getKind() == Diagnostic.Kind.ERROR
+                    && diagnostic.getMessage(null).contains("[" + code + "]")) {
                 String name = diagnostic.getSource() == null ? "-" : diagnostic.getSource().getName();
                 return name.substring(name.lastIndexOf('/') + 1) + ":" + diagnostic.getLineNumber();
             }
@@ -93,8 +95,9 @@ class StaticFactoryClashTest {
         Map<String, String> generic = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY
                 + "    default <T extends DocActions> String graph(T actions) { return \"docs\"; }\n");
         Compilation.Result erased = Compilation.compileTyped(generic);
-        assertEquals(List.of("[SG504] graph(DocActions) is the static graph(DocActions) the generated DocsRuntime declares,"
-                + " which takes every class with instance members the machine binds: give the method another name"),
+        assertEquals(List.of("[SG504] graph(DocActions) is the static graph(DocActions) the generated DocsRuntime"
+                + " declares, which takes every class with instance members the machine binds: give the method"
+                + " another name"),
                 erased.errors(), erased.describe());
         assertEquals(line(generic, "fx.Docs", "String graph(T actions)"), at(erased, "SG504"), erased.describe());
     }
@@ -116,8 +119,8 @@ class StaticFactoryClashTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG504] graph(Doc) is the static graph(Doc) the generated DocsRuntime declares, which takes"
-                + " every class with instance members the machine binds: give the operation another name"),
+        assertEquals(List.of("[SG504] graph(Doc) is the static graph(Doc) the generated DocsRuntime declares, which"
+                + " takes every class with instance members the machine binds: give the operation another name"),
                 result.errors(), result.describe());
         assertEquals(line(sources, "fx.Docs", "graph(Doc doc);"), at(result, "SG504"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
@@ -130,7 +133,8 @@ class StaticFactoryClashTest {
     @Test
     void sg504AGraphMethodTheFacadeInherits() {
         Map<String, String> named = pages("");
-        named.put("fx.Named", "package fx;\npublic interface Named {\n    default String graph() { return \"named\"; }\n}\n");
+        named.put("fx.Named",
+                "package fx;\npublic interface Named {\n    default String graph() { return \"named\"; }\n}\n");
         named.put("fx.Pages", named.get("fx.Pages").replace("extends Machine<Page, PageStatus, PageTransition>",
                 "extends Machine<Page, PageStatus, PageTransition>, Named"));
         Compilation.Result inherited = Compilation.compileTyped(named);
@@ -141,7 +145,8 @@ class StaticFactoryClashTest {
         assertFalse(inherited.hasGenerated("fx.PagesRuntime"), inherited.describe());
 
         Map<String, String> generic = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
-        generic.put("fx.Graphed", "package fx;\npublic interface Graphed<T> {\n    default String graph(T host) { return \"graphed\"; }\n}\n");
+        generic.put("fx.Graphed", "package fx;\npublic interface Graphed<T> {\n"
+                + "    default String graph(T host) { return \"graphed\"; }\n}\n");
         generic.put("fx.Docs", generic.get("fx.Docs").replace("extends Machine<Doc, DocStatus, DocTransition>",
                 "extends Machine<Doc, DocStatus, DocTransition>, Graphed<DocActions>"));
         Compilation.Result erased = Compilation.compileTyped(generic);
@@ -164,11 +169,13 @@ class StaticFactoryClashTest {
                     default String graph(String name) { return name + graph(); }
                     private String graph() { return "private"; }
                 """);
-        sources.put("fx.Graphed", "package fx;\npublic interface Graphed<T> {\n    default String graph(T host) { return \"graphed\"; }\n}\n");
+        sources.put("fx.Graphed", "package fx;\npublic interface Graphed<T> {\n"
+                + "    default String graph(T host) { return \"graphed\"; }\n}\n");
         sources.put("fx.Docs", sources.get("fx.Docs").replace("extends Machine<Doc, DocStatus, DocTransition>",
                 "extends Machine<Doc, DocStatus, DocTransition>, Graphed<String>")
                 .replace("Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);",
-                        "Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n    static String graph(DocActions actions) { return \"static\"; }"));
+                        "Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n"
+                        + "    static String graph(DocActions actions) { return \"static\"; }"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
@@ -188,18 +195,22 @@ class StaticFactoryClashTest {
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
     }
 
-    /** Docs is asynchronous and binds DocActions, so {@code builder(Duration, DocActions)} is what the companion declares. */
+    /**
+     * Docs is asynchronous and binds DocActions, so {@code builder(Duration, DocActions)} is what the companion
+     * declares.
+     */
     @Test
     void sg510ABuilderMethodWithTheParametersOfTheCompanions() {
-        Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY, Fixtures.LIBRARY.replace(
-                "Pages pages();", "Pages pages();\n    default String builder(java.time.Duration timeout, DocActions actions) {"
+        Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY,
+                Fixtures.LIBRARY.replace("Pages pages();",
+                        "Pages pages();\n    default String builder(java.time.Duration timeout, DocActions actions) {"
                         + " return \"library\"; }"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(List.of("[SG510] builder(Duration, DocActions) is the static builder(Duration, DocActions) the"
-                + " generated LibraryRuntime declares, which takes the timeout shared by the set's asynchronous machines,"
-                + " then every class with instance members its machines use: give the method another name"),
+                + " generated LibraryRuntime declares, which takes the timeout shared by the set's asynchronous"
+                + " machines, then every class with instance members its machines use: give the method another name"),
                 result.errors(), result.describe());
         assertEquals(line(sources, "fx.Library", "default String builder("), at(result, "SG510"), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
@@ -213,11 +224,13 @@ class StaticFactoryClashTest {
     @Test
     void sg510ABuilderMethodTheSetInherits() {
         Map<String, String> sources = pagesLibrary(", Named", "");
-        sources.put("fx.Named", "package fx;\npublic interface Named {\n    default String builder() { return \"named\"; }\n}\n");
+        sources.put("fx.Named",
+                "package fx;\npublic interface Named {\n    default String builder() { return \"named\"; }\n}\n");
         Compilation.Result inherited = Compilation.compileTyped(sources);
-        assertEquals(List.of("[SG510] Library inherits builder() from fx.Named, but the generated LibraryRuntime declares"
-                + " a static builder(), which takes no parameter for a set without asynchronous machines and without"
-                + " instance dependencies: give that method another name"), inherited.errors(), inherited.describe());
+        assertEquals(List.of("[SG510] Library inherits builder() from fx.Named, but the generated LibraryRuntime"
+                + " declares a static builder(), which takes no parameter for a set without asynchronous machines and"
+                + " without instance dependencies: give that method another name"), inherited.errors(),
+                inherited.describe());
         assertEquals(line(sources, "fx.Library", "@StateGraphs"), at(inherited, "SG510"), inherited.describe());
         assertFalse(inherited.hasGenerated("fx.LibraryRuntime"), inherited.describe());
 
@@ -225,11 +238,14 @@ class StaticFactoryClashTest {
         sources.put("fx.Library", sources.get("fx.Library").replace("    Pages pages();\n", ""));
         Compilation.Result abstractOne = Compilation.compileTyped(sources);
         assertEquals(1, abstractOne.errors().size(), abstractOne.describe());
-        assertTrue(abstractOne.errors().get(0).contains("[SG510] Library inherits the abstract method builder from fx.Named"),
+        assertTrue(abstractOne.errors().get(0).contains(
+                "[SG510] Library inherits the abstract method builder from fx.Named"),
                 abstractOne.describe());
     }
 
-    /** A {@code builder(String)} is an overload of the companion's {@code builder()}, and a static one is not inherited. */
+    /**
+     * A {@code builder(String)} is an overload of the companion's {@code builder()}, and a static one is not inherited.
+     */
     @Test
     void aBuilderMethodThatOnlyOverloadsTheCompanionsIsAccepted() {
         Compilation.Result result = Compilation.compileTyped(pagesLibrary("", """

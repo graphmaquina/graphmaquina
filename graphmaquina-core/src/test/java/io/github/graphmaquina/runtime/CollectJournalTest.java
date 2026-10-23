@@ -101,15 +101,7 @@ class CollectJournalTest {
             return ActionOutcome.ok();
         };
         packItem.behaviour = (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> {
-            switch (ctx.entity().id()) {
-                case "a" -> ctx.cascade(ITEMS, nested, ItemTransition.PACK);
-                case "b" -> throw new IllegalStateException("b cannot be packed");
-                case "d" -> {
-                    ctx.cascade(ITEMS, grandchild, ItemTransition.PACK);
-                    throw new IllegalStateException("d cannot be packed");
-                }
-                default -> { }
-            }
+            packOrFail(ctx, nested, grandchild);
             return ActionOutcome.ok();
         };
         CascadeException error;
@@ -118,6 +110,27 @@ class CollectJournalTest {
         }
         assertSame(caught.get(), error);
         assertEquals(2, error.errors().size());
+        assertTheJournalsStoppedAtTheirElementAndOneWasReadInside(error, readInside);
+        assertEveryJournalIsUnmodifiable(error);
+        assertTheAggregateJournalIsTheLastAbortsJournal(error);
+    }
+
+    /** Item a cascades to {@code nested}, b fails, d cascades to {@code grandchild} and then fails, c just packs. */
+    private static void packOrFail(TransitionContext<Item, ItemStatus, ItemTransition> ctx, Item nested,
+            Item grandchild) {
+        switch (ctx.entity().id()) {
+            case "a" -> ctx.cascade(ITEMS, nested, ItemTransition.PACK);
+            case "b" -> throw new IllegalStateException("b cannot be packed");
+            case "d" -> {
+                ctx.cascade(ITEMS, grandchild, ItemTransition.PACK);
+                throw new IllegalStateException("d cannot be packed");
+            }
+            default -> { }
+        }
+    }
+
+    private static void assertTheJournalsStoppedAtTheirElementAndOneWasReadInside(CascadeException error,
+            AtomicReference<List<String>> readInside) {
         List<String> first = List.of("ShipOrder:Order#o1:THREW", "PackItem:Item#a:OK", "PackItem:Item#x:OK",
                 "PackItem:Item#b:THREW");
         List<String> all = List.of("ShipOrder:Order#o1:THREW", "PackItem:Item#a:OK", "PackItem:Item#x:OK",
@@ -126,10 +139,16 @@ class CollectJournalTest {
         assertEquals(all, entries(error.errors().get(1).journal()));
         assertEquals(all, entries(error.journal()));
         assertEquals(first, readInside.get());
+    }
+
+    private static void assertEveryJournalIsUnmodifiable(CascadeException error) {
         for (TransitionAbortedException abort : error.errors()) {
             assertUnmodifiable(abort.journal());
         }
         assertUnmodifiable(error.journal());
+    }
+
+    private static void assertTheAggregateJournalIsTheLastAbortsJournal(CascadeException error) {
         assertEquals(error.journal(), error.errors().get(1).journal());
         assertEquals(error.journal().hashCode(), error.errors().get(1).journal().hashCode());
         assertEquals(error.journal().toString(), List.copyOf(error.journal()).toString());

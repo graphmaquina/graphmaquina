@@ -53,14 +53,14 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(@NonNull MachineKey<P, Q, U> key) {
         check();
-        return tx.peer(this, this::checkedUnit, key);
+        return Cascades.peer(tx, this, this::checkedUnit, key);
     }
 
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(@NonNull MachineKey<P, Q, U> key,
                                                                               @NonNull P peer, @NonNull U transition) {
         check();
-        return tx.cascade(this, key, peer, transition);
+        return Cascades.cascade(tx, this, key, peer, transition);
     }
 
     @Override
@@ -68,7 +68,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull MachineKey<P, Q, U> key, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
         check();
-        return tx.cascadeAll(this, key, peers, transition, policy);
+        return Cascades.cascadeAll(tx, this, key, peers, transition, policy);
     }
 
     /**
@@ -76,9 +76,10 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
      * stages nothing: an unknown facade throws here without poisoning the transaction.
      */
     @Override
-    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(
+            @NonNull Class<M> peer) {
         check();
-        return tx.peer(this, this::checkedUnit, tx.peerKeyFor(this, peer));
+        return Cascades.peer(tx, this, this::checkedUnit, Cascades.peerKeyFor(tx, this, peer));
     }
 
     /** An unknown facade poisons the transaction, as an unknown key does once the cascade looks its machine up. */
@@ -86,7 +87,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
             @NonNull Class<M> peer, @NonNull P entity, @NonNull U transition) {
         check();
-        return tx.cascade(this, tx.cascadeKeyFor(this, peer), entity, transition);
+        return Cascades.cascade(tx, this, tx.cascadeKeyFor(this, peer), entity, transition);
     }
 
     /**
@@ -99,7 +100,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
         check();
-        return tx.cascadeAll(this, peer, peers, transition, policy);
+        return Cascades.cascadeAll(tx, this, peer, peers, transition, policy);
     }
 
     /**

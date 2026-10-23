@@ -59,15 +59,7 @@ class NoJdkCompilerFallbackTest {
                 throw new ClassNotFoundException(name);
             }
             synchronized (getClassLoadingLock(name)) {
-                Class<?> loaded = findLoadedClass(name);
-                if (loaded == null && !name.startsWith("java.") && !name.startsWith("javax.")
-                        && !name.startsWith("jdk.") && !name.startsWith("com.sun.") && !name.startsWith("sun.")) {
-                    try {
-                        loaded = findClass(name);
-                    } catch (ClassNotFoundException notHere) {
-                        loaded = null;
-                    }
-                }
+                Class<?> loaded = loadedHere(name);
                 if (loaded == null) {
                     return super.loadClass(name, resolve);
                 }
@@ -76,6 +68,24 @@ class NoJdkCompilerFallbackTest {
                 }
                 return loaded;
             }
+        }
+
+        /** The class this loader holds already or finds on its own classpath, null for the platform and the unknown. */
+        private Class<?> loadedHere(String name) {
+            Class<?> loaded = findLoadedClass(name);
+            if (loaded == null && !isPlatform(name)) {
+                try {
+                    loaded = findClass(name);
+                } catch (ClassNotFoundException notHere) {
+                    loaded = null;
+                }
+            }
+            return loaded;
+        }
+
+        private static boolean isPlatform(String name) {
+            return name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("jdk.")
+                    || name.startsWith("com.sun.") || name.startsWith("sun.");
         }
     }
 

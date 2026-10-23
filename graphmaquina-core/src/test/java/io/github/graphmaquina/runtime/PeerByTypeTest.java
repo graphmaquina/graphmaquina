@@ -57,7 +57,8 @@ class PeerByTypeTest {
 
     private MachineRegistry registry(boolean registerItemsFacade) {
         StateMachines.Builder<Item, ItemStatus, ItemTransition> items = StateMachines.from(
-                        OrderGraphs.item((TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> ActionOutcome.ok()))
+                        OrderGraphs.item(
+                                (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> ActionOutcome.ok()))
                 .state(Item::status, Item::setStatus).identity(Item::id);
         if (registerItemsFacade) {
             items.as(Facades.Items.class);
@@ -121,7 +122,8 @@ class PeerByTypeTest {
                                         CompletableFuture.completedFuture(ActionOutcome.ok()),
                                 (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> ActionOutcome.ok(),
                                 (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
-                                    ctx.cascade(Facades.Items.class, ctx.entity().items().get(0), ItemTransition.CANCEL);
+                                    ctx.cascade(Facades.Items.class, ctx.entity().items().get(0),
+                                            ItemTransition.CANCEL);
                                     return ActionOutcome.ok();
                                 },
                                 (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass(),

@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -348,20 +349,5 @@ class TrailAssertionsTest {
         try (MachineRegistry registry = checkout.registry(Parcels.ticking())) {
             return registry.of(Checkout.ORDERS).execute(order, OrderChange.CHECKOUT).flow().trail();
         }
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
-    }
-
-    /** The fields of the error, then the message they render. */
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual, String message) {
-        assertFailure(error, context, property, expected, actual);
-        assertEquals(message, error.getMessage());
     }
 }

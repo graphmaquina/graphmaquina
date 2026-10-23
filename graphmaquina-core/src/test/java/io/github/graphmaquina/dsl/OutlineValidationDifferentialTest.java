@@ -88,7 +88,10 @@ class OutlineValidationDifferentialTest {
         return List.copyOf(corpus);
     }
 
-    /** The nine edges three states admit, identified {@code E0..E8}: {@code Ek} runs from {@code k / 3} to {@code k % 3}. */
+    /**
+     * The nine edges three states admit, identified {@code E0..E8}: {@code Ek} runs from {@code k / 3} to
+     * {@code k % 3}.
+     */
     private static List<String> catalog() {
         List<String> catalog = new ArrayList<>();
         for (int edge = 0; edge < 9; edge++) {
@@ -155,6 +158,15 @@ class OutlineValidationDifferentialTest {
      * five whose names hold a slash, which the frozen validator keys by their printed form and answers differently.
      */
     private static List<MachineOutline> fixturesOfTheValidatorTest() {
+        List<MachineOutline> outlines = new ArrayList<>(declarationFixturesOfTheValidatorTest());
+        outlines.addAll(recoveryFixturesOfTheValidatorTest());
+        outlines.add(CirculantOutlines.of(500, 8, true));
+        outlines.add(CirculantOutlines.of(500, 8, false));
+        return outlines;
+    }
+
+    /** The fixtures of the validator test that declare policies, watches and {@code onFailure} routes. */
+    private static List<MachineOutline> declarationFixturesOfTheValidatorTest() {
         List<MachineOutline> outlines = new ArrayList<>();
         outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
                 Set.of("REVIEW"),
@@ -192,6 +204,12 @@ class OutlineValidationDifferentialTest {
                         action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
                         move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        return outlines;
+    }
+
+    /** The fixtures of the validator test that declare {@code recover} transitions. */
+    private static List<MachineOutline> recoveryFixturesOfTheValidatorTest() {
+        List<MachineOutline> outlines = new ArrayList<>();
         outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
                 Set.of("REVIEW"),
                 List.of(move("DRAFT", "SUBMIT", "REVIEW"),
@@ -236,8 +254,6 @@ class OutlineValidationDifferentialTest {
                                 "ARCHIVE"),
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
-        outlines.add(circulant(500, 8, true));
-        outlines.add(circulant(500, 8, false));
         return outlines;
     }
 
@@ -266,29 +282,5 @@ class OutlineValidationDifferentialTest {
             policies.add(new PolicyOutline(state, state + " rejects the rest", Map.of()));
         }
         return List.copyOf(policies);
-    }
-
-    /** {@code vertices} states, each leaving through {@code degree} identifiers towards the next states. */
-    private static MachineOutline circulant(int vertices, int degree, boolean allowed) {
-        List<String> states = new ArrayList<>();
-        List<String> catalog = new ArrayList<>();
-        List<TransitionOutline> transitions = new ArrayList<>();
-        List<PolicyOutline> policies = new ArrayList<>();
-        for (int i = 0; i < vertices; i++) {
-            states.add("s" + i);
-        }
-        for (int offset = 1; offset <= degree; offset++) {
-            catalog.add("step" + offset);
-        }
-        for (int from = 0; from < vertices; from++) {
-            for (int offset = 1; offset <= degree; offset++) {
-                transitions.add(new TransitionOutline("s" + from, "step" + offset, "s" + ((from + offset) % vertices),
-                        TransitionKind.MOVE, Optional.empty()));
-            }
-            policies.add(new PolicyOutline("s" + from, "no edge with that identifier leaves s" + from, Map.of()));
-        }
-        Set<String> cycleAllowed = allowed ? Set.copyOf(states) : Set.of();
-        return new MachineOutline("circulant", states, catalog, "s0", Set.of(), cycleAllowed, transitions, policies,
-                List.of());
     }
 }

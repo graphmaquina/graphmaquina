@@ -219,8 +219,10 @@ class TypedPropertiesTest {
     @Test
     void resolvesThePeersOfAnEntityAndTheOwnerOfAPeer() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Pages", Use.PEERS, "fx.Doc/fx.DocStatus/fx.DocTransition", "fx.Page/fx.PageStatus/fx.PageTransition");
-        TypedProcessors.Resolving.property("fx.PageRefs.Doc", Use.OWNER, "fx.Doc/fx.DocStatus/fx.DocTransition", "fx.Page/fx.PageStatus/fx.PageTransition");
+        TypedProcessors.Resolving.property("fx.DocRefs.Pages", Use.PEERS, "fx.Doc/fx.DocStatus/fx.DocTransition",
+                "fx.Page/fx.PageStatus/fx.PageTransition");
+        TypedProcessors.Resolving.property("fx.PageRefs.Doc", Use.OWNER, "fx.Doc/fx.DocStatus/fx.DocTransition",
+                "fx.Page/fx.PageStatus/fx.PageTransition");
         Map<String, String> sources = entity("""
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;

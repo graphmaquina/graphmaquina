@@ -41,7 +41,8 @@ class MachineValidationTest {
         }
     }
 
-    private static GraphBuilder<Doc, DocStatus, DocTransition> policies(GraphBuilder<Doc, DocStatus, DocTransition> builder) {
+    private static GraphBuilder<Doc, DocStatus, DocTransition> policies(
+            GraphBuilder<Doc, DocStatus, DocTransition> builder) {
         return builder.statePolicy(DRAFT, "a draft is submitted or discarded")
                 .statePolicy(REVIEW, "in review it is published or sent back")
                 .statePolicy(PUBLISHED, "published only archives");

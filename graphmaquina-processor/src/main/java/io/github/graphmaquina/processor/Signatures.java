@@ -24,6 +24,10 @@ import javax.lang.model.util.Types;
  */
 final class Signatures {
 
+    static final String COLLECTION = "java.util.Collection";
+    static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
+    static final String OPTIONAL = "java.util.Optional";
+
     private final Elements elements;
     private final Types types;
     private final MemberIndex members;
@@ -145,7 +149,10 @@ final class Signatures {
         return Optional.empty();
     }
 
-    /** Whether {@code builtIn}, written as a member of {@code type}, implements {@code method} there; see {@link #implemented}. */
+    /**
+     * Whether {@code builtIn}, written as a member of {@code type}, implements {@code method} there; see
+     * {@link #implemented}.
+     */
     boolean implementedBy(ExecutableElement method, ExecutableElement builtIn, TypeElement type) {
         if (!method.getSimpleName().contentEquals(builtIn.getSimpleName())) {
             return false;
@@ -189,7 +196,8 @@ final class Signatures {
         List<ExecutableElement> clashing = new ArrayList<>();
         for (ExecutableElement method : ElementFilter.methodsIn(elements.getAllMembers(type))) {
             if (!method.getSimpleName().contentEquals(name) || method.getModifiers().contains(Modifier.STATIC)
-                    || method.getModifiers().contains(Modifier.PRIVATE) || method.getParameters().size() != parameters.size()) {
+                    || method.getModifiers().contains(Modifier.PRIVATE)
+                    || method.getParameters().size() != parameters.size()) {
                 continue;
             }
             List<? extends TypeMirror> declared = asMemberOf(site, method).getParameterTypes();
@@ -208,7 +216,8 @@ final class Signatures {
     private List<ExecutableElement> publicMethods(List<String> owners) {
         List<ExecutableElement> methods = new ArrayList<>();
         for (String owner : owners) {
-            for (ExecutableElement candidate : ElementFilter.methodsIn(elements.getTypeElement(owner).getEnclosedElements())) {
+            for (ExecutableElement candidate
+                    : ElementFilter.methodsIn(elements.getTypeElement(owner).getEnclosedElements())) {
                 if (candidate.getModifiers().contains(Modifier.PUBLIC)) {
                     methods.add(candidate);
                 }

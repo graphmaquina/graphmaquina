@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -71,18 +72,6 @@ import org.junit.jupiter.api.Test;
  */
 class PropagationTest {
 
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
     private static StateMachine<Doc, DocStatus, DocTransition> standalone(
             GraphDefinition<Doc, DocStatus, DocTransition> graph) {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5))
@@ -110,33 +99,40 @@ class PropagationTest {
         return others;
     }
 
+    /** The four ways a call of this machine can wait for, or complete with, a call of {@code other}. */
+    private static Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> graphsJoining(
+            StateMachine<Doc, DocStatus, DocTransition> other) {
+        Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> joins = new LinkedHashMap<>();
+        joins.put("action joining it", docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    other.async().execute(new Doc("other", DRAFT), SUBMIT).join();
+                    return ActionOutcome.ok();
+                })));
+        joins.put("async action completing with it", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .asyncAction("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                other.async().execute(new Doc("other", DRAFT), SUBMIT)
+                                        .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
+                                                ActionOutcome.ok()))));
+        joins.put("async guard completing with it", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .asyncGuard("CanSubmit", (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                other.async().execute(new Doc("other", DRAFT), SUBMIT)
+                                        .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
+                                                GuardResult.pass()))));
+        joins.put("guard joining it", docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                .guard("CanSubmit", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    other.async().execute(new Doc("other", DRAFT), SUBMIT).join();
+                    return GuardResult.pass();
+                })));
+        return joins;
+    }
+
     @Test
     void aFailureOfAnotherCallIsTheCauseOfThisCallsAbort() {
         List<String> ends = new ArrayList<>();
         for (Map.Entry<String, StateMachine<Doc, DocStatus, DocTransition>> other : failingCalls().entrySet()) {
-            Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> joins = new LinkedHashMap<>();
-            joins.put("action joining it", docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                        other.getValue().async().execute(new Doc("other", DRAFT), SUBMIT).join();
-                        return ActionOutcome.ok();
-                    })));
-            joins.put("async action completing with it", docs(
-                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                            .asyncAction("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                                    other.getValue().async().execute(new Doc("other", DRAFT), SUBMIT)
-                                            .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
-                                                    ActionOutcome.ok()))));
-            joins.put("async guard completing with it", docs(
-                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                            .asyncGuard("CanSubmit", (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
-                                    other.getValue().async().execute(new Doc("other", DRAFT), SUBMIT)
-                                            .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
-                                                    GuardResult.pass()))));
-            joins.put("guard joining it", docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                    .guard("CanSubmit", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                        other.getValue().async().execute(new Doc("other", DRAFT), SUBMIT).join();
-                        return GuardResult.pass();
-                    })));
+            Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> joins = graphsJoining(other.getValue());
             for (Map.Entry<String, GraphDefinition<Doc, DocStatus, DocTransition>> join : joins.entrySet()) {
                 Doc doc = new Doc("1", DRAFT);
                 TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
@@ -318,7 +314,20 @@ class PropagationTest {
 
         Doc last = new Doc("last", REVIEW);
         List<String> published = new ArrayList<>();
-        GraphDefinition<Doc, DocStatus, DocTransition> collecting = StateGraph.define(DOCS).initial(DRAFT)
+        GraphDefinition<Doc, DocStatus, DocTransition> collecting = collectingGraph(unset, last, published);
+        Doc root = new Doc("2", DRAFT);
+        TransitionAbortedException collected = assertThrows(TransitionAbortedException.class,
+                () -> standalone(collecting).execute(root, SUBMIT));
+        assertEquals(CallPhase.ACTION, collected.phase());
+        assertInstanceOf(UninitializedStateException.class, collected.getCause());
+        assertEquals(List.of(), published);
+        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), last.status()));
+    }
+
+    /** SUBMIT cascades PUBLISH to {@code unset} and {@code last} with COLLECT; PUBLISH notes the id it ran for. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> collectingGraph(Doc unset, Doc last,
+            List<String> published) {
+        return StateGraph.define(DOCS).initial(DRAFT)
                 .terminal(ARCHIVED)
                 .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
                 .transition(SUBMIT, DRAFT, REVIEW)
@@ -336,13 +345,6 @@ class PropagationTest {
                     .endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        Doc root = new Doc("2", DRAFT);
-        TransitionAbortedException collected = assertThrows(TransitionAbortedException.class,
-                () -> standalone(collecting).execute(root, SUBMIT));
-        assertEquals(CallPhase.ACTION, collected.phase());
-        assertInstanceOf(UninitializedStateException.class, collected.getCause());
-        assertEquals(List.of(), published);
-        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), last.status()));
     }
 
     /** A hook that joins a failing call of another machine fails as a hook of this call. */

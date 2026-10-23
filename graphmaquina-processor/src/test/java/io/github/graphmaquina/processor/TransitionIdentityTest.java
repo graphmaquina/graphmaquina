@@ -19,7 +19,8 @@ class TransitionIdentityTest {
     private static final String BODY = """
                 @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                 Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+            action = DocActionsRefs.Publish.class)
                 Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED)
                 Outcome<Doc, DocStatus, DocTransition> archive(Doc doc);
@@ -55,7 +56,8 @@ class TransitionIdentityTest {
     @Test
     void sg701AStateWithNoPolicy() {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER.replace(
-                "@DocsGraph.StatePolicy(state = REVIEW, otherwise = \"a review is published or sent back\")\n", ""), BODY);
+                "@DocsGraph.StatePolicy(state = REVIEW, otherwise = \"a review is published or sent back\")\n", ""),
+                BODY);
         assertTrue(result.hasError("SG701"), result.describe());
     }
 
@@ -69,7 +71,8 @@ class TransitionIdentityTest {
     @Test
     void sg301AFailureRouteThatLeavesNoEdgeFromTheOrigin() {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER,
-                BODY.replace("action = DocActionsRefs.Publish.class", "action = DocActionsRefs.Publish.class, onFailure = ARCHIVE"));
+                BODY.replace("action = DocActionsRefs.Publish.class",
+                        "action = DocActionsRefs.Publish.class, onFailure = ARCHIVE"));
         assertTrue(result.hasError("SG301"), result.describe());
     }
 
@@ -112,8 +115,10 @@ class TransitionIdentityTest {
                 + "    Outcome<Doc, DocStatus, DocTransition> autoPublish(Doc doc);\n");
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.DocsRuntime");
-        assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"), source);
-        assertTrue(source.contains(".transition(DocTransition.AUTO_PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"), source);
+        assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"),
+                source);
+        assertTrue(source.contains(".transition(DocTransition.AUTO_PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"),
+                source);
     }
 
     @Test
@@ -135,13 +140,15 @@ class TransitionIdentityTest {
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.DRAFT, DocStatus.REVIEW)"), source);
-        assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"), source);
+        assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"),
+                source);
     }
 
     @Test
     void aFailureRouteReachingTheSameDestinationUnderAnotherIdentifierIsAccepted() {
         Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER, BODY
-                .replace("action = DocActionsRefs.Publish.class", "action = DocActionsRefs.Publish.class, onFailure = AUTO_PUBLISH")
+                .replace("action = DocActionsRefs.Publish.class",
+                        "action = DocActionsRefs.Publish.class, onFailure = AUTO_PUBLISH")
                 + "    @DocsGraph.Transition(id = AUTO_PUBLISH, from = REVIEW, to = PUBLISHED,"
                 + " action = DocActionsRefs.AutoPublish.class)\n"
                 + "    Outcome<Doc, DocStatus, DocTransition> autoPublish(Doc doc);\n");

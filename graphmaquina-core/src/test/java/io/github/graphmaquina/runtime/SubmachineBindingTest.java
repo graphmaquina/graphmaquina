@@ -3,6 +3,7 @@ package io.github.graphmaquina.runtime;
 import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
 import static io.github.graphmaquina.fixtures.Billing.RISKS;
+import static io.github.graphmaquina.fixtures.RecordTexts.described;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -20,7 +21,6 @@ import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.AmbiguousParentException;
@@ -171,11 +171,6 @@ class SubmachineBindingTest {
     private static <T> T single(List<T> values) {
         assertEquals(1, values.size(), values.toString());
         return values.get(0);
-    }
-
-    private static List<String> described(List<TransitionRecord<?, ?, ?>> records) {
-        return records.stream().map((TransitionRecord<?, ?, ?> record) -> record.entity() + ":" + record.from() + "-"
-                + record.transition() + ">" + record.to() + "@" + record.depth()).toList();
     }
 
     @Test

@@ -46,7 +46,6 @@ import javax.lang.model.type.TypeMirror;
 final class EffectiveMethods {
 
     private static final Map<Class<? extends Annotation>, SymbolKind> ROLES = roles();
-    private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
 
     private final Signatures signatures;
     private final Annotations annotations;
@@ -147,7 +146,8 @@ final class EffectiveMethods {
         if (role != SymbolKind.ACTION && role != SymbolKind.GUARD) {
             return false;
         }
-        return signatures.erasureIs(returned, COMPLETION_STAGE) || signatures.subtype(returned, COMPLETION_STAGE);
+        return signatures.erasureIs(returned, Signatures.COMPLETION_STAGE)
+                || signatures.subtype(returned, Signatures.COMPLETION_STAGE);
     }
 
     /** Every supertype of {@code host}, transitively, each one once. */

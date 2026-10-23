@@ -135,7 +135,8 @@ class PoisonTest {
         Doc peer = new Doc("2", REVIEW);
         AtomicReference<Throwable> caught = new AtomicReference<>();
         swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH));
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertSame(broken, caught.get());
         assertSame(broken, error.getCause());
         assertEquals(DRAFT, doc.status());
@@ -154,7 +155,8 @@ class PoisonTest {
         Doc peer = new Doc("2", REVIEW);
         AtomicReference<Throwable> caught = new AtomicReference<>();
         swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH));
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertSame(caught.get(), error);
         assertSame(shipping, error.getCause());
         assertEquals(DRAFT, doc.status());
@@ -179,18 +181,22 @@ class PoisonTest {
             AtomicReference<Throwable> caught = new AtomicReference<>();
             swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                     ctx.cascadeAll(DOCS, peers, PUBLISH, policy));
-            String end;
-            try {
-                end = machine.execute(doc, SUBMIT).status().name();
-            } catch (TransitionAbortedException error) {
-                end = error.getCause() == broken ? "aborted by the Error" : "aborted by " + error.getCause();
-            }
+            String end = endOfTheCallAbortedByTheError(machine, doc, broken);
             ends.add(policy + ": " + end + ", parent caught " + (caught.get() == broken ? "the Error" : caught.get())
                     + ", " + doc.status() + ", " + peers.stream().map(Doc::status).toList());
         }
         assertEquals(List.of(
                 "FAIL_FAST: aborted by the Error, parent caught the Error, DRAFT, [REVIEW, REVIEW, REVIEW]",
                 "COLLECT: aborted by the Error, parent caught the Error, DRAFT, [REVIEW, REVIEW, REVIEW]"), ends);
+    }
+
+    private static String endOfTheCallAbortedByTheError(StateMachine<Doc, DocStatus, DocTransition> machine, Doc doc,
+            AssertionError broken) {
+        try {
+            return machine.execute(doc, SUBMIT).status().name();
+        } catch (TransitionAbortedException error) {
+            return error.getCause() == broken ? "aborted by the Error" : "aborted by " + error.getCause();
+        }
     }
 
     /**
@@ -270,7 +276,8 @@ class PoisonTest {
         StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
         Doc peer = new Doc("2", REVIEW);
         List<Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = List.of(
-                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(Facades.Docs.class, peer, PUBLISH),
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                        ctx.cascade(Facades.Docs.class, peer, PUBLISH),
                 (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                         ctx.cascadeAll(Facades.Docs.class, List.of(peer), PUBLISH, CascadePolicy.FAIL_FAST));
         for (Consumer<TransitionContext<Doc, DocStatus, DocTransition>> cascade : cascades) {
@@ -287,14 +294,9 @@ class PoisonTest {
         }
     }
 
-    /**
-     * An unknown machine is one wiring error, whichever way a cascade names it and whatever valid elements its
-     * collection holds: cascade and cascadeAll, by key or by facade type, under either policy, over no element or one,
-     * refuse it and poison, so the root does not commit although its action catches the refusal.
-     */
-    @Test
-    void anUnknownMachineIsRefusedAndPoisonsWhateverValidElementsItsCollectionHolds() {
-        Item item = new Item("i1", ItemStatus.PACKING, Optional.empty());
+    /** Every way to name the unknown items machine: cascade by key or facade, then cascadeAll under each policy. */
+    private static Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>>
+            cascadesToAnUnknownMachine(Item item) {
         Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
         cascades.put("cascade by key", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                 ctx.cascade(ITEMS, item, ItemTransition.PACK));
@@ -309,6 +311,19 @@ class PoisonTest {
                         ctx.cascadeAll(Facades.Items.class, peers, ItemTransition.PACK, policy));
             }
         }
+        return cascades;
+    }
+
+    /**
+     * An unknown machine is one wiring error, whichever way a cascade names it and whatever valid elements its
+     * collection holds: cascade and cascadeAll, by key or by facade type, under either policy, over no element or one,
+     * refuse it and poison, so the root does not commit although its action catches the refusal.
+     */
+    @Test
+    void anUnknownMachineIsRefusedAndPoisonsWhateverValidElementsItsCollectionHolds() {
+        Item item = new Item("i1", ItemStatus.PACKING, Optional.empty());
+        Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades =
+                cascadesToAnUnknownMachine(item);
         List<String> ends = new ArrayList<>();
         List<String> expected = new ArrayList<>();
         for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
@@ -363,7 +378,8 @@ class PoisonTest {
         }
         List<String> ends = new ArrayList<>();
         List<String> expected = new ArrayList<>();
-        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade : cascades.entrySet()) {
+        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                : cascades.entrySet()) {
             StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
             AtomicReference<Throwable> caught = new AtomicReference<>();
             swallowing(caught, cascade.getValue());
@@ -375,7 +391,8 @@ class PoisonTest {
             } catch (TransitionAbortedException error) {
                 end = error.getClass().getSimpleName() + " (" + error.getMessage() + ")";
             }
-            ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", publish ran " + publish.calls.size()
+            ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", publish ran "
+                    + publish.calls.size()
                     + ", " + doc.status() + ", " + peer.status());
             expected.add(cascade.getKey() + ": APPLIED, caught java.lang.IllegalArgumentException: transition must"
                     + " belong to io.github.graphmaquina.fixtures.DocTransition: PACK, publish ran 0, REVIEW, REVIEW");
@@ -420,8 +437,9 @@ class PoisonTest {
                 new AssertionError("the collection cannot be read"))) {
             Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
             for (CascadePolicy policy : CascadePolicy.values()) {
-                cascades.put("by key, known machine, " + policy, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                        ctx.cascadeAll(DOCS, new Unreadable<Doc>(failure), PUBLISH, policy));
+                cascades.put("by key, known machine, " + policy,
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ctx.cascadeAll(DOCS, new Unreadable<Doc>(failure), PUBLISH, policy));
                 cascades.put("by key, unknown machine, " + policy,
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                                 ctx.cascadeAll(ITEMS, new Unreadable<Item>(failure), ItemTransition.PACK, policy));
@@ -593,44 +611,58 @@ class PoisonTest {
         for (boolean byFacade : List.of(false, true)) {
             for (CascadePolicy policy : CascadePolicy.values()) {
                 for (boolean grows : List.of(true, false)) {
-                    StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(machine(false).definition())
-                            .state(Doc::status, Doc::setStatus).as(Facades.Docs.class).build();
-                    Doc doc = new Doc("1", DRAFT);
-                    Doc first = new Doc("p1", REVIEW);
-                    Doc second = new Doc("p2", REVIEW);
-                    Doc late = new Doc("late", REVIEW);
-                    List<Doc> peers = new ArrayList<>(List.of(first, second));
-                    publish.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                        if (ctx.entity() == first) {
-                            if (grows) {
-                                peers.add(late);
-                            } else {
-                                peers.remove(first);
-                            }
-                        }
-                        return ActionOutcome.ok();
-                    };
-                    AtomicReference<Throwable> caught = new AtomicReference<>();
-                    AtomicReference<Integer> outcomes = new AtomicReference<>();
-                    swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> outcomes.set(byFacade
-                            ? ctx.cascadeAll(Facades.Docs.class, peers, PUBLISH, policy).size()
-                            : ctx.cascadeAll(DOCS, peers, PUBLISH, policy).size()));
-                    String end;
-                    try {
-                        end = machine.execute(doc, SUBMIT).status().name();
-                    } catch (StateMachineException error) {
-                        end = error.getClass().getSimpleName();
-                    }
-                    String label = (byFacade ? "by facade, " : "by key, ") + policy + (grows ? ", grows" : ", shrinks");
-                    ends.add(label + ": root " + end + ", caught "
-                            + (caught.get() == null ? "nothing" : caught.get().getClass().getSimpleName())
-                            + ", outcomes " + outcomes.get() + ", " + doc.status() + ", " + first.status() + ", "
-                            + second.status() + ", late " + late.status());
-                    expected.add(label + ": root APPLIED, caught nothing, outcomes 2, REVIEW, PUBLISHED, PUBLISHED,"
+                    ends.add(runWithACollectionThatChanges(byFacade, policy, grows));
+                    expected.add(labelOfTheChange(byFacade, policy, grows)
+                            + ": root APPLIED, caught nothing, outcomes 2, REVIEW, PUBLISHED, PUBLISHED,"
                             + " late REVIEW");
                 }
             }
         }
         assertEquals(expected, ends);
+    }
+
+    private static String labelOfTheChange(boolean byFacade, CascadePolicy policy, boolean grows) {
+        return (byFacade ? "by facade, " : "by key, ") + policy + (grows ? ", grows" : ", shrinks");
+    }
+
+    /** Cascades over a list that PUBLISH of the first element makes grow, or shrink, and says how it went. */
+    private String runWithACollectionThatChanges(boolean byFacade, CascadePolicy policy, boolean grows) {
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(machine(false).definition())
+                .state(Doc::status, Doc::setStatus).as(Facades.Docs.class).build();
+        Doc doc = new Doc("1", DRAFT);
+        Doc first = new Doc("p1", REVIEW);
+        Doc second = new Doc("p2", REVIEW);
+        Doc late = new Doc("late", REVIEW);
+        List<Doc> peers = new ArrayList<>(List.of(first, second));
+        publish.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            changeThePeersWhenTheFirstRuns(ctx, first, late, peers, grows);
+            return ActionOutcome.ok();
+        };
+        AtomicReference<Throwable> caught = new AtomicReference<>();
+        AtomicReference<Integer> outcomes = new AtomicReference<>();
+        swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> outcomes.set(byFacade
+                ? ctx.cascadeAll(Facades.Docs.class, peers, PUBLISH, policy).size()
+                : ctx.cascadeAll(DOCS, peers, PUBLISH, policy).size()));
+        String end;
+        try {
+            end = machine.execute(doc, SUBMIT).status().name();
+        } catch (StateMachineException error) {
+            end = error.getClass().getSimpleName();
+        }
+        return labelOfTheChange(byFacade, policy, grows) + ": root " + end + ", caught "
+                + (caught.get() == null ? "nothing" : caught.get().getClass().getSimpleName())
+                + ", outcomes " + outcomes.get() + ", " + doc.status() + ", " + first.status() + ", "
+                + second.status() + ", late " + late.status();
+    }
+
+    private static void changeThePeersWhenTheFirstRuns(TransitionContext<Doc, DocStatus, DocTransition> ctx,
+            Doc first, Doc late, List<Doc> peers, boolean grows) {
+        if (ctx.entity() == first) {
+            if (grows) {
+                peers.add(late);
+            } else {
+                peers.remove(first);
+            }
+        }
     }
 }

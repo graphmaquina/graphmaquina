@@ -138,8 +138,8 @@ final class CompanionScope {
             Optional<String> taken = earlier.takenBy(simple);
             if (taken.isPresent()) {
                 boolean root = earlier.written().roots().containsKey(simple);
-                diagnostics.error(COLLISION, earlier.described() + ", written in an earlier round, writes " + taken.get()
-                        + ", but in its scope " + simple + " would name the companion " + name + " of "
+                diagnostics.error(COLLISION, earlier.described() + ", written in an earlier round, writes "
+                        + taken.get() + ", but in its scope " + simple + " would name the companion " + name + " of "
                         + declaration.getQualifiedName() + ", which this round reserves" + (root
                         ? ", not a package: rename " + declaration.getQualifiedName() + " or the package " + simple
                         : ": rename " + declaration.getQualifiedName()), declaration);
@@ -198,15 +198,29 @@ final class CompanionScope {
      * {@code memberTypes} are the simple names of the member types the companion declares itself, and
      * {@code fields} the names of the fields it declares that it does not choose.
      */
-    boolean admits(TypeElement declaration, String companion, Set<String> memberTypes, Set<String> fields, Written written) {
+    boolean admits(TypeElement declaration, String companion, Set<String> memberTypes, Set<String> fields,
+                   Written written) {
         Map<String, Taker> types = types(declaration, companion, memberTypes, written);
         Map<String, Taker> packageTypes = packageTypes(declaration, written.roots().keySet());
         Map<String, Taker> variables = variables(declaration, companion, fields);
         String prefix = "the companion " + companion + " of " + declaration.getQualifiedName() + " writes ";
+        boolean packages = admitsPackages(declaration, written, prefix, List.of(types, packageTypes), variables);
+        boolean unnamed = admitsUnnamedPackageTypes(declaration, written, prefix, types, variables);
+        boolean simpleNames = admitsSimpleNames(declaration, written, prefix, variables);
+        return packages && unnamed && simpleNames;
+    }
+
+    /**
+     * Whether no package that heads a qualified name in {@code written} is taken: {@code SG603} at
+     * {@code declaration} for each that a type of {@code typeScopes} or of {@code java.lang} takes, or else that a
+     * field of {@code variables} takes where an expression reads it. Each diagnostic starts with {@code prefix}.
+     */
+    private boolean admitsPackages(TypeElement declaration, Written written, String prefix,
+                                   List<Map<String, Taker>> typeScopes, Map<String, Taker> variables) {
         boolean admitted = true;
         for (Map.Entry<String, String> root : written.roots().entrySet()) {
             String name = root.getKey();
-            Taker taker = first(name, List.of(types, packageTypes));
+            Taker taker = first(name, typeScopes);
             if (taker == null && topLevelType("java.lang", name) != null) {
                 taker = new Taker("the type java.lang." + name, "");
             }
@@ -221,6 +235,17 @@ final class CompanionScope {
                 admitted = false;
             }
         }
+        return admitted;
+    }
+
+    /**
+     * Whether no top-level type of the unnamed package that heads a qualified name in {@code written} is taken:
+     * {@code SG603} at {@code declaration} for each that a type of {@code types} takes, or else that a field of
+     * {@code variables} takes where an expression reads it. Each diagnostic starts with {@code prefix}.
+     */
+    private boolean admitsUnnamedPackageTypes(TypeElement declaration, Written written, String prefix,
+                                              Map<String, Taker> types, Map<String, Taker> variables) {
+        boolean admitted = true;
         for (Map.Entry<String, String> root : written.typeRoots().entrySet()) {
             String name = root.getKey();
             if (types.containsKey(name)) {
@@ -235,6 +260,17 @@ final class CompanionScope {
                 admitted = false;
             }
         }
+        return admitted;
+    }
+
+    /**
+     * Whether no simple name {@code written} holds for a type is taken where an expression reads it: {@code SG603}
+     * at {@code declaration} for each that a field of {@code variables} takes. Each diagnostic starts with
+     * {@code prefix}.
+     */
+    private boolean admitsSimpleNames(TypeElement declaration, Written written, String prefix,
+                                      Map<String, Taker> variables) {
+        boolean admitted = true;
         for (Map.Entry<String, String> simple : written.simpleNames().entrySet()) {
             Taker taker = variables.get(simple.getKey());
             if (taker != null && written.expressions().containsKey(simple.getKey())) {
@@ -269,7 +305,8 @@ final class CompanionScope {
      * imports, takes from {@code java.lang} or inherits; the member types it inherits from {@code declaration};
      * and the member types it declares itself. Where two share a name, the later one hides the earlier one.
      */
-    private Map<String, Taker> types(TypeElement declaration, String companion, Set<String> memberTypes, Written written) {
+    private Map<String, Taker> types(TypeElement declaration, String companion, Set<String> memberTypes,
+                                     Written written) {
         String packageName = elements.getPackageOf(declaration).getQualifiedName().toString();
         Map<String, Taker> types = new LinkedHashMap<>();
         types.put(companion, new Taker("the companion " + companion + " itself", ""));
@@ -338,7 +375,8 @@ final class CompanionScope {
         Map<String, Taker> variables = new LinkedHashMap<>();
         for (VariableElement field : ElementFilter.fieldsIn(elements.getAllMembers(declaration))) {
             variables.putIfAbsent(field.getSimpleName().toString(), new Taker("the constant "
-                    + field.getEnclosingElement().getSimpleName() + "." + field.getSimpleName(), "rename that constant"));
+                    + field.getEnclosingElement().getSimpleName() + "." + field.getSimpleName(),
+                    "rename that constant"));
         }
         for (String field : fields) {
             variables.put(field, new Taker("the field " + companion + "." + field + " the companion declares", ""));

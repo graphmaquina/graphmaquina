@@ -29,7 +29,8 @@ class ExportValidationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Hidden {
-                    @GraphAction private ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction private ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -245,7 +246,8 @@ class ExportValidationTest {
     void refusesAnExportWhoseRoleChangedAfterItWasGenerated() {
         Compilation.Prepared prepared = Compilation.prepare(exports("fx.Host", ACTION_HOST));
         rewriteOriginal(prepared, "fx.Host", ACTION_HOST.replace("@GraphAction", "@GraphGuard")
-                .replace("import io.github.graphmaquina.annotation.GraphAction;", "import io.github.graphmaquina.annotation.GraphGuard;"));
+                .replace("import io.github.graphmaquina.annotation.GraphAction;",
+                        "import io.github.graphmaquina.annotation.GraphGuard;"));
 
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
@@ -302,8 +304,10 @@ class ExportValidationTest {
     void doesNotRepeatAnExportThatDoesNotHoldAtItsUseButValidatesTheOtherMachines() {
         Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
         sources.put("fx.DocActions", sources.get("fx.DocActions").replace(
-                "@GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { calls.add(\"publish\"); return ActionOutcome.ok(); }",
-                "@GraphAction public String publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { return \"publish\"; }"));
+                "@GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) "
+                        + "{ calls.add(\"publish\"); return ActionOutcome.ok(); }",
+                "@GraphAction public String publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) "
+                        + "{ return \"publish\"; }"));
         sources.put("fx.Pages", Fixtures.PAGES.replace("otherwise = \"a page is finished\"", "otherwise = \" \""));
 
         Compilation.Result result = Compilation.compileTyped(sources);

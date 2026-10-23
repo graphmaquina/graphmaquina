@@ -136,8 +136,10 @@ class CommitSummaryTest {
             }
         }
         assertEquals(refs, summary.changes().stream().map(CommitSummary.Change::ref).toList());
-        assertEquals(firsts, summary.changes().stream().map((CommitSummary.Change change) -> change.first().from()).toList());
-        assertEquals(lasts, summary.changes().stream().map((CommitSummary.Change change) -> change.last().to()).toList());
+        assertEquals(firsts,
+                summary.changes().stream().map((CommitSummary.Change change) -> change.first().from()).toList());
+        assertEquals(lasts,
+                summary.changes().stream().map((CommitSummary.Change change) -> change.last().to()).toList());
         assertEquals(moved, summary.movedEntities());
         assertEquals(List.of(b), summary.movedEntities());
     }

@@ -35,7 +35,8 @@ class OperationInputDefaultsTest {
         public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(
+                Class<M> type) {
             throw new UnsupportedOperationException();
         }
         public FlowView flow() {
@@ -52,10 +53,12 @@ class OperationInputDefaultsTest {
         public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(
+                Class<M> type) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(MachineKey<P, Q, U> key, P entity, U transition) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(
+                MachineKey<P, Q, U> key, P entity, U transition) {
             throw new UnsupportedOperationException();
         }
         public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(

@@ -29,17 +29,18 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * What the flow tests do not reach: the metadata both graphs of the example declare, the entities an
- * aborted cascade has to leave where they were, and the recorder's promise that a reaction it records
- * as a call of its own is not also counted a second time. Every expected name here is the runtime name the
- * generated companion declares, not the name of the method that implements it.
+ * What the flow tests do not reach: the metadata both graphs of the example declare, the entities an aborted cascade
+ * has to leave where they were, and the recorder's promise that a reaction it records as a call of its own is not also
+ * counted a second time. Every expected name here is the runtime name the generated companion declares, not the name of
+ * the method that implements it.
  */
 class TestingApiTest {
 
     final FakeGateway gateway = new FakeGateway();
     final FakeCarrier carrier = new FakeCarrier();
     final TransitionRecorder recorder = TransitionRecorder.create();
-    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
+                    new ItemActions())
             .observer(recorder)
             .build();
     final Orders orders = shop.orders();

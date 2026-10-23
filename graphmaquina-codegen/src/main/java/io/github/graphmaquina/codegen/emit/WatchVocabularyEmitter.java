@@ -63,17 +63,7 @@ final class WatchVocabularyEmitter {
         String vocabulary = vocabularyName(owner, peer);
         String simpleName = SymbolNames.nameWithin(owner.packageName(), vocabulary);
         String pair = "machine = " + owner.facade() + ".class, peer = " + peer.facade() + ".class";
-        String unit = "the pair vocabulary " + simpleName;
-        Map<String, String> named = new LinkedHashMap<>();
-        named.put(owner.facade(), "the machine " + owner.facade());
-        named.put(peer.facade(), "the peer machine " + peer.facade());
-        named.put(owner.stateType(), "the state type " + owner.stateType() + " of " + owner.facade());
-        named.put(owner.transitionType(), "the transition type " + owner.transitionType() + " of " + owner.facade());
-        named.put(peer.stateType(), "the state type " + peer.stateType() + " of " + peer.facade());
-        Map<String, String> meanings = ApiEmitter.meanings(simpleName, owner.packageName(), ANNOTATIONS, generated);
-        for (Map.Entry<String, String> name : named.entrySet()) {
-            ApiEmitter.requireNameable(unit, meanings, name.getValue(), name.getKey(), owner.origin());
-        }
+        requirePairTypesNameable(owner, peer, simpleName, generated);
 
         JavaSource source = new JavaSource();
         source.header(owner.packageName(), List.of());
@@ -98,6 +88,29 @@ final class WatchVocabularyEmitter {
         source.outdent();
         source.line("}");
         return new GeneratedSource(vocabulary, source.toString());
+    }
+
+    /**
+     * Applies {@link ApiEmitter#requireNameable} to the types the pair vocabulary {@code simpleName} of {@code owner}
+     * over {@code peer} names: both machines, the owner's state and transition enums and the peer's state enum. It
+     * refuses one whose first segment a nested annotation of the vocabulary, or a top-level type generated in the
+     * owner's package, takes over.
+     *
+     * @param generated the simple names of the top-level types generated in each package
+     */
+    private static void requirePairTypesNameable(GraphDescriptor owner, GraphDescriptor peer, String simpleName,
+            Map<String, Set<String>> generated) {
+        String unit = "the pair vocabulary " + simpleName;
+        Map<String, String> named = new LinkedHashMap<>();
+        named.put(owner.facade(), "the machine " + owner.facade());
+        named.put(peer.facade(), "the peer machine " + peer.facade());
+        named.put(owner.stateType(), "the state type " + owner.stateType() + " of " + owner.facade());
+        named.put(owner.transitionType(), "the transition type " + owner.transitionType() + " of " + owner.facade());
+        named.put(peer.stateType(), "the state type " + peer.stateType() + " of " + peer.facade());
+        Map<String, String> meanings = ApiEmitter.meanings(simpleName, owner.packageName(), ANNOTATIONS, generated);
+        for (Map.Entry<String, String> name : named.entrySet()) {
+            ApiEmitter.requireNameable(unit, meanings, name.getValue(), name.getKey(), owner.origin());
+        }
     }
 
     private static void watch(JavaSource source, String vocabulary, String pair, GraphDescriptor owner) {

@@ -89,23 +89,38 @@ public final class ManifestProcessors {
             VocabularyRegistry vocabulary =
                     new VocabularyRegistry(registry.manifest().orElseThrow(), processingEnv.getElementUtils());
             for (Element root : round.getRootElements()) {
-                if (!(root instanceof TypeElement type) || !type.getQualifiedName().contentEquals("fx.Docs")) {
-                    continue;
-                }
-                for (AnnotationMirror policy : vocabulary.findAll(type, VocabularyKind.STATE_POLICY)) {
-                    POLICIES.add(TypedValues.enumConstant(values.value(policy, "state")).getSimpleName().toString());
-                }
-                for (Element member : type.getEnclosedElements()) {
-                    if (member instanceof ExecutableElement method) {
-                        for (AnnotationMirror transition : vocabulary.findAll(method, VocabularyKind.TRANSITION)) {
-                            for (javax.lang.model.element.AnnotationValue action : values.array(transition, "action")) {
-                                ACTIONS.add(TypedValues.classLiteral(action).toString());
-                            }
-                        }
-                    }
-                }
+                recordDocs(values, vocabulary, root);
             }
             return true;
+        }
+
+        /** Records the policies and the actions of {@code root} when it is {@code fx.Docs}, and nothing otherwise. */
+        private static void recordDocs(Annotations values, VocabularyRegistry vocabulary, Element root) {
+            if (!(root instanceof TypeElement type) || !type.getQualifiedName().contentEquals("fx.Docs")) {
+                return;
+            }
+            for (AnnotationMirror policy : vocabulary.findAll(type, VocabularyKind.STATE_POLICY)) {
+                POLICIES.add(TypedValues.enumConstant(values.value(policy, "state")).getSimpleName().toString());
+            }
+            recordActionsOfMembers(values, vocabulary, type);
+        }
+
+        private static void recordActionsOfMembers(Annotations values, VocabularyRegistry vocabulary,
+                TypeElement type) {
+            for (Element member : type.getEnclosedElements()) {
+                if (member instanceof ExecutableElement method) {
+                    recordActionsOfMethod(values, vocabulary, method);
+                }
+            }
+        }
+
+        private static void recordActionsOfMethod(Annotations values, VocabularyRegistry vocabulary,
+                ExecutableElement method) {
+            for (AnnotationMirror transition : vocabulary.findAll(method, VocabularyKind.TRANSITION)) {
+                for (javax.lang.model.element.AnnotationValue action : values.array(transition, "action")) {
+                    ACTIONS.add(TypedValues.classLiteral(action).toString());
+                }
+            }
         }
     }
 

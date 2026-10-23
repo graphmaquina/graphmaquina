@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -293,13 +294,5 @@ class RecoveryAssertionsTest {
         return new Outcome.Failed<>(new Ticket("t"), TicketState.READY, TicketChange.PUBLISH, TicketState.PUBLISHED,
                 TicketChange.RECORD_REJECTION, TicketState.REJECTED_BY_PROVIDER, "content rejected", Optional.empty(),
                 List.of(), List.of(), kind);
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 }

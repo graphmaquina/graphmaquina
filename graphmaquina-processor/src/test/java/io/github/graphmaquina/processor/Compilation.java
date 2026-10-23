@@ -54,7 +54,8 @@ final class Compilation {
      * What a compilation produced: whether it succeeded, its diagnostics, the processor's source output and a loader
      * over the classes.
      */
-    record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output, ClassLoader classes) {
+    record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output,
+            ClassLoader classes) {
 
         List<String> errors() {
             List<String> errors = new ArrayList<>();
@@ -83,7 +84,8 @@ final class Compilation {
         /** Line of the first error carrying the code, or -1. */
         long lineOf(String code) {
             for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
-                if (diagnostic.getKind() == Diagnostic.Kind.ERROR && diagnostic.getMessage(null).contains("[" + code + "]")) {
+                if (diagnostic.getKind() == Diagnostic.Kind.ERROR
+                        && diagnostic.getMessage(null).contains("[" + code + "]")) {
                     return diagnostic.getLineNumber();
                 }
             }
@@ -105,13 +107,17 @@ final class Compilation {
 
         String generated(String qualifiedName) {
             try {
-                return Files.readString(output.resolve(qualifiedName.replace('.', '/') + ".java"), StandardCharsets.UTF_8);
+                return Files.readString(output.resolve(qualifiedName.replace('.', '/') + ".java"),
+                        StandardCharsets.UTF_8);
             } catch (IOException e) {
-                throw new IllegalStateException("no generated source for " + qualifiedName + "; diagnostics:\n" + describe(), e);
+                throw new IllegalStateException("no generated source for " + qualifiedName
+                        + "; diagnostics:\n" + describe(), e);
             }
         }
 
-        /** Every class comes from the same loader, so reflection over two generated types sees one identity per type. */
+        /**
+         * Every class comes from the same loader, so reflection over two generated types sees one identity per type.
+         */
         Class<?> load(String qualifiedName) {
             try {
                 return classes.loadClass(qualifiedName);

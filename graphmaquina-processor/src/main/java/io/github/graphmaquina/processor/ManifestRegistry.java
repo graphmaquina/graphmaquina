@@ -19,6 +19,7 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
+import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.nio.file.Files;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import javax.annotation.processing.ProcessingEnvironment;
 
 /**
@@ -54,6 +56,9 @@ import javax.annotation.processing.ProcessingEnvironment;
  * written are met with {@code SG602} and not with an annotation nobody owns. A compilation that carries none of
  * them, such as one whose only annotation is the {@code @Generated} of another tool, never reaches the
  * processor, and is neither refused nor claimed.</p>
+ *
+ * <p>The registry also answers which machines the export indexes of a trusted manifest list, this compilation's own
+ * and its dependencies'.</p>
  */
 final class ManifestRegistry {
 
@@ -122,6 +127,23 @@ final class ManifestRegistry {
     /** Why no manifest could be trusted, to be reported once as {@code SG602}. */
     Optional<String> failure() {
         return failure;
+    }
+
+    /** Whether the index of this compilation names the machine {@code name}, which one of its sources declares. */
+    boolean isLocal(String name) {
+        return manifest.map((CompileManifest compiled) -> compiled.local().model().graphs().stream()
+                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(false);
+    }
+
+    /**
+     * Whether an index this compilation reads, its own or a dependency's, lists the machine {@code name}. Without a
+     * manifest, which has been reported already, nothing is known not to be listed.
+     */
+    boolean isListed(String name) {
+        return manifest.map((CompileManifest compiled) -> Stream.concat(Stream.of(compiled.local()),
+                        compiled.dependencies().stream())
+                .flatMap((ExportIndex index) -> index.model().graphs().stream())
+                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(true);
     }
 
     private static ManifestRegistry failed(String reason) {

@@ -79,7 +79,8 @@ class LookupExportTest {
                 import io.github.graphmaquina.annotation.GraphCondition;
                 import java.util.Optional;
                 public final class PaymentConditions extends OrderLookups {
-                    @Override @GraphCondition public Optional<Order> orderOf(Payment payment) { return Optional.empty(); }
+                    @Override @GraphCondition public Optional<Order> orderOf(Payment payment) { \
+                return Optional.empty(); }
                 }
                 """);
         sources.put("fx.OrderLookups", sources.get("fx.OrderLookups").replace("public final class", "public class"));

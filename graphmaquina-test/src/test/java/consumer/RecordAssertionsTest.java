@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -849,13 +850,5 @@ class RecordAssertionsTest {
         assertEquals(new ActionRecord(TestDomain.KEY, entity, from, transition, to, action, depth, status),
                 error.expected());
         assertEquals(journal, error.actual());
-    }
-
-    private static void assertFailure(
-            GraphAssertionError error, String context, String property, Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 }

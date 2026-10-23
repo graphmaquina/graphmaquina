@@ -4,9 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures, one entry per compilation unit. Everything lives in
- * package {@code fx}, and no entry names a generated type the pre-javac generator does not produce from these
- * very sources, so the fixture can be prepared and compiled exactly as a consumer build does.
+ * Source fixtures, one entry per compilation unit. Everything lives in package {@code fx}, and no entry names a
+ * generated type the pre-javac generator does not produce from these very sources, so the fixture can be prepared and
+ * compiled exactly as a consumer build does.
  */
 final class TypedFixtures {
 
@@ -18,6 +18,41 @@ final class TypedFixtures {
      */
     static Map<String, String> minimal() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putMinimalDomain(sources);
+        sources.put("fx.DocActions", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public final class DocActions {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fx.Docs", """
+                package fx;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
+                    state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "publish before finishing")
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
+                }
+                """);
+        return sources;
+    }
+
+    /** The states, the changes and the entity of {@link #minimal()}. */
+    private static void putMinimalDomain(Map<String, String> sources) {
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
@@ -36,34 +71,6 @@ final class TypedFixtures {
                     public void status(DocStatus value) { status = value; }
                 }
                 """);
-        sources.put("fx.DocActions", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.TransitionContext;
-                public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
-                        return ActionOutcome.ok();
-                    }
-                }
-                """);
-        sources.put("fx.Docs", """
-                package fx;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import static fx.DocStatus.*;
-                import static fx.DocTransition.*;
-                @GenerateGraphApi
-                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
-                    state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "publish before finishing")
-                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
-                    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
-                }
-                """);
-        return sources;
     }
 
     /**
@@ -103,10 +110,12 @@ final class TypedFixtures {
                 import java.util.concurrent.CompletableFuture;
                 import java.util.concurrent.CompletionStage;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
-                    @GraphAction public CompletionStage<ActionOutcome> archive(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                    @GraphAction public CompletionStage<ActionOutcome> \
+                archive(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return CompletableFuture.completedFuture(ActionOutcome.ok());
                     }
                     @GraphGuard public GuardResult approved(GuardContext<Doc, DocStatus, DocTransition> context) {
@@ -139,6 +148,15 @@ final class TypedFixtures {
      */
     static Map<String, String> watching(String peers, String watch) {
         Map<String, String> sources = new LinkedHashMap<>();
+        putWatchingEnums(sources);
+        putWatchingEntities(sources);
+        sources.put("fx.DocActions", DOC_ACTIONS.formatted("public final class DocActions {"));
+        putWatchingMachines(sources, peers, watch);
+        return sources;
+    }
+
+    /** The states and the changes of the document and of its pages. */
+    private static void putWatchingEnums(Map<String, String> sources) {
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, REVIEW, PUBLISHED }
@@ -155,6 +173,10 @@ final class TypedFixtures {
                 package fx;
                 public enum PageTransition { FINISH }
                 """);
+    }
+
+    /** The document and the page that belongs to it. */
+    private static void putWatchingEntities(Map<String, String> sources) {
         sources.put("fx.Doc", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -188,7 +210,10 @@ final class TypedFixtures {
                     @GraphProperty public Optional<Doc> doc() { return Optional.of(doc); }
                 }
                 """);
-        sources.put("fx.DocActions", DOC_ACTIONS.formatted("public final class DocActions {"));
+    }
+
+    /** The machine of the pages, the watching facade and the set that holds both. */
+    private static void putWatchingMachines(Map<String, String> sources, String peers, String watch) {
         sources.put("fx.Pages", """
                 package fx;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -216,7 +241,6 @@ final class TypedFixtures {
                     Pages pages();
                 }
                 """);
-        return sources;
     }
 
     /** The pair {@link #watching()} declares: the one peer its watch follows. */
@@ -282,7 +306,8 @@ final class TypedFixtures {
                 public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """;
@@ -309,6 +334,18 @@ final class TypedFixtures {
                 import static fx.DocStatus.*;
                 import static fx.DocTransition.*;
                 @GenerateGraphApi
-                """ + header + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n" + members + "}\n";
+                """ + header + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n"
+                + members + "}\n";
+    }
+
+    /** The operations of the fixture, publishing with the asynchronous action and {@code extra} declared on it. */
+    static String archive(String extra) {
+        return """
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Archive.class%s)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
+                """.formatted(extra);
     }
 }

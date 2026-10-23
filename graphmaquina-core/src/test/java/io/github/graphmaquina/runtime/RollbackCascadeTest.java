@@ -165,7 +165,29 @@ class RollbackCascadeTest {
         List<String> refusals = new ArrayList<>();
         List<DocStatus> seen = new ArrayList<>();
         List<TransitionContext<Doc, DocStatus, DocTransition>> retained = new ArrayList<>();
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = graphWhoseNestedSubmitArmsTheIdentityOfFirst(
+                root, nested, first, second, firstId, refusals, seen, retained);
+        try (MachineRegistry registry = registry(graph, first, firstId)) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertEquals(Optional.of(REVIEW), thrown.from());
+            assertEquals(Optional.of(ARCHIVE), thrown.transition());
+        }
+        assertEquals(List.of(REFUSAL), refusals);
+        assertEquals(List.of(REVIEW), seen);
+        assertEquals(List.of(DRAFT, DRAFT, REVIEW, DRAFT),
+                List.of(root.status(), nested.status(), first.status(), second.status()));
+    }
+
+    /**
+     * The root submits {@code second} and {@code nested}; the nested submit retains its context, puts {@code first}
+     * live, arms {@code firstId} to cascade {@code second} from the retained context when hashed, and fails into
+     * DISCARD, whose action notes the state it sees of {@code second} and archives it.
+     */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> graphWhoseNestedSubmitArmsTheIdentityOfFirst(
+            Doc root, Doc nested, Doc first, Doc second, ArmedId firstId, List<String> refusals,
+            List<DocStatus> seen, List<TransitionContext<Doc, DocStatus, DocTransition>> retained) {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
                 .statePolicy(PUBLISHED, "a publication is archived")
                 .transition(SUBMIT, DRAFT, REVIEW)
@@ -200,16 +222,6 @@ class RollbackCascadeTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        try (MachineRegistry registry = registry(graph, first, firstId)) {
-            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
-                    () -> registry.of(DOCS).execute(root, SUBMIT));
-            assertEquals(Optional.of(REVIEW), thrown.from());
-            assertEquals(Optional.of(ARCHIVE), thrown.transition());
-        }
-        assertEquals(List.of(REFUSAL), refusals);
-        assertEquals(List.of(REVIEW), seen);
-        assertEquals(List.of(DRAFT, DRAFT, REVIEW, DRAFT),
-                List.of(root.status(), nested.status(), first.status(), second.status()));
     }
 
     @Test

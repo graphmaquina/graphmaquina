@@ -61,9 +61,6 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** The lowest Java feature release the generator and the compilation it prepares are supported on. */
     private static final int MINIMUM_LANGUAGE_VERSION = 21;
 
-    /** The annotation processor that publishes the index of what javac accepted, named by failures. */
-    private static final String PROCESSOR = "io.github.graphmaquina:graphmaquina-processor";
-
     /** The name of the request file every step of one compilation reads, inside that compilation's directory. */
     private static final String REQUEST = "request.json";
 
@@ -311,7 +308,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 + request.compilationId() + " — " + pendingInventory + " is there, so its previous outputs"
                 + " have been retired — but javac left no " + pendingIndex
                 + ". The StateGraph annotation processor did not run: it is what publishes the index of an"
-                + " accepted compilation. Check that " + PROCESSOR
+                + " accepted compilation. Check that " + ProcessorPathRequirements.PROCESSOR
                 + " is on the <annotationProcessorPaths> of this compilation and that annotation processing"
                 + " is not switched off.");
         }

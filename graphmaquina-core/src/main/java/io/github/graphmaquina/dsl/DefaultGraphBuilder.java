@@ -10,15 +10,11 @@ import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.InvalidGraphException;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.EnumMap;
 import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -226,7 +222,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             MachineOutlineValidator.validate(outline(ordered, policies, watchSpecs), problems);
         }
         // SG805 reads only the children, which were built before this graph: it is checked whatever else was found.
-        compositionCycle();
+        CompositionCycles.check(key, submachines, problems);
         if (!problems.isEmpty()) {
             throw new InvalidGraphException(key, problems.sorted());
         }
@@ -243,62 +239,6 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
         }
         return resolved;
-    }
-
-    /** One step of the walk of {@link #compositionCycle()}: a definition, its path and that path's ancestor keys. */
-    private record Visit(GraphDefinition<?, ?, ?> definition, String path, Set<MachineKey<?, ?, ?>> ancestors) {
-        Visit {
-            ancestors = Set.copyOf(ancestors);
-        }
-    }
-
-    /**
-     * SG805 when the sub-machines of this graph, followed through the children's own sub-machines, reach a definition
-     * of this graph's own key along a path this walk expands. The walk is breadth first, so the path it reports is a
-     * shortest one: it starts from this graph's bindings in the order of their states, and visits each child's states
-     * in declaration order. It never expands a key that is already on the path, so a hand-written definition that
-     * hands out new instances of itself still ends; distinct definitions of the same key are each checked on their own
-     * paths, but a second definition of a key already on a path is not expanded there. It takes a definition's bindings
-     * to be the same each time it asks, so what a visit expands depends only on its definition and the keys on its
-     * path, and the walk expands each such pair once: paths that reach one definition through the same keys, such as a
-     * child bound in several states of each level, cost one expansion, not one per path. A return to this graph's key
-     * is checked before either pruning.
-     */
-    private void compositionCycle() {
-        List<SubmachineDraft<E, S, T, ?, ?, ?>> byState = new ArrayList<>(submachines);
-        byState.sort(Comparator.comparingInt((SubmachineDraft<E, S, T, ?, ?, ?> draft) -> draft.state().ordinal()));
-        Deque<Visit> queue = new ArrayDeque<>();
-        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : byState) {
-            queue.add(new Visit(draft.child(), key + "." + draft.state().name(), Set.of(key)));
-        }
-        Map<GraphDefinition<?, ?, ?>, Set<Set<MachineKey<?, ?, ?>>>> expanded = new IdentityHashMap<>();
-        while (!queue.isEmpty()) {
-            Visit visit = queue.removeFirst();
-            MachineKey<?, ?, ?> reached = visit.definition().key();
-            if (reached.equals(key)) {
-                problems.add("SG805", "the sub-machines of " + key + " contain " + key + " again: " + visit.path()
-                        + " -> " + key);
-                return;
-            }
-            if (!visit.ancestors().contains(reached) && expanded.computeIfAbsent(visit.definition(),
-                    (GraphDefinition<?, ?, ?> definition) -> new HashSet<>()).add(visit.ancestors())) {
-                Set<MachineKey<?, ?, ?>> ancestors = new HashSet<>(visit.ancestors());
-                ancestors.add(reached);
-                visitChildren(visit.definition(), visit.path(), ancestors, queue);
-            }
-        }
-    }
-
-    /** Queues each child in state order, with its path and an immutable copy of that path's ancestor keys. */
-    private static <P, Q extends Enum<Q>, U extends Enum<U>> void visitChildren(GraphDefinition<P, Q, U> definition,
-            String path, Set<MachineKey<?, ?, ?>> ancestors, Deque<Visit> queue) {
-        for (Q state : definition.key().states().getEnumConstants()) {
-            Optional<SubmachineSpec<P, Q, U, ?, ?, ?>> bound = definition.submachine(state);
-            if (bound.isPresent()) {
-                queue.add(new Visit(bound.get().child(), path + " -> " + definition.key() + "." + state.name(),
-                        ancestors));
-            }
-        }
     }
 
     /**
@@ -343,6 +283,27 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (T transition : catalog) {
             catalogNames.add(transition.name());
         }
+        List<TransitionOutline> edges = edgeOutlines(ordered);
+        List<PolicyOutline> policyOutlines = policyOutlines(policies);
+        List<WatchOutline> watchOutlines = watchOutlines(watchSpecs);
+        Set<String> terminalNames = new LinkedHashSet<>();
+        for (S state : terminals) {
+            terminalNames.add(state.name());
+        }
+        Set<String> cycleNames = new LinkedHashSet<>();
+        for (S state : cycleAllowed) {
+            cycleNames.add(state.name());
+        }
+        List<SubmachineOutline> submachineOutlines = new ArrayList<>();
+        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : submachines) {
+            submachineOutlines.add(draft.toOutline());
+        }
+        return new MachineOutline(key.toString(), stateNames, catalogNames, initial.orElseThrow().name(), terminalNames,
+                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines);
+    }
+
+    /** The outline of each edge of {@code ordered}, in that order, with the identifiers its recovery rules name. */
+    private List<TransitionOutline> edgeOutlines(List<TransitionSpec<E, S, T>> ordered) {
         List<TransitionOutline> edges = new ArrayList<>();
         for (TransitionSpec<E, S, T> spec : ordered) {
             List<String> recoveries = new ArrayList<>();
@@ -352,6 +313,14 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             edges.add(new TransitionOutline(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
                     spec.onFailure().map(Enum::name), recoveries));
         }
+        return edges;
+    }
+
+    /**
+     * The outline of the policy of each state that declares one or is terminal, in state order: the declared text,
+     * else the resolved one of {@code policies}, else the generated text of a terminal, with its declared rejections.
+     */
+    private List<PolicyOutline> policyOutlines(Map<S, StatePolicy<S, T>> policies) {
         List<PolicyOutline> policyOutlines = new ArrayList<>();
         for (S state : states) {
             Optional<String> otherwise = Optional.ofNullable(statePolicies.get(state));
@@ -367,6 +336,11 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
             policyOutlines.add(new PolicyOutline(state.name(), text, declaredRejections));
         }
+        return policyOutlines;
+    }
+
+    /** The outline of each watch of {@code watchSpecs}, in its order, with the identifiers its rules select. */
+    private List<WatchOutline> watchOutlines(Map<S, WatchSpec<E, S, T, ?, ?, ?>> watchSpecs) {
         List<WatchOutline> watchOutlines = new ArrayList<>();
         for (WatchSpec<E, S, T, ?, ?, ?> watch : watchSpecs.values()) {
             List<String> executed = new ArrayList<>();
@@ -375,19 +349,6 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
             watchOutlines.add(new WatchOutline(watch.state().name(), executed));
         }
-        Set<String> terminalNames = new LinkedHashSet<>();
-        for (S state : terminals) {
-            terminalNames.add(state.name());
-        }
-        Set<String> cycleNames = new LinkedHashSet<>();
-        for (S state : cycleAllowed) {
-            cycleNames.add(state.name());
-        }
-        List<SubmachineOutline> submachineOutlines = new ArrayList<>();
-        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : submachines) {
-            submachineOutlines.add(draft.toOutline());
-        }
-        return new MachineOutline(key.toString(), stateNames, catalogNames, initial.orElseThrow().name(), terminalNames,
-                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines);
+        return watchOutlines;
     }
 }

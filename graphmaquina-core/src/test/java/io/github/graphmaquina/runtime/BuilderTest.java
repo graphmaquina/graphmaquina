@@ -59,7 +59,8 @@ class BuilderTest {
 
     @Test
     void stateAccessorsAreMandatory() {
-        IllegalStateException error = assertThrows(IllegalStateException.class, () -> StateMachines.from(docs()).build());
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> StateMachines.from(docs()).build());
         assertTrue(error.getMessage().contains("state(getter, setter)"));
     }
 

@@ -2,14 +2,9 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
-import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
-import io.github.graphmaquina.codegen.manifest.ExportIndex;
-import io.github.graphmaquina.codegen.manifest.ManifestCodec;
-import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
-import io.github.graphmaquina.codegen.output.CaseFolding;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.Emitted;
 import io.github.graphmaquina.processor.gen.MachineGenerator;
@@ -18,10 +13,6 @@ import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.SetModel;
 import java.io.IOException;
 import java.io.Writer;
-import java.nio.file.FileSystemNotFoundException;
-import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -30,23 +21,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Stream;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.AnnotationMirror;
-import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
-import javax.tools.FileObject;
-import javax.tools.StandardLocation;
 
 /**
  * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
@@ -100,7 +83,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private boolean reportedManifest;
     private boolean validatedExports;
     private Set<String> invalidExports = Set.of();
-    private Set<String> previousInventory;
     private Diagnostics diagnostics;
     private ExportValidator exports;
     private ExportIndexWriter indexes;
@@ -109,6 +91,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private EffectiveMethods effective;
     private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private Optional<VocabularyPlacement> placement = Optional.empty();
+    private RuntimeNameCheck runtimeNames;
     private CompanionScope scope;
     private MissingExportIndex missingIndex;
     private SetModelBuilder sets;
@@ -118,11 +101,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Set<String> handed;
     private Set<String> deferred;
     private Set<String> deferredSets;
-    private Set<String> refused;
     private Set<String> generated;
     private Set<String> verified;
-    private final Map<String, TypeElement> runtimeOrigins = new LinkedHashMap<>();
-    private final Map<String, String> runtimeCases = new LinkedHashMap<>();
 
     @Override
     public Set<String> getSupportedOptions() {
@@ -150,40 +130,22 @@ public final class StateGraphProcessor extends AbstractProcessor {
         handed = new HashSet<>();
         deferred = new LinkedHashSet<>();
         deferredSets = new LinkedHashSet<>();
-        refused = new HashSet<>();
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
         signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
         Annotations annotations = new Annotations(env.getElementUtils());
-        Accessors accessors = new Accessors(signatures);
-        Bindings bindings = new Bindings(signatures);
         effective = new EffectiveMethods(signatures);
         exports = new ExportValidator(signatures, effective, diagnostics);
         indexes = new ExportIndexWriter(env);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
-        StructuralChecks structure = new StructuralChecks(signatures, diagnostics);
         sets = new SetModelBuilder(annotations, signatures, diagnostics, invocations);
-        scope = new CompanionScope(env.getElementUtils(), diagnostics, runtimeOrigins);
+        runtimeNames = new RuntimeNameCheck(env, manifests.manifest(), diagnostics);
+        scope = new CompanionScope(env.getElementUtils(), diagnostics, runtimeNames.companions());
         missingIndex = new MissingExportIndex(env.getElementUtils(), env.getFiler());
         placement = manifests.manifest().map((CompileManifest manifest) ->
                 new VocabularyPlacement(manifest, annotations, diagnostics));
-        typed = manifests.manifest().map((CompileManifest manifest) -> {
-            Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(manifest);
-            VocabularyRegistry vocabulary = new VocabularyRegistry(manifest, env.getElementUtils());
-            PropertyResolver propertyResolver = new PropertyResolver(symbols, missingIndex, signatures, accessors,
-                    diagnostics);
-            SymbolResolver symbolResolver = new SymbolResolver(symbols, missingIndex, signatures, effective, bindings,
-                    invocations, diagnostics);
-            TypedPairs pairs = new TypedPairs(structure, signatures, diagnostics);
-            return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
-                    new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
-                            annotations, diagnostics),
-                    pairs,
-                    new TypedWatchReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures, diagnostics),
-                    new TypedSubmachineReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures,
-                            diagnostics),
-                    signatures, diagnostics);
-        });
+        typed = manifests.manifest().map((CompileManifest manifest) -> TypedPipeline.modelBuilder(manifest,
+                env.getElementUtils(), annotations, signatures, effective, invocations, missingIndex, diagnostics));
     }
 
     @Override
@@ -193,7 +155,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         scope.checkLaterTypes();
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
         validateExports();
-        validateRuntimeNames(round);
+        runtimeNames.validate(round, scope);
         for (TypeElement type : waited(deferred)) {
             resolve(type, round);
         }
@@ -210,7 +172,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             }
             Optional<SetModel> set = sets.build(type, (TypeElement machine) -> held(machine, type, round));
             Optional<Emitted> companion = set
-                    .filter((SetModel model) -> !refused.contains(type.getQualifiedName().toString()))
+                    .filter((SetModel model) -> !runtimeNames.refused(type.getQualifiedName().toString()))
                     .map((SetModel model) -> SetGenerator.emit(model, invocations));
             if (companion.isPresent() && scope.admits(type, SymbolNames.runtimeName(set.get().setName()),
                     SetGenerator.MEMBER_TYPES, Set.of(), companion.get().written()) && invalidExports.isEmpty()) {
@@ -262,139 +224,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
         invocations.forget();
     }
 
-    /**
-     * Reserves the normalized runtime names of this round's top-level declarations before any source of the round is
-     * written. A declaration is refused, at the declaration itself, when its simple name does not normalize to a
-     * runtime name, when another declaration or an existing type takes that name already, when the companion name of
-     * another declaration differs from it only in case and the volume of the companions' sources or of the class
-     * output does not tell names apart, which would hold the two companions, or their class files, as one file, or
-     * when its companion would take a name that a companion written in an earlier round writes. A refused declaration
-     * is still checked like every other declaration of the round, so all their problems are reported together, but
-     * its companion is never written, nor is the companion of a set that holds it, which would name that companion.
-     *
-     * <p>The existing type is looked up by the companion's qualified name as javac's {@code Filer} looks up a type
-     * it is asked to create, so a member type whose canonical name that is takes the name too, as one nested in a
-     * class of the unnamed package named like the first segment of the package does. The {@code Filer} refuses to
-     * create a type over one declared in a source the compilation was given, over one a processor created in it
-     * already, or over a class it was given by name; it warns of any other existing type under
-     * {@code -Xlint:processing}.</p>
-     */
-    private void validateRuntimeNames(RoundEnvironment round) {
-        Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
-        declarations.addAll(round.getElementsAnnotatedWith(StateGraphs.class));
-        for (Element declaration : declarations) {
-            TypeElement type = (TypeElement) declaration;
-            if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
-                continue; // The model builder reports unsupported nested declarations as SG502.
-            }
-            String declared = type.getQualifiedName().toString();
-            String name;
-            try {
-                name = SymbolNames.qualified(processingEnv.getElementUtils().getPackageOf(type)
-                        .getQualifiedName().toString(), SymbolNames.runtimeName(type.getSimpleName().toString()));
-            } catch (IllegalArgumentException failure) {
-                diagnostics.error("SG603", failure.getMessage(), type);
-                refused.add(declared);
-                continue;
-            }
-            TypeElement previous = runtimeOrigins.putIfAbsent(name, type);
-            if (previous != null) {
-                if (!previous.getQualifiedName().contentEquals(type.getQualifiedName())) {
-                    diagnostics.error("SG603", "the generated runtime " + name + " is claimed by both "
-                            + previous.getQualifiedName() + " and " + type.getQualifiedName(), type);
-                    refused.add(declared);
-                }
-                continue;
-            }
-            String twin = runtimeCases.putIfAbsent(CaseFolding.key(name), name);
-            Optional<String> volume = twin == null ? Optional.empty() : caseBlindVolume();
-            if (volume.isPresent()) {
-                diagnostics.error("SG603", "the generated runtimes " + twin + " of "
-                        + runtimeOrigins.get(twin).getQualifiedName() + " and " + name + " of "
-                        + type.getQualifiedName() + " differ only in case, and the volume of " + volume.get()
-                        + " does not tell their files apart", type);
-                refused.add(declared);
-                continue;
-            }
-            TypeElement existing = processingEnv.getElementUtils().getTypeElement(name);
-            if (existing == null) {
-                if (!scope.admitsLater(type, name)) {
-                    refused.add(declared);
-                }
-                continue;
-            }
-            refused.add(declared);
-            if (isStaleOutput(existing, round)) {
-                diagnostics.error("SG602", "the generated runtime " + name + " of " + type.getQualifiedName()
-                        + " is still compiled from a previous compilation that nothing retired: run the generation"
-                        + " lifecycle, whose prepare-compile step retires it, or clean the build, then compile again",
-                        type);
-            } else {
-                diagnostics.error("SG603", "the generated runtime " + name + " for " + type.getQualifiedName()
-                        + " conflicts with existing type " + existing.getQualifiedName(), type);
-            }
-        }
-    }
-
-    /**
-     * The first output of the companions whose volume does not tell names apart by case, named as a diagnostic names
-     * it: the output of their sources, then the class output, each the directory the {@code Filer} resolves a file of
-     * the unnamed package in. Empty when each tells names apart, and for an output that is no directory of the
-     * default file system or that cannot be examined, as one a file manager keeps in memory.
-     */
-    private Optional<String> caseBlindVolume() {
-        Map<String, StandardLocation> outputs = new LinkedHashMap<>();
-        outputs.put("the generated sources ", StandardLocation.SOURCE_OUTPUT);
-        outputs.put("the class output ", StandardLocation.CLASS_OUTPUT);
-        for (Map.Entry<String, StandardLocation> output : outputs.entrySet()) {
-            try {
-                FileObject probe = processingEnv.getFiler().getResource(output.getValue(), "", "graphmaquina-case");
-                Path directory = Path.of(probe.toUri()).getParent();
-                if (directory != null && CaseFolding.folds(directory)) {
-                    return Optional.of(output.getKey() + directory);
-                }
-            } catch (IOException | IllegalArgumentException | FileSystemNotFoundException | SecurityException unknown) {
-                // An output that is no directory, or that cannot be examined, is not known to hold two names as one.
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Whether {@code existing} is what a previous compilation of this processor generated, still on the classpath
-     * because nothing retired it: a type this round does not compile from source, which the inventory the
-     * previous run wrote lists. A source of this round that takes the generated name is a collision instead.
-     */
-    private boolean isStaleOutput(TypeElement existing, RoundEnvironment round) {
-        Element topLevel = existing;
-        while (topLevel.getEnclosingElement() instanceof TypeElement enclosing) {
-            topLevel = enclosing;
-        }
-        return !round.getRootElements().contains(topLevel)
-                && previousInventory().contains(existing.getQualifiedName().toString());
-    }
-
-    /**
-     * The qualified names the previous run of this processor generated, read once from the inventory the manifest
-     * names; none when there is no manifest, no inventory yet, or one that cannot be read, so that nothing which
-     * is not certainly this processor's own output is ever taken for it.
-     */
-    private Set<String> previousInventory() {
-        if (previousInventory == null) {
-            previousInventory = manifests.manifest().map((CompileManifest manifest) -> {
-                try {
-                    Path inventory = Path.of(manifest.processorInventory());
-                    return Files.isRegularFile(inventory)
-                            ? Set.copyOf(ManifestCodec.readProcessorInventory(inventory))
-                            : Set.<String>of();
-                } catch (IOException | CodegenException | InvalidPathException unreadable) {
-                    return Set.<String>of();
-                }
-            }).orElse(Set.of());
-        }
-        return previousInventory;
-    }
-
     /** A manifest the registry refused is reported once: init has no round to anchor a diagnostic at. */
     private void reportManifestFailure() {
         if (reportedManifest) {
@@ -429,108 +258,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * Whether a declaration of {@code type}, on the facade or on one of its members, names an export that does
-     * not hold: its class literal is read wherever the vocabulary puts it, nested annotations and arrays included.
-     */
-    private boolean usesInvalidExport(TypeElement type) {
-        if (invalidExports.isEmpty()) {
-            return false;
-        }
-        if (names(type)) {
-            return true;
-        }
-        for (Element member : type.getEnclosedElements()) {
-            if (names(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Whether a declaration of {@code type}, on the facade or on one of its members, holds a value of an annotation
-     * this processor claims that javac has not resolved, nested annotations and arrays included: a class literal, or
-     * a constant that gives a text or a number. javac hands such a value to the processor as the text of an error: a
-     * string where its element declares something else, or, where its element declares a string, one whose source
-     * form, which {@link AnnotationValue#toString()} returns, is not a string literal, so a text that reads like that
-     * error is still a text. javac enters every source again in the next round, where the value names a type that
-     * round brought, and reports it once processing is over if none did. The values of any other annotation are never
-     * read: no model is built from them.
-     */
-    private boolean holdsUnresolvedValue(TypeElement type) {
-        if (unresolved(type)) {
-            return true;
-        }
-        for (Element member : type.getEnclosedElements()) {
-            if (unresolved(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean unresolved(Element element) {
-        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-            if (mirror.getAnnotationType().asElement() instanceof TypeElement annotation
-                    && manifests.supportedAnnotationTypes().contains(annotation.getQualifiedName().toString())
-                    && unresolved(mirror)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean unresolved(AnnotationMirror mirror) {
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> value
-                : mirror.getElementValues().entrySet()) {
-            if (unresolved(value.getKey().getReturnType(), value.getValue())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean unresolved(TypeMirror declared, AnnotationValue value) {
-        return switch (value.getValue()) {
-            case String text -> !(declared instanceof DeclaredType type
-                    && ((TypeElement) type.asElement()).getQualifiedName().contentEquals("java.lang.String"))
-                    || !value.toString().startsWith("\"");
-            case AnnotationMirror nested -> unresolved(nested);
-            case List<?> values -> declared instanceof ArrayType array && values.stream()
-                    .anyMatch((Object item) -> unresolved(array.getComponentType(), (AnnotationValue) item));
-            default -> false;
-        };
-    }
-
-    private boolean names(Element element) {
-        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-            if (names(mirror)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean names(AnnotationMirror mirror) {
-        for (AnnotationValue value : mirror.getElementValues().values()) {
-            if (names(value)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean names(AnnotationValue value) {
-        return switch (value.getValue()) {
-            case DeclaredType type -> type.asElement() instanceof TypeElement element
-                    && invalidExports.contains(element.getQualifiedName().toString());
-            case AnnotationMirror nested -> names(nested);
-            case List<?> values -> values.stream().anyMatch((Object item) -> names((AnnotationValue) item));
-            default -> false;
-        };
-    }
-
-    /**
      * The model of {@code machine}, which the set {@code set} holds. A machine the index of this compilation names
      * that no round handed to this processor, which is what javac does with a source it compiles implicitly, from
      * the source path, has no companion, and the set's companion could not build it without one: that is reported
@@ -540,36 +267,19 @@ public final class StateGraphProcessor extends AbstractProcessor {
      */
     private Optional<MachineModel> held(TypeElement machine, TypeElement set, RoundEnvironment round) {
         String name = machine.getQualifiedName().toString();
-        if (!models.containsKey(name) && !failed.contains(name) && isLocal(name)) {
+        if (!models.containsKey(name) && !failed.contains(name) && manifests.isLocal(name)) {
             diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", which this compilation never"
                     + " processed, so neither gets a companion: javac does not process a source it compiles"
                     + " implicitly, from the source path, so pass every source of the compilation to javac", set);
             return Optional.empty();
         }
-        Optional<String> unlisted = isListed(name) ? Optional.empty() : missingIndex.unlisted(machine);
+        Optional<String> unlisted = manifests.isListed(name) ? Optional.empty() : missingIndex.unlisted(machine);
         if (unlisted.isPresent()) {
             diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", but " + name + unlisted.get(),
                     set);
             return Optional.empty();
         }
         return resolve(machine, round);
-    }
-
-    /** Whether the index of this compilation names the machine {@code name}, which one of its sources declares. */
-    private boolean isLocal(String name) {
-        return manifests.manifest().map((CompileManifest manifest) -> manifest.local().model().graphs().stream()
-                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(false);
-    }
-
-    /**
-     * Whether an index this compilation reads, its own or a dependency's, lists the machine {@code name}. Without a
-     * manifest, which has been reported already, nothing is known not to be listed.
-     */
-    private boolean isListed(String name) {
-        return manifests.manifest().map((CompileManifest manifest) -> Stream.concat(Stream.of(manifest.local()),
-                        manifest.dependencies().stream())
-                .flatMap((ExportIndex index) -> index.model().graphs().stream())
-                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(true);
     }
 
     /**
@@ -590,35 +300,45 @@ public final class StateGraphProcessor extends AbstractProcessor {
         if (models.containsKey(name)) {
             return Optional.of(models.get(name));
         }
-        if (failed.contains(name) || usesInvalidExport(type)) {
+        if (failed.contains(name) || AnnotationValueScan.usesInvalidExport(type, invalidExports)) {
             failed.add(name);
             return Optional.empty();
         }
-        boolean unresolved = holdsUnresolvedValue(type);
+        boolean unresolved = AnnotationValueScan.holdsUnresolvedValue(type, manifests.supportedAnnotationTypes());
         if (unresolved && handed.contains(name) && !round.processingOver()) {
             deferred.add(name);
             return Optional.empty();
         }
         Optional<MachineModel> model = build(type, !withheld.contains(name) && !unresolved);
-        if (model.isEmpty() || withheld.contains(name) || refused.contains(name) || unresolved) {
+        if (model.isEmpty() || withheld.contains(name) || runtimeNames.refused(name) || unresolved) {
             failed.add(name);
             return Optional.empty();
         }
+        return keepAndGenerate(type, name, model.get());
+    }
+
+    /**
+     * Keeps {@code model}, the model of the machine {@code type} named {@code name}, for the whole compilation and,
+     * for a machine some round handed to the processor, emits its companion, which counts the machine as verified
+     * and is written unless an export does not hold. A companion that would write a name its scope takes is refused,
+     * as {@link CompanionScope} decides, and so is the model: the machine failed.
+     */
+    private Optional<MachineModel> keepAndGenerate(TypeElement type, String name, MachineModel model) {
         Optional<Emitted> companion = handed.contains(name)
-                ? Optional.of(MachineGenerator.emit(model.get(), invocations)) : Optional.empty();
-        if (companion.isPresent() && !scope.admits(type, SymbolNames.runtimeName(model.get().facadeName()), Set.of(),
+                ? Optional.of(MachineGenerator.emit(model, invocations)) : Optional.empty();
+        if (companion.isPresent() && !scope.admits(type, SymbolNames.runtimeName(model.facadeName()), Set.of(),
                 MachineGenerator.FIXED_FIELDS, companion.get().written())) {
             failed.add(name);
             return Optional.empty();
         }
-        models.put(name, model.get());
+        models.put(name, model);
         if (companion.isPresent()) {
             verified.add(name);
             if (invalidExports.isEmpty()) {
-                write(MachineGenerator.qualifiedName(model.get()), companion.get(), type);
+                write(MachineGenerator.qualifiedName(model), companion.get(), type);
             }
         }
-        return model;
+        return Optional.of(model);
     }
 
     /**

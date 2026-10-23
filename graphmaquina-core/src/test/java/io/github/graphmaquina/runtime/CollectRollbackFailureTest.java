@@ -18,6 +18,7 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
@@ -80,7 +81,40 @@ class CollectRollbackFailureTest {
         ArmedId childId = new ArmedId("child");
         IllegalStateException hashFailure = new IllegalStateException("identity hash failed during rollback");
         List<RuntimeException> caught = new ArrayList<>();
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = graphWhoseChildArmsItsIdentityBeforeFailing(
+                child, childId, hashFailure, caught);
+        try (LibraryLog log = LibraryLog.runtime(Level.FINER);
+             MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())
+                .recordTrail(InstantSource.fixed(Instant.EPOCH))).build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            List<String> lines = log.records().stream().map(LogRecord::getMessage).toList();
+            assertTrue(lines.stream().noneMatch((String line) -> line.contains("collect-rollback")), lines.toString());
+            assertTrue(lines.stream().anyMatch((String line) -> line.startsWith("call=")
+                    && line.endsWith(" depth=0 poison error=" + thrown)), lines.toString());
+            assertEquals(StatesWritten.NONE, thrown.statesWritten());
+            assertEquals(1, caught.size());
+            assertSame(caught.get(0), thrown);
+            assertSame(hashFailure, thrown.getCause());
+            assertTrue(thrown.getMessage().contains("the cascade to Doc/DocStatus failed: " + hashFailure),
+                    thrown.getMessage());
+            TransitionAbortedException element = assertInstanceOf(TransitionAbortedException.class,
+                    thrown.getSuppressed()[0]);
+            assertTrue(element.getMessage().contains("the action Publish threw"), element.getMessage());
+            assertEquals(Optional.of("written by the child"), thrown.flow().get(NOTE));
+            assertEquals(List.of(root, child), hopEntitiesOf(thrown.flow()));
+        }
+        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), child.status()));
+    }
+
+    /**
+     * SUBMIT cascades PUBLISH to {@code child} with COLLECT and notes what it catches; the child's PUBLISH writes a
+     * note, arms {@code childId} to throw {@code hashFailure} when hashed, and fails.
+     */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> graphWhoseChildArmsItsIdentityBeforeFailing(
+            Doc child, ArmedId childId, IllegalStateException hashFailure, List<RuntimeException> caught) {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "a draft is submitted").statePolicy(REVIEW, "a review is published")
                 .statePolicy(PUBLISHED, "a publication is archived")
                 .transition(SUBMIT, DRAFT, REVIEW)
@@ -104,35 +138,17 @@ class CollectRollbackFailureTest {
                     .endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        try (LibraryLog log = LibraryLog.runtime(Level.FINER);
-             MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
-                .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())
-                .recordTrail(InstantSource.fixed(Instant.EPOCH))).build()) {
-            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
-                    () -> registry.of(DOCS).execute(root, SUBMIT));
-            List<String> lines = log.records().stream().map(LogRecord::getMessage).toList();
-            assertTrue(lines.stream().noneMatch((String line) -> line.contains("collect-rollback")), lines.toString());
-            assertTrue(lines.stream().anyMatch((String line) -> line.startsWith("call=")
-                    && line.endsWith(" depth=0 poison error=" + thrown)), lines.toString());
-            assertEquals(StatesWritten.NONE, thrown.statesWritten());
-            assertEquals(1, caught.size());
-            assertSame(caught.get(0), thrown);
-            assertSame(hashFailure, thrown.getCause());
-            assertTrue(thrown.getMessage().contains("the cascade to Doc/DocStatus failed: " + hashFailure),
-                    thrown.getMessage());
-            TransitionAbortedException element = assertInstanceOf(TransitionAbortedException.class,
-                    thrown.getSuppressed()[0]);
-            assertTrue(element.getMessage().contains("the action Publish threw"), element.getMessage());
-            assertEquals(Optional.of("written by the child"), thrown.flow().get(NOTE));
-            List<Object> hops = new ArrayList<>();
-            for (FlowEntry entry : thrown.flow().trail()) {
-                if (entry instanceof FlowEntry.Hop hop) {
-                    hops.add(hop.hop().entity());
-                }
+    }
+
+    /** The entity of every hop in the trail of {@code flow}, in order. */
+    private static List<Object> hopEntitiesOf(FlowView flow) {
+        List<Object> hops = new ArrayList<>();
+        for (FlowEntry entry : flow.trail()) {
+            if (entry instanceof FlowEntry.Hop hop) {
+                hops.add(hop.hop().entity());
             }
-            assertEquals(List.of(root, child), hops);
         }
-        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), child.status()));
+        return hops;
     }
 
     @Test

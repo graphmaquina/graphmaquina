@@ -39,7 +39,8 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
     }
 
     @Override
-    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull String name, @NonNull WatchCondition<E, P, Q, U> condition) {
+    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull String name,
+                                                   @NonNull WatchCondition<E, P, Q, U> condition) {
         requireUnbuilt();
         if (name.isBlank()) {
             graph.problems().add("SG107", state.ordinal(), -1,

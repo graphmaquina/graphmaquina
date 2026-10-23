@@ -282,12 +282,7 @@ class SourcePatternsTest {
             for (List<String> includes : listsOfOne(INCLUDES)) {
                 for (List<String> excludes : listsOfOne(EXCLUDES)) {
                     SourcePatterns patterns = new SourcePatterns(includes, excludes, separator);
-                    Set<String> selected = new TreeSet<>();
-                    for (String file : TREE) {
-                        if (patterns.selects(file)) {
-                            selected.add(file);
-                        }
-                    }
+                    Set<String> selected = selectedFiles(patterns);
 
                     assertEquals(new PlexusScanner(includes, excludes, separator).includedFiles(Set.copyOf(TREE)),
                             selected, "separator " + separator + ", includes " + includes + ", excludes " + excludes);
@@ -406,6 +401,17 @@ class SourcePatternsTest {
         } finally {
             MavenFixture.allowListing(locked);
         }
+    }
+
+    /** The files of {@link #TREE} that {@code patterns} select, one by one. */
+    private static Set<String> selectedFiles(SourcePatterns patterns) {
+        Set<String> selected = new TreeSet<>();
+        for (String file : TREE) {
+            if (patterns.selects(file)) {
+                selected.add(file);
+            }
+        }
+        return selected;
     }
 
     /** The empty list, followed by a list of each of {@code patterns} alone. */

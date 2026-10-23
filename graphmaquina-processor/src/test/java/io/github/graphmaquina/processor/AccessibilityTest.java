@@ -28,7 +28,8 @@ class AccessibilityTest {
                 import shop.OrderStatus;
                 import shop.OrderTransition;
                 final class Charges {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -56,7 +57,8 @@ class AccessibilityTest {
                 import shop.OrderTransition;
                 final class Outer {
                     public static final class Inner {
-                        @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                        @GraphAction public ActionOutcome charge(\
+                TransitionContext<Order, OrderStatus, OrderTransition> context) {
                             return ActionOutcome.ok();
                         }
                     }
@@ -78,7 +80,8 @@ class AccessibilityTest {
     void sg510ASetWhosePackageCannotAccessWhatItsMachinesAreBuiltWith() {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class");
         sources.put("shop.Order", sources.get("shop.Order").replace("public final class Order", "final class Order"));
-        sources.put("shop.Payments", sources.get("shop.Payments").replace("public final class Payments", "final class Payments"));
+        sources.put("shop.Payments",
+                sources.get("shop.Payments").replace("public final class Payments", "final class Payments"));
         sources.put("app.Shop", """
                 package app;
                 import io.github.graphmaquina.annotation.StateGraphs;
@@ -106,6 +109,44 @@ class AccessibilityTest {
     @Test
     void sg509AWatchedPeerWhoseEntityTheWatchersPackageCannotAccess() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putPagesPackage(sources);
+        sources.put("docs.Docs", """
+                package docs;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.annotation.GraphPeers;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import pages.Doc;
+                import pages.DocStatus;
+                import pages.DocTransition;
+                import pages.DocRefs;
+                import pages.PageRefs;
+                import pages.PageStatus;
+                @GenerateGraphApi
+                @GraphPeers(pages.Pages.class)
+                @DocsGraph.Definition(initial = DocStatus.DRAFT, terminals = DocStatus.PUBLISHED,
+                    state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DocStatus.DRAFT, otherwise = "a draft is sent to review")
+                @DocsGraph.StatePolicy(state = DocStatus.REVIEW, otherwise = "the pages decide")
+                @DocsPages.Watch(state = DocStatus.REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
+                    rules = @DocsPages.When(allIn = PageStatus.DONE, transition = DocTransition.PUBLISH))
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = DocTransition.SUBMIT, from = DocStatus.DRAFT, to = DocStatus.REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = DocTransition.PUBLISH, from = DocStatus.REVIEW, to = DocStatus.PUBLISHED)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG509"), result.describe());
+        assertTrue(result.errors().get(0).contains("pages.Page"), result.describe());
+        assertFalse(result.hasGenerated("docs.DocsRuntime"), result.describe());
+    }
+
+    /** The package {@code pages}: a document with its states, and a package-private page with its machine. */
+    private static void putPagesPackage(Map<String, String> sources) {
         sources.put("pages.DocStatus", "package pages;\npublic enum DocStatus { DRAFT, REVIEW, PUBLISHED }\n");
         sources.put("pages.DocTransition", "package pages;\npublic enum DocTransition { SUBMIT, PUBLISH }\n");
         sources.put("pages.PageStatus", "package pages;\npublic enum PageStatus { OPEN, DONE }\n");
@@ -151,39 +192,6 @@ class AccessibilityTest {
                     Outcome<Page, PageStatus, PageTransition> finish(Page page);
                 }
                 """);
-        sources.put("docs.Docs", """
-                package docs;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.annotation.GraphPeers;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import pages.Doc;
-                import pages.DocStatus;
-                import pages.DocTransition;
-                import pages.DocRefs;
-                import pages.PageRefs;
-                import pages.PageStatus;
-                @GenerateGraphApi
-                @GraphPeers(pages.Pages.class)
-                @DocsGraph.Definition(initial = DocStatus.DRAFT, terminals = DocStatus.PUBLISHED,
-                    state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.StatePolicy(state = DocStatus.DRAFT, otherwise = "a draft is sent to review")
-                @DocsGraph.StatePolicy(state = DocStatus.REVIEW, otherwise = "the pages decide")
-                @DocsPages.Watch(state = DocStatus.REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(allIn = PageStatus.DONE, transition = DocTransition.PUBLISH))
-                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
-                    @DocsGraph.Transition(id = DocTransition.SUBMIT, from = DocStatus.DRAFT, to = DocStatus.REVIEW)
-                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = DocTransition.PUBLISH, from = DocStatus.REVIEW, to = DocStatus.PUBLISHED)
-                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
-                }
-                """);
-
-        Compilation.Result result = Compilation.compileTyped(sources);
-
-        assertEquals(1, result.countError("SG509"), result.describe());
-        assertTrue(result.errors().get(0).contains("pages.Page"), result.describe());
-        assertFalse(result.hasGenerated("docs.DocsRuntime"), result.describe());
     }
 
     /** The shop domain, every type public, with the facade's payment bound to {@code action}. */
@@ -207,7 +215,8 @@ class AccessibilityTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Payments {
-                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                 }

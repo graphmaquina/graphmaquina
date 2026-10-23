@@ -61,10 +61,10 @@ final class VocabularyPlacement {
      * that vocabulary was generated for, and the ones whose vocabulary sits on the facade of another machine,
      * where that facade's builder refuses it.
      *
-     * <p>The round is scanned once for all of those annotation types, whose elements are then sorted by the
-     * annotation they carry, each in the order of the scan, which is the order a scan for that annotation alone would
-     * give: the cost of the round does not multiply with the machines. No vocabulary annotation is inherited, so an
-     * element carries one exactly when it is directly present on it.</p>
+     * <p>The round is scanned once for all of those annotation types, whose elements are then grouped by the
+     * annotation they carry, each group in the order of the scan, which is the order a scan for that annotation alone
+     * would give: the cost of the round does not multiply with the machines. No vocabulary annotation is inherited,
+     * so an element carries one exactly when it is directly present on it.</p>
      */
     Set<String> report(Set<? extends TypeElement> annotationTypes, RoundEnvironment round) {
         Set<String> machines = new LinkedHashSet<>();
@@ -77,16 +77,7 @@ final class VocabularyPlacement {
         if (present.isEmpty()) {
             return machines;
         }
-        Map<TypeElement, List<Element>> carriers = new HashMap<>();
-        for (Element element : round.getElementsAnnotatedWithAny(present.toArray(new TypeElement[0]))) {
-            Set<TypeElement> carried = new LinkedHashSet<>();
-            for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-                if (mirror.getAnnotationType().asElement() instanceof TypeElement type && present.contains(type)
-                        && carried.add(type)) {
-                    carriers.computeIfAbsent(type, (TypeElement key) -> new ArrayList<>()).add(element);
-                }
-            }
-        }
+        Map<TypeElement, List<Element>> carriers = carriers(present, round);
         for (TypeElement annotation : present) {
             Optional<String> machine = machine(annotation);
             for (Element element : carriers.getOrDefault(annotation, List.of())) {
@@ -108,12 +99,32 @@ final class VocabularyPlacement {
         return machines;
     }
 
+    /**
+     * The elements of {@code round} that carry each annotation of {@code present}, found in one scan and grouped by
+     * the annotation they carry, each list in the order of the scan; an element is listed once per annotation, however
+     * often it carries it.
+     */
+    private static Map<TypeElement, List<Element>> carriers(Set<TypeElement> present, RoundEnvironment round) {
+        Map<TypeElement, List<Element>> carriers = new HashMap<>();
+        for (Element element : round.getElementsAnnotatedWithAny(present.toArray(new TypeElement[0]))) {
+            Set<TypeElement> carried = new LinkedHashSet<>();
+            for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+                if (mirror.getAnnotationType().asElement() instanceof TypeElement type && present.contains(type)
+                        && carried.add(type)) {
+                    carriers.computeIfAbsent(type, (TypeElement key) -> new ArrayList<>()).add(element);
+                }
+            }
+        }
+        return carriers;
+    }
+
     /** The machine {@code annotation} was generated for, as its {@code GeneratedVocabulary} metadata names it. */
     private Optional<String> machine(TypeElement annotation) {
         return annotations.find(annotation, GeneratedVocabulary.class)
                 .map((AnnotationMirror metadata) -> TypedValues.classLiteral(annotations.value(metadata, "machine")))
                 .filter((TypeMirror machine) -> machine instanceof DeclaredType)
-                .map((TypeMirror machine) -> ((TypeElement) ((DeclaredType) machine).asElement()).getQualifiedName().toString());
+                .map((TypeMirror machine) -> ((TypeElement) ((DeclaredType) machine).asElement()).getQualifiedName()
+                        .toString());
     }
 
     /**
@@ -142,7 +153,8 @@ final class VocabularyPlacement {
     private void report(Element element, AnnotationMirror mirror, TypeElement annotation, Optional<String> machine) {
         String name = annotation.getQualifiedName().toString();
         if (element instanceof ExecutableElement method && method.getEnclosingElement() instanceof TypeElement owner
-                && isFacade(owner) && machine.map((String facade) -> owner.getQualifiedName().contentEquals(facade)).orElse(true)) {
+                && isFacade(owner)
+                && machine.map((String facade) -> owner.getQualifiedName().contentEquals(facade)).orElse(true)) {
             DiagnosticAnchor.of(element, mirror).report(diagnostics, OPERATION, method.getSimpleName() + " is a "
                     + kind(method) + " method, so its " + name + " is never read: an edge is declared on an abstract"
                     + " operation of " + owner.getSimpleName() + ", or on " + owner.getSimpleName() + " itself");

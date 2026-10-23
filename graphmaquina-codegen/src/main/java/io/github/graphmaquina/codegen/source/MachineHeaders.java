@@ -84,22 +84,10 @@ public final class MachineHeaders {
             throw new CodegenException(UNRESOLVED,
                     "the entity type " + entity.render() + " of " + facade + " is unresolved", origin);
         }
-        TypeHeader stateHeader = binding.type(new TypeParameterKey(MACHINE, 1))
-                .orElseThrow(() -> new CodegenException(UNRESOLVED,
-                        "the state type " + state.render() + " of " + facade + " is unresolved", origin));
-        if (stateHeader.kind() != ElementKind.ENUM) {
-            throw new CodegenException(UNRESOLVED, "the state type " + stateHeader.canonicalName() + " of "
-                    + facade + " is not an enum", origin);
-        }
+        TypeHeader stateHeader = enumType(binding, 1, "state", state, facade, origin);
         TypeUse.Declared transition = declared(arguments.get(new TypeParameterKey(MACHINE, 2)),
             "transition", facade, origin);
-        TypeHeader transitionHeader = binding.type(new TypeParameterKey(MACHINE, 2))
-                .orElseThrow(() -> new CodegenException(UNRESOLVED,
-                        "the transition type " + transition.render() + " of " + facade + " is unresolved", origin));
-        if (transitionHeader.kind() != ElementKind.ENUM) {
-            throw new CodegenException(UNRESOLVED, "the transition type " + transitionHeader.canonicalName() + " of "
-                    + facade + " is not an enum", origin);
-        }
+        TypeHeader transitionHeader = enumType(binding, 2, "transition", transition, facade, origin);
         if (transitionHeader == stateHeader) {
             throw new CodegenException(UNRESOLVED, "the machine " + facade + " uses " + stateHeader.canonicalName()
                     + " as both its state type and its transition type; states and transitions require distinct"
@@ -289,6 +277,24 @@ public final class MachineHeaders {
         }
         throw new CodegenException(UNRESOLVED, "the " + role + " type of " + facade + " is not a declared type"
                 + (use == null ? "" : ": " + use.render()), origin);
+    }
+
+    /**
+     * The enum the type argument of {@code Machine} at {@code position} names, the {@code role} type of
+     * {@code facade}, which that argument spells as {@code spelled}.
+     *
+     * @throws CodegenException {@code SG601} if no header resolves the argument, or if the type it names is no enum
+     */
+    private static TypeHeader enumType(Binding binding, int position, String role, TypeUse.Declared spelled,
+            String facade, SourceLocation origin) {
+        TypeHeader type = binding.type(new TypeParameterKey(MACHINE, position))
+                .orElseThrow(() -> new CodegenException(UNRESOLVED,
+                        "the " + role + " type " + spelled.render() + " of " + facade + " is unresolved", origin));
+        if (type.kind() != ElementKind.ENUM) {
+            throw new CodegenException(UNRESOLVED, "the " + role + " type " + type.canonicalName() + " of "
+                    + facade + " is not an enum", origin);
+        }
+        return type;
     }
 
     /**

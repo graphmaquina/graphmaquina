@@ -35,8 +35,6 @@ final class PropertyResolver {
 
     private static final String WRONG_HOST = "SG605";
     private static final String NO_ACCESSOR = "SG503";
-    private static final String COLLECTION = "java.util.Collection";
-    private static final String OPTIONAL = "java.util.Optional";
 
     private final Map<String, SymbolDescriptor> symbols;
     private final MissingExportIndex missingIndex;
@@ -81,7 +79,7 @@ final class PropertyResolver {
      * would turn into one.
      */
     Optional<Property> peers(TypeMirror symbol, MachineTypes machine, MachineTypes peer, DiagnosticAnchor anchor) {
-        TypeMirror collection = signatures.declared(COLLECTION, signatures.extendsWildcard(peer.entity()));
+        TypeMirror collection = signatures.declared(Signatures.COLLECTION, signatures.extendsWildcard(peer.entity()));
         return declaration(symbol, machine, anchor).flatMap((PropertyDescriptor property) -> read(property, machine,
                 (TypeMirror returned) -> signatures.subtypeOf(returned, collection),
                 "Collection<? extends " + peer.entityName() + ">", anchor));
@@ -90,14 +88,15 @@ final class PropertyResolver {
     /** The reader of the peer entity that returns the owner a watch reevaluates, directly or as an Optional. */
     Optional<Property> owner(TypeMirror symbol, MachineTypes machine, MachineTypes peer, DiagnosticAnchor anchor) {
         return declaration(symbol, peer, anchor).flatMap((PropertyDescriptor property) -> read(property, peer,
-                (TypeMirror returned) -> signatures.same(returned, signatures.declared(OPTIONAL, machine.entity()))
+                (TypeMirror returned) -> signatures.same(returned,
+                        signatures.declared(Signatures.OPTIONAL, machine.entity()))
                         || signatures.assignable(returned, machine.entity()),
                 "Optional<" + machine.entityName() + "> or " + machine.entityName(), anchor));
     }
 
     /** The reader of {@code parent} that returns the entity of its sub-machine {@code child} as an Optional. */
     Optional<Property> child(TypeMirror symbol, MachineTypes parent, MachineTypes child, DiagnosticAnchor anchor) {
-        TypeMirror expected = signatures.declared(OPTIONAL, child.entity());
+        TypeMirror expected = signatures.declared(Signatures.OPTIONAL, child.entity());
         return declaration(symbol, parent, anchor).flatMap((PropertyDescriptor property) -> read(property, parent,
                 (TypeMirror returned) -> signatures.same(returned, expected), "Optional<" + child.entityName() + ">",
                 anchor));
@@ -105,7 +104,7 @@ final class PropertyResolver {
 
     /** The reader of the sub-machine {@code child} that returns the entity of its {@code parent} as an Optional. */
     Optional<Property> parent(TypeMirror symbol, MachineTypes parent, MachineTypes child, DiagnosticAnchor anchor) {
-        TypeMirror expected = signatures.declared(OPTIONAL, parent.entity());
+        TypeMirror expected = signatures.declared(Signatures.OPTIONAL, parent.entity());
         return declaration(symbol, child, anchor).flatMap((PropertyDescriptor property) -> read(property, child,
                 (TypeMirror returned) -> signatures.same(returned, expected), "Optional<" + parent.entityName() + ">",
                 anchor));

@@ -58,10 +58,76 @@ public final class PluginFixture {
     private static final String TEST_COMPILER_ARG = "TEST_COMPILER_ARG=";
 
     /** The published index a compilation leaves beside its classes. */
-    private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
+    static final String EXPORTS = "META-INF/graphmaquina/exports.json";
 
     /** The manifest and index schema this release of the tool reads. */
     private static final int SCHEMA_VERSION = 2;
+
+    /** The file Maven repository the parent build published core, codegen and the processor to. */
+    static final Path FIXTURE_REPOSITORY = Path.of(System.getProperty("graphmaquina.fixtureRepository"));
+
+    /** The published index of the main compilation, beside its classes. */
+    static final String MAIN_EXPORTS = "build/classes/java/main/META-INF/graphmaquina/exports.json";
+
+    /** The inventory the preparation of the main compilation writes before it retires anything. */
+    static final String MAIN_PENDING_INVENTORY = "build/graphmaquina/main/owned-outputs.pending.json";
+
+    /**
+     * The program {@code fxs.Bookkeeping}: it books a stay, captures its deposit and its balance, captures the
+     * deposit of a booking that was never booked, and prints what each call did.
+     */
+    private static final String BOOKKEEPING = """
+            package fxs;
+
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.api.SubmachineStart;
+            import io.github.graphmaquina.api.TransitionRecord;
+
+            /** Runs a stay through both of its payments, then a payment whose booking was never booked. */
+            public final class Bookkeeping {
+
+                private Bookkeeping() {
+                }
+
+                public static void main(String[] arguments) {
+                    Ledger ledger = new Ledger();
+                    Payment deposit = new Payment("deposit");
+                    Payment balance = new Payment("balance");
+                    Booking stay = new Booking("stay", deposit, balance);
+                    Payment early = new Payment("early");
+                    Booking unbooked = new Booking("unbooked", early, new Payment("late"));
+                    ledger.register(stay);
+                    ledger.register(unbooked);
+                    try (Billing billing = BillingRuntime.builder(ledger).build()) {
+                        print("book", billing.bookings().book(stay));
+                        print("deposit", billing.payments().capture(deposit));
+                        print("balance", billing.payments().capture(balance));
+                        print("early", billing.payments().capture(early));
+                    }
+                    System.out.println("BILLING states stay=" + stay.status() + " deposit=" + deposit.status()
+                            + " balance=" + balance.status() + " unbooked=" + unbooked.status()
+                            + " early=" + early.status());
+                }
+
+                /** Prints the status of {@code outcome}, then its refusal, its hops and its starts. */
+                private static void print(String call, Outcome<?, ?, ?> outcome) {
+                    StringBuilder line = new StringBuilder("BILLING ").append(call).append(' ')
+                            .append(outcome.status());
+                    if (outcome instanceof Outcome.Rejected<?, ?, ?> rejected) {
+                        line.append(' ').append(rejected.kind()).append(' ').append(rejected.reason());
+                    }
+                    for (TransitionRecord<?, ?, ?> hop : outcome.records()) {
+                        line.append(' ').append(hop.from()).append('-').append(hop.transition())
+                                .append("->").append(hop.to());
+                    }
+                    for (SubmachineStart<?, ?, ?> start : outcome.starts()) {
+                        line.append(" start ").append(start.node()).append(':').append(start.child())
+                                .append(':').append(start.initial());
+                    }
+                    System.out.println(line);
+                }
+            }
+            """;
 
     private final Path directory;
 
@@ -184,7 +250,8 @@ public final class PluginFixture {
      */
     public static PluginFixture realizingCompilationsEarly(Path directory, Path repository) throws IOException {
         return materialize(directory, repository, "", true,
-                "    testAnnotationProcessor(\"io.github.graphmaquina:graphmaquina-processor:" + VERSION + "\")\n", "", """
+                "    testAnnotationProcessor(\"io.github.graphmaquina:graphmaquina-processor:" + VERSION + "\")\n",
+                "", """
                 // Realized before anything is declared for them, which is what the wiring must survive.
                 tasks.named<JavaCompile>("compileJava").get()
                 tasks.named<JavaCompile>("compileTestJava").get()
@@ -372,12 +439,21 @@ public final class PluginFixture {
      */
     private static String buildScript(String pluginVersion, String testProcessors,
             String extraConfiguration, String earlyConfiguration) {
+        return projectDeclaration(pluginVersion, earlyConfiguration) + dependencies(testProcessors)
+                + compilerOptions() + reportingTasks(extraConfiguration);
+    }
+
+    /**
+     * The plugins, the group and version, the Java 21 toolchain, and the configuration spliced in before the
+     * {@code dependencies} block.
+     */
+    private static String projectDeclaration(String pluginVersion, String earlyConfiguration) {
         return """
                 import io.github.graphmaquina.gradle.GenerateGraphApi
 
                 plugins {
                     java
-                    id("io.github.graphmaquina")%7$s
+                    id("io.github.graphmaquina")%1$s
                 }
 
                 group = "fx.build"
@@ -391,7 +467,13 @@ public final class PluginFixture {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
                 }
 
-                %8$s
+                %2$s
+                """.formatted(pluginVersion, earlyConfiguration);
+    }
+
+    /** The {@code dependencies} block: Lombok before the StateGraph processor, and {@code testProcessors}. */
+    private static String dependencies(String testProcessors) {
+        return """
                 dependencies {
                     implementation("io.github.graphmaquina:graphmaquina-core:%1$s")
                     implementation(fileTree("lib") { include("*.jar") })
@@ -399,18 +481,30 @@ public final class PluginFixture {
                     // Lombok first: the processor reads the accessors Lombok generates on Order.
                     annotationProcessor("org.projectlombok:lombok:%2$s")
                     annotationProcessor("io.github.graphmaquina:graphmaquina-processor:%1$s")
-                %5$s}
+                %3$s}
 
+                """.formatted(VERSION, LOMBOK, testProcessors);
+    }
+
+    /** The strict compiler options every compilation of the fixture runs with. */
+    private static String compilerOptions() {
+        return """
                 tasks.withType<JavaCompile>().configureEach {
                     options.encoding = "UTF-8"
                     options.release = 21
                     options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
                 }
 
+                """;
+    }
+
+    /** The three reporting tasks the assertions read, and {@code extraConfiguration} after them. */
+    private static String reportingTasks(String extraConfiguration) {
+        return """
                 tasks.register("printRuntimeClasspath") {
                     val entries = configurations.named("runtimeClasspath")
                     doLast {
-                        entries.get().files.forEach { println("%3$s" + it.name) }
+                        entries.get().files.forEach { println("%1$s" + it.name) }
                     }
                 }
 
@@ -419,7 +513,7 @@ public final class PluginFixture {
                         sourceSets.getByName("main").java.srcDirs.map { it.absolutePath }.sorted()
                     }
                     doLast {
-                        roots.get().forEach { println("%4$s" + it) }
+                        roots.get().forEach { println("%2$s" + it) }
                     }
                 }
 
@@ -439,9 +533,8 @@ public final class PluginFixture {
                     }
                 }
 
-                %6$s
-                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT, testProcessors, extraConfiguration,
-                pluginVersion, earlyConfiguration);
+                %3$s
+                """.formatted(RUNTIME_ENTRY, SOURCE_ROOT, extraConfiguration);
     }
 
     /**
@@ -452,6 +545,23 @@ public final class PluginFixture {
      */
     public static Map<String, String> domainSources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addStatesAndEntity(sources);
+        addActionsAndFacade(sources);
+        sources.put("fx.Unrelated", """
+                package fx;
+
+                /** A type no marker mentions, kept to prove that cleanup is selective. */
+                public final class Unrelated {
+
+                    private Unrelated() {
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /** The states, the transitions and the entity of the order graph. */
+    private static void addStatesAndEntity(Map<String, String> sources) {
         sources.put("fx.Status", """
                 package fx;
 
@@ -483,6 +593,10 @@ public final class PluginFixture {
                     private Status status = Status.NEW;
                 }
                 """);
+    }
+
+    /** The action host and the machine facade of the order graph. */
+    private static void addActionsAndFacade(Map<String, String> sources) {
         sources.put("fx.Actions", """
                 package fx;
 
@@ -500,17 +614,6 @@ public final class PluginFixture {
                 }
                 """);
         sources.put("fx.Orders", orders("Orders", "Approve", "approve"));
-        sources.put("fx.Unrelated", """
-                package fx;
-
-                /** A type no marker mentions, kept to prove that cleanup is selective. */
-                public final class Unrelated {
-
-                    private Unrelated() {
-                    }
-                }
-                """);
-        return sources;
     }
 
     /**
@@ -556,6 +659,17 @@ public final class PluginFixture {
      */
     public static Map<String, String> recoverySources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addPublicationVocabulary(sources);
+        addProviderExceptions(sources);
+        addTicket(sources);
+        addTicketActions(sources);
+        addPublicationMachine(sources);
+        addPublicationProgram(sources);
+        return sources;
+    }
+
+    /** The states, the transitions and the failure kinds of the publication graph. */
+    private static void addPublicationVocabulary(Map<String, String> sources) {
         sources.put("fxr.TicketState", """
                 package fxr;
 
@@ -592,6 +706,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The exceptions the provider's adapter throws. */
+    private static void addProviderExceptions(Map<String, String> sources) {
         sources.put("fxr.ServiceUnavailableException", """
                 package fxr;
 
@@ -625,6 +743,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The entity of the publication graph; its id names the failure its publication meets. */
+    private static void addTicket(Map<String, String> sources) {
         sources.put("fxr.Ticket", """
                 package fxr;
 
@@ -656,6 +778,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The action host of the publication graph: the id of each ticket picks the failure it meets. */
+    private static void addTicketActions(Map<String, String> sources) {
         sources.put("fxr.TicketActions", """
                 package fxr;
 
@@ -678,6 +804,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The machine whose PUBLISH declares the recoveries. */
+    private static void addPublicationMachine(Map<String, String> sources) {
         sources.put("fxr.Tickets", """
                 package fxr;
 
@@ -723,6 +853,10 @@ public final class PluginFixture {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 }
                 """);
+    }
+
+    /** The program that publishes one ticket per route. */
+    private static void addPublicationProgram(Map<String, String> sources) {
         sources.put("fxr.Publications", """
                 package fxr;
 
@@ -760,7 +894,6 @@ public final class PluginFixture {
                     }
                 }
                 """);
-        return sources;
     }
 
     /**
@@ -774,6 +907,19 @@ public final class PluginFixture {
      */
     public static Map<String, String> submachineSources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addPaymentAndBookingStates(sources);
+        addPaymentEntity(sources);
+        addBookingEntity(sources);
+        addLedger(sources);
+        addPaymentMachine(sources);
+        addBookingMachine(sources);
+        addBillingSet(sources);
+        sources.put("fxs.Bookkeeping", BOOKKEEPING);
+        return sources;
+    }
+
+    /** The states and the identified transitions of the payment and booking graphs. */
+    private static void addPaymentAndBookingStates(Map<String, String> sources) {
         sources.put("fxs.PaymentStatus", """
                 package fxs;
 
@@ -798,6 +944,10 @@ public final class PluginFixture {
                 /** The identified transitions of the booking graph. */
                 public enum BookingTransition { BOOK, DEPOSIT_PAID, BALANCE_PAID, DECLINE }
                 """);
+    }
+
+    /** The entity of the payment graph, the sub-machine. */
+    private static void addPaymentEntity(Map<String, String> sources) {
         sources.put("fxs.Payment", """
                 package fxs;
 
@@ -834,6 +984,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The entity of the booking graph, the parent. */
+    private static void addBookingEntity(Map<String, String> sources) {
         sources.put("fxs.Booking", """
                 package fxs;
 
@@ -882,6 +1036,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The lookup host that finds the booking of a payment. */
+    private static void addLedger(Map<String, String> sources) {
         sources.put("fxs.Ledger", """
                 package fxs;
 
@@ -913,6 +1071,10 @@ public final class PluginFixture {
                     }
                 }
                 """);
+    }
+
+    /** The payment machine, the child. */
+    private static void addPaymentMachine(Map<String, String> sources) {
         sources.put("fxs.Payments", """
                 package fxs;
 
@@ -940,6 +1102,10 @@ public final class PluginFixture {
                     Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);
                 }
                 """);
+    }
+
+    /** The booking machine, the parent. */
+    private static void addBookingMachine(Map<String, String> sources) {
         sources.put("fxs.Bookings", """
                 package fxs;
 
@@ -986,6 +1152,10 @@ public final class PluginFixture {
                     Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
                 }
                 """);
+    }
+
+    /** The set of both machines. */
+    private static void addBillingSet(Map<String, String> sources) {
         sources.put("fxs.Billing", """
                 package fxs;
 
@@ -1001,59 +1171,98 @@ public final class PluginFixture {
                     Payments payments();
                 }
                 """);
-        sources.put("fxs.Bookkeeping", """
-                package fxs;
+    }
 
-                import io.github.graphmaquina.api.Outcome;
-                import io.github.graphmaquina.api.SubmachineStart;
-                import io.github.graphmaquina.api.TransitionRecord;
+    /** A self-contained domain for the test source set, in a package of its own. */
+    static Map<String, String> testDomain() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        addTicketVocabulary(sources);
+        addTicketMachine(sources);
+        return sources;
+    }
 
-                /** Runs a stay through both of its payments, then a payment whose booking was never booked. */
-                public final class Bookkeeping {
+    /** The states, the transitions and the entity of the test graph. */
+    private static void addTicketVocabulary(Map<String, String> sources) {
+        sources.put("fxt.Level", """
+                package fxt;
 
-                    private Bookkeeping() {
+                /** The states a ticket moves through. */
+                public enum Level { OPEN, CLOSED }
+                """);
+        sources.put("fxt.Step", """
+                package fxt;
+
+                /** The identified transitions of the ticket graph. */
+                public enum Step { RESOLVE }
+                """);
+        sources.put("fxt.Ticket", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+
+                /** The entity of the test graph, with hand-written accessors. */
+                public final class Ticket {
+
+                    @GraphProperty
+                    private Level status = Level.OPEN;
+
+                    @GraphProperty
+                    public String getId() {
+                        return "ticket";
                     }
 
-                    public static void main(String[] arguments) {
-                        Ledger ledger = new Ledger();
-                        Payment deposit = new Payment("deposit");
-                        Payment balance = new Payment("balance");
-                        Booking stay = new Booking("stay", deposit, balance);
-                        Payment early = new Payment("early");
-                        Booking unbooked = new Booking("unbooked", early, new Payment("late"));
-                        ledger.register(stay);
-                        ledger.register(unbooked);
-                        try (Billing billing = BillingRuntime.builder(ledger).build()) {
-                            print("book", billing.bookings().book(stay));
-                            print("deposit", billing.payments().capture(deposit));
-                            print("balance", billing.payments().capture(balance));
-                            print("early", billing.payments().capture(early));
-                        }
-                        System.out.println("BILLING states stay=" + stay.status() + " deposit=" + deposit.status()
-                                + " balance=" + balance.status() + " unbooked=" + unbooked.status()
-                                + " early=" + early.status());
+                    public Level getStatus() {
+                        return status;
                     }
 
-                    /** Prints the status of {@code outcome}, then its refusal, its hops and its starts. */
-                    private static void print(String call, Outcome<?, ?, ?> outcome) {
-                        StringBuilder line = new StringBuilder("BILLING ").append(call).append(' ')
-                                .append(outcome.status());
-                        if (outcome instanceof Outcome.Rejected<?, ?, ?> rejected) {
-                            line.append(' ').append(rejected.kind()).append(' ').append(rejected.reason());
-                        }
-                        for (TransitionRecord<?, ?, ?> hop : outcome.records()) {
-                            line.append(' ').append(hop.from()).append('-').append(hop.transition())
-                                    .append("->").append(hop.to());
-                        }
-                        for (SubmachineStart<?, ?, ?> start : outcome.starts()) {
-                            line.append(" start ").append(start.node()).append(':').append(start.child())
-                                    .append(':').append(start.initial());
-                        }
-                        System.out.println(line);
+                    public void setStatus(Level value) {
+                        status = value;
                     }
                 }
                 """);
-        return sources;
+    }
+
+    /** The action host and the machine of the test graph. */
+    private static void addTicketMachine(Map<String, String> sources) {
+        sources.put("fxt.TicketActions", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the test graph. */
+                public final class TicketActions {
+
+                    @GraphAction
+                    public ActionOutcome resolve(TransitionContext<Ticket, Level, Step> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fxt.Tickets", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxt.Level.CLOSED;
+                import static fxt.Level.OPEN;
+                import static fxt.Step.RESOLVE;
+
+                /** The machine of the test source set. */
+                @GenerateGraphApi
+                @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED,
+                    state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+                @TicketsGraph.StatePolicy(state = OPEN, otherwise = "an open ticket is resolved")
+                public interface Tickets extends Machine<Ticket, Level, Step> {
+
+                    @TicketsGraph.Transition(id = RESOLVE, from = OPEN, to = CLOSED,
+                        action = TicketActionsRefs.Resolve.class)
+                    Outcome<Ticket, Level, Step> resolve(Ticket ticket);
+                }
+                """);
     }
 
     /**

@@ -186,7 +186,10 @@ class BuilderReuseTest {
         }
     }
 
-    /** The same for a standalone machine: a build missing its accessors, then its asyncTimeout, is retried until it works. */
+    /**
+     * The same for a standalone machine: a build missing its accessors, then its asyncTimeout, is retried until it
+     * works.
+     */
     @Test
     void aMachineBuildThatFailsConsumesNothing() {
         StateMachines.Builder<Doc, DocStatus, DocTransition> docs = StateMachines.from(docs());
@@ -196,7 +199,8 @@ class BuilderReuseTest {
         StateMachine<Doc, DocStatus, DocTransition> machine = docs.build();
         assertInstanceOf(Outcome.Applied.class, machine.execute(new Doc("1", DocStatus.DRAFT), DocTransition.SUBMIT));
 
-        StateMachines.Builder<Order, OrderStatus, OrderTransition> orders = StateMachines.from(OrderGraphs.orderWithoutWatch(
+        StateMachines.Builder<Order, OrderStatus, OrderTransition> orders =
+                StateMachines.from(OrderGraphs.orderWithoutWatch(
                         (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
                                 CompletableFuture.completedFuture(ActionOutcome.ok()),
                         (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> ActionOutcome.ok(),

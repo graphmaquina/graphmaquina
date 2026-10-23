@@ -42,8 +42,9 @@ final class TypedTimeouts {
             return Optional.empty();
         }
         if (seconds < 0 || nanos < 0 || nanos > MAX_NANOS || (seconds == 0 && nanos == 0)) {
-            anchor.report(diagnostics, INVALID, "timeout must be a positive duration: seconds " + seconds + " and nanos "
-                    + nanos + " must not be negative, nanos must be at most " + MAX_NANOS + ", and the two must not both be zero");
+            anchor.report(diagnostics, INVALID, "timeout must be a positive duration: seconds " + seconds
+                    + " and nanos " + nanos + " must not be negative, nanos must be at most " + MAX_NANOS
+                    + ", and the two must not both be zero");
             return Optional.empty();
         }
         return Optional.of(Duration.ofSeconds(seconds, nanos));

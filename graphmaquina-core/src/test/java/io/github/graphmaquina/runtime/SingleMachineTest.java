@@ -140,7 +140,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", REVIEW);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, SEND_BACK);
         assertInstanceOf(Outcome.Applied.class, outcome);
-        Outcome.Applied<Doc, DocStatus, DocTransition> applied = (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Applied<Doc, DocStatus, DocTransition> applied =
+                (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(REVIEW, applied.from());
         assertEquals(DRAFT, applied.to());
         assertEquals(DRAFT, doc.status());
@@ -162,7 +163,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", REVIEW);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Rejected.class, outcome);
-        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected = (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(RejectionKind.NO_TRANSITION, rejected.kind());
         assertEquals(REVIEW, doc.status());
         assertEquals(List.of(), submit.calls);
@@ -173,7 +175,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", REVIEW);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, ARCHIVE);
         assertInstanceOf(Outcome.Rejected.class, outcome);
-        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected = (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
         assertEquals("in review it can only be published or sent back", rejected.reason());
         assertEquals(Optional.empty(), rejected.guard());
         assertEquals(REVIEW, doc.status());
@@ -185,7 +188,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", DRAFT);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Rejected.class, outcome);
-        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected = (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(RejectionKind.GUARD, rejected.kind());
         assertEquals(Optional.of("G1"), rejected.guard());
         assertEquals("no title", rejected.reason());
@@ -197,7 +201,8 @@ class SingleMachineTest {
         g2.verdict = () -> GuardResult.reject("no body");
         Outcome<Doc, DocStatus, DocTransition> secondOutcome = machine.execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Rejected.class, secondOutcome);
-        Outcome.Rejected<Doc, DocStatus, DocTransition> second = (Outcome.Rejected<Doc, DocStatus, DocTransition>) secondOutcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> second =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) secondOutcome;
         assertEquals(Optional.of("G2"), second.guard());
         assertEquals(DRAFT, doc.status());
     }
@@ -207,7 +212,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", DRAFT);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Applied.class, outcome);
-        Outcome.Applied<Doc, DocStatus, DocTransition> applied = (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Applied<Doc, DocStatus, DocTransition> applied =
+                (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(List.of("DRAFT-SUBMIT>REVIEW@0"), submit.calls);
         assertEquals(REVIEW, doc.status());
         assertEquals(Optional.of("Submit"), applied.records().get(0).action());
@@ -265,7 +271,8 @@ class SingleMachineTest {
         IllegalStateException boom = new IllegalStateException("boom");
         submit.behaviour = () -> { throw boom; };
         Doc doc = new Doc("1", DRAFT);
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertSame(boom, error.getCause());
         assertEquals(DRAFT, doc.status());
         assertEquals(List.of(), discard.calls);
@@ -277,14 +284,16 @@ class SingleMachineTest {
         assertEquals("Submit", record.action());
         assertEquals(SUBMIT, record.transition());
         assertEquals(ActionStatus.THREW, record.status());
-        assertEquals(List.of("Doc/DocStatus#@" + Integer.toHexString(System.identityHashCode(doc))), error.cascadePath());
+        assertEquals(List.of("Doc/DocStatus#@" + Integer.toHexString(System.identityHashCode(doc))),
+                error.cascadePath());
     }
 
     @Test
     void failedWithoutRouteIsUnhandled() {
         publish.behaviour = () -> ActionOutcome.failed("reviewer absent");
         Doc doc = new Doc("1", REVIEW);
-        UnhandledFailureException error = assertThrows(UnhandledFailureException.class, () -> machine.execute(doc, PUBLISH));
+        UnhandledFailureException error = assertThrows(UnhandledFailureException.class,
+                () -> machine.execute(doc, PUBLISH));
         assertEquals("reviewer absent", error.reason());
         assertEquals(REVIEW, doc.status());
     }
@@ -294,7 +303,8 @@ class SingleMachineTest {
         submit.behaviour = () -> ActionOutcome.failed("no content");
         discard.behaviour = () -> ActionOutcome.failed("could not discard");
         Doc doc = new Doc("1", DRAFT);
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertTrue(error.getMessage().contains("failure route"));
         assertTrue(error.getMessage().contains("no content"));
         assertEquals(DRAFT, doc.status());
@@ -308,7 +318,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", DRAFT);
         Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, DISCARD);
         assertInstanceOf(Outcome.Rejected.class, outcome);
-        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected = (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(Optional.of("ArchiveGuard"), rejected.guard());
         assertEquals(List.of(), discard.calls);
     }
@@ -381,7 +392,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", DRAFT);
         Outcome<Doc, DocStatus, DocTransition> outcome = recording.execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Applied.class, outcome);
-        Outcome.Applied<Doc, DocStatus, DocTransition> applied = (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
+        Outcome.Applied<Doc, DocStatus, DocTransition> applied =
+                (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(List.of("1:REVIEW", "2:ARCHIVED"), writes);
         assertEquals(REVIEW, doc.status());
         assertEquals(ARCHIVED, peer.status());
@@ -408,7 +420,8 @@ class SingleMachineTest {
 
     @Test
     void reentrancyIsDetected() {
-        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> machine.execute(ctx.entity(), DISCARD);
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                machine.execute(ctx.entity(), DISCARD);
         Doc doc = new Doc("1", DRAFT);
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> machine.execute(doc, SUBMIT));

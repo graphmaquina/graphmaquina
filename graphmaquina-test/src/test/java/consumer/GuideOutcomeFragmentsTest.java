@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -602,6 +601,15 @@ class GuideOutcomeFragmentsTest {
         source.append("    static final class BookingActions {\n");
         source.append("        BookingActions(RoomDesk desk) { }\n");
         source.append(blockAfter(guide, COMPOSITION_HEADING, 5)).append("    }\n\n");
+        appendSecondParentAndSameEntityBlocks(source, guide);
+
+        List<String> diagnostics = compile(workDir, "GuideCompositionFragments", source.toString(), coreJar);
+        assertTrue(diagnostics.isEmpty(), "the guide's composition fragments must compile against the published core:\n"
+                + String.join("\n", diagnostics) + "\n--- generated GuideCompositionFragments.java ---\n" + source);
+    }
+
+    /** Appends the composition section's blocks 6 to 8 and closes the generated class. */
+    private static void appendSecondParentAndSameEntityBlocks(StringBuilder source, List<String> guide) {
         source.append("    // --- block 6 (the second parent's binding), on its facade\n");
         source.append("    /** Subscription facade stand-in, which binds the reusable payment machine. */\n");
         source.append(blockAfter(guide, COMPOSITION_HEADING, 6));
@@ -611,10 +619,6 @@ class GuideOutcomeFragmentsTest {
         source.append(blockAfter(guide, COMPOSITION_HEADING, 7)).append('\n');
         source.append("    // --- block 8 (both machines over one entity)\n");
         source.append(blockAfter(guide, COMPOSITION_HEADING, 8)).append("}\n");
-
-        List<String> diagnostics = compile(workDir, "GuideCompositionFragments", source.toString(), coreJar);
-        assertTrue(diagnostics.isEmpty(), "the guide's composition fragments must compile against the published core:\n"
-                + String.join("\n", diagnostics) + "\n--- generated GuideCompositionFragments.java ---\n" + source);
     }
 
     /** Compiles the flow section's seven Java blocks against the staged core jar. */
@@ -659,25 +663,7 @@ class GuideOutcomeFragmentsTest {
      * heading. Headings are matched outside code fences only.
      */
     private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
-        boolean inside = false;
-        MarkdownFence fence = null;
-        int count = 0;
-        for (String line : guide) {
-            if (fence != null) {
-                fence = fence.closes(line) ? null : fence;
-                continue;
-            }
-            fence = MarkdownFence.opening(line).orElse(null);
-            if (fence != null) {
-                if (inside && fence.language("java")) {
-                    count++;
-                }
-            } else if (!inside) {
-                inside = line.equals(heading);
-            } else if (line.startsWith("## ")) {
-                break;
-            }
-        }
+        int count = javaBlocksAfter(guide, heading).size();
         assertEquals(expected, count, "the guide's section '" + heading + "' has " + count
                 + " java blocks; this test covers exactly " + expected + ": update the test to match the section");
     }
@@ -687,67 +673,29 @@ class GuideOutcomeFragmentsTest {
      * are matched outside code fences only. Fails when the block is missing or blank.
      */
     private static String blockAfter(List<String> guide, String heading, int n) {
-        boolean inside = false;
-        boolean taking = false;
-        Optional<MarkdownFence> fence = Optional.empty();
-        int count = 0;
-        StringBuilder block = new StringBuilder();
-        for (String line : guide) {
-            if (fence.isPresent()) {
-                if (fence.get().closes(line)) {
-                    if (taking) {
-                        break;
-                    }
-                    fence = Optional.empty();
-                } else if (taking) {
-                    block.append(line).append('\n');
-                }
-                continue;
-            }
-            fence = MarkdownFence.opening(line);
-            if (fence.isPresent()) {
-                if (inside && fence.get().language("java")) {
-                    count++;
-                    taking = count == n;
-                }
-            } else if (!inside) {
-                inside = line.equals(heading);
-            } else if (line.startsWith("## ")) {
-                break;
-            }
-        }
-        assertFalse(block.toString().isBlank(), "no non-blank java block number " + n + " after the heading '"
+        List<MarkdownPage.Block> blocks = javaBlocksAfter(guide, heading);
+        String block = n <= blocks.size() ? blocks.get(n - 1).content() : "";
+        assertFalse(block.isBlank(), "no non-blank java block number " + n + " after the heading '"
                 + heading + "' of the guide");
-        return block.toString();
+        return block;
+    }
+
+    /**
+     * Returns the java blocks after {@code heading} and before the next level-two heading. Headings are matched
+     * outside code fences only.
+     */
+    private static List<MarkdownPage.Block> javaBlocksAfter(List<String> guide, String heading) {
+        return MarkdownPage.blocksAfter(guide, heading, (String line) -> line.startsWith("## "), "java");
     }
 
     /** Returns the first java block whose first line starts with the prefix. Fails when there is none. */
     private static String blockStarting(List<String> guide, String prefix) {
-        StringBuilder block = new StringBuilder();
-        Optional<MarkdownFence> fence = Optional.empty();
-        boolean first = false;
-        boolean taking = false;
-        for (String line : guide) {
-            if (fence.isEmpty()) {
-                fence = MarkdownFence.opening(line);
-                first = fence.isPresent() && fence.get().language("java");
-            } else if (fence.get().closes(line)) {
-                if (taking) {
-                    break;
-                }
-                fence = Optional.empty();
-            } else if (fence.get().language("java")) {
-                if (first) {
-                    first = false;
-                    taking = line.startsWith(prefix);
-                }
-                if (taking) {
-                    block.append(line).append('\n');
-                }
-            }
-        }
+        String block = MarkdownPage.allBlocks(guide, "java").stream()
+                .map(MarkdownPage.Block::content)
+                .filter((String content) -> content.startsWith(prefix))
+                .findFirst().orElse("");
         assertFalse(block.isEmpty(), "no non-empty java block starting with '" + prefix + "' in the guide");
-        return block.toString();
+        return block;
     }
 
     private static List<String> compile(Path workDir, String className, String content, Path coreJar)

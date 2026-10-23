@@ -17,7 +17,8 @@ import lombok.RequiredArgsConstructor;
  * call's flow, but no cascading.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> implements GuardContext<E, S, T>, ContextHandle {
+final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
+        implements GuardContext<E, S, T>, ContextHandle {
 
     /**
      * The transaction of the call while this context is live; once it is invalidated, its machine's released one,
@@ -49,7 +50,7 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(@NonNull MachineKey<P, Q, U> key) {
         check();
-        return tx.peer(this, this::checkedUnit, key);
+        return Cascades.peer(tx, this, this::checkedUnit, key);
     }
 
     /**
@@ -57,9 +58,10 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
      * poisons.
      */
     @Override
-    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(
+            @NonNull Class<M> peer) {
         check();
-        return tx.peer(this, this::checkedUnit, tx.peerKeyFor(this, peer));
+        return Cascades.peer(tx, this, this::checkedUnit, Cascades.peerKeyFor(tx, this, peer));
     }
 
     /**

@@ -29,7 +29,8 @@ class TypedCardinalityTest {
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish(", onFailure = RETURN")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.DocsRuntime").contains(".onFailure(DocTransition.RETURN)"), one.generated("fx.DocsRuntime"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".onFailure(DocTransition.RETURN)"),
+                one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", onFailure = {RETURN, SUBMIT}")));
@@ -46,7 +47,8 @@ class TypedCardinalityTest {
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", afterCommit = DocActionsRefs.Notified.class")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.DocsRuntime").contains(".afterCommit(\"notified\""), one.generated("fx.DocsRuntime"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".afterCommit(\"notified\""),
+                one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", afterCommit = {DocActionsRefs.Notified.class, DocActionsRefs.Notified.class}")));
@@ -56,17 +58,18 @@ class TypedCardinalityTest {
 
     @Test
     void readsNoneOneAndRefusesTwoTimeouts() {
-        Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, archive("")));
+        Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, TypedFixtures.archive("")));
         assertTrue(none.success(), none.describe());
         assertFalse(none.generated("fx.DocsRuntime").contains(".timeout("), none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = 2)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = 2)")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT2S\"))"), one.generated("fx.DocsRuntime"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT2S\"))"),
+                one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = {@Timeout(seconds = 1), @Timeout(seconds = 2)}")));
+                TypedFixtures.archive(", timeout = {@Timeout(seconds = 1), @Timeout(seconds = 2)}")));
         assertFalse(many.success(), many.describe());
         assertTrue(many.hasError("SG607"), many.describe());
     }
@@ -99,17 +102,8 @@ class TypedCardinalityTest {
         return """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class%s)
-                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
-                """.formatted(extra);
-    }
-
-    /** The same operations, publishing with the asynchronous action a timeout needs. */
-    private static String archive(String extra) {
-        return """
-                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class%s)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """.formatted(extra);
     }

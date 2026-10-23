@@ -29,12 +29,8 @@ import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.TypeVariable;
-import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.tools.DiagnosticCollector;
@@ -338,16 +334,13 @@ final class ClasspathDeclarations implements AutoCloseable {
 
     /** The header of {@code element}; every type its header names is added to {@code referenced}. */
     private static TypeHeader header(TypeElement element, Set<TypeElement> referenced) {
-        List<String> typeParameters = new ArrayList<>();
-        for (TypeParameterElement parameter : element.getTypeParameters()) {
-            typeParameters.add(parameter.getSimpleName().toString());
-        }
+        List<String> typeParameters = typeParameterNames(element.getTypeParameters());
         List<TypeUse> supertypes = new ArrayList<>();
         if (element.getSuperclass().getKind() == TypeKind.DECLARED) {
-            supertypes.add(use(element.getSuperclass(), referenced));
+            supertypes.add(MirrorTypeUses.use(element.getSuperclass(), referenced));
         }
         for (TypeMirror implemented : element.getInterfaces()) {
-            supertypes.add(use(implemented, referenced));
+            supertypes.add(MirrorTypeUses.use(implemented, referenced));
         }
         List<TypeHeader.Member> members = new ArrayList<>();
         List<String> constants = new ArrayList<>();
@@ -366,22 +359,28 @@ final class ClasspathDeclarations implements AutoCloseable {
     }
 
     private static TypeHeader.Member method(ExecutableElement method, Set<TypeElement> referenced) {
-        List<String> typeParameters = new ArrayList<>();
-        for (TypeParameterElement parameter : method.getTypeParameters()) {
-            typeParameters.add(parameter.getSimpleName().toString());
-        }
+        List<String> typeParameters = typeParameterNames(method.getTypeParameters());
         List<TypeUse> parameterTypes = new ArrayList<>();
         for (VariableElement parameter : method.getParameters()) {
-            parameterTypes.add(use(parameter.asType(), referenced));
+            parameterTypes.add(MirrorTypeUses.use(parameter.asType(), referenced));
         }
         return new TypeHeader.Member(method.getSimpleName().toString(), ElementKind.METHOD,
-                method.getModifiers(), typeParameters, parameterTypes, use(method.getReturnType(), referenced),
-                markers(method, referenced), Optional.empty());
+                method.getModifiers(), typeParameters, parameterTypes,
+                MirrorTypeUses.use(method.getReturnType(), referenced), markers(method, referenced), Optional.empty());
+    }
+
+    /** The simple names of the type parameters a type or a method declares, in declaration order. */
+    private static List<String> typeParameterNames(List<? extends TypeParameterElement> parameters) {
+        List<String> names = new ArrayList<>();
+        for (TypeParameterElement parameter : parameters) {
+            names.add(parameter.getSimpleName().toString());
+        }
+        return names;
     }
 
     private static TypeHeader.Member field(VariableElement field, Set<TypeElement> referenced) {
         return new TypeHeader.Member(field.getSimpleName().toString(), ElementKind.FIELD,
-                field.getModifiers(), List.of(), List.of(), use(field.asType(), referenced),
+                field.getModifiers(), List.of(), List.of(), MirrorTypeUses.use(field.asType(), referenced),
                 markers(field, referenced), Optional.empty());
     }
 
@@ -403,126 +402,12 @@ final class ClasspathDeclarations implements AutoCloseable {
     private static void classLiterals(AnnotationValue value, List<String> classLiterals) {
         Object raw = value.getValue();
         if (raw instanceof TypeMirror mirror) {
-            classLiterals.add(spell(mirror));
+            classLiterals.add(MirrorTypeUses.spell(mirror));
         } else if (raw instanceof List<?> elements) {
             for (Object element : elements) {
                 if (element instanceof AnnotationValue nested) {
                     classLiterals(nested, classLiterals);
                 }
-            }
-        }
-    }
-
-    /** The use {@code mirror} is; every type it names is added to {@code referenced}. */
-    private static TypeUse use(TypeMirror mirror, Set<TypeElement> referenced) {
-        switch (mirror.getKind()) {
-            case DECLARED -> {
-                DeclaredType declared = (DeclaredType) mirror;
-                List<TypeUse> arguments = new ArrayList<>();
-                for (TypeMirror argument : declared.getTypeArguments()) {
-                    arguments.add(use(argument, referenced));
-                }
-                TypeMirror enclosing = declared.getEnclosingType();
-                Optional<TypeUse> owner = enclosing.getKind() == TypeKind.DECLARED
-                        ? Optional.of(use(enclosing, referenced))
-                        : Optional.empty();
-                TypeElement type = (TypeElement) declared.asElement();
-                referenced.add(type);
-                return new TypeUse.Declared(type.getQualifiedName().toString(), arguments, owner);
-            }
-            case TYPEVAR -> {
-                TypeParameterElement parameter = (TypeParameterElement) ((TypeVariable) mirror).asElement();
-                return new TypeUse.Variable(parameter.getSimpleName().toString(), key(parameter));
-            }
-            case ARRAY -> {
-                return new TypeUse.Array(use(((ArrayType) mirror).getComponentType(), referenced));
-            }
-            case WILDCARD -> {
-                WildcardType wildcard = (WildcardType) mirror;
-                if (wildcard.getExtendsBound() != null) {
-                    return new TypeUse.Wildcard(Optional.of(use(wildcard.getExtendsBound(), referenced)),
-                            Optional.empty());
-                }
-                if (wildcard.getSuperBound() != null) {
-                    return new TypeUse.Wildcard(Optional.empty(),
-                            Optional.of(use(wildcard.getSuperBound(), referenced)));
-                }
-                return TypeUse.Wildcard.unbounded();
-            }
-            case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE, VOID -> {
-                return new TypeUse.Primitive(mirror.toString());
-            }
-            default -> {
-                return TypeUse.Declared.of(mirror.toString());
-            }
-        }
-    }
-
-    /** The identity of a type parameter, whether its generic owner is a type or a method declaration. */
-    private static TypeParameterKey key(TypeParameterElement parameter) {
-        Element generic = parameter.getGenericElement();
-        if (generic instanceof TypeElement type) {
-            return new TypeParameterKey(type.getQualifiedName().toString(),
-                    position(type.getTypeParameters(), parameter));
-        }
-        ExecutableElement method = (ExecutableElement) generic;
-        return new TypeParameterKey(methodOwner(method), position(method.getTypeParameters(), parameter));
-    }
-
-    private static String methodOwner(ExecutableElement method) {
-        List<String> parameterTypes = new ArrayList<>();
-        for (VariableElement parameter : method.getParameters()) {
-            parameterTypes.add(spell(parameter.asType()));
-        }
-        return TypeParameterKey.methodOwner(
-                ((TypeElement) method.getEnclosingElement()).getQualifiedName().toString(),
-                method.getSimpleName().toString(), parameterTypes);
-    }
-
-    /** Type parameter names are unique inside their own declaration, so a name identifies the position. */
-    private static int position(List<? extends TypeParameterElement> parameters,
-            TypeParameterElement parameter) {
-        for (int index = 0; index < parameters.size(); index++) {
-            if (parameters.get(index).getSimpleName().contentEquals(parameter.getSimpleName())) {
-                return index;
-            }
-        }
-        return 0;
-    }
-
-    /** Renders a mirror for a method owner token; a type variable renders as its own simple name. */
-    private static String spell(TypeMirror mirror) {
-        switch (mirror.getKind()) {
-            case DECLARED -> {
-                DeclaredType declared = (DeclaredType) mirror;
-                String name = ((TypeElement) declared.asElement()).getQualifiedName().toString();
-                if (declared.getTypeArguments().isEmpty()) {
-                    return name;
-                }
-                List<String> arguments = new ArrayList<>();
-                for (TypeMirror argument : declared.getTypeArguments()) {
-                    arguments.add(spell(argument));
-                }
-                return name + '<' + String.join(", ", arguments) + '>';
-            }
-            case TYPEVAR -> {
-                return ((TypeVariable) mirror).asElement().getSimpleName().toString();
-            }
-            case ARRAY -> {
-                return spell(((ArrayType) mirror).getComponentType()) + "[]";
-            }
-            case WILDCARD -> {
-                WildcardType wildcard = (WildcardType) mirror;
-                if (wildcard.getExtendsBound() != null) {
-                    return "? extends " + spell(wildcard.getExtendsBound());
-                }
-                if (wildcard.getSuperBound() != null) {
-                    return "? super " + spell(wildcard.getSuperBound());
-                }
-                return "?";
-            }
-            default -> {
-                return mirror.toString();
             }
         }
     }

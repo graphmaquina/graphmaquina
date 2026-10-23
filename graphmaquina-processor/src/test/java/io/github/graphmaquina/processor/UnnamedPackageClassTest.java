@@ -260,17 +260,7 @@ class UnnamedPackageClassTest {
     @Test
     void theHostOfAMachineOfTheUnnamedPackageIsAMemberTypeOfTheClass() {
         Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("OrderStatus", "public enum OrderStatus { NEW, PAID }\n");
-        sources.put("OrderTransition", "public enum OrderTransition { PAY }\n");
-        sources.put("Order", """
-                import io.github.graphmaquina.annotation.GraphProperty;
-                public final class Order {
-                    @GraphProperty private OrderStatus status = OrderStatus.NEW;
-                    @GraphProperty public String id() { return "o1"; }
-                    public OrderStatus status() { return status; }
-                    public void status(OrderStatus value) { status = value; }
-                }
-                """);
+        putOrderModel(sources);
         sources.put("shop", """
                 import io.github.graphmaquina.annotation.GraphAction;
                 import io.github.graphmaquina.api.ActionOutcome;
@@ -312,6 +302,21 @@ class UnnamedPackageClassTest {
                 """);
 
         assertCompiled(Compilation.compileTyped(sources), "OrdersRuntime");
+    }
+
+    /** The enums and the entity {@code Order} of the unnamed package, with a marked getter for its identity. */
+    private static void putOrderModel(Map<String, String> sources) {
+        sources.put("OrderStatus", "public enum OrderStatus { NEW, PAID }\n");
+        sources.put("OrderTransition", "public enum OrderTransition { PAY }\n");
+        sources.put("Order", """
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Order {
+                    @GraphProperty private OrderStatus status = OrderStatus.NEW;
+                    @GraphProperty public String id() { return "o1"; }
+                    public OrderStatus status() { return status; }
+                    public void status(OrderStatus value) { status = value; }
+                }
+                """);
     }
 
     /**
@@ -764,6 +769,35 @@ class UnnamedPackageClassTest {
      */
     private static Map<String, String> nested() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putNestedModel(sources);
+        putNestedHosts(sources);
+        sources.put("shop.Orders", """
+                package shop;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import shop.Model.Order;
+                import shop.Statuses.OrderStatus;
+                import shop.Statuses.OrderTransition;
+                import static shop.Statuses.OrderStatus.*;
+                import static shop.Statuses.OrderTransition.*;
+                @GenerateGraphApi
+                @OrdersGraph.Definition(initial = NEW, terminals = {PAID, CANCELLED},
+                    state = ModelOrderRefs.Status.class, id = ModelOrderRefs.Id.class)
+                @OrdersGraph.StatePolicy(state = NEW, otherwise = "a new order is paid or cancelled")
+                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
+                    @OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = HostsPaymentsRefs.Charge.class)
+                    Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
+
+                    @OrdersGraph.Transition(id = CANCEL, from = NEW, to = CANCELLED)
+                    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order);
+                }
+                """);
+        return sources;
+    }
+
+    /** The enums and the entity of {@link #nested()}, member types of {@code Statuses} and {@code Model}. */
+    private static void putNestedModel(Map<String, String> sources) {
         sources.put("shop.Statuses", """
                 package shop;
                 public final class Statuses {
@@ -785,6 +819,10 @@ class UnnamedPackageClassTest {
                     }
                 }
                 """);
+    }
+
+    /** The action hosts of {@link #nested()}: {@code Charging} marks the action, {@code Payments} overrides it. */
+    private static void putNestedHosts(Map<String, String> sources) {
         sources.put("shop.Hosts", """
                 package shop;
                 import io.github.graphmaquina.annotation.GraphAction;
@@ -811,29 +849,6 @@ class UnnamedPackageClassTest {
                     }
                 }
                 """);
-        sources.put("shop.Orders", """
-                package shop;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import shop.Model.Order;
-                import shop.Statuses.OrderStatus;
-                import shop.Statuses.OrderTransition;
-                import static shop.Statuses.OrderStatus.*;
-                import static shop.Statuses.OrderTransition.*;
-                @GenerateGraphApi
-                @OrdersGraph.Definition(initial = NEW, terminals = {PAID, CANCELLED},
-                    state = ModelOrderRefs.Status.class, id = ModelOrderRefs.Id.class)
-                @OrdersGraph.StatePolicy(state = NEW, otherwise = "a new order is paid or cancelled")
-                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
-                    @OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = HostsPaymentsRefs.Charge.class)
-                    Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
-
-                    @OrdersGraph.Transition(id = CANCEL, from = NEW, to = CANCELLED)
-                    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order);
-                }
-                """);
-        return sources;
     }
 
     /**
@@ -843,6 +858,37 @@ class UnnamedPackageClassTest {
      */
     private static Map<String, String> unnamedNested() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putShopClass(sources);
+        putShopPackage(sources);
+        sources.put("Orders", """
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                @GenerateGraphApi
+                @OrdersGraph.Definition(initial = shop.Statuses.OrderStatus.NEW,
+                    terminals = {shop.Statuses.OrderStatus.PAID, shop.Statuses.OrderStatus.CANCELLED},
+                    state = ShopModelOrderRefs.Status.class, id = ShopModelOrderRefs.Id.class)
+                @OrdersGraph.StatePolicy(state = shop.Statuses.OrderStatus.NEW,
+                    otherwise = "a new order is paid or cancelled")
+                public interface Orders
+                        extends Machine<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> {
+                    @OrdersGraph.Transition(id = shop.Statuses.OrderTransition.PAY,
+                        from = shop.Statuses.OrderStatus.NEW, to = shop.Statuses.OrderStatus.PAID,
+                        action = ShopHostsPaymentsRefs.Charge.class)
+                    Outcome<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> pay(
+                            shop.Model.Order order);
+
+                    @OrdersGraph.Transition(id = shop.Statuses.OrderTransition.CANCEL,
+                        from = shop.Statuses.OrderStatus.NEW, to = shop.Statuses.OrderStatus.CANCELLED)
+                    Outcome<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> cancel(
+                            shop.Model.Order order);
+                }
+                """);
+        return sources;
+    }
+
+    /** The class {@code shop} of the unnamed package, whose member types are the declarations of {@link #nested()}. */
+    private static void putShopClass(Map<String, String> sources) {
         sources.put("shop", """
                 import io.github.graphmaquina.annotation.GraphAction;
                 import io.github.graphmaquina.annotation.GraphBindings;
@@ -885,6 +931,10 @@ class UnnamedPackageClassTest {
                     }
                 }
                 """);
+    }
+
+    /** The package {@code shop}: types of the canonical names of {@link #putShopClass}, with other constants. */
+    private static void putShopPackage(Map<String, String> sources) {
         sources.put("shop.Statuses", """
                 package shop;
                 public final class Statuses {
@@ -908,31 +958,6 @@ class UnnamedPackageClassTest {
                     public static final class Payments extends Charging { }
                 }
                 """);
-        sources.put("Orders", """
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                @GenerateGraphApi
-                @OrdersGraph.Definition(initial = shop.Statuses.OrderStatus.NEW,
-                    terminals = {shop.Statuses.OrderStatus.PAID, shop.Statuses.OrderStatus.CANCELLED},
-                    state = ShopModelOrderRefs.Status.class, id = ShopModelOrderRefs.Id.class)
-                @OrdersGraph.StatePolicy(state = shop.Statuses.OrderStatus.NEW,
-                    otherwise = "a new order is paid or cancelled")
-                public interface Orders
-                        extends Machine<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> {
-                    @OrdersGraph.Transition(id = shop.Statuses.OrderTransition.PAY,
-                        from = shop.Statuses.OrderStatus.NEW, to = shop.Statuses.OrderStatus.PAID,
-                        action = ShopHostsPaymentsRefs.Charge.class)
-                    Outcome<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> pay(
-                            shop.Model.Order order);
-
-                    @OrdersGraph.Transition(id = shop.Statuses.OrderTransition.CANCEL,
-                        from = shop.Statuses.OrderStatus.NEW, to = shop.Statuses.OrderStatus.CANCELLED)
-                    Outcome<shop.Model.Order, shop.Statuses.OrderStatus, shop.Statuses.OrderTransition> cancel(
-                            shop.Model.Order order);
-                }
-                """);
-        return sources;
     }
 
     /**
@@ -941,24 +966,7 @@ class UnnamedPackageClassTest {
      */
     private static Map<String, String> nestedProducer() {
         Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("dep.Statuses", """
-                package dep;
-                public final class Statuses {
-                    private Statuses() { }
-                    public enum BillStatus { OPEN, PAID }
-                    public enum BillTransition { SETTLE }
-                }
-                """);
-        sources.put("dep.Bill", """
-                package dep;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                public final class Bill {
-                    @GraphProperty private Statuses.BillStatus status = Statuses.BillStatus.OPEN;
-                    @GraphProperty public String id() { return "b1"; }
-                    public Statuses.BillStatus status() { return status; }
-                    public void status(Statuses.BillStatus value) { status = value; }
-                }
-                """);
+        putDepModel(sources);
         sources.put("dep.Hosts", """
                 package dep;
                 import io.github.graphmaquina.annotation.GraphAction;
@@ -1002,6 +1010,28 @@ class UnnamedPackageClassTest {
         return sources;
     }
 
+    /** The enums, as member types of {@code Statuses}, and the entity {@code Bill} of {@link #nestedProducer()}. */
+    private static void putDepModel(Map<String, String> sources) {
+        sources.put("dep.Statuses", """
+                package dep;
+                public final class Statuses {
+                    private Statuses() { }
+                    public enum BillStatus { OPEN, PAID }
+                    public enum BillTransition { SETTLE }
+                }
+                """);
+        sources.put("dep.Bill", """
+                package dep;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Bill {
+                    @GraphProperty private Statuses.BillStatus status = Statuses.BillStatus.OPEN;
+                    @GraphProperty public String id() { return "b1"; }
+                    public Statuses.BillStatus status() { return status; }
+                    public void status(Statuses.BillStatus value) { status = value; }
+                }
+                """);
+    }
+
     /**
      * A machine of the unnamed package over member types of a class {@code dep} of that package, which nests types of
      * the canonical names of the enums, the entity and both action hosts of {@link #nestedProducer()}, with other
@@ -1010,31 +1040,7 @@ class UnnamedPackageClassTest {
      */
     private static Map<String, String> unnamedOverDep() {
         Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("dep", """
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.TransitionContext;
-                public final class dep {
-                    private dep() { }
-                    public static final class Statuses {
-                        private Statuses() { }
-                        public enum BillStatus { NEW, PAID }
-                        public enum BillTransition { PAY }
-                    }
-                    public static final class Hosts {
-                        private Hosts() { }
-                        public static class Charging { }
-                        public static final class Payments {
-                            @GraphAction
-                            public ActionOutcome charge(
-                                    TransitionContext<Order, Statuses.BillStatus, Statuses.BillTransition> context) {
-                                return ActionOutcome.ok();
-                            }
-                        }
-                    }
-                    public static final class Bill { }
-                }
-                """);
+        putDepClass(sources);
         sources.put("Order", """
                 import io.github.graphmaquina.annotation.GraphProperty;
                 public final class Order {
@@ -1069,6 +1075,35 @@ class UnnamedPackageClassTest {
                 }
                 """);
         return sources;
+    }
+
+    /** The class {@code dep} of the unnamed package, nesting homonyms of the declarations of the package. */
+    private static void putDepClass(Map<String, String> sources) {
+        sources.put("dep", """
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public final class dep {
+                    private dep() { }
+                    public static final class Statuses {
+                        private Statuses() { }
+                        public enum BillStatus { NEW, PAID }
+                        public enum BillTransition { PAY }
+                    }
+                    public static final class Hosts {
+                        private Hosts() { }
+                        public static class Charging { }
+                        public static final class Payments {
+                            @GraphAction
+                            public ActionOutcome charge(
+                                    TransitionContext<Order, Statuses.BillStatus, Statuses.BillTransition> context) {
+                                return ActionOutcome.ok();
+                            }
+                        }
+                    }
+                    public static final class Bill { }
+                }
+                """);
     }
 
     /**

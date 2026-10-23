@@ -60,6 +60,15 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         for (String state : cycleAllowed) {
             requireState(name, states, stateNames, state, "allowsCycle");
         }
+        requireEdgeNames(name, states, stateNames, catalog, transitionNames, transitions);
+        requirePolicyNames(name, states, stateNames, catalog, transitionNames, policies);
+        requireWatchNames(name, states, stateNames, catalog, transitionNames, watches);
+        requireSubmachineNames(name, states, stateNames, catalog, transitionNames, submachines);
+    }
+
+    /** Refuses an edge that names a state or an identifier the outline lacks, onFailure and recoveries included. */
+    private static void requireEdgeNames(String name, List<String> states, Set<String> stateNames,
+            List<String> catalog, Set<String> transitionNames, List<TransitionOutline> transitions) {
         for (TransitionOutline edge : transitions) {
             requireState(name, states, stateNames, edge.from(), "transition.from");
             requireState(name, states, stateNames, edge.to(), "transition.to");
@@ -71,18 +80,33 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
                 requireTransition(name, catalog, transitionNames, recovery, "transition.recovery");
             }
         }
+    }
+
+    /** Refuses a policy whose state, or an identifier it rejects, the outline lacks. */
+    private static void requirePolicyNames(String name, List<String> states, Set<String> stateNames,
+            List<String> catalog, Set<String> transitionNames, List<PolicyOutline> policies) {
         for (PolicyOutline policy : policies) {
             requireState(name, states, stateNames, policy.state(), "policy.state");
             for (String rejected : policy.rejections().keySet()) {
                 requireTransition(name, catalog, transitionNames, rejected, "policy.reject");
             }
         }
+    }
+
+    /** Refuses a watch whose state, or an identifier its rules select, the outline lacks. */
+    private static void requireWatchNames(String name, List<String> states, Set<String> stateNames,
+            List<String> catalog, Set<String> transitionNames, List<WatchOutline> watches) {
         for (WatchOutline watch : watches) {
             requireState(name, states, stateNames, watch.state(), "watch.state");
             for (String transition : watch.transitions()) {
                 requireTransition(name, catalog, transitionNames, transition, "watch.transition");
             }
         }
+    }
+
+    /** Refuses a sub-machine whose bound state, or an identifier its exits name, the outline lacks. */
+    private static void requireSubmachineNames(String name, List<String> states, Set<String> stateNames,
+            List<String> catalog, Set<String> transitionNames, List<SubmachineOutline> submachines) {
         for (SubmachineOutline submachine : submachines) {
             requireState(name, states, stateNames, submachine.state(), "submachine.state");
             for (ExitOutline exit : submachine.exits()) {

@@ -58,6 +58,20 @@ final class Commit {
         if (conflict.isPresent()) {
             throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes), conflict.get());
         }
+        writeStates(registry, tx, changes, entryCounts);
+        tx.enter(CallPhase.HOOK);
+        return summary;
+    }
+
+    /**
+     * Calls the setter of each of {@code changes}, in order, with the to of its last entry, telling the transaction
+     * before each call; at TRACE each setter is logged first, with how many entries of the log, counted in
+     * {@code entryCounts}, move its entity. A setter that throws stops the writes there.
+     */
+    private static void writeStates(MachineRegistry registry, Transaction tx, List<CommitSummary.Change> changes,
+                                    Map<EntityRef, Integer> entryCounts) {
+        UnitOfWork uow = tx.uow();
+        CallLog log = tx.log();
         for (int index = 0; index < changes.size(); index++) {
             CommitSummary.Change change = changes.get(index);
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
@@ -76,8 +90,6 @@ final class Commit {
                         change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }
         }
-        tx.enter(CallPhase.HOOK);
-        return summary;
     }
 
     /** The first entity whose state moved while the call ran, described; empty when every one is where it started. */

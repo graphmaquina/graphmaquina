@@ -10,6 +10,7 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
+import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.codegen.source.Bootstrap;
 import io.github.graphmaquina.codegen.source.SourceFiles;
 import java.io.IOException;
@@ -389,7 +390,7 @@ class GeneratedApiCompilationTest {
         List<GeneratedSource> emitted = ApiEmitter.emit(model, "shadowed-imports");
         assertEquals(List.of("ActionSymbol", "ConditionSymbol", "GeneratedSymbol", "GuardSymbol", "HookSymbol",
             "LookupSymbol", "PropertySymbol", "SymbolKind"),
-            model.symbols().stream().map((io.github.graphmaquina.codegen.model.SymbolDescriptor symbol) -> symbol.member()).toList());
+            model.symbols().stream().map((SymbolDescriptor symbol) -> symbol.member()).toList());
         assertTrue(content(emitted, "fx.ActionsRefs").contains("@io.github.graphmaquina.annotation.internal"
             + ".GeneratedSymbol(host = fx.Actions.class, member = \"LookupSymbol\", kinds = io.github.graphmaquina"
             + ".annotation.internal.SymbolKind.LOOKUP)\n    public static final class LookupSymbol implements"
@@ -399,13 +400,16 @@ class GeneratedApiCompilationTest {
             package fx;
             public class Usage {
                 Class<? extends io.github.graphmaquina.symbol.ActionSymbol> action = ActionsRefs.ActionSymbol.class;
-                Class<? extends io.github.graphmaquina.symbol.ActionSymbol> metadata = ActionsRefs.GeneratedSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.ActionSymbol> metadata = \
+            ActionsRefs.GeneratedSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.ActionSymbol> kind = ActionsRefs.SymbolKind.class;
                 Class<? extends io.github.graphmaquina.symbol.GuardSymbol> guard = ActionsRefs.GuardSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.HookSymbol> hook = ActionsRefs.HookSymbol.class;
-                Class<? extends io.github.graphmaquina.symbol.ConditionSymbol> condition = ActionsRefs.ConditionSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.ConditionSymbol> condition = \
+            ActionsRefs.ConditionSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.LookupSymbol> lookup = ActionsRefs.LookupSymbol.class;
-                Class<? extends io.github.graphmaquina.symbol.PropertySymbol> property = ActionsRefs.PropertySymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.PropertySymbol> property = \
+            ActionsRefs.PropertySymbol.class;
             }
             """)));
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
@@ -551,12 +555,13 @@ class GeneratedApiCompilationTest {
      */
     @Test
     void refusesANameOfTheUnnamedPackageThatASubmachineAnnotationOfAPairShadows() {
-        GenerationModel pair = inspect("pair", Map.of(
+        assertEmissionIsRefusedAtTheDeclaration("pair", Map.of(
                 "Doc", "/** Fixture type for the nested Exit name collision. */ public class Doc {}",
                 "Page", "/** Fixture type for the nested Exit name collision. */ public class Page {}",
                 "Status", "/** Fixture type for the nested Exit name collision. */ public enum Status { OPEN, DONE }",
                 "Exit", "/** Fixture type for the nested Exit name collision. */ public enum Exit { CLOSE }",
-                "PageStatus", "/** Fixture type for the nested Exit name collision. */ public enum PageStatus { OPEN, DONE }",
+                "PageStatus", "/** Fixture type for the nested Exit name collision. */ public enum PageStatus"
+                        + " { OPEN, DONE }",
                 "PageStep", "/** Fixture type for the nested Exit name collision. */ public enum PageStep { FINISH }",
                 "Docs", """
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -573,14 +578,9 @@ class GeneratedApiCompilationTest {
                     /** A facade used to check the nested Exit name collision. */
                     @GenerateGraphApi
                     public interface Pages extends Machine<Page, PageStatus, PageStep> {}
-                    """));
-
-        CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(pair, "pair"));
-
-        assertEquals("SG603", failure.code());
-        assertEquals("the pair vocabulary DocsPages cannot name the transition type Exit of Docs: inside it, Exit"
-                + " means its own nested type DocsPages.Exit", failure.getMessage());
-        assertEquals("pair/Docs.java", failure.location().orElseThrow().path());
+                    """),
+                "the pair vocabulary DocsPages cannot name the transition type Exit of Docs: inside it, Exit"
+                + " means its own nested type DocsPages.Exit", "pair/Docs.java");
     }
 
     /**
@@ -592,7 +592,7 @@ class GeneratedApiCompilationTest {
      */
     @Test
     void refusesANameThatATypeGeneratedInTheSamePackageObscures() {
-        GenerationModel vocabulary = inspect("vocabulary", Map.of(
+        assertEmissionIsRefusedAtTheDeclaration("vocabulary", Map.of(
                 "DocsGraph.Doc",
                     "package DocsGraph; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
                 "fx.Docs", """
@@ -602,15 +602,11 @@ class GeneratedApiCompilationTest {
                     import io.github.graphmaquina.api.Machine;
                     @GenerateGraphApi
                     public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
-                    """));
-        CodegenException machine = assertThrows(CodegenException.class,
-                () -> ApiEmitter.emit(vocabulary, "vocabulary"));
-        assertEquals("SG603", machine.code());
-        assertEquals("the vocabulary DocsGraph cannot name the state type DocsGraph.Doc.Status of fx.Docs: inside it,"
-                + " DocsGraph means the type fx.DocsGraph generated in package fx", machine.getMessage());
-        assertEquals("vocabulary/fx/Docs.java", machine.location().orElseThrow().path());
+                    """),
+                "the vocabulary DocsGraph cannot name the state type DocsGraph.Doc.Status of fx.Docs: inside it,"
+                + " DocsGraph means the type fx.DocsGraph generated in package fx", "vocabulary/fx/Docs.java");
 
-        GenerationModel pair = inspect("pair", Map.of(
+        assertEmissionIsRefusedAtTheDeclaration("pair", Map.of(
                 "DocsGraph.Page",
                     "package DocsGraph; public class Page { public enum Status { OPEN } public enum Step { GO } }",
                 "DocsGraph.Pages", """
@@ -630,26 +626,20 @@ class GeneratedApiCompilationTest {
                     @GenerateGraphApi
                     @GraphPeers(Pages.class)
                     public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
-                    """));
-        CodegenException watch = assertThrows(CodegenException.class, () -> ApiEmitter.emit(pair, "pair"));
-        assertEquals("SG603", watch.code());
-        assertEquals("the pair vocabulary DocsPages cannot name the peer machine DocsGraph.Pages: inside it,"
-                + " DocsGraph means the type fx.DocsGraph generated in package fx", watch.getMessage());
-        assertEquals("pair/fx/Docs.java", watch.location().orElseThrow().path());
+                    """),
+                "the pair vocabulary DocsPages cannot name the peer machine DocsGraph.Pages: inside it,"
+                + " DocsGraph means the type fx.DocsGraph generated in package fx", "pair/fx/Docs.java");
 
-        GenerationModel host = inspect("host", Map.of("DocRefs.Doc", """
+        assertEmissionIsRefusedAtTheDeclaration("host", Map.of("DocRefs.Doc", """
                 package DocRefs;
                 import io.github.graphmaquina.annotation.GraphAction;
                 public class Doc {
                     @GraphAction
                     public void archive(Object doc) {}
                 }
-                """));
-        CodegenException container = assertThrows(CodegenException.class, () -> ApiEmitter.emit(host, "host"));
-        assertEquals("SG603", container.code());
-        assertEquals("the references container DocRefs cannot name its host DocRefs.Doc: inside it, DocRefs means"
-                + " the type DocRefs.DocRefs generated in package DocRefs", container.getMessage());
-        assertEquals("host/DocRefs/Doc.java", container.location().orElseThrow().path());
+                """),
+                "the references container DocRefs cannot name its host DocRefs.Doc: inside it, DocRefs means"
+                + " the type DocRefs.DocRefs generated in package DocRefs", "host/DocRefs/Doc.java");
     }
 
     /** A name of the unnamed package that no generated type shadows still names the application's own type. */
@@ -729,17 +719,7 @@ class GeneratedApiCompilationTest {
     void marksEveryAnnotationWithTheVocabularyKindItDeclares() {
         Map<String, String> kinds = new TreeMap<>();
         for (GeneratedSource source : ApiEmitter.emit(inspect("peered", withPeer()), "peered")) {
-            Optional<String> kind = Optional.empty();
-            for (String line : source.content().lines().map(String::strip).toList()) {
-                int marker = line.indexOf("VocabularyKind.");
-                if (marker >= 0) {
-                    kind = Optional.of(line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')')));
-                } else if (kind.isPresent() && line.startsWith("public @interface ")) {
-                    String name = line.substring("public @interface ".length(), line.indexOf(" {"));
-                    kinds.put(source.qualifiedName() + '.' + name, kind.get());
-                    kind = Optional.empty();
-                }
-            }
+            putVocabularyKindsOfTheAnnotations(source, kinds);
         }
 
         Map<String, String> expected = new TreeMap<>();
@@ -809,6 +789,34 @@ class GeneratedApiCompilationTest {
         return Bootstrap.inspect(new GenerationRequest(directory, List.of(sources), SourceFiles.classpath(),
                 directory.resolve("generated"), directory.resolve("processor-generated"),
                 directory.resolve("classes"), directory.resolve("work"), root));
+    }
+
+    /**
+     * Asserts that emitting the vocabularies of the project {@code originals}, inspected under the root {@code id}, is
+     * refused with {@code SG603} and {@code message} at the declaration in the file {@code path}.
+     */
+    private void assertEmissionIsRefusedAtTheDeclaration(String id, Map<String, String> originals, String message,
+            String path) {
+        GenerationModel model = inspect(id, originals);
+        CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(model, id));
+        assertEquals("SG603", failure.code());
+        assertEquals(message, failure.getMessage());
+        assertEquals(path, failure.location().orElseThrow().path());
+    }
+
+    /** Puts in {@code kinds}, by qualified name, the vocabulary kind of each annotation {@code source} declares. */
+    private static void putVocabularyKindsOfTheAnnotations(GeneratedSource source, Map<String, String> kinds) {
+        Optional<String> kind = Optional.empty();
+        for (String line : source.content().lines().map(String::strip).toList()) {
+            int marker = line.indexOf("VocabularyKind.");
+            if (marker >= 0) {
+                kind = Optional.of(line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')')));
+            } else if (kind.isPresent() && line.startsWith("public @interface ")) {
+                String name = line.substring("public @interface ".length(), line.indexOf(" {"));
+                kinds.put(source.qualifiedName() + '.' + name, kind.get());
+                kind = Optional.empty();
+            }
+        }
     }
 
     private SourceFiles.Compilation compile(List<GeneratedSource> emitted, Map<String, String> usage) {

@@ -59,7 +59,8 @@ class InheritedMembersTest {
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
                 }
                 """);
-        sources.put("fx.Docs", sources.get("fx.Docs").replace(EXTENDS, "public interface Docs extends DocOperations {"));
+        sources.put("fx.Docs",
+                sources.get("fx.Docs").replace(EXTENDS, "public interface Docs extends DocOperations {"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
@@ -91,7 +92,8 @@ class InheritedMembersTest {
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
                 }
                 """);
-        sources.put("fx.Docs", sources.get("fx.Docs").replace(EXTENDS, "public interface Docs extends DocOperations {"));
+        sources.put("fx.Docs",
+                sources.get("fx.Docs").replace(EXTENDS, "public interface Docs extends DocOperations {"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
@@ -182,7 +184,8 @@ class InheritedMembersTest {
                 }
                 """);
         sources.put("fx.Docs", sources.get("fx.Docs").replace(EXTENDS,
-                "public interface Docs extends Machine<Doc, DocStatus, DocTransition>, Reevaluable<Doc>, AsyncCapable, Describable {"));
+                "public interface Docs extends Machine<Doc, DocStatus, DocTransition>, Reevaluable<Doc>, "
+                        + "AsyncCapable, Describable {"));
         sources.put("fx.Library", Fixtures.LIBRARY.replace("public interface Library extends Machines {",
                 "public interface Library extends Machines, Lifecycle, Describable {"));
         return sources;
@@ -210,11 +213,14 @@ class InheritedMembersTest {
         assertEquals(1, throughBase.countError("SG504"), throughBase.describe());
         assertTrue(throughBase.errors().get(0).contains("Docs inherits reevaluate from fx.Strict, which redeclares"
                 + " Machine.reevaluate with a result the generated companion's reevaluate cannot return: declare it in"
-                + " fx.Strict with the result Machine.reevaluate has, or leave the redeclaration out"), throughBase.describe());
+                + " fx.Strict with the result Machine.reevaluate has, or leave the redeclaration out"),
+                throughBase.describe());
         assertFalse(throughBase.hasGenerated("fx.DocsRuntime"), throughBase.describe());
 
-        Compilation.Result declared = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY
-                + "    @Override io.github.graphmaquina.api.Outcome.Applied<Doc, DocStatus, DocTransition> reevaluate(Doc doc);\n"));
+        Compilation.Result declared = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
+                Fixtures.DOCS_BODY
+                        + "    @Override io.github.graphmaquina.api.Outcome.Applied<Doc, DocStatus, DocTransition> "
+                        + "reevaluate(Doc doc);\n"));
         assertEquals(1, declared.countError("SG504"), declared.describe());
         assertTrue(declared.errors().get(0).contains("reevaluate redeclares Machine.reevaluate with a result the"
                 + " generated companion's reevaluate cannot return: declare it with the result Machine.reevaluate has,"
@@ -225,7 +231,8 @@ class InheritedMembersTest {
     /** A set inherits an accessor: it is not "no machine", it is an accessor the companion would not implement. */
     @Test
     void sg510AnAccessorTheSetInheritsFromAnotherInterface() {
-        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY);
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY);
         sources.put("fx.HasPages", """
                 package fx;
                 public interface HasPages {

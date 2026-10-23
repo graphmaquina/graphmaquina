@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** Compiles the generated facade of a default after-commit hook and runs it, asserting its observable runtime behavior. */
+/**
+ * Compiles the generated facade of a default after-commit hook and runs it, asserting its observable runtime behavior.
+ */
 class DefaultAfterCommitRuntimeTest {
     private static Map<String, String> sources() {
         Map<String, String> sources = DefaultHookFixtures.sources(
@@ -32,7 +34,8 @@ class DefaultAfterCommitRuntimeTest {
         sources.compute("fx.DocActions", (key, text) -> text
             .replace("public final class DocActions {",
                 "public final class DocActions { public boolean fail; public int notified;")
-            .replace("return ActionOutcome.ok();", "return fail ? ActionOutcome.failed(\"declined\") : ActionOutcome.ok();")
+            .replace("return ActionOutcome.ok();",
+                "return fail ? ActionOutcome.failed(\"declined\") : ActionOutcome.ok();")
             .replace("public void notified(Doc doc) { }", "public void notified(Doc doc) { notified++; }"));
         return sources;
     }
@@ -103,7 +106,8 @@ class DefaultAfterCommitRuntimeTest {
     @Test void asyncWrapperRunsDefaultOnTheOperationThread() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             Thread caller = Thread.currentThread();
-            java.util.concurrent.atomic.AtomicReference<Thread> worker = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<Thread> worker = \
+            new java.util.concurrent.atomic.AtomicReference<>();
             Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().async(() -> {
                 worker.set(Thread.currentThread());
                 return library.docs().submit(doc);
@@ -139,7 +143,8 @@ class DefaultAfterCommitRuntimeTest {
             public final class Scenario {
                 public static List<String> run() {
                     Recorder recorder = new Recorder();
-                    try (Library library = LibraryRuntime.builder(Duration.ofSeconds(5), recorder, new DocActions()).build()) {
+                    try (Library library = LibraryRuntime.builder(Duration.ofSeconds(5), \
+            recorder, new DocActions()).build()) {
                         Doc doc = new Doc();
                         library.docs().submit(doc);
                         library.docs().publish(doc);

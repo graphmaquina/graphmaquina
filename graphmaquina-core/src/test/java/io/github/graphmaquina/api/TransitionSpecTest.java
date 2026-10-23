@@ -39,7 +39,8 @@ class TransitionSpecTest {
 
     private static TransitionSpec<String, DayOfWeek, Month> spec(Optional<ActionRef<String, DayOfWeek, Month>> action,
                                                                  List<GuardRef<String, DayOfWeek, Month>> guards,
-                                                                 Optional<Month> onFailure, Optional<Duration> timeout) {
+                                                                 Optional<Month> onFailure,
+                                                                 Optional<Duration> timeout) {
         return new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, action, guards, onFailure,
                 List.of(), timeout, Optional.empty());
     }
@@ -58,10 +59,12 @@ class TransitionSpecTest {
 
     @Test
     void anEdgeWithoutAnActionIsAMoveAndKeepsItsKey() {
-        TransitionSpec<String, DayOfWeek, Month> move = spec(Optional.empty(), List.of(), Optional.empty(), Optional.empty());
+        TransitionSpec<String, DayOfWeek, Month> move =
+                spec(Optional.empty(), List.of(), Optional.empty(), Optional.empty());
         assertEquals(TransitionKind.MOVE, move.kind());
         assertEquals(new TransitionKey<>(DayOfWeek.MONDAY, Month.JANUARY), move.key());
-        assertEquals(TransitionKind.ACTION, spec(Optional.of(SYNC), List.of(), Optional.empty(), Optional.empty()).kind());
+        assertEquals(TransitionKind.ACTION,
+                spec(Optional.of(SYNC), List.of(), Optional.empty(), Optional.empty()).kind());
     }
 
     @Test

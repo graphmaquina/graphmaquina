@@ -404,6 +404,25 @@ class LaterRoundValuesTest {
      */
     private static Map<String, String> staged(String failsOn) {
         Map<String, String> sources = new LinkedHashMap<>();
+        putPagesModel(sources);
+        putDocsModel(sources, failsOn);
+        sources.put("fx.app.Library", """
+                package fx.app;
+                import fx.model.Docs;
+                import fx.model.Pages;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Library extends Machines {
+                    Docs docs();
+                    Pages pages();
+                }
+                """);
+        return sources;
+    }
+
+    /** The package-private {@code Stage}, and the machine of the pages whose state writer takes it. */
+    private static void putPagesModel(Map<String, String> sources) {
         sources.put("fx.model.Stage", "package fx.model;\ninterface Stage { }\n");
         sources.put("fx.model.PageStatus",
                 "package fx.model;\npublic enum PageStatus implements Stage { OPEN, DONE }\n");
@@ -431,6 +450,10 @@ class LaterRoundValuesTest {
                 @PagesGraph.Transition(id = FINISH, from = OPEN, to = DONE)
                 public interface Pages extends Machine<Page, PageStatus, PageTransition> { }
                 """);
+    }
+
+    /** The machine of the docs, whose edge fails on {@code failsOn}, with its entity and its static action host. */
+    private static void putDocsModel(Map<String, String> sources, String failsOn) {
         sources.put("fx.model.DocStatus", "package fx.model;\npublic enum DocStatus { DRAFT, PUBLISHED }\n");
         sources.put("fx.model.DocTransition", "package fx.model;\npublic enum DocTransition { PUBLISH }\n");
         sources.put("fx.model.Doc", """
@@ -470,19 +493,6 @@ class LaterRoundValuesTest {
                         failsOn = %s.class)
                 public interface Docs extends Machine<Doc, DocStatus, DocTransition> { }
                 """.formatted(failsOn));
-        sources.put("fx.app.Library", """
-                package fx.app;
-                import fx.model.Docs;
-                import fx.model.Pages;
-                import io.github.graphmaquina.annotation.StateGraphs;
-                import io.github.graphmaquina.api.Machines;
-                @StateGraphs
-                public interface Library extends Machines {
-                    Docs docs();
-                    Pages pages();
-                }
-                """);
-        return sources;
     }
 
     /** {@code sources} with {@link #MARKER}. */

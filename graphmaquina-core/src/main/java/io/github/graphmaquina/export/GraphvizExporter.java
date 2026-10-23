@@ -97,6 +97,13 @@ public final class GraphvizExporter {
                 }
                 out.append("];\n");
             });
+            renderClusters(out, indent);
+            renderEdges(out, indent);
+            renderWatches(out, indent);
+        }
+
+        /** Each sub-machine as a cluster: its label, its policy's tooltip, its anchor and the child's own graph. */
+        private void renderClusters(StringBuilder out, String indent) {
             for (int j = 0; j < view.submachines().size(); j++) {
                 String inner = indent + "    ";
                 SubmachineView submachine = view.submachines().get(j);
@@ -111,6 +118,13 @@ public final class GraphvizExporter {
                 child(j).render(out, inner);
                 out.append(indent).append("}\n");
             }
+        }
+
+        /**
+         * The initial arrow, then every declared edge in the view's order: an exit from each terminal state that
+         * selects it, any other edge from its state or from the anchor of the cluster it leaves.
+         */
+        private void renderEdges(StringBuilder out, String indent) {
             arrow(out, indent, prefix + "initial", entry(view.initial()), Optional.empty(),
                     Optional.ofNullable(bound.get(view.initial())), List.of());
             for (TransitionView transition : view.transitions()) {
@@ -132,6 +146,10 @@ public final class GraphvizExporter {
                     arrow(out, indent, node(transition.from()), head, Optional.empty(), to, label);
                 }
             }
+        }
+
+        /** Each watch as a note, with a dashed connection from its state, or from the anchor of a bound state. */
+        private void renderWatches(StringBuilder out, String indent) {
             for (int i = 0; i < view.watches().size(); i++) {
                 WatchView watch = view.watches().get(i);
                 String note = prefix + "watch" + i;

@@ -298,6 +298,12 @@ class PendingStateIndexTest {
         assertEquals(Optional.of(S.B), uow.pendingState(sameAsA));
         assertEquals(Optional.of(S.A), uow.pendingState(b));
         assertEquals(Optional.of(S.B), uow.pendingState(c));
+        assertNestedRollbacksUndoTheLaterHops(uow, a, sameAsA, b, c, inner, outer);
+    }
+
+    /** The rollbacks go to {@code inner}, to {@code outer} and to 0; {@code sameAsA} is an equal reference to a. */
+    private static void assertNestedRollbacksUndoTheLaterHops(UnitOfWork uow, EntityRef a, EntityRef sameAsA,
+            EntityRef b, EntityRef c, int inner, int outer) {
         uow.rollbackTo(inner);
         assertEquals(Optional.of(S.C), uow.pendingState(a));
         assertEquals(Optional.of(S.A), uow.pendingState(b));
@@ -364,25 +370,31 @@ class PendingStateIndexTest {
             assertEquals(Optional.of(S.B), uow.pendingState(b));
             assertEquals(List.of(first, second, third), uow.entries());
 
-            FragileId.failing = true;
-            assertThrows(IllegalStateException.class, () -> uow.append(hop(fragile, S.C, S.A)));
-            FragileId.failing = false;
-            assertEquals(List.of(first, second, third), uow.entries());
-            assertEquals(3, uow.savepoint());
-            assertEquals(Optional.of(S.B), uow.pendingState(a));
-            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
-            assertEquals(Optional.of(S.B), uow.pendingState(b));
-
-            uow.append(hop(fragile, S.C, S.A));
-            assertEquals(Optional.of(S.A), uow.pendingState(fragile));
-            uow.rollbackTo(1);
-            assertEquals(List.of(first), uow.entries());
-            assertEquals(Optional.of(S.B), uow.pendingState(a));
-            assertEquals(Optional.empty(), uow.pendingState(fragile));
-            assertEquals(Optional.empty(), uow.pendingState(b));
+            assertAFailedAppendLeavesTheLogTheIndexAndUndoAsTheyWere(uow, a, fragile, b, first, second, third);
         } finally {
             FragileId.failing = false;
         }
+    }
+
+    /** {@code first}, {@code second} and {@code third} are the hops appended for a, the fragile reference and b. */
+    private static void assertAFailedAppendLeavesTheLogTheIndexAndUndoAsTheyWere(UnitOfWork uow, EntityRef a,
+            EntityRef fragile, EntityRef b, LogEntry first, LogEntry second, LogEntry third) {
+        FragileId.failing = true;
+        assertThrows(IllegalStateException.class, () -> uow.append(hop(fragile, S.C, S.A)));
+        FragileId.failing = false;
+        assertEquals(List.of(first, second, third), uow.entries());
+        assertEquals(3, uow.savepoint());
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+        assertEquals(Optional.of(S.B), uow.pendingState(b));
+
+        uow.append(hop(fragile, S.C, S.A));
+        assertEquals(Optional.of(S.A), uow.pendingState(fragile));
+        uow.rollbackTo(1);
+        assertEquals(List.of(first), uow.entries());
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.empty(), uow.pendingState(fragile));
+        assertEquals(Optional.empty(), uow.pendingState(b));
     }
 
     /**
@@ -416,24 +428,29 @@ class PendingStateIndexTest {
             assertEquals(Optional.empty(), uow.pendingState(a));
             assertEquals(Optional.empty(), uow.pendingState(fragile));
 
-            LogEntry fragileFirst = hop(fragile, S.A, S.C);
-            LogEntry fragileSecond = hop(fragile, S.C, S.B);
-            uow.append(fragileFirst);
-            uow.append(fragileSecond);
-            uow.append(hop(a, S.A, S.B));
-            FragileId.failing = true;
-            assertThrows(IllegalStateException.class, () -> uow.rollbackTo(1));
-            FragileId.failing = false;
-            assertEquals(List.of(fragileFirst, fragileSecond), uow.entries());
-            assertEquals(2, uow.savepoint());
-            assertEquals(Optional.of(S.B), uow.pendingState(fragile));
-            assertEquals(Optional.empty(), uow.pendingState(a));
-            uow.rollbackTo(1);
-            assertEquals(List.of(fragileFirst), uow.entries());
-            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+            assertARetriedRollbackPutsTheEarlierStateBack(uow, a, fragile);
         } finally {
             FragileId.failing = false;
         }
+    }
+
+    private static void assertARetriedRollbackPutsTheEarlierStateBack(UnitOfWork uow, EntityRef a,
+            EntityRef fragile) {
+        LogEntry fragileFirst = hop(fragile, S.A, S.C);
+        LogEntry fragileSecond = hop(fragile, S.C, S.B);
+        uow.append(fragileFirst);
+        uow.append(fragileSecond);
+        uow.append(hop(a, S.A, S.B));
+        FragileId.failing = true;
+        assertThrows(IllegalStateException.class, () -> uow.rollbackTo(1));
+        FragileId.failing = false;
+        assertEquals(List.of(fragileFirst, fragileSecond), uow.entries());
+        assertEquals(2, uow.savepoint());
+        assertEquals(Optional.of(S.B), uow.pendingState(fragile));
+        assertEquals(Optional.empty(), uow.pendingState(a));
+        uow.rollbackTo(1);
+        assertEquals(List.of(fragileFirst), uow.entries());
+        assertEquals(Optional.of(S.C), uow.pendingState(fragile));
     }
 
     /**
@@ -446,49 +463,88 @@ class PendingStateIndexTest {
     @Test
     void theIndexMatchesAPlainLogScanOnRandomSequences() {
         Object[] ids = { 1, 2, new CollidingId(1), new CollidingId(2), new CollidingId(3) };
-        S[] states = S.values();
         for (long seed = 0; seed < 200; seed++) {
-            Random random = new Random(seed);
-            UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
-            List<LogEntry> log = new ArrayList<>();
-            Deque<Integer> savepoints = new ArrayDeque<>();
-            EntityRef[] canonical = new EntityRef[ids.length];
+            new RandomSequence(seed, ids).run();
+        }
+    }
+
+    /** One fixed-seed sequence of appends, lookups, savepoints and rollbacks, compared with a plain log scan. */
+    private static final class RandomSequence {
+
+        private final long seed;
+        private final Object[] ids;
+        private final S[] states = S.values();
+        private final Random random;
+        private final UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        private final List<LogEntry> log = new ArrayList<>();
+        private final Deque<Integer> savepoints = new ArrayDeque<>();
+        private final EntityRef[] canonical;
+        private final int lookupsFrom;
+
+        RandomSequence(long seed, Object[] ids) {
+            this.seed = seed;
+            this.ids = ids;
+            random = new Random(seed);
+            canonical = new EntityRef[ids.length];
             for (int i = 0; i < ids.length; i++) {
                 canonical[i] = new EntityRef(FIRST, ids[i], new Object());
             }
-            int lookupsFrom = random.nextInt(150);
+            lookupsFrom = random.nextInt(150);
+        }
+
+        void run() {
             for (int step = 0; step < 300; step++) {
-                String where = "seed " + seed + ", step " + step;
-                int which = random.nextInt(ids.length);
-                EntityRef ref = random.nextBoolean()
-                        ? canonical[which]
-                        : new EntityRef(FIRST, ids[which], new Object());
-                int dice = random.nextInt(10);
-                if (dice < 4) {
-                    S from = states[random.nextInt(states.length)];
-                    S to = states[random.nextInt(states.length)];
-                    LogEntry entry = hop(ref, from, to);
-                    uow.append(entry);
-                    log.add(entry);
-                } else if (dice < 6) {
-                    if (step >= lookupsFrom) {
-                        assertEquals(lastHop(log, ref), uow.pendingState(ref), where);
-                    }
-                } else if (dice < 8) {
-                    savepoints.push(uow.savepoint());
-                } else {
-                    int target = savepoints.isEmpty() || random.nextBoolean()
-                            ? random.nextInt(log.size() + 3) - 1
-                            : savepoints.pop();
-                    assertEquals(truncate(log, target), thrownBy(uow, target), where + ", rollbackTo(" + target + ")");
-                }
-                assertEquals(log.size(), uow.savepoint(), where);
-                assertEquals(log, uow.entries(), where);
+                step(step);
             }
             for (Object id : ids) {
                 EntityRef ref = new EntityRef(FIRST, id, new Object());
                 assertEquals(lastHop(log, ref), uow.pendingState(ref), "seed " + seed + ", final lookup of " + id);
             }
+        }
+
+        private void step(int step) {
+            String where = "seed " + seed + ", step " + step;
+            EntityRef ref = randomReference();
+            int dice = random.nextInt(10);
+            if (dice < 4) {
+                appendRandomHop(ref);
+            } else if (dice < 6) {
+                lookUp(step, ref, where);
+            } else if (dice < 8) {
+                savepoints.push(uow.savepoint());
+            } else {
+                rollBack(where);
+            }
+            assertEquals(log.size(), uow.savepoint(), where);
+            assertEquals(log, uow.entries(), where);
+        }
+
+        private EntityRef randomReference() {
+            int which = random.nextInt(ids.length);
+            return random.nextBoolean()
+                    ? canonical[which]
+                    : new EntityRef(FIRST, ids[which], new Object());
+        }
+
+        private void appendRandomHop(EntityRef ref) {
+            S from = states[random.nextInt(states.length)];
+            S to = states[random.nextInt(states.length)];
+            LogEntry entry = hop(ref, from, to);
+            uow.append(entry);
+            log.add(entry);
+        }
+
+        private void lookUp(int step, EntityRef ref, String where) {
+            if (step >= lookupsFrom) {
+                assertEquals(lastHop(log, ref), uow.pendingState(ref), where);
+            }
+        }
+
+        private void rollBack(String where) {
+            int target = savepoints.isEmpty() || random.nextBoolean()
+                    ? random.nextInt(log.size() + 3) - 1
+                    : savepoints.pop();
+            assertEquals(truncate(log, target), thrownBy(uow, target), where + ", rollbackTo(" + target + ")");
         }
     }
 

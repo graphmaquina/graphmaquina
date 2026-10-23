@@ -353,36 +353,11 @@ class ThrownFailureRoutingTest {
         AtomicReference<Throwable> foreignFailure = new AtomicReference<>();
         Future<TransitionAbortedException> outerCall = null;
         try {
-            StateMachine<Ticket, TicketState, TicketChange> other = StateMachines.from(
-                            publishing(throwing(new IllegalStateException("the other call failed")),
-                                    UnaryOperator.identity()))
-                    .state((Ticket ticket) -> ticket.state, (Ticket ticket, TicketState state) -> {
-                        ticket.state = state;
-                        ticket.stateWrites++;
-                    })
-                    .identity((Ticket ticket) -> ticket.id)
-                    .asyncExecutor(workers)
-                    .build();
+            StateMachine<Ticket, TicketState, TicketChange> other = failingMachineRunningOn(workers);
             Ticket elsewhere = new Ticket("T-2");
             GraphDefinition<Ticket, TicketState, TicketChange> listing = new ListingRuntimeException(publishing(
-                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> pending =
-                                other.async().execute(elsewhere, TicketChange.PUBLISH);
-                        foreignCall.set(pending);
-                        try {
-                            pending.get(5, TimeUnit.SECONDS);
-                        } catch (ExecutionException transport) {
-                            Throwable foreign = transport.getCause();
-                            foreignFailure.set(foreign);
-                            throw Sneaky.raise(foreign);
-                        } catch (InterruptedException interrupted) {
-                            Thread.currentThread().interrupt();
-                            throw Sneaky.raise(interrupted);
-                        } catch (TimeoutException timeout) {
-                            throw Sneaky.raise(timeout);
-                        }
-                        return ActionOutcome.ok();
-                    },
+                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                            awaitTheOtherCall(other, elsewhere, foreignCall, foreignFailure),
                     ThrownFailureRoutingTest::ruleOnIllegalState));
             Ticket ticket = new Ticket("T-1");
             outerCall = workers.submit(() -> assertThrows(TransitionAbortedException.class,
@@ -397,15 +372,58 @@ class ThrownFailureRoutingTest {
             assertEquals(TicketState.READY, ticket.state);
             assertEquals(TicketState.READY, elsewhere.state);
         } finally {
-            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> foreign = foreignCall.get();
-            if (foreign != null) {
-                foreign.cancel(true);
-            }
-            if (outerCall != null) {
-                outerCall.cancel(true);
-            }
-            workers.shutdownNow();
+            cancelTheCallsAndStopTheWorkers(foreignCall, outerCall, workers);
         }
+    }
+
+    /** A machine whose PUBLISH action throws, and whose asynchronous calls run on {@code workers}. */
+    private static StateMachine<Ticket, TicketState, TicketChange> failingMachineRunningOn(ExecutorService workers) {
+        return StateMachines.from(
+                        publishing(throwing(new IllegalStateException("the other call failed")),
+                                UnaryOperator.identity()))
+                .state((Ticket ticket) -> ticket.state, (Ticket ticket, TicketState state) -> {
+                    ticket.state = state;
+                    ticket.stateWrites++;
+                })
+                .identity((Ticket ticket) -> ticket.id)
+                .asyncExecutor(workers)
+                .build();
+    }
+
+    /** Starts a call of {@code other}, waits for it and rethrows its failure as it is, noting call and failure. */
+    private static ActionOutcome awaitTheOtherCall(StateMachine<Ticket, TicketState, TicketChange> other,
+            Ticket elsewhere,
+            AtomicReference<CompletableFuture<Outcome<Ticket, TicketState, TicketChange>>> foreignCall,
+            AtomicReference<Throwable> foreignFailure) {
+        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> pending =
+                other.async().execute(elsewhere, TicketChange.PUBLISH);
+        foreignCall.set(pending);
+        try {
+            pending.get(5, TimeUnit.SECONDS);
+        } catch (ExecutionException transport) {
+            Throwable foreign = transport.getCause();
+            foreignFailure.set(foreign);
+            throw Sneaky.raise(foreign);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw Sneaky.raise(interrupted);
+        } catch (TimeoutException timeout) {
+            throw Sneaky.raise(timeout);
+        }
+        return ActionOutcome.ok();
+    }
+
+    private static void cancelTheCallsAndStopTheWorkers(
+            AtomicReference<CompletableFuture<Outcome<Ticket, TicketState, TicketChange>>> foreignCall,
+            Future<TransitionAbortedException> outerCall, ExecutorService workers) {
+        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> foreign = foreignCall.get();
+        if (foreign != null) {
+            foreign.cancel(true);
+        }
+        if (outerCall != null) {
+            outerCall.cancel(true);
+        }
+        workers.shutdownNow();
     }
 
     /**

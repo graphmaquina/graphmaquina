@@ -203,7 +203,8 @@ class PublishedGraphsTest {
                 """);
         producer.put("prod.Bills", producer.get("prod.Bills").replace(
                 "public interface Bills extends Machine<Bill, BillStatus, BillTransition> {",
-                "public interface Bills extends Machine<Bill, BillStatus, BillTransition>, Reevaluable<Bill>, AsyncCapable {"));
+                "public interface Bills extends Machine<Bill, BillStatus, BillTransition>, Reevaluable<Bill>, "
+                        + "AsyncCapable {"));
         producer.put("prod.Ledger", producer.get("prod.Ledger").replace(
                 "public interface Ledger extends Machines {", "public interface Ledger extends Machines, Lifecycle {"));
         Path jar = publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
@@ -447,40 +448,7 @@ class PublishedGraphsTest {
     /** A machine, its entity, two exported actions and a set holding the machine, in a package of their own. */
     private static Map<String, String> producer() {
         Map<String, String> sources = new LinkedHashMap<>();
-        sources.put("prod.BillStatus", """
-                package prod;
-                public enum BillStatus { OPEN, PAID }
-                """);
-        sources.put("prod.BillTransition", """
-                package prod;
-                public enum BillTransition { SETTLE, CANCEL }
-                """);
-        sources.put("prod.Bill", """
-                package prod;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                public final class Bill {
-                    private final String id;
-                    @GraphProperty private BillStatus status = BillStatus.OPEN;
-                    public Bill(String id) { this.id = id; }
-                    @GraphProperty public String id() { return id; }
-                    public BillStatus status() { return status; }
-                    public void status(BillStatus value) { status = value; }
-                }
-                """);
-        sources.put("prod.BillActions", """
-                package prod;
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.TransitionContext;
-                public final class BillActions {
-                    @GraphAction public ActionOutcome settle(TransitionContext<Bill, BillStatus, BillTransition> context) {
-                        return ActionOutcome.ok();
-                    }
-                    @GraphAction public ActionOutcome cancel(TransitionContext<Bill, BillStatus, BillTransition> context) {
-                        return ActionOutcome.ok();
-                    }
-                }
-                """);
+        putBillDomain(sources);
         sources.put("prod.Bills", """
                 package prod;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -507,6 +475,46 @@ class PublishedGraphsTest {
                 }
                 """);
         return sources;
+    }
+
+    /** The entity of {@link #producer()}, its states and its transitions, and the host of its two actions. */
+    private static void putBillDomain(Map<String, String> sources) {
+        sources.put("prod.BillStatus", """
+                package prod;
+                public enum BillStatus { OPEN, PAID }
+                """);
+        sources.put("prod.BillTransition", """
+                package prod;
+                public enum BillTransition { SETTLE, CANCEL }
+                """);
+        sources.put("prod.Bill", """
+                package prod;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Bill {
+                    private final String id;
+                    @GraphProperty private BillStatus status = BillStatus.OPEN;
+                    public Bill(String id) { this.id = id; }
+                    @GraphProperty public String id() { return id; }
+                    public BillStatus status() { return status; }
+                    public void status(BillStatus value) { status = value; }
+                }
+                """);
+        sources.put("prod.BillActions", """
+                package prod;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public final class BillActions {
+                    @GraphAction public ActionOutcome settle(TransitionContext<Bill, BillStatus, BillTransition> \
+                context) {
+                        return ActionOutcome.ok();
+                    }
+                    @GraphAction public ActionOutcome cancel(TransitionContext<Bill, BillStatus, BillTransition> \
+                context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
     }
 
     /**
@@ -542,7 +550,8 @@ class PublishedGraphsTest {
                     state = BillRefs.Status.class, id = BillRefs.Id.class)
                 @ArchivesGraph.StatePolicy(state = OPEN, otherwise = "an archived bill is cancelled")
                 public interface Archives extends Machine<Bill, BillStatus, BillTransition> {
-                    @ArchivesGraph.Transition(id = CANCEL, from = OPEN, to = PAID, action = BillActionsRefs.Cancel.class)
+                    @ArchivesGraph.Transition(id = CANCEL, from = OPEN, to = PAID, \
+                action = BillActionsRefs.Cancel.class)
                     Outcome<Bill, BillStatus, BillTransition> cancel(Bill bill);
                 }
                 """);

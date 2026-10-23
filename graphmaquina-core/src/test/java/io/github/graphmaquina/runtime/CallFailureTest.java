@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -70,18 +71,6 @@ import org.junit.jupiter.api.Test;
  */
 class CallFailureTest {
 
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
     private static StateMachine<Doc, DocStatus, DocTransition> standalone(
             GraphDefinition<Doc, DocStatus, DocTransition> graph, BiConsumer<Doc, DocStatus> setter) {
         return StateMachines.from(graph).state(Doc::status, setter).build();
@@ -93,6 +82,14 @@ class CallFailureTest {
             actions.add(record.action() + " " + record.status());
         }
         return actions;
+    }
+
+    private static List<String> failureKindsOf(List<CallFailedException> failures) {
+        List<String> ends = new ArrayList<>();
+        for (CallFailedException failure : failures) {
+            ends.add(failure.getClass().getSimpleName() + " " + failure.phase() + " " + failure.statesWritten());
+        }
+        return ends;
     }
 
     /** DRAFT -SUBMIT-> REVIEW runs {@code submit}; REVIEW -PUBLISH-> PUBLISHED runs {@code publish}. */
@@ -249,12 +246,8 @@ class CallFailureTest {
                 }, ok), Doc::setStatus).execute(collecting, SUBMIT));
         assertEquals(1, collected.errors().size());
 
-        List<String> ends = new ArrayList<>();
-        for (CallFailedException failure : List.<CallFailedException>of(cycle, depth, collected)) {
-            ends.add(failure.getClass().getSimpleName() + " " + failure.phase() + " " + failure.statesWritten());
-        }
         assertEquals(List.of("CascadeCycleException ACTION NONE", "CascadeDepthExceededException ACTION NONE",
-                "CascadeException ACTION NONE"), ends);
+                "CascadeException ACTION NONE"), failureKindsOf(List.<CallFailedException>of(cycle, depth, collected)));
         assertSame(looping, cycle.call().entity());
         assertSame(deep, depth.call().entity());
         assertSame(collecting, collected.call().entity());

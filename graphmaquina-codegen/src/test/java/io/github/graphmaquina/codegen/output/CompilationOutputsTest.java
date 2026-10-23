@@ -286,9 +286,9 @@ class CompilationOutputsTest {
 
     /**
      * After an interrupted cycle, an inventory entry that is not the kind of file its list holds, a binary or an
-     * excluded binary that is no class file or a source that is no Java source, is refused with {@code SG603} naming the
-     * inventory and the entry, before the pending inventory is rewritten: the next preparation refuses it again, rather
-     * than failing on what this one wrote. So is an owned source of the manifest that is no Java source, with
+     * excluded binary that is no class file or a source that is no Java source, is refused with {@code SG603} naming
+     * the inventory and the entry, before the pending inventory is rewritten: the next preparation refuses it again,
+     * rather than failing on what this one wrote. So is an owned source of the manifest that is no Java source, with
      * {@code SG602} naming the manifest.
      */
     @ParameterizedTest
@@ -309,16 +309,7 @@ class CompilationOutputsTest {
                 lists.get("excludedBinaries"));
         Path manifest = workDirectory.resolve("annotation-manifest.json");
         Path pending = workDirectory.resolve(PENDING_INVENTORY);
-        if (file.equals(INVENTORY)) {
-            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), inventory);
-            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
-        } else if (file.equals(PENDING_INVENTORY)) {
-            ManifestCodec.writeOwned(pending, inventory);
-        } else {
-            Files.writeString(manifest, Files.readString(manifest).replace("\"" + CARRIER_SOURCE + "\"",
-                    "\"" + CARRIER_SOURCE + "\", \"" + entry + "\""));
-            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
-        }
+        writeTheInterruptedCycle(file, inventory, entry, manifest, pending);
         byte[] interrupted = Files.readAllBytes(pending);
 
         Exception failure = assertThrows(Exception.class, () -> CompilationOutputs.prepare(request()));
@@ -755,11 +746,7 @@ class CompilationOutputsTest {
             case "an exponent out of range" -> Files.writeString(file,
                     "{\n  \"schemaVersion\": 1e99999999999,\n  \"generatedTypes\": [\n    \"fx.Old_\"\n  ]\n}\n",
                     StandardCharsets.UTF_8);
-            case "NUL in a name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "fx.Old_\u0000"));
-            case "a path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "../outside/Victim"));
-            case "an empty name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", ""));
-            case "a Windows path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "C:\\x"));
-            default -> throw new IllegalArgumentException(inventory);
+            default -> writeProcessorInventoryNamingAnUnusableName(file, inventory);
         }
 
         CompilationOutputs.prepare(request());
@@ -939,6 +926,39 @@ class CompilationOutputsTest {
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(
                 Stream.concat(files.stream(), processorFiles.stream()).toList(), classesOutput, options);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    /**
+     * Writes the state an interrupted cycle left, in which {@code file} holds {@code entry}: {@code inventory} as the
+     * inventory or as the pending one, or the manifest with the entry among its owned sources.
+     */
+    private void writeTheInterruptedCycle(String file, OwnedOutputs inventory, String entry, Path manifest,
+            Path pending) throws IOException {
+        if (file.equals(INVENTORY)) {
+            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), inventory);
+            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        } else if (file.equals(PENDING_INVENTORY)) {
+            ManifestCodec.writeOwned(pending, inventory);
+        } else {
+            Files.writeString(manifest, Files.readString(manifest).replace("\"" + CARRIER_SOURCE + "\"",
+                    "\"" + CARRIER_SOURCE + "\", \"" + entry + "\""));
+            ManifestCodec.writeOwned(pending, new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        }
+    }
+
+    /**
+     * Writes at {@code file} a processor inventory that names {@code fx.Old_} and also the unusable name that
+     * {@code inventory} describes.
+     */
+    private static void writeProcessorInventoryNamingAnUnusableName(Path file, String inventory)
+            throws IOException {
+        switch (inventory) {
+            case "NUL in a name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "fx.Old_\u0000"));
+            case "a path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "../outside/Victim"));
+            case "an empty name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", ""));
+            case "a Windows path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "C:\\x"));
+            default -> throw new IllegalArgumentException(inventory);
+        }
     }
 
     /** The provisional index the processor writes through the Filer, and the bytes it must be promoted with. */

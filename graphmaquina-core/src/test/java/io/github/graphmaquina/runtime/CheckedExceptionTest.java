@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -78,20 +79,8 @@ import org.junit.jupiter.api.Test;
  */
 class CheckedExceptionTest {
 
-    /** DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED is the route a failure can take. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static StateMachine<Doc, DocStatus, DocTransition> standalone(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+    private static StateMachine<Doc, DocStatus, DocTransition> standalone(
+            GraphDefinition<Doc, DocStatus, DocTransition> graph) {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
     }
 
@@ -124,7 +113,8 @@ class CheckedExceptionTest {
      * Runs the calls one after the other on a fresh thread, as a pooled thread would, so that a marker a regression
      * leaks stays there. Each call ends as its outcome's status, or as the very throwable it threw.
      */
-    private static List<Object> onOneThread(List<Supplier<Outcome<Doc, DocStatus, DocTransition>>> calls) throws Exception {
+    private static List<Object> onOneThread(List<Supplier<Outcome<Doc, DocStatus, DocTransition>>> calls)
+            throws Exception {
         try (ExecutorService thread = Executors.newSingleThreadExecutor()) {
             return thread.submit(() -> {
                 List<Object> ends = new ArrayList<>();
@@ -201,7 +191,8 @@ class CheckedExceptionTest {
                             throw Sneaky.raise(upload);
                         })));
         Doc doc = new Doc("1", DRAFT);
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertSame(upload, error.getCause());
         assertEquals(List.of(ActionStatus.THREW), statuses(error.journal()));
         assertEquals(DRAFT, doc.status());
@@ -266,7 +257,8 @@ class CheckedExceptionTest {
         IOException metrics = new IOException("metrics down");
         try (LibraryLog log = LibraryLog.capture();
              MachineRegistry registry = MachineRegistry.builder()
-                .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
+                .add(StateMachines.from(
+                        docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
                 .observer(new MachineObserver() {
                     @Override
@@ -422,7 +414,8 @@ class CheckedExceptionTest {
         AssertionError broken = new AssertionError("audit invariant broken");
         Doc doc = new Doc("1", DRAFT);
         try (MachineRegistry registry = MachineRegistry.builder()
-                .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
+                .add(StateMachines.from(
+                        docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
                 .observer(new MachineObserver() {
                     @Override
@@ -477,6 +470,15 @@ class CheckedExceptionTest {
     void anEngineExceptionFromACallbackAbortsTheCallOnEveryPath() {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
+        addActionPaths(paths, engine);
+        addGuardPaths(paths, engine);
+        paths.put("recovery action, in CompletionException",
+                graphWhoseRecoveryActionThrows(() -> new CompletionException(engine)));
+        assertEveryPathAbortsCausedByTheEngineException(paths, engine);
+    }
+
+    private static void addActionPaths(Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths,
+            StateMachineException engine) {
         paths.put("sync action, bare", docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -505,6 +507,10 @@ class CheckedExceptionTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.failedFuture(new CompletionException(engine)))));
+    }
+
+    private static void addGuardPaths(Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths,
+            StateMachineException engine) {
         paths.put("sync guard, bare", docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -524,7 +530,12 @@ class CheckedExceptionTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.failedFuture(engine))));
-        paths.put("recovery action, in CompletionException", StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+    }
+
+    /** SUBMIT is declined and routes to DISCARD, whose action throws what {@code thrown} makes. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> graphWhoseRecoveryActionThrows(
+            Supplier<RuntimeException> thrown) {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
                 .transition(SUBMIT, DRAFT, REVIEW)
                     .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
@@ -532,11 +543,16 @@ class CheckedExceptionTest {
                     .onFailure(DISCARD).endTransition()
                 .transition(DISCARD, DRAFT, ARCHIVED)
                     .action("Discard", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                        throw new CompletionException(engine);
+                        throw thrown.get();
                     }).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build());
+                .build();
+    }
+
+    /** Every path ends in the abort of its call, whose cause is the engine exception, and leaves the doc in DRAFT. */
+    private static void assertEveryPathAbortsCausedByTheEngineException(
+            Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths, StateMachineException engine) {
         List<String> ends = new ArrayList<>();
         List<String> expected = new ArrayList<>();
         for (Map.Entry<String, GraphDefinition<Doc, DocStatus, DocTransition>> path : paths.entrySet()) {
@@ -594,6 +610,14 @@ class CheckedExceptionTest {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         CompletionException deep = nested(10_000, engine);
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
+        addDeepActionPaths(paths, deep);
+        addDeepGuardPaths(paths, deep);
+        paths.put("recovery action", graphWhoseRecoveryActionThrows(() -> deep));
+        assertEveryPathAbortsCausedByTheEngineException(paths, engine);
+    }
+
+    private static void addDeepActionPaths(Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths,
+            CompletionException deep) {
         paths.put("sync action", docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -608,6 +632,10 @@ class CheckedExceptionTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.failedFuture(deep))));
+    }
+
+    private static void addDeepGuardPaths(Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths,
+            CompletionException deep) {
         paths.put("sync guard", docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -622,34 +650,6 @@ class CheckedExceptionTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.failedFuture(deep))));
-        paths.put("recovery action", StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                .transition(SUBMIT, DRAFT, REVIEW)
-                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                            ActionOutcome.failed("declined"))
-                    .onFailure(DISCARD).endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED)
-                    .action("Discard", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                        throw deep;
-                    }).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build());
-        List<String> ends = new ArrayList<>();
-        List<String> expected = new ArrayList<>();
-        for (Map.Entry<String, GraphDefinition<Doc, DocStatus, DocTransition>> path : paths.entrySet()) {
-            Doc doc = new Doc("1", DRAFT);
-            String end;
-            try {
-                end = standalone(path.getValue()).execute(doc, SUBMIT).status().name();
-            } catch (StateMachineException thrown) {
-                end = thrown == engine ? "the engine exception itself" : thrown.getClass().getSimpleName()
-                        + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
-            }
-            ends.add(path.getKey() + ": " + end + ", " + doc.status());
-            expected.add(path.getKey() + ": TransitionAbortedException caused by the engine exception, DRAFT");
-        }
-        assertEquals(expected, ends);
     }
 
     /**
@@ -685,7 +685,8 @@ class CheckedExceptionTest {
                         .asyncAction("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.failedFuture(broken))));
         Doc doc = new Doc("1", DRAFT);
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
         assertSame(broken, error.getCause());
         assertEquals(DRAFT, doc.status());
     }

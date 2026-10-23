@@ -2,6 +2,7 @@ package io.github.graphmaquina.example;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -17,14 +18,21 @@ import org.junit.jupiter.api.Test;
 /**
  * The guides quote the shop as it is: every Java block of the testing guide that a link to one of the shop's tests
  * introduces appears verbatim in that test, and the four Java blocks of the guide's section on the call's flow are the
- * shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes. A block
- * may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing, so it
- * fails.
+ * shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes. The Java
+ * blocks of the guide's section on sub-machines over the same entity, from its mention of
+ * {@code SameEntitySubmachineTest} on, appear verbatim in that test. A block may sit deeper in the source than in the
+ * guide, by whole levels of four spaces. A blank block quotes nothing, so it fails.
  */
 class GuideCopiesTest {
 
     /** A Java block of the guide's section on the call's flow: the shop's source it quotes, and its declaration. */
     private record Quote(String source, String declaration) { }
+
+    /**
+     * A Java block of the testing guide that a link to one of the shop's tests introduces: that test, the line the
+     * block starts at, and its code.
+     */
+    private record TestQuote(String test, int start, String code) { }
 
     private static final List<String> SHOP_TESTS =
             List.of("OrderFlowTest", "TestingApiTest", "DiagramsTest", "GraphContractsTest");
@@ -63,47 +71,15 @@ class GuideCopiesTest {
 
     @Test
     void theTestingGuideQuotesTheShopsTestsVerbatim() throws IOException {
-        List<String> lines = List.of(read(path("graphmaquina.docs", "testing.md")).split("\n", -1));
-        Optional<String> current = Optional.empty();
-        boolean inBlock = false;
-        boolean isJava = false;
-        List<String> block = new ArrayList<>();
-        int start = 0;
+        List<TestQuote> quotes = new TestQuoteReader().read(read(path("graphmaquina.docs", "testing.md")));
         List<String> missing = new ArrayList<>();
-        int checked = 0;
-        for (int index = 0; index < lines.size(); index++) {
-            String line = lines.get(index);
-            if (line.startsWith("#")) {
-                current = Optional.empty();
-            }
-            Matcher link = LINK.matcher(line);
-            if (link.find() && !inBlock) {
-                current = Optional.of(link.group(1));
-            }
-            if (line.startsWith("```")) {
-                if (!inBlock) {
-                    inBlock = true;
-                    isJava = line.startsWith("```java");
-                    block = new ArrayList<>();
-                    start = index + 1;
-                    continue;
-                }
-                inBlock = false;
-                if (isJava && current.isPresent()) {
-                    String source = read(path("graphmaquina.example.tests", current.get() + ".java"));
-                    String quoted = String.join("\n", block);
-                    checked++;
-                    if (quoted.isBlank() || !holds(source, quoted, 0, 4, 8, 12)) {
-                        missing.add("docs/testing.md:" + start + " " + current.get());
-                    }
-                }
-                continue;
-            }
-            if (inBlock) {
-                block.add(line);
+        for (TestQuote quote : quotes) {
+            String source = read(path("graphmaquina.example.tests", quote.test() + ".java"));
+            if (quote.code().isBlank() || !holds(source, quote.code(), 0, 4, 8, 12)) {
+                missing.add("docs/testing.md:" + quote.start() + " " + quote.test());
             }
         }
-        assertTrue(checked > 0, "no block of the testing guide quotes a test of the shop");
+        assertFalse(quotes.isEmpty(), "no block of the testing guide quotes a test of the shop");
         assertEquals(List.of(), missing);
     }
 
@@ -126,5 +102,81 @@ class GuideCopiesTest {
             }
         }
         assertEquals(List.of(), missing);
+    }
+
+    @Test
+    void theGuideQuotesTheSameEntitySubmachineTestVerbatim() throws IOException {
+        String guide = read(path("graphmaquina.docs", "guide.md"));
+        int mention = guide.indexOf("`SameEntitySubmachineTest`");
+        assertTrue(mention >= 0, "the guide no longer names SameEntitySubmachineTest");
+        int sectionEnd = guide.indexOf("\n### ", mention);
+        Matcher blocks = JAVA_BLOCK.matcher(guide).region(mention, sectionEnd < 0 ? guide.length() : sectionEnd);
+        String source = read(path("graphmaquina.example.tests", "billing/SameEntitySubmachineTest.java"));
+        List<String> quoted = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        while (blocks.find()) {
+            String where = "docs/guide.md:" + guide.substring(0, blocks.start()).split("\n", -1).length;
+            quoted.add(where);
+            if (blocks.group(1).isBlank() || !holds(source, blocks.group(1), 0, 4, 8, 12)) {
+                missing.add(where + " SameEntitySubmachineTest");
+            }
+        }
+        assertFalse(quoted.isEmpty(), "no Java block follows the guide's mention of SameEntitySubmachineTest");
+        assertEquals(List.of(), missing);
+    }
+
+    /**
+     * Reads the testing guide line by line. A link outside a code block names the test that the Java blocks after it
+     * quote, up to the next heading; a heading is any line that starts with {@code #}, even inside a code block.
+     */
+    private static final class TestQuoteReader {
+
+        private final List<TestQuote> quotes = new ArrayList<>();
+        private final List<String> block = new ArrayList<>();
+        private Optional<String> test = Optional.empty();
+        private boolean inBlock;
+        private boolean isJava;
+        private int start;
+
+        List<TestQuote> read(String guide) {
+            List<String> lines = List.of(guide.split("\n", -1));
+            for (int index = 0; index < lines.size(); index++) {
+                accept(index, lines.get(index));
+            }
+            return quotes;
+        }
+
+        private void accept(int index, String line) {
+            if (line.startsWith("#")) {
+                test = Optional.empty();
+            }
+            if (!inBlock) {
+                scanOutsideBlock(index, line);
+            } else if (line.startsWith("```")) {
+                closeBlock();
+            } else {
+                block.add(line);
+            }
+        }
+
+        private void scanOutsideBlock(int index, String line) {
+            Matcher link = LINK.matcher(line);
+            if (link.find()) {
+                test = Optional.of(link.group(1));
+            }
+            if (line.startsWith("```")) {
+                inBlock = true;
+                isJava = line.startsWith("```java");
+                block.clear();
+                start = index + 1;
+            }
+        }
+
+        private void closeBlock() {
+            inBlock = false;
+            if (isJava && test.isPresent()) {
+                quotes.add(new TestQuote(test.get(), start, String.join("\n", block)));
+            }
+        }
     }
 }

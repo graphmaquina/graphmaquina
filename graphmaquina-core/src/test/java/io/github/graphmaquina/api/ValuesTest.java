@@ -109,7 +109,8 @@ class ValuesTest {
                 Map.of(Month.JANUARY, "January is closed"));
         assertEquals("January is closed", policy.reasonFor(Month.JANUARY));
         assertEquals("not from here", policy.reasonFor(Month.MARCH));
-        assertThrows(IllegalArgumentException.class, () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, " ", Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, " ", Map.of()));
     }
 
     /** A reason declared for one identifier is read like the default one, so it is refused blank the same way. */

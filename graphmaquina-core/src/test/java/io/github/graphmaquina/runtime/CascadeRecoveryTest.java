@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.RecoveryFixtures.hops;
+import static io.github.graphmaquina.fixtures.RecoveryFixtures.unavailable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -16,7 +18,6 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -173,28 +174,6 @@ class CascadeRecoveryTest {
         };
     }
 
-    /**
-     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and returns a failure
-     * of the kind Unavailable, whose rule selects SCHEDULE_RETRY.
-     */
-    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailable() {
-        return (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                    ctx.entity().calls.add("publish");
-                    return ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy");
-                }));
-    }
-
-    /** Each hop the outcome committed, as {@code FROM -ID-> TO KIND action at depth N}. */
-    private static List<String> hops(Outcome<?, ?, ?> outcome) {
-        List<String> hops = new ArrayList<>();
-        for (TransitionRecord<?, ?, ?> record : outcome.records()) {
-            hops.add(record.from() + " -" + record.transition() + "-> " + record.to() + " " + record.kind() + " "
-                    + record.action().orElse("no action") + " at depth " + record.depth());
-        }
-        return hops;
-    }
-
     /** Each action of the abort's journal, as {@code name STATUS}. */
     private static List<String> journal(TransitionAbortedException error) {
         return error.journal().stream()
@@ -264,6 +243,40 @@ class CascadeRecoveryTest {
         }
     }
 
+    private static Map<String, Function<TransitionContext<Ticket, TicketState, TicketChange>, ActionOutcome>>
+            parentActions() {
+        Map<String, Function<TransitionContext<Ticket, TicketState, TicketChange>, ActionOutcome>> parents =
+                new LinkedHashMap<>();
+        parents.put("the parent applies", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                ActionOutcome.ok());
+        parents.put("the parent recovers", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy"));
+        parents.put("the parent aborts", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+            throw new IllegalStateException("the ledger is closed");
+        });
+        return parents;
+    }
+
+    /** PUBLISH cascades GO_LIVE to {@code listing}, notes the routed failure it gets back, then runs {@code parent}. */
+    private static GraphDefinition<Ticket, TicketState, TicketChange> ticketGraphWherePublishSeesThePeer(
+            Listing listing, List<String> seen,
+            Function<TransitionContext<Ticket, TicketState, TicketChange>, ActionOutcome> parent) {
+        return tickets(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
+                        publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            Outcome<Listing, ListingState, ListingChange> peer =
+                                    ctx.cascade(LISTINGS, listing, ListingChange.GO_LIVE);
+                            Outcome.Failed<Listing, ListingState, ListingChange> failed =
+                                    peer.asFailed().orElseThrow();
+                            seen.add(peer.code() + " " + failed.failureTransition() + " to " + failed.movedTo()
+                                    + ", kind " + failed.failureKind().map(Class::getSimpleName).orElse("none")
+                                    + ", " + failed.records().size() + " record(s)");
+                            return parent.apply(ctx);
+                        })),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) ->
+                        retry.action("schedule retry", logsOnTicket("schedule retry")));
+    }
+
     /**
      * A peer's routed failure is provisional. The listing's GO_LIVE returns the kind Rejected, its own rule takes
      * SUSPEND, and the cascade hands the parent action an Outcome.Failed that carries that kind. The suspension is
@@ -274,33 +287,14 @@ class CascadeRecoveryTest {
     @Test
     void aPeersRoutedFailureIsProvisionalAndShowsItsKindToTheParent() {
         Map<String, Function<TransitionContext<Ticket, TicketState, TicketChange>, ActionOutcome>> parents =
-                new LinkedHashMap<>();
-        parents.put("the parent applies", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
-                ActionOutcome.ok());
-        parents.put("the parent recovers", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
-                ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy"));
-        parents.put("the parent aborts", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-            throw new IllegalStateException("the ledger is closed");
-        });
+                parentActions();
         List<String> ends = new ArrayList<>();
         for (Map.Entry<String, Function<TransitionContext<Ticket, TicketState, TicketChange>, ActionOutcome>> parent
                 : parents.entrySet()) {
             Listing listing = new Listing("l1");
             List<String> seen = new ArrayList<>();
-            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
-                    (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                            publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                                Outcome<Listing, ListingState, ListingChange> peer =
-                                        ctx.cascade(LISTINGS, listing, ListingChange.GO_LIVE);
-                                Outcome.Failed<Listing, ListingState, ListingChange> failed =
-                                        peer.asFailed().orElseThrow();
-                                seen.add(peer.code() + " " + failed.failureTransition() + " to " + failed.movedTo()
-                                        + ", kind " + failed.failureKind().map(Class::getSimpleName).orElse("none")
-                                        + ", " + failed.records().size() + " record(s)");
-                                return parent.getValue().apply(ctx);
-                            })),
-                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) ->
-                            retry.action("schedule retry", logsOnTicket("schedule retry")));
+            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph =
+                    ticketGraphWherePublishSeesThePeer(listing, seen, parent.getValue());
             GraphDefinition<Listing, ListingState, ListingChange> listingGraph = listings(
                     (TransitionContext<Listing, ListingState, ListingChange> ctx) ->
                             ActionOutcome.failed(PublicationFailures.Rejected.class, "listing refused"),
@@ -794,6 +788,48 @@ class CascadeRecoveryTest {
     }
 
     /**
+     * SCHEDULE_RETRY suspends {@code first}, {@code failing} and {@code last} with COLLECT; once the aggregate arrives
+     * it notes what a peer view taken before the cascade reads of those and of {@code touched}, and it lets the
+     * aggregate through unless the recovery catches it.
+     */
+    private static GraphDefinition<Ticket, TicketState, TicketChange> ticketGraphWhoseRetryCollects(
+            Listing first, Listing failing, Listing last, Listing touched, List<String> seen,
+            AtomicReference<CascadeException> aggregate, boolean recoveryCatches) {
+        return tickets(unavailable(),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry
+                        .action("schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            PeerView<Listing, ListingState, ListingChange> view = ctx.peer(LISTINGS);
+                            try {
+                                ctx.cascadeAll(LISTINGS, List.of(first, failing, last), ListingChange.SUSPEND,
+                                        CascadePolicy.COLLECT);
+                            } catch (CascadeException failure) {
+                                aggregate.set(failure);
+                                for (Listing listing : List.of(first, failing, last, touched)) {
+                                    seen.add(listing.id + " " + view.stateOf(listing));
+                                }
+                                if (!recoveryCatches) {
+                                    throw failure;
+                                }
+                            }
+                            return ActionOutcome.ok();
+                        }));
+    }
+
+    /** SUSPEND notes its call, and on {@code failing} it puts {@code touched} live and then throws. */
+    private static GraphDefinition<Listing, ListingState, ListingChange> listingGraphWhoseSuspendCascades(
+            Listing failing, Listing touched) {
+        return listings(logsOnListing("go live"),
+                (TransitionContext<Listing, ListingState, ListingChange> ctx) -> {
+                    ctx.entity().calls.add("suspend");
+                    if (ctx.entity() == failing) {
+                        ctx.cascade(LISTINGS, touched, ListingChange.GO_LIVE);
+                        throw new IllegalStateException("the listing cannot be suspended");
+                    }
+                    return ActionOutcome.ok();
+                });
+    }
+
+    /**
      * COLLECT inside a recovery keeps its savepoints and its poison. SCHEDULE_RETRY suspends three listings with
      * COLLECT; the second one's action puts a fourth listing live and then throws. COLLECT rolls back that element,
      * the fourth listing's hop included, keeps the other two, and ends in a CascadeException that poisons the
@@ -809,33 +845,10 @@ class CascadeRecoveryTest {
             Listing touched = new Listing("touched");
             List<String> seen = new ArrayList<>();
             AtomicReference<CascadeException> aggregate = new AtomicReference<>();
-            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(unavailable(),
-                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry
-                            .action("schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                                PeerView<Listing, ListingState, ListingChange> view = ctx.peer(LISTINGS);
-                                try {
-                                    ctx.cascadeAll(LISTINGS, List.of(first, failing, last), ListingChange.SUSPEND,
-                                            CascadePolicy.COLLECT);
-                                } catch (CascadeException failure) {
-                                    aggregate.set(failure);
-                                    for (Listing listing : List.of(first, failing, last, touched)) {
-                                        seen.add(listing.id + " " + view.stateOf(listing));
-                                    }
-                                    if (!recoveryCatches) {
-                                        throw failure;
-                                    }
-                                }
-                                return ActionOutcome.ok();
-                            }));
-            GraphDefinition<Listing, ListingState, ListingChange> listingGraph = listings(logsOnListing("go live"),
-                    (TransitionContext<Listing, ListingState, ListingChange> ctx) -> {
-                        ctx.entity().calls.add("suspend");
-                        if (ctx.entity() == failing) {
-                            ctx.cascade(LISTINGS, touched, ListingChange.GO_LIVE);
-                            throw new IllegalStateException("the listing cannot be suspended");
-                        }
-                        return ActionOutcome.ok();
-                    });
+            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = ticketGraphWhoseRetryCollects(
+                    first, failing, last, touched, seen, aggregate, recoveryCatches);
+            GraphDefinition<Listing, ListingState, ListingChange> listingGraph = listingGraphWhoseSuspendCascades(
+                    failing, touched);
             try (MachineRegistry registry = registry(ticketGraph, listingGraph, 10)) {
                 Ticket ticket = new Ticket("t1");
                 String scenario = recoveryCatches ? "the recovery catches it" : "the recovery lets it through";

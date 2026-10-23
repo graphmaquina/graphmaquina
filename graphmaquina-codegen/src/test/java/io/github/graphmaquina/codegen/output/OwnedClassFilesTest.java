@@ -137,27 +137,14 @@ class OwnedClassFilesTest {
         ByteArrayOutputStream attributeBytes = new ByteArrayOutputStream();
         DataOutputStream attributes = new DataOutputStream(attributeBytes);
         int count = 1;
-        attributes.writeShort(pool.utf8("SourceFile"));
-        attributes.writeInt(2);
-        attributes.writeShort(pool.utf8(sourceFile));
+        writeSourceFile(attributes, pool, sourceFile);
         if (!outerOf.isEmpty()) {
             count++;
-            attributes.writeShort(pool.utf8("InnerClasses"));
-            attributes.writeInt(2 + 8 * outerOf.size());
-            attributes.writeShort(outerOf.size());
-            for (Map.Entry<String, String> entry : new TreeMap<>(outerOf).entrySet()) {
-                attributes.writeShort(pool.type(entry.getKey()));
-                attributes.writeShort(entry.getValue().isEmpty() ? 0 : pool.type(entry.getValue()));
-                attributes.writeShort(0);
-                attributes.writeShort(0);
-            }
+            writeInnerClasses(attributes, pool, outerOf);
         }
         if (!enclosing.isEmpty()) {
             count++;
-            attributes.writeShort(pool.utf8("EnclosingMethod"));
-            attributes.writeInt(4);
-            attributes.writeShort(pool.type(enclosing));
-            attributes.writeShort(0);
+            writeEnclosingMethod(attributes, pool, enclosing);
         }
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
@@ -175,6 +162,40 @@ class OwnedClassFilesTest {
         out.writeShort(count);
         attributeBytes.writeTo(out);
         return bytes.toByteArray();
+    }
+
+    /** The {@code SourceFile} attribute naming {@code sourceFile}. */
+    private static void writeSourceFile(DataOutputStream attributes, Pool pool, String sourceFile)
+            throws IOException {
+        attributes.writeShort(pool.utf8("SourceFile"));
+        attributes.writeInt(2);
+        attributes.writeShort(pool.utf8(sourceFile));
+    }
+
+    /**
+     * The {@code InnerClasses} attribute: each class of {@code outerOf} with its outer class, or with none for an
+     * entry whose outer class is empty.
+     */
+    private static void writeInnerClasses(DataOutputStream attributes, Pool pool, Map<String, String> outerOf)
+            throws IOException {
+        attributes.writeShort(pool.utf8("InnerClasses"));
+        attributes.writeInt(2 + 8 * outerOf.size());
+        attributes.writeShort(outerOf.size());
+        for (Map.Entry<String, String> entry : new TreeMap<>(outerOf).entrySet()) {
+            attributes.writeShort(pool.type(entry.getKey()));
+            attributes.writeShort(entry.getValue().isEmpty() ? 0 : pool.type(entry.getValue()));
+            attributes.writeShort(0);
+            attributes.writeShort(0);
+        }
+    }
+
+    /** The {@code EnclosingMethod} attribute naming the class {@code enclosing}. */
+    private static void writeEnclosingMethod(DataOutputStream attributes, Pool pool, String enclosing)
+            throws IOException {
+        attributes.writeShort(pool.utf8("EnclosingMethod"));
+        attributes.writeInt(4);
+        attributes.writeShort(pool.type(enclosing));
+        attributes.writeShort(0);
     }
 
     /** The constant pool of a class file being written: each string and each class entered once. */

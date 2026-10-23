@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
+import static io.github.graphmaquina.fixtures.DocGraphs.plain;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -63,7 +65,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BiConsumer;
-import java.util.function.UnaryOperator;
 import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
@@ -111,23 +112,6 @@ class ObserverTest {
 
     /** A graph and the setter its machine writes with. */
     private record Scenario(GraphDefinition<Doc, DocStatus, DocTransition> graph, BiConsumer<Doc, DocStatus> setter) { }
-
-    /** DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DISCARD, PUBLISH and ARCHIVE are plain moves. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> plain() {
-        return docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity());
-    }
 
     private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph,
                                             BiConsumer<Doc, DocStatus> setter, MachineObserver... observers) {

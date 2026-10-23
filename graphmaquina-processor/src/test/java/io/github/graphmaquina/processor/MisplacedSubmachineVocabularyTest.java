@@ -37,8 +37,9 @@ class MisplacedSubmachineVocabularyTest {
         assertEquals(2, result.errors().size(), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocsPages.Submachine is read")
                 && error.contains("never read on fx.DocService")), result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocsPages.Submachines is read")
-                && error.contains("never read on fx.Docs.Nested")), result.describe());
+        assertTrue(result.errors().stream().anyMatch(
+                (String error) -> error.contains("fx.DocsPages.Submachines is read")
+                        && error.contains("never read on fx.Docs.Nested")), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 

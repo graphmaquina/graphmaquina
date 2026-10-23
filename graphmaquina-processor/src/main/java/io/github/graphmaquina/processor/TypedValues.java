@@ -61,7 +61,9 @@ final class TypedValues {
                 : Optional.empty();
     }
 
-    /** The names of every constant of an array element, and empty when one of them is not one of {@code declaring}'s. */
+    /**
+     * The names of every constant of an array element, and empty when one of them is not one of {@code declaring}'s.
+     */
     static Optional<List<String>> constantNames(List<AnnotationValue> values, TypeElement declaring) {
         List<String> names = new ArrayList<>();
         for (AnnotationValue value : values) {

@@ -55,11 +55,14 @@ class DraftProblemsTest {
 
     /** A guard that always passes. */
     static final class Approved implements TransitionGuard<Doc, DocStatus, DocTransition> {
-        @Override public GuardResult test(GuardContext<Doc, DocStatus, DocTransition> ctx) { return GuardResult.pass(); }
+        @Override public GuardResult test(GuardContext<Doc, DocStatus, DocTransition> ctx) {
+            return GuardResult.pass();
+        }
     }
 
     /** The rest of a valid machine, so each test only supplies the declaration under scrutiny. */
-    private static GraphBuilder<Doc, DocStatus, DocTransition> tail(GraphBuilder<Doc, DocStatus, DocTransition> builder) {
+    private static GraphBuilder<Doc, DocStatus, DocTransition> tail(
+            GraphBuilder<Doc, DocStatus, DocTransition> builder) {
         return builder
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()

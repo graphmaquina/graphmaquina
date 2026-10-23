@@ -39,7 +39,8 @@ class GenericTypesTest {
                 import static shop.TicketStatus.*;
                 import static shop.TicketTransition.*;
                 @GenerateGraphApi
-                @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED, state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+                @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED, \
+                state = TicketRefs.Status.class, id = TicketRefs.Id.class)
                 @TicketsGraph.StatePolicy(state = OPEN, otherwise = "an open ticket is closed")
                 public interface Tickets extends Machine<Ticket<String>, TicketStatus, TicketTransition> {
                     @TicketsGraph.Transition(id = CLOSE, from = OPEN, to = CLOSED)
@@ -111,16 +112,21 @@ class GenericTypesTest {
     @Test
     void sg509AWatchOfAPeerOverAParameterizedEntity() {
         Map<String, String> sources = TypedFixtures.watching();
-        sources.put("fx.Page", sources.get("fx.Page").replace("public final class Page {", "public final class Page<T> {")
+        sources.put("fx.Page", sources.get("fx.Page")
+                .replace("public final class Page {", "public final class Page<T> {")
                 .replace("public Page(String id, Doc doc)", "public Page(String id, Doc doc, T tag)"));
         sources.put("fx.Doc", sources.get("fx.Doc").replace("List<Page>", "List<Page<String>>")
-                .replace("Collection<Page>", "Collection<Page<String>>").replace("void attach(Page page)", "void attach(Page<String> page)"));
+                .replace("Collection<Page>", "Collection<Page<String>>")
+                .replace("void attach(Page page)", "void attach(Page<String> page)"));
         sources.put("fx.Pages", sources.get("fx.Pages").replace("Machine<Page, PageStatus, PageTransition>",
-                "Machine<Page<String>, PageStatus, PageTransition>").replace("Outcome<Page, PageStatus, PageTransition> finish(Page page)",
-                "Outcome<Page<String>, PageStatus, PageTransition> finish(Page<String> page)"));
-        sources.put("fx.DocActions", sources.get("fx.DocActions").replace("Iterable<? extends Page>", "Iterable<? extends Page<String>>")
+                "Machine<Page<String>, PageStatus, PageTransition>")
+                .replace("Outcome<Page, PageStatus, PageTransition> finish(Page page)",
+                        "Outcome<Page<String>, PageStatus, PageTransition> finish(Page<String> page)"));
+        sources.put("fx.DocActions", sources.get("fx.DocActions")
+                .replace("Iterable<? extends Page>", "Iterable<? extends Page<String>>")
                 .replace("Collection<? extends Page>", "Collection<? extends Page<String>>")
-                .replace("PeerView<Page, PageStatus, PageTransition>", "PeerView<Page<String>, PageStatus, PageTransition>"));
+                .replace("PeerView<Page, PageStatus, PageTransition>",
+                        "PeerView<Page<String>, PageStatus, PageTransition>"));
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
@@ -186,7 +192,8 @@ class GenericTypesTest {
                 import io.github.graphmaquina.api.TransitionContext;
                 public class Ledger<X> {
                     public %sclass Book {
-                        @GraphAction public ActionOutcome post(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                        @GraphAction public ActionOutcome post(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                             return ActionOutcome.ok();
                         }
                     }
@@ -218,7 +225,8 @@ class GenericTypesTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public class Ledger<X> {
-                    @GraphAction public %sActionOutcome post(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                    @GraphAction public %sActionOutcome post(TransitionContext<Order, OrderStatus, OrderTransition> \
+                context) {
                         return ActionOutcome.ok();
                     }
                     public X last() { return null; }
@@ -232,7 +240,8 @@ class GenericTypesTest {
                 import static shop.OrderStatus.*;
                 import static shop.OrderTransition.*;
                 @GenerateGraphApi
-                @OrdersGraph.Definition(initial = NEW, terminals = PAID, state = OrderRefs.Status.class, id = OrderRefs.Id.class)
+                @OrdersGraph.Definition(initial = NEW, terminals = PAID, \
+                state = OrderRefs.Status.class, id = OrderRefs.Id.class)
                 @OrdersGraph.StatePolicy(state = NEW, otherwise = "a new order is paid")
                 public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
                     @OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = LedgerRefs.Post.class)

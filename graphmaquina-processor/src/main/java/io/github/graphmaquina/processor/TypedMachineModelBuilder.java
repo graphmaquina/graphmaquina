@@ -110,6 +110,32 @@ final class TypedMachineModelBuilder {
         DiagnosticAnchor header = definitions.isEmpty()
                 ? DiagnosticAnchor.of(type)
                 : DiagnosticAnchor.of(type, definitions.get(0));
+        Optional<MachineTypes> types = facadeTypes(type, header);
+        if (types.isEmpty()) {
+            return Optional.empty();
+        }
+        if (definitions.isEmpty()) {
+            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
+                    + ", which is the vocabulary its own name, states and transitions belong to", type);
+            return Optional.empty();
+        }
+        Optional<MachineModel> model = model(type, types.get(), definitions.get(0), before);
+        if (model.isEmpty()) {
+            return Optional.empty();
+        }
+        if (complete) {
+            structure.checkOutline(model.get(), header);
+            structure.checkGraphFactory(model.get());
+        }
+        return diagnostics.errors() > before ? Optional.empty() : model;
+    }
+
+    /**
+     * The entity, state and transition types of the facade {@code type}, or empty after {@code SG502} or
+     * {@code SG601} at {@code header} when it is no top-level interface extending {@code Machine<E, S, T>} over a
+     * concrete entity type that is not parameterized and two distinct enum types.
+     */
+    private Optional<MachineTypes> facadeTypes(TypeElement type, DiagnosticAnchor header) {
         if (!structure.checkTopLevel(type, header)) {
             return Optional.empty();
         }
@@ -133,13 +159,17 @@ final class TypedMachineModelBuilder {
                     + " not be parameterized");
             return Optional.empty();
         }
-        if (definitions.isEmpty()) {
-            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
-                    + ", which is the vocabulary its own name, states and transitions belong to", type);
-            return Optional.empty();
-        }
-        AnnotationMirror definition = definitions.get(0);
+        return resolved;
+    }
 
+    /**
+     * The model that {@code definition}, the {@code Definition} the facade {@code type} carries, and the other
+     * declarations of the facade describe, each of them checked. Empty when javac refused a value of the
+     * {@code Definition} the model needs, when its state or identity property did not resolve, or when an error was
+     * reported since the build of the machine started, with {@code before} errors.
+     */
+    private Optional<MachineModel> model(TypeElement type, MachineTypes types, AnnotationMirror definition,
+                                         int before) {
         Optional<AnnotationValue> declaredInitial = annotations.find(definition, "initial");
         Optional<AnnotationValue> declaredState = annotations.find(definition, "state");
         Optional<AnnotationValue> declaredId = annotations.find(definition, "id");
@@ -175,14 +205,9 @@ final class TypedMachineModelBuilder {
         if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
             return Optional.empty();
         }
-        MachineModel model = new MachineModel(types, packageName(type), initial.get(), terminals.get(), cycleAllowed.get(),
-                state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched,
-                bound);
-        if (complete) {
-            structure.checkOutline(model, header);
-            structure.checkGraphFactory(model);
-        }
-        return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
+        return Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
+                cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies, rejections,
+                declared, operations, watched, bound));
     }
 
     /** The policy of each state: the reason every identifier it declares no edge for is refused with. */
@@ -226,7 +251,8 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             Optional<String> from = TypedValues.constantName(declaredFrom.get(), types.statesElement());
-            Optional<String> transition = TypedValues.constantName(declaredTransition.get(), types.transitionsElement());
+            Optional<String> transition = TypedValues.constantName(declaredTransition.get(),
+                    types.transitionsElement());
             if (from.isEmpty() || transition.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
                 continue;
             }
@@ -264,7 +290,8 @@ final class TypedMachineModelBuilder {
      * companion writes or inherits that method already: one that carries vocabulary, or declares a result the
      * companion's method cannot return, is refused as {@code SG504}.
      */
-    private List<OperationModel> operations(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
+    private List<OperationModel> operations(TypeElement type, MachineTypes types,
+                                            Optional<Binding> defaultAfterCommit) {
         List<OperationModel> operations = new ArrayList<>();
         Map<String, ExecutableElement> owners = new LinkedHashMap<>();
         for (Element member : type.getEnclosedElements()) {

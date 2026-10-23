@@ -160,6 +160,11 @@ public final class TypedProcessors {
                 });
                 return;
             }
+            answerProperty(ask, properties, symbol, machine, peer, anchor);
+        }
+
+        private static void answerProperty(Ask ask, PropertyResolver properties, TypeMirror symbol,
+                MachineTypes machine, Optional<MachineTypes> peer, DiagnosticAnchor anchor) {
             switch (ask.property().orElseThrow()) {
                 case ID -> properties.id(symbol, machine, anchor)
                         .ifPresent(property -> record(ask, describe(property)));

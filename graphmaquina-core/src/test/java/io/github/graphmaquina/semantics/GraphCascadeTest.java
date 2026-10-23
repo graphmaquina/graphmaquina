@@ -194,7 +194,10 @@ class GraphCascadeTest {
                     })
                     .onFailure(FAIL).endTransition()
                 .transition(FAIL, REVIEW, DONE)
-                    .action("recover", ctx -> { ctx.entity().calls.add("recover from " + ctx.from()); return ActionOutcome.ok(); })
+                    .action("recover", ctx -> {
+                        ctx.entity().calls.add("recover from " + ctx.from());
+                        return ActionOutcome.ok();
+                    })
                     .afterCommit("recovered", ticket -> hooks.add("recovered:" + ticket.id)).endTransition()
                 .build();
         try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
@@ -265,7 +268,10 @@ class GraphCascadeTest {
                 .transition(AUTO_APPROVE, REVIEW, DONE)
                     .afterCommit("auto", ticket -> hooks.add("auto:" + ticket.id)).endTransition()
                 .transition(FAIL, REVIEW, DONE)
-                    .action("recover", ctx -> { seen.add(ctx.peer(KEY).stateOf(peer).name()); return ActionOutcome.ok(); })
+                    .action("recover", ctx -> {
+                        seen.add(ctx.peer(KEY).stateOf(peer).name());
+                        return ActionOutcome.ok();
+                    })
                     .afterCommit("recovered", ticket -> hooks.add("recovered:" + ticket.id)).endTransition()
                 .build();
         try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {

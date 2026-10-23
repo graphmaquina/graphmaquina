@@ -25,7 +25,8 @@ class TypedMachineProcessorTest {
     private static final String OPERATIONS = """
                 @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                 Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+            action = DocActionsRefs.Publish.class)
                 Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
             """;
 
@@ -51,7 +52,8 @@ class TypedMachineProcessorTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         onFailure = {SUBMIT, RETURN})
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
@@ -62,8 +64,8 @@ class TypedMachineProcessorTest {
 
     @Test
     void leavesAStateOfAnotherMachineToJavac() {
-        Map<String, String> sources = TypedFixtures.graph(HEADER.replace("initial = DRAFT", "initial = PageStatus.OPEN"),
-                OPERATIONS);
+        Map<String, String> sources = TypedFixtures.graph(
+                HEADER.replace("initial = DRAFT", "initial = PageStatus.OPEN"), OPERATIONS);
         sources.put("fx.PageStatus", """
                 package fx;
                 public enum PageStatus { OPEN, DONE }
@@ -74,7 +76,8 @@ class TypedMachineProcessorTest {
         assertFalse(result.success(), result.describe());
         assertFalse(result.errors().stream().anyMatch(error -> error.contains("[SG")), result.describe());
         assertTrue(result.errors().stream().anyMatch(error ->
-                error.contains("incompatible types: fx.PageStatus cannot be converted to fx.DocStatus")), result.describe());
+                error.contains("incompatible types: fx.PageStatus cannot be converted to fx.DocStatus")),
+                result.describe());
     }
 
     @Test
@@ -97,7 +100,8 @@ class TypedMachineProcessorTest {
                 public interface Drafts extends Machine<Doc, DocStatus, DocTransition> {
                     @DraftsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DraftsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    @DraftsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """);
@@ -148,7 +152,8 @@ class TypedMachineProcessorTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         guards = DocActionsRefs.Approved.class, afterCommit = DocActionsRefs.Notified.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
@@ -164,7 +169,8 @@ class TypedMachineProcessorTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class})
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
@@ -178,7 +184,8 @@ class TypedMachineProcessorTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
                     @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                     Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class,
                         failsOn = RuntimeException.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
@@ -230,7 +237,8 @@ class TypedMachineProcessorTest {
     @Test
     void reportsARejectionOfAnIdentifierThatIsAlsoDeclared() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(
-                HEADER + "@DocsGraph.Reject(from = DRAFT, transition = SUBMIT, reason = \"already a move\")\n", OPERATIONS));
+                HEADER + "@DocsGraph.Reject(from = DRAFT, transition = SUBMIT, reason = \"already a move\")\n",
+                OPERATIONS));
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG702"), result.describe());
@@ -239,7 +247,8 @@ class TypedMachineProcessorTest {
     @Test
     void reportsAnUnreachableState() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Publish.class)
                     Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 

@@ -2,7 +2,9 @@ package io.github.graphmaquina.api;
 
 import lombok.NonNull;
 
-/** Result of running a {@link TransitionGuard} or {@link AsyncTransitionGuard}: either {@link Pass} or {@link Reject}. */
+/**
+ * Result of running a {@link TransitionGuard} or {@link AsyncTransitionGuard}: either {@link Pass} or {@link Reject}.
+ */
 public sealed interface GuardResult permits GuardResult.Pass, GuardResult.Reject {
 
     /** A guard that allows the transition to proceed. */

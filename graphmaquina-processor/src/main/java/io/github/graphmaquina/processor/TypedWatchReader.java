@@ -39,7 +39,6 @@ final class TypedWatchReader {
     private static final String TWO_WATCHES = "SG403";
     private static final String NO_RULES = "SG404";
     private static final String ALTERNATIVE = "SG508";
-    private static final String OPTIONAL = "java.util.Optional";
 
     /** The four elements of a rule, exactly one of which a {@code When} declares. */
     private static final List<String> ALTERNATIVES = List.of("condition", "allIn", "anyIn", "noneIn");
@@ -158,7 +157,8 @@ final class TypedWatchReader {
      * {@code SG508} when none or several are declared, since neither an unconditional rule nor a rule with two
      * meanings is a rule the model can hold.
      */
-    private Optional<RuleModel> rule(TypeElement facade, AnnotationMirror rule, MachineTypes machine, MachineTypes peer) {
+    private Optional<RuleModel> rule(TypeElement facade, AnnotationMirror rule, MachineTypes machine,
+            MachineTypes peer) {
         int before = diagnostics.errors();
         Optional<AnnotationValue> declaredTransition = annotations.find(rule, "transition");
         if (declaredTransition.isEmpty()) {
@@ -191,8 +191,8 @@ final class TypedWatchReader {
     }
 
     /** A rule that asks a condition, resolved against the machine and the peer the pair names. */
-    private Optional<RuleModel> condition(AnnotationValue value, String executed, MachineTypes machine, MachineTypes peer,
-            DiagnosticAnchor anchor) {
+    private Optional<RuleModel> condition(AnnotationValue value, String executed, MachineTypes machine,
+            MachineTypes peer, DiagnosticAnchor anchor) {
         return symbol(value).flatMap((TypeMirror symbol) ->
                         symbols.resolve(symbol, Bindings.Role.CONDITION, machine, Optional.of(peer), anchor))
                 .map((Binding condition) -> new RuleModel(RuleKind.CONDITION, "", Optional.of(condition), executed));
@@ -207,7 +207,7 @@ final class TypedWatchReader {
     /** Whether the owner accessor answers with an {@code Optional}, which decides how the peer is followed back. */
     private boolean isOptional(Property owner, MachineTypes machine) {
         return signatures.same(owner.accessor().effectiveType().getReturnType(),
-                signatures.declared(OPTIONAL, machine.entity()));
+                signatures.declared(Signatures.OPTIONAL, machine.entity()));
     }
 
     /** The values of an array element, and none when this annotation does not declare that element at all. */

@@ -6,7 +6,8 @@ import java.io.UncheckedIOException;
 import java.util.Properties;
 
 /**
- * The version of this generator, as the build stamped it into {@code io/github/graphmaquina/codegen/version.properties}.
+ * The version of this generator, as the build stamped it into
+ * {@code io/github/graphmaquina/codegen/version.properties}.
  *
  * <p>The compile manifest and every export index this tool writes carry it; the inventories and the request do not.
  * Of what it reads back, only the export index a classpath entry publishes is compared with it: one written by
@@ -40,8 +41,8 @@ public final class ToolVersion {
         }
         String version = properties.getProperty("version");
         if (version == null || version.isBlank()) {
-            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/" + RESOURCE
-                + " declares no version; this tool jar is incomplete");
+            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"
+                + RESOURCE + " declares no version; this tool jar is incomplete");
         }
         if (version.contains("${")) {
             throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"
