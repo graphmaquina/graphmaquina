@@ -49,7 +49,8 @@ its label. Replace the placeholders with your vault and item names or IDs after 
 ./gradlew --no-daemon :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
-./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
+./gradlew --no-daemon test
+./gradlew --no-daemon :graphmaquina-gradle-plugin:test
 
 SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
 SIGNING_PASSWORD='op://<vault>/<item>/password' \

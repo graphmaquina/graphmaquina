@@ -4252,7 +4252,8 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
 ./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
-./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
+./gradlew --no-daemon test
+./gradlew --no-daemon :graphmaquina-gradle-plugin:test
 ./gradlew --no-daemon :graphmaquina-test:publishedArtifactTest --offline
 ./gradlew :graphmaquina-example:test
 ./gradlew :graphmaquina-codegen:test :graphmaquina-processor:test
@@ -4261,8 +4262,11 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
 
 Stage the sibling artifacts before running the Gradle adapter's TestKit suite, especially in a fresh checkout
 or after changing versions. This uses a file repository under `build/adapter-test-repository`.
-The combined `test` command explicitly includes that suite. Its plugin is a separate included
-build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
+Run that suite in an invocation of its own, never together with `test` or `build`. The Maven adapter's suite,
+which `test` runs, and `:graphmaquina-test:publishedArtifactTest`, which `build` reaches, first republish core, the
+generator and the processor into that repository, rewriting their files in place while the TestKit builds of that
+suite read them. The Gradle adapter's plugin is a separate included build, while the Maven adapter's integration
+suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
 `./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
