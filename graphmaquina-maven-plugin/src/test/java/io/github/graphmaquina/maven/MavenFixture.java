@@ -48,11 +48,71 @@ public final class MavenFixture {
     /** The published index a compilation leaves beside its classes. */
     private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
 
-    /** The package the generator emits the carrier of one compilation into. */
-    private static final String CARRIER_PACKAGE = "io/github/graphmaquina/generated/bootstrap";
-
     /** The annotation that carrier holds, which is what makes a generated source the carrier. */
     private static final String CARRIER_MARKER = "@GraphCompilation(";
+
+    /** The published index of the main compilation, beside its classes. */
+    static final String MAIN_EXPORTS = "target/classes/META-INF/graphmaquina/exports.json";
+
+    /** The published index of the test compilation, beside its own classes. */
+    static final String TEST_EXPORTS = "target/test-classes/META-INF/graphmaquina/exports.json";
+
+    /**
+     * The program {@code fxs.Bookkeeping}: it books a stay, captures its deposit and its balance, captures the
+     * deposit of a booking that was never booked, and prints what each call did.
+     */
+    private static final String BOOKKEEPING = """
+            package fxs;
+
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.api.SubmachineStart;
+            import io.github.graphmaquina.api.TransitionRecord;
+
+            /** Runs a stay through both of its payments, then a payment whose booking was never booked. */
+            public final class Bookkeeping {
+
+                private Bookkeeping() {
+                }
+
+                public static void main(String[] arguments) {
+                    Ledger ledger = new Ledger();
+                    Payment deposit = new Payment("deposit");
+                    Payment balance = new Payment("balance");
+                    Booking stay = new Booking("stay", deposit, balance);
+                    Payment early = new Payment("early");
+                    Booking unbooked = new Booking("unbooked", early, new Payment("late"));
+                    ledger.register(stay);
+                    ledger.register(unbooked);
+                    try (Billing billing = BillingRuntime.builder(ledger).build()) {
+                        print("book", billing.bookings().book(stay));
+                        print("deposit", billing.payments().capture(deposit));
+                        print("balance", billing.payments().capture(balance));
+                        print("early", billing.payments().capture(early));
+                    }
+                    System.out.println("BILLING states stay=" + stay.status() + " deposit=" + deposit.status()
+                            + " balance=" + balance.status() + " unbooked=" + unbooked.status()
+                            + " early=" + early.status());
+                }
+
+                /** Prints the status of {@code outcome}, then its refusal, its hops and its starts. */
+                private static void print(String call, Outcome<?, ?, ?> outcome) {
+                    StringBuilder line = new StringBuilder("BILLING ").append(call).append(' ')
+                            .append(outcome.status());
+                    if (outcome instanceof Outcome.Rejected<?, ?, ?> rejected) {
+                        line.append(' ').append(rejected.kind()).append(' ').append(rejected.reason());
+                    }
+                    for (TransitionRecord<?, ?, ?> hop : outcome.records()) {
+                        line.append(' ').append(hop.from()).append('-').append(hop.transition())
+                                .append("->").append(hop.to());
+                    }
+                    for (SubmachineStart<?, ?, ?> start : outcome.starts()) {
+                        line.append(" start ").append(start.node()).append(':').append(start.child())
+                                .append(':').append(start.initial());
+                    }
+                    System.out.println(line);
+                }
+            }
+            """;
 
     private final Path directory;
     private final Path settings;
@@ -153,16 +213,6 @@ public final class MavenFixture {
         }
     }
 
-    /** The version every StateGraph artifact of the fixture repository is published under. */
-    private static String graphmaquinaVersion() {
-        String configured = System.getProperty("graphmaquina.version");
-        if (configured == null) {
-            throw new IllegalStateException("graphmaquina.version is not set; these tests must run through the"
-                    + " Gradle test task, which points it at the version this build resolved");
-        }
-        return configured;
-    }
-
     /**
      * The settings file of every fixture build: one active profile whose dependency and plugin repositories are
      * the file repository this build published to, with snapshots enabled and always re-read, followed by Maven
@@ -223,6 +273,23 @@ public final class MavenFixture {
      */
     public static Map<String, String> domainSources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addStatesAndEntity(sources);
+        addActionsAndFacade(sources);
+        sources.put("fx.Unrelated", """
+                package fx;
+
+                /** A type no marker mentions, kept to prove that cleanup is selective. */
+                public final class Unrelated {
+
+                    private Unrelated() {
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /** The states, the transitions and the entity of the order graph. */
+    private static void addStatesAndEntity(Map<String, String> sources) {
         sources.put("fx.Status", """
                 package fx;
 
@@ -254,6 +321,10 @@ public final class MavenFixture {
                     private Status status = Status.NEW;
                 }
                 """);
+    }
+
+    /** The action host and the machine facade of the order graph. */
+    private static void addActionsAndFacade(Map<String, String> sources) {
         sources.put("fx.Actions", """
                 package fx;
 
@@ -271,17 +342,6 @@ public final class MavenFixture {
                 }
                 """);
         sources.put("fx.Orders", orders("Orders", "Approve", "approve"));
-        sources.put("fx.Unrelated", """
-                package fx;
-
-                /** A type no marker mentions, kept to prove that cleanup is selective. */
-                public final class Unrelated {
-
-                    private Unrelated() {
-                    }
-                }
-                """);
-        return sources;
     }
 
     /**
@@ -327,6 +387,17 @@ public final class MavenFixture {
      */
     public static Map<String, String> recoverySources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addPublicationVocabulary(sources);
+        addProviderExceptions(sources);
+        addTicket(sources);
+        addTicketActions(sources);
+        addPublicationMachine(sources);
+        addPublicationProgram(sources);
+        return sources;
+    }
+
+    /** The states, the transitions and the failure kinds of the publication graph. */
+    private static void addPublicationVocabulary(Map<String, String> sources) {
         sources.put("fxr.TicketState", """
                 package fxr;
 
@@ -363,6 +434,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The exceptions the provider's adapter throws. */
+    private static void addProviderExceptions(Map<String, String> sources) {
         sources.put("fxr.ServiceUnavailableException", """
                 package fxr;
 
@@ -396,6 +471,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The entity of the publication graph; its id names the failure its publication meets. */
+    private static void addTicket(Map<String, String> sources) {
         sources.put("fxr.Ticket", """
                 package fxr;
 
@@ -427,6 +506,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The action host of the publication graph: the id of each ticket picks the failure it meets. */
+    private static void addTicketActions(Map<String, String> sources) {
         sources.put("fxr.TicketActions", """
                 package fxr;
 
@@ -449,6 +532,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The machine whose PUBLISH declares the recoveries. */
+    private static void addPublicationMachine(Map<String, String> sources) {
         sources.put("fxr.Tickets", """
                 package fxr;
 
@@ -494,6 +581,10 @@ public final class MavenFixture {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 }
                 """);
+    }
+
+    /** The program that publishes one ticket per route. */
+    private static void addPublicationProgram(Map<String, String> sources) {
         sources.put("fxr.Publications", """
                 package fxr;
 
@@ -531,7 +622,6 @@ public final class MavenFixture {
                     }
                 }
                 """);
-        return sources;
     }
 
     /**
@@ -545,6 +635,19 @@ public final class MavenFixture {
      */
     public static Map<String, String> submachineSources() {
         Map<String, String> sources = new LinkedHashMap<>();
+        addPaymentAndBookingStates(sources);
+        addPaymentEntity(sources);
+        addBookingEntity(sources);
+        addLedger(sources);
+        addPaymentMachine(sources);
+        addBookingMachine(sources);
+        addBillingSet(sources);
+        sources.put("fxs.Bookkeeping", BOOKKEEPING);
+        return sources;
+    }
+
+    /** The states and the identified transitions of the payment and booking graphs. */
+    private static void addPaymentAndBookingStates(Map<String, String> sources) {
         sources.put("fxs.PaymentStatus", """
                 package fxs;
 
@@ -569,6 +672,10 @@ public final class MavenFixture {
                 /** The identified transitions of the booking graph. */
                 public enum BookingTransition { BOOK, DEPOSIT_PAID, BALANCE_PAID, DECLINE }
                 """);
+    }
+
+    /** The entity of the payment graph, the sub-machine. */
+    private static void addPaymentEntity(Map<String, String> sources) {
         sources.put("fxs.Payment", """
                 package fxs;
 
@@ -605,6 +712,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The entity of the booking graph, the parent. */
+    private static void addBookingEntity(Map<String, String> sources) {
         sources.put("fxs.Booking", """
                 package fxs;
 
@@ -653,6 +764,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The lookup host that finds the booking of a payment. */
+    private static void addLedger(Map<String, String> sources) {
         sources.put("fxs.Ledger", """
                 package fxs;
 
@@ -684,6 +799,10 @@ public final class MavenFixture {
                     }
                 }
                 """);
+    }
+
+    /** The payment machine, the child. */
+    private static void addPaymentMachine(Map<String, String> sources) {
         sources.put("fxs.Payments", """
                 package fxs;
 
@@ -711,6 +830,10 @@ public final class MavenFixture {
                     Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);
                 }
                 """);
+    }
+
+    /** The booking machine, the parent. */
+    private static void addBookingMachine(Map<String, String> sources) {
         sources.put("fxs.Bookings", """
                 package fxs;
 
@@ -757,6 +880,10 @@ public final class MavenFixture {
                     Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
                 }
                 """);
+    }
+
+    /** The set of both machines. */
+    private static void addBillingSet(Map<String, String> sources) {
         sources.put("fxs.Billing", """
                 package fxs;
 
@@ -772,59 +899,98 @@ public final class MavenFixture {
                     Payments payments();
                 }
                 """);
-        sources.put("fxs.Bookkeeping", """
-                package fxs;
+    }
 
-                import io.github.graphmaquina.api.Outcome;
-                import io.github.graphmaquina.api.SubmachineStart;
-                import io.github.graphmaquina.api.TransitionRecord;
+    /** A self-contained domain for the test source set, in a package of its own. */
+    static Map<String, String> testDomain() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        addTicketVocabulary(sources);
+        addTicketMachine(sources);
+        return sources;
+    }
 
-                /** Runs a stay through both of its payments, then a payment whose booking was never booked. */
-                public final class Bookkeeping {
+    /** The states, the transitions and the entity of the test graph. */
+    private static void addTicketVocabulary(Map<String, String> sources) {
+        sources.put("fxt.Level", """
+                package fxt;
 
-                    private Bookkeeping() {
+                /** The states a ticket moves through. */
+                public enum Level { OPEN, CLOSED }
+                """);
+        sources.put("fxt.Step", """
+                package fxt;
+
+                /** The identified transitions of the ticket graph. */
+                public enum Step { RESOLVE }
+                """);
+        sources.put("fxt.Ticket", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+
+                /** The entity of the test graph, with hand-written accessors. */
+                public final class Ticket {
+
+                    @GraphProperty
+                    private Level status = Level.OPEN;
+
+                    @GraphProperty
+                    public String getId() {
+                        return "ticket";
                     }
 
-                    public static void main(String[] arguments) {
-                        Ledger ledger = new Ledger();
-                        Payment deposit = new Payment("deposit");
-                        Payment balance = new Payment("balance");
-                        Booking stay = new Booking("stay", deposit, balance);
-                        Payment early = new Payment("early");
-                        Booking unbooked = new Booking("unbooked", early, new Payment("late"));
-                        ledger.register(stay);
-                        ledger.register(unbooked);
-                        try (Billing billing = BillingRuntime.builder(ledger).build()) {
-                            print("book", billing.bookings().book(stay));
-                            print("deposit", billing.payments().capture(deposit));
-                            print("balance", billing.payments().capture(balance));
-                            print("early", billing.payments().capture(early));
-                        }
-                        System.out.println("BILLING states stay=" + stay.status() + " deposit=" + deposit.status()
-                                + " balance=" + balance.status() + " unbooked=" + unbooked.status()
-                                + " early=" + early.status());
+                    public Level getStatus() {
+                        return status;
                     }
 
-                    /** Prints the status of {@code outcome}, then its refusal, its hops and its starts. */
-                    private static void print(String call, Outcome<?, ?, ?> outcome) {
-                        StringBuilder line = new StringBuilder("BILLING ").append(call).append(' ')
-                                .append(outcome.status());
-                        if (outcome instanceof Outcome.Rejected<?, ?, ?> rejected) {
-                            line.append(' ').append(rejected.kind()).append(' ').append(rejected.reason());
-                        }
-                        for (TransitionRecord<?, ?, ?> hop : outcome.records()) {
-                            line.append(' ').append(hop.from()).append('-').append(hop.transition())
-                                    .append("->").append(hop.to());
-                        }
-                        for (SubmachineStart<?, ?, ?> start : outcome.starts()) {
-                            line.append(" start ").append(start.node()).append(':').append(start.child())
-                                    .append(':').append(start.initial());
-                        }
-                        System.out.println(line);
+                    public void setStatus(Level value) {
+                        status = value;
                     }
                 }
                 """);
-        return sources;
+    }
+
+    /** The action host and the machine of the test graph. */
+    private static void addTicketMachine(Map<String, String> sources) {
+        sources.put("fxt.TicketActions", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the test graph. */
+                public final class TicketActions {
+
+                    @GraphAction
+                    public ActionOutcome resolve(TransitionContext<Ticket, Level, Step> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fxt.Tickets", """
+                package fxt;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxt.Level.CLOSED;
+                import static fxt.Level.OPEN;
+                import static fxt.Step.RESOLVE;
+
+                /** The machine of the test source set. */
+                @GenerateGraphApi
+                @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED,
+                    state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+                @TicketsGraph.StatePolicy(state = OPEN, otherwise = "an open ticket is resolved")
+                public interface Tickets extends Machine<Ticket, Level, Step> {
+
+                    @TicketsGraph.Transition(id = RESOLVE, from = OPEN, to = CLOSED,
+                        action = TicketActionsRefs.Resolve.class)
+                    Outcome<Ticket, Level, Step> resolve(Ticket ticket);
+                }
+                """);
     }
 
     /**
@@ -918,6 +1084,15 @@ public final class MavenFixture {
         writeSources(sources);
     }
 
+    /** One {@code <arg>} element per value, each on a line of its own, as the fixture POM writes them. */
+    static String arguments(List<String> values) {
+        StringBuilder elements = new StringBuilder();
+        for (String value : values) {
+            elements.append("\n                <arg>").append(value).append("</arg>");
+        }
+        return elements.toString();
+    }
+
     /**
      * Runs {@code goals} with the fixture's settings and local repository, in the project directory, merging
      * both streams of the process in the order Maven wrote them.
@@ -1002,6 +1177,15 @@ public final class MavenFixture {
 
     /** The same fixture runner, with a package-local test callback for the exact child {@link Process}. */
     String runMain(String mainClass, Consumer<Process> onStart) throws IOException {
+        Path core = coreJar();
+        List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
+        Path transcript = Files.createTempFile(directory, "publications-", ".out");
+        return new ChildRun(mainClass, command, directory, transcript).run(onStart);
+    }
+
+    /** The {@code graphmaquina-core} jar the fixture build resolved into its local repository. */
+    private static Path coreJar() {
         String version = graphmaquinaVersion();
         Path core = Path.of(localRepository(), "io", "github", "graphmaquina", "graphmaquina-core", version,
                 "graphmaquina-core-" + version + ".jar");
@@ -1009,84 +1193,7 @@ public final class MavenFixture {
             throw new IllegalStateException("the fixture build resolved no " + core
                     + "; run a build that compiles the main sources first");
         }
-        List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
-        Path transcript = Files.createTempFile(directory, "publications-", ".out");
-        Process process = null;
-        boolean terminated = false;
-        Throwable originalFailure = null;
-        try {
-            process = new ProcessBuilder(command)
-                    .directory(directory.toFile())
-                    .redirectErrorStream(true)
-                    .redirectOutput(transcript.toFile())
-                    .start();
-            onStart.accept(process);
-            if (!process.waitFor(2, TimeUnit.MINUTES)) {
-                throw new IllegalStateException(mainClass + " did not terminate within two minutes:\n"
-                        + Files.readString(transcript, StandardCharsets.UTF_8));
-            }
-            terminated = true;
-            String output = Files.readString(transcript, StandardCharsets.UTF_8);
-            int status = process.exitValue();
-            if (status != 0) {
-                throw new IllegalStateException(mainClass + " exited with status " + status + ":\n" + output);
-            }
-            return output;
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            IllegalStateException failure = new IllegalStateException(
-                    "interrupted while running " + String.join(" ", command), interrupted);
-            originalFailure = failure;
-            throw failure;
-        } catch (IOException | RuntimeException | Error failure) {
-            originalFailure = failure;
-            throw failure;
-        } finally {
-            if (process != null && !terminated) {
-                try {
-                    if (process.isAlive()) {
-                        process.destroyForcibly();
-                    }
-                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                    boolean cleanupInterrupted = false;
-                    while (!terminated) {
-                        long remaining = deadline - System.nanoTime();
-                        if (remaining <= 0) {
-                            break;
-                        }
-                        try {
-                            terminated = process.waitFor(remaining, TimeUnit.NANOSECONDS);
-                        } catch (InterruptedException interrupted) {
-                            cleanupInterrupted = true;
-                        }
-                    }
-                    if (cleanupInterrupted) {
-                        Thread.currentThread().interrupt();
-                    }
-                    if (!terminated) {
-                        throw new IllegalStateException(mainClass
-                                + " remained alive after forcible destruction");
-                    }
-                } catch (RuntimeException | Error cleanupFailure) {
-                    if (originalFailure == null) {
-                        originalFailure = cleanupFailure;
-                        throw cleanupFailure;
-                    }
-                    originalFailure.addSuppressed(cleanupFailure);
-                }
-            }
-            if (process == null || terminated) {
-                try {
-                    Files.deleteIfExists(transcript);
-                } catch (IOException | RuntimeException | Error deletion) {
-                    if (originalFailure == null) {
-                        throw deletion;
-                    }
-                    originalFailure.addSuppressed(deletion);
-                }
-            }
-        }
+        return core;
     }
 
     /** The one local repository every fixture build of this module writes to; never the developer's {@code ~/.m2}. */
@@ -1097,6 +1204,21 @@ public final class MavenFixture {
                     + " through the Gradle test task, which points it at this module's build directory");
         }
         return configured;
+    }
+
+    /** The version every StateGraph artifact of the fixture repository is published under. */
+    static String graphmaquinaVersion() {
+        return requireProperty("graphmaquina.version");
+    }
+
+    /** The value of {@code name}, which the Gradle test task sets and these tests cannot run without. */
+    static String requireProperty(String name) {
+        String value = System.getProperty(name);
+        if (value == null) {
+            throw new IllegalStateException(name + " is not set; run these tests through"
+                    + " ./gradlew :graphmaquina-maven-plugin:test");
+        }
+        return value;
     }
 
     /**
@@ -1125,7 +1247,7 @@ public final class MavenFixture {
      * @return {@code true} if a generated source carries the compilation marker
      */
     public boolean generatedSourcesContainGraphCompilation() {
-        Path carriers = directory.resolve("target/generated-sources/graphmaquina").resolve(CARRIER_PACKAGE);
+        Path carriers = carrierDirectory();
         if (!Files.isDirectory(carriers)) {
             return false;
         }
@@ -1141,6 +1263,12 @@ public final class MavenFixture {
         return false;
     }
 
+    /** The directory the generator emits the carrier of the main compilation into. */
+    private Path carrierDirectory() {
+        return directory.resolve("target/generated-sources/graphmaquina")
+                .resolve(CarrierTimestamp.CARRIER_PACKAGE);
+    }
+
     /**
      * The single carrier source of the main generation: the tool-internal type every generation emits, whose
      * timestamp the preparation dates past the outputs it retired.
@@ -1149,7 +1277,7 @@ public final class MavenFixture {
      * @throws IllegalStateException if the generation left more or fewer than one carrier source
      */
     public Path carrierSource() {
-        Path carriers = directory.resolve("target/generated-sources/graphmaquina").resolve(CARRIER_PACKAGE);
+        Path carriers = carrierDirectory();
         try (Stream<Path> walk = Files.walk(carriers)) {
             List<Path> sources = walk.filter(Files::isRegularFile)
                     .filter(file -> file.getFileName().toString().endsWith(".java"))
@@ -1354,6 +1482,35 @@ public final class MavenFixture {
         Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
     }
 
+    /** A directory of {@code parent} laid out like the home of another JDK; see {@link #fakeJavaHome}. */
+    static Path fakeJdk(Path parent, String name, String version) throws IOException {
+        return fakeJavaHome(parent, name, version, "java", "javac");
+    }
+
+    /**
+     * A directory of {@code parent} laid out like the home of another Java installation: each of {@code tools} in
+     * its {@code bin} runs that tool of the JDK running these tests, so only its path tells it apart, and its
+     * {@code release} file declares {@code version} when one is given. Without {@code javac} among the tools it is
+     * a runtime.
+     */
+    static Path fakeJavaHome(Path parent, String name, String version, String... tools) throws IOException {
+        Path home = parent.resolve(name);
+        Path bin = Files.createDirectories(home.resolve("bin"));
+        Path real = Path.of(System.getProperty("java.home"), "bin");
+        for (String tool : tools) {
+            Path launcher = bin.resolve(tool);
+            Files.writeString(launcher, "#!/bin/sh\nexec \"" + real.resolve(tool) + "\" \"$@\"\n",
+                    StandardCharsets.UTF_8);
+            if (!launcher.toFile().setExecutable(true)) {
+                throw new IllegalStateException("cannot make " + launcher + " executable");
+            }
+        }
+        if (version != null) {
+            Files.writeString(home.resolve("release"), "JAVA_VERSION=\"" + version + "\"\n", StandardCharsets.UTF_8);
+        }
+        return home;
+    }
+
     private static void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
@@ -1361,6 +1518,130 @@ public final class MavenFixture {
         try (Stream<Path> walk = Files.walk(root)) {
             for (Path entry : walk.sorted(Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(entry);
+            }
+        }
+    }
+
+    /**
+     * One run of a child JVM whose output goes to a transcript file. It waits for the child and reads what it
+     * printed. However the wait ends, it then makes sure the child is gone and removes the transcript, keeping the
+     * first failure and attaching the failures of the cleanup to it as suppressed exceptions.
+     */
+    private static final class ChildRun {
+
+        private final String mainClass;
+        private final List<String> command;
+        private final Path directory;
+        private final Path transcript;
+        private Process process;
+        private boolean terminated;
+        private Throwable originalFailure;
+
+        ChildRun(String mainClass, List<String> command, Path directory, Path transcript) {
+            this.mainClass = mainClass;
+            this.command = command;
+            this.directory = directory;
+            this.transcript = transcript;
+        }
+
+        String run(Consumer<Process> onStart) throws IOException {
+            try {
+                return startAndAwait(onStart);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                IllegalStateException failure = new IllegalStateException(
+                        "interrupted while running " + String.join(" ", command), interrupted);
+                originalFailure = failure;
+                throw failure;
+            } catch (IOException | RuntimeException | Error failure) {
+                originalFailure = failure;
+                throw failure;
+            } finally {
+                reap();
+                removeTranscript();
+            }
+        }
+
+        /** Starts the child, hands it to {@code onStart} and returns what it printed once it has exited with 0. */
+        private String startAndAwait(Consumer<Process> onStart) throws IOException, InterruptedException {
+            process = new ProcessBuilder(command)
+                    .directory(directory.toFile())
+                    .redirectErrorStream(true)
+                    .redirectOutput(transcript.toFile())
+                    .start();
+            onStart.accept(process);
+            if (!process.waitFor(2, TimeUnit.MINUTES)) {
+                throw new IllegalStateException(mainClass + " did not terminate within two minutes:\n"
+                        + Files.readString(transcript, StandardCharsets.UTF_8));
+            }
+            terminated = true;
+            String output = Files.readString(transcript, StandardCharsets.UTF_8);
+            int status = process.exitValue();
+            if (status != 0) {
+                throw new IllegalStateException(mainClass + " exited with status " + status + ":\n" + output);
+            }
+            return output;
+        }
+
+        /** Stops a child that did not end by itself, unless it was never started or has ended. */
+        private void reap() {
+            if (process != null && !terminated) {
+                try {
+                    terminate();
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (originalFailure == null) {
+                        originalFailure = cleanupFailure;
+                        throw cleanupFailure;
+                    }
+                    originalFailure.addSuppressed(cleanupFailure);
+                }
+            }
+        }
+
+        /** Destroys the child and confirms that it ended. */
+        private void terminate() {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            terminated = awaitTermination();
+            if (!terminated) {
+                throw new IllegalStateException(mainClass + " remained alive after forcible destruction");
+            }
+        }
+
+        /** Waits up to ten seconds for the child to end, and gives the thread back its interrupt status. */
+        private boolean awaitTermination() {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            boolean ended = false;
+            boolean cleanupInterrupted = false;
+            while (!ended) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    break;
+                }
+                try {
+                    ended = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException interrupted) {
+                    cleanupInterrupted = true;
+                }
+            }
+            if (cleanupInterrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return ended;
+        }
+
+        /** Removes the transcript, unless the child may still be writing to it. */
+        private void removeTranscript() throws IOException {
+            if (process == null || terminated) {
+                try {
+                    Files.deleteIfExists(transcript);
+                } catch (IOException | RuntimeException | Error deletion) {
+                    if (originalFailure == null) {
+                        throw deletion;
+                    }
+                    originalFailure.addSuppressed(deletion);
+                }
             }
         }
     }
