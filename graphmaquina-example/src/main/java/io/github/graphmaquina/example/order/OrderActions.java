@@ -60,7 +60,9 @@ public final class OrderActions {
                 : GuardResult.reject("there are unpacked items");
     }
 
-    /** After-commit hook of ship: the carrier hears about it once SHIPPED is written, and whether that closes the order. */
+    /**
+     * After-commit hook of ship: the carrier hears about it once SHIPPED is written, and whether that closes the order.
+     */
     @GraphHook
     public void notifyCarrier(Order order, CommitContext<OrderStatus, OrderTransition> commit) {
         carrier.shipped(order, commit.isTerminal());
