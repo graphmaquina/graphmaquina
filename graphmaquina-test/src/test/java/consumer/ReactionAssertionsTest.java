@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static io.github.graphmaquina.api.WatchCondition.allIn;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -924,13 +925,5 @@ class ReactionAssertionsTest {
 
     private static ReactionAssert<Entity, State, Id> single(Reaction reaction, Entity entity) {
         return ReactionsAssert.assertThat(List.of(reaction)).forEntity(TestDomain.KEY, entity).single();
-    }
-
-    private static void assertFailure(
-            GraphAssertionError error, String context, String property, Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 }

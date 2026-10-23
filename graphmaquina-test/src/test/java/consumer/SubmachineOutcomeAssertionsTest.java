@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 import static io.github.graphmaquina.test.GraphAssertions.captureFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -128,13 +129,5 @@ class SubmachineOutcomeAssertionsTest {
             assertFailure(assertThrows(GraphAssertionError.class, view::isReservedExit),
                     "rejected outcome", "kind", RejectionKind.RESERVED_EXIT, RejectionKind.NO_TRANSITION);
         }
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 }

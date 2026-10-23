@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -244,13 +245,5 @@ class StartAssertionsTest {
 
     private StartAssert<Payment, PaymentState, PaymentChange> single(SubmachineStart<?, ?, ?> start) {
         return StartsAssert.assertThat(List.of(start)).forChild(Checkout.PAYMENTS, payment).single();
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 }

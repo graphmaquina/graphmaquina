@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -315,20 +316,5 @@ class FlowAssertionsTest {
     /** How a failure names an instance whose rendering it cannot tell from another's: class and identity hash. */
     private static String instance(Object value) {
         return value.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(value));
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
-    }
-
-    /** The fields of the error, then the message they render. */
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual, String message) {
-        assertFailure(error, context, property, expected, actual);
-        assertEquals(message, error.getMessage());
     }
 }

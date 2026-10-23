@@ -1,5 +1,6 @@
 package consumer;
 
+import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -409,14 +410,6 @@ class GraphAssertionsTest {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> expectation.accept(graph));
         assertFailure(error, "graph", property, expected, null);
-    }
-
-    private static void assertFailure(GraphAssertionError error, String context, String property,
-            Object expected, Object actual) {
-        assertEquals(context, error.context());
-        assertEquals(property, error.property());
-        assertEquals(expected, error.expected());
-        assertEquals(actual, error.actual());
     }
 
     private static GraphDefinition<Entity, State, Id> synchronousGraph() {
