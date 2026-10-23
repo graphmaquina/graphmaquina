@@ -1,12 +1,23 @@
 package io.github.graphmaquina.gradle;
 
+import org.apache.tools.ant.DirectoryScanner;
 import org.gradle.api.GradleException;
+import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.file.DirectoryTree;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.file.FileVisitDetails;
+import org.gradle.api.file.SourceDirectorySet;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.tasks.SourceSet;
+import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.api.tasks.util.PatternFilterable;
+import org.gradle.api.tasks.util.PatternSet;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +28,8 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * The check that the generation and the compilation of one source set read the same original sources.
+ * The original sources of one source set: those the generation reads, and the check that the generation and the
+ * compilation read the same ones.
  *
  * <p>The generation reads the directories of the source set as the include and exclude patterns and the filter of the
  * source set's java sources, the include and exclude pattern strings of the compilation task and the default excludes
@@ -31,7 +43,86 @@ import java.util.stream.Collectors;
  */
 final class OriginalSources {
 
+    /** The include the {@code java} plugin gives the filter of the java sources of every source set. */
+    private static final Set<String> JAVA_PLUGIN_INCLUDES = Set.of("**/*.java");
+
+    /**
+     * The default excludes of Ant 1.10, which Gradle leaves out of every source directory unless a settings script
+     * changes them through Ant's {@code DirectoryScanner}. Of the Java sources of a directory, they leave out what
+     * the generator leaves out when it walks that directory whole.
+     */
+    private static final Set<String> ANT_DEFAULT_EXCLUDES = Set.of(
+            "**/*~", "**/#*#", "**/.#*", "**/%*%", "**/._*",
+            "**/CVS", "**/CVS/**", "**/.cvsignore",
+            "**/SCCS", "**/SCCS/**",
+            "**/vssver.scc",
+            "**/.svn", "**/.svn/**",
+            "**/.git", "**/.git/**", "**/.gitattributes", "**/.gitignore", "**/.gitmodules",
+            "**/.hg", "**/.hg/**", "**/.hgignore", "**/.hgsub", "**/.hgsubstate", "**/.hgtags",
+            "**/.bzr", "**/.bzr/**", "**/.bzrignore",
+            "**/.DS_Store");
+
     private OriginalSources() {
+    }
+
+    /**
+     * The original sources of {@code sourceSet}, as {@code compilation} reads them: every source directory except
+     * the two this build generates into, filtered by the include and exclude patterns and the filter of the source
+     * set's java sources, by the include and exclude pattern strings of {@code compilation} and by the default excludes
+     * of the build. A directory is named as a directory, which the generator walks for its Java sources itself, when
+     * Gradle selects in it just what that walk reads: when no pattern of the source set nor of {@code compilation}
+     * filters it, the filter of the java sources is the one the {@code java} plugin gives them, and the default
+     * excludes of the build are Ant's own, which the walk leaves out. Any other directory is named file by file, as
+     * Gradle selects them. A filter {@code compilation} is given as a spec or a closure, and a source it is given
+     * beyond the source set, are not followed here. One that changes the original Java sources javac compiles is
+     * refused: by {@link StateGraphPlugin.RequireCompiledSources} before the generator runs, and by the preparation
+     * when the generation is up to date.
+     *
+     * <p>Each directory is named by its location alone, so the generation task's input never inherits the
+     * dependency the source set carries on that very task, which would be a cycle; the generation task depends
+     * on the tasks that write the other directories instead. A filtered directory is walked when the generation
+     * task reads its input, not here.</p>
+     */
+    static FileCollection of(ObjectFactory objects, SourceSet sourceSet, GenerateGraphApi generation,
+            JavaCompile compilation) {
+        SourceDirectorySet java = sourceSet.getJava();
+        List<File> generatedDirectories = List.of(generation.getSourcesOutput().get().getAsFile(),
+                generation.getProcessorSourcesOutput().get().getAsFile());
+        Set<String> includes = Set.copyOf(compilation.getIncludes());
+        Set<String> excludes = Set.copyOf(compilation.getExcludes());
+        boolean walkedAlike = includes.isEmpty() && excludes.isEmpty() && javaPluginFilter(java.getFilter())
+                && Set.copyOf(Arrays.asList(DirectoryScanner.getDefaultExcludes())).equals(ANT_DEFAULT_EXCLUDES);
+        ConfigurableFileCollection sources = objects.fileCollection();
+        for (DirectoryTree tree : java.getSrcDirTrees()) {
+            File directory = tree.getDir();
+            if (generatedDirectories.contains(directory)) {
+                continue;
+            }
+            if (walkedAlike && tree.getPatterns().isEmpty()) {
+                sources.from(directory);
+            } else {
+                sources.from(objects.fileTree().from(directory)
+                        .matching(tree.getPatterns())
+                        .matching(java.getFilter())
+                        .matching((PatternFilterable patterns) ->
+                                patterns.setIncludes(includes).setExcludes(excludes)));
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * Whether {@code filter}, the filter of a source set's java sources, is the one the {@code java} plugin gives
+     * them: the include {@code **}{@code /*.java} alone, matched case-sensitively, which selects in a directory just
+     * the Java sources the generator walks it for.
+     */
+    private static boolean javaPluginFilter(PatternFilterable filter) {
+        return filter instanceof PatternSet patterns
+                && patterns.getIncludes().equals(JAVA_PLUGIN_INCLUDES)
+                && patterns.getExcludes().isEmpty()
+                && patterns.getIncludeSpecs().isEmpty()
+                && patterns.getExcludeSpecs().isEmpty()
+                && patterns.isCaseSensitive();
     }
 
     /**
