@@ -122,17 +122,7 @@ class CodegenProcessTest {
      * build resolved, over this class's own loader, which provides the Gson the codec reads with.
      */
     private static Map<String, Object> readWithTheGeneratorCodec(Path file) throws IOException {
-        String version = System.getProperty("graphmaquina.version");
-        Path artifacts = Path.of(System.getProperty("graphmaquina.fixtureRepository"), "io", "github", "graphmaquina");
-        List<URL> jars = new ArrayList<>();
-        for (String module : List.of("graphmaquina-codegen", "graphmaquina-core")) {
-            Path jar = artifacts.resolve(module).resolve(version).resolve(module + "-" + version + ".jar");
-            if (!Files.isRegularFile(jar)) {
-                throw new IllegalStateException(jar + " does not exist; run ./gradlew :" + module
-                        + ":publishMavenPublicationToAdapterTestsRepository first");
-            }
-            jars.add(jar.toUri().toURL());
-        }
+        List<URL> jars = generatorJars();
         try (URLClassLoader generator = new URLClassLoader(jars.toArray(new URL[0]),
                 CodegenProcessTest.class.getClassLoader())) {
             Object request = generator.loadClass("io.github.graphmaquina.codegen.manifest.ManifestCodec")
@@ -148,6 +138,25 @@ class CodegenProcessTest {
         } catch (ReflectiveOperationException absent) {
             throw new IllegalStateException("the generator's codec cannot be called", absent);
         }
+    }
+
+    /**
+     * The {@code graphmaquina-codegen} and {@code graphmaquina-core} jars of the fixture repository, at the version
+     * this build resolved.
+     */
+    private static List<URL> generatorJars() throws IOException {
+        String version = System.getProperty("graphmaquina.version");
+        Path artifacts = Path.of(System.getProperty("graphmaquina.fixtureRepository"), "io", "github", "graphmaquina");
+        List<URL> jars = new ArrayList<>();
+        for (String module : List.of("graphmaquina-codegen", "graphmaquina-core")) {
+            Path jar = artifacts.resolve(module).resolve(version).resolve(module + "-" + version + ".jar");
+            if (!Files.isRegularFile(jar)) {
+                throw new IllegalStateException(jar + " does not exist; run ./gradlew :" + module
+                        + ":publishMavenPublicationToAdapterTestsRepository first");
+            }
+            jars.add(jar.toUri().toURL());
+        }
+        return jars;
     }
 
     private static CodegenProcess.Request request() {
