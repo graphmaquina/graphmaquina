@@ -31,13 +31,13 @@ import javax.lang.model.element.Modifier;
  * marked declarations it inherits, from a source or a binary supertype, under its own name. Generated code calls a
  * static binding through the host, so a static method the host does not inherit is not exported through it: a
  * static method of an interface, which no type inherits, or one that the host or a superclass between hides with a
- * method of the same name and the same erased parameter types. Every marked method
- * is kept as its own candidate, with the type that declares it, the role that declaration spells and its own
- * origin, or the host's for one read from a binary. A property keeps only the first declaration of its logical
- * name, the host's own before inherited ones, and two the host declares itself are refused with {@code SG603}.
- * Nothing here decides an override: the bootstrap cannot see a source host from the binary task, so a role is never
- * transferred onto a same-name local declaration and a family is never rejected for mixing roles. Resolving
- * overrides and effective signatures is the processor's work, once javac has the real elements.</p>
+ * method of the same name and the same erased parameter types. Every marked method is kept as its own candidate, with
+ * the type that declares it, the role that declaration spells and its own origin, or the host's for one read from a
+ * binary. A property keeps only the first declaration of its logical name, the host's own before inherited ones, and
+ * two the host declares itself are refused with {@code SG603}. Nothing here decides an override: the bootstrap cannot
+ * see a source host from the binary task, so a role is never transferred onto a same-name local declaration and a
+ * family is never rejected for mixing roles. Resolving overrides and effective signatures is the processor's work, once
+ * javac has the real elements.</p>
  */
 public final class ExportDeclarations {
 
@@ -58,11 +58,10 @@ public final class ExportDeclarations {
      * order of the files nor the order of a hash table can change the result. A host its references container
      * cannot name, because it is private or nested in a private type, is refused with {@code SG604}, and so is a
      * marker written in a local or anonymous class, on the class or on one of its members, which no references
-     * container can name at all. A host is
-     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package,
-     * {@code java.lang.SuppressWarnings} or, for a host of a named package, the host's own name, starts with the
-     * simple name of a type the host's package declares or of a public type of {@code java.lang}: inside the
-     * container that type obscures the package.
+     * container can name at all. A host is refused with {@code SG603} when a qualified name its container writes,
+     * StateGraph's {@code io} package, {@code java.lang.SuppressWarnings} or, for a host of a named package, the host's
+     * own name, starts with the simple name of a type the host's package declares or of a public type of
+     * {@code java.lang}: inside the container that type obscures the package.
      */
     public static List<SymbolDescriptor> collect(DeclarationIndex index) {
         Objects.requireNonNull(index, "index");
@@ -185,11 +184,10 @@ public final class ExportDeclarations {
     /**
      * The marked declarations {@code host} exports, its own first and, when it carries {@code @GraphBindings},
      * the inherited ones in the order its hierarchy declares them, without the static methods it does not inherit,
-     * as {@link #inherits} tells them. A declaration reached twice through a
-     * diamond is kept once; that deduplication is not a second local declaration. The hierarchy can hold two types of
-     * one canonical name, a type of a named package and a type of the unnamed package. The declarations of each are
-     * exported, but a member both declare with one name and with parameter types of the same canonical names is kept
-     * once, as the type met first declares it.
+     * as {@link #inherits} tells them. A declaration reached twice through a diamond is kept once; that deduplication
+     * is not a second local declaration. The hierarchy can hold two types of one canonical name, a type of a named
+     * package and a type of the unnamed package. The declarations of each are exported, but a member both declare with
+     * one name and with parameter types of the same canonical names is kept once, as the type met first declares it.
      */
     private static List<Declaration> declarations(DeclarationIndex index, TypeHeader host) {
         List<Declaration> declarations = new ArrayList<>();

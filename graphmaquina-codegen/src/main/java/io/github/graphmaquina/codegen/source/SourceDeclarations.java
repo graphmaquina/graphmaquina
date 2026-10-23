@@ -35,9 +35,8 @@ import javax.tools.ToolProvider;
  * types and annotations of a unit are read syntactically; a body is visited only for the local and anonymous classes
  * it declares, the annotations written in them and the member types and supertypes that decide what those annotations
  * name, and no expression is evaluated, so a source may name a type this generator has not produced yet. javac still
- * parses every body,
- * so the sources are parsed at the release and in the encoding the compilation that follows reads them with:
- * a source may use the syntax of that release anywhere, and characters of that encoding.
+ * parses every body, so the sources are parsed at the release and in the encoding the compilation that follows reads
+ * them with: a source may use the syntax of that release anywhere, and characters of that encoding.
  */
 public final class SourceDeclarations {
 
