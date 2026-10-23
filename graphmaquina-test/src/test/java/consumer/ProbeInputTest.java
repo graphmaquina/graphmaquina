@@ -165,15 +165,7 @@ class ProbeInputTest {
             a2.complete(ActionOutcome.ok());
             AsyncAssertions.await(one, BUDGET).isApplied();
             AsyncAssertions.await(two, BUDGET).isApplied();
-            CompletableFuture<Outcome<Entity, State, Id>> empty = registry.of(KEY).async()
-                    .execute(new Entity("empty", State.NEW), Id.PREPARE);
-            PendingInvocation<GuardCall<Entity, State, Id>, GuardResult> g3 = guard.awaitInvocation(BUDGET);
-            assertThat(g3.call()).hasNoInput();
-            g3.complete(GuardResult.pass());
-            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> a3 = action.awaitInvocation(BUDGET);
-            assertThat(a3.call()).hasNoInput();
-            a3.complete(ActionOutcome.ok());
-            AsyncAssertions.await(empty, BUDGET).isApplied();
+            assertNoInputReachesEitherStage(registry, guard, action);
         }
         assertSame(first, guard.invocations().get(0).call().input(Object.class).orElseThrow());
         assertSame(second, action.invocations().get(0).call().input(Object.class).orElseThrow());
@@ -209,6 +201,20 @@ class ProbeInputTest {
                 () -> new GuardCall<>(entity, State.NEW, null, State.READY, Optional.empty()));
         assertThrows(NullPointerException.class,
                 () -> new ActionCall<>(entity, State.NEW, null, State.READY, 0, Optional.empty()));
+    }
+
+    /** A call made without input hands neither its guard nor its action one. */
+    private static void assertNoInputReachesEitherStage(MachineRegistry registry,
+            ControlledAsyncGuard<Entity, State, Id> guard, ControlledAsyncAction<Entity, State, Id> action) {
+        CompletableFuture<Outcome<Entity, State, Id>> empty = registry.of(KEY).async()
+                .execute(new Entity("empty", State.NEW), Id.PREPARE);
+        PendingInvocation<GuardCall<Entity, State, Id>, GuardResult> g3 = guard.awaitInvocation(BUDGET);
+        assertThat(g3.call()).hasNoInput();
+        g3.complete(GuardResult.pass());
+        PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> a3 = action.awaitInvocation(BUDGET);
+        assertThat(a3.call()).hasNoInput();
+        a3.complete(ActionOutcome.ok());
+        AsyncAssertions.await(empty, BUDGET).isApplied();
     }
 
     private static GraphDefinition<Entity, State, Id> graph(GuardProbe<Entity, State, Id> guard,

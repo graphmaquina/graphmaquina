@@ -1,5 +1,6 @@
 package consumer;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -25,13 +26,13 @@ final class MarkdownFence {
 
     /** Returns the fence that the line opens, or empty when the line opens none. */
     static Optional<MarkdownFence> opening(String line) {
-        if (line.isEmpty() || (line.charAt(0) != '`' && line.charAt(0) != '~')) {
+        if (line.isEmpty() || !isMarker(line.charAt(0))) {
             return Optional.empty();
         }
         char marker = line.charAt(0);
         int run = runLength(line, marker);
         String info = line.substring(run).replaceAll("^[ \t]+|[ \t]+$", "");
-        if (run < MINIMUM_RUN || (marker == '`' && info.indexOf('`') >= 0)) {
+        if (run < MINIMUM_RUN || backtickInBacktickInfo(marker, info)) {
             return Optional.empty();
         }
         return Optional.of(new MarkdownFence(marker, run, info));
@@ -46,6 +47,24 @@ final class MarkdownFence {
     boolean closes(String line) {
         int run = runLength(line, marker);
         return run >= length && line.substring(run).chars().allMatch((int c) -> c == ' ' || c == '\t');
+    }
+
+    /** Returns the index of the first line at or after {@code from} that closes this fence, or the line count. */
+    int closingLine(List<String> lines, int from) {
+        int index = from;
+        while (index < lines.size() && !closes(lines.get(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    private static boolean isMarker(char character) {
+        return character == '`' || character == '~';
+    }
+
+    /** A backtick fence's info string cannot contain a backtick. */
+    private static boolean backtickInBacktickInfo(char marker, String info) {
+        return marker == '`' && info.indexOf('`') >= 0;
     }
 
     private static int runLength(String line, char marker) {

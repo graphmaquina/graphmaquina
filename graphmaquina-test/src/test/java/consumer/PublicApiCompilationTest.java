@@ -237,18 +237,23 @@ class PublicApiCompilationTest {
                 "the detector must flag a public member that names an internal type, or it proves nothing");
         List<String> leaks = new ArrayList<>();
         for (Class<?> type : types) {
-            for (Field field : type.getDeclaredFields()) {
-                inspect(type, field.getName(), field.getGenericType(), field.getModifiers(), leaks);
-            }
-            for (Method method : type.getDeclaredMethods()) {
-                inspect(type, method.getName(), method.getGenericReturnType(), method.getModifiers(), leaks);
-                inspectParameters(type, method, leaks);
-            }
-            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
-                inspectParameters(type, constructor, leaks);
-            }
+            inspectMembers(type, leaks);
         }
         assertEquals(List.of(), leaks);
+    }
+
+    /** Inspects the fields, the methods and the constructors that {@code type} declares. */
+    private static void inspectMembers(Class<?> type, List<String> leaks) {
+        for (Field field : type.getDeclaredFields()) {
+            inspect(type, field.getName(), field.getGenericType(), field.getModifiers(), leaks);
+        }
+        for (Method method : type.getDeclaredMethods()) {
+            inspect(type, method.getName(), method.getGenericReturnType(), method.getModifiers(), leaks);
+            inspectParameters(type, method, leaks);
+        }
+        for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+            inspectParameters(type, constructor, leaks);
+        }
     }
 
     /** Compiles the mutated source and requires an error on the line the mutation changed, message aside. */

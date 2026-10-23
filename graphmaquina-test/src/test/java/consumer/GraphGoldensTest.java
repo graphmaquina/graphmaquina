@@ -161,10 +161,13 @@ class GraphGoldensTest {
                      initial [shape=point, label=""];
                 -    n0 [label="NEW", shape=ellipse, tooltip="otherwise: prepare first"];
                 -    n1 [label="READY", shape=ellipse, tooltip="otherwise: finish only"];
-                -    n2 [label="DONE", shape=doublecircle, tooltip="otherwise: terminal state DONE accepts no transitions"];
-                -    n3 [label="FAILED", shape=doublecircle, tooltip="otherwise: terminal state FAILED accepts no transitions"];
+                -    n2 [label="DONE", shape=doublecircle, \
+                tooltip="otherwise: terminal state DONE accepts no transitions"];
+                -    n3 [label="FAILED", shape=doublecircle, \
+                tooltip="otherwise: terminal state FAILED accepts no transitions"];
                 +    n0 [label="OPEN", shape=ellipse, tooltip="otherwise: stay put"];
-                +    n1 [label="CLOSED", shape=doublecircle, tooltip="otherwise: terminal state CLOSED accepts no transitions"];
+                +    n1 [label="CLOSED", shape=doublecircle, \
+                tooltip="otherwise: terminal state CLOSED accepts no transitions"];
                      initial -> n0;
                 -    n0 -> n1 [label="PREPARE prepare [async] [if first, second] [onFailure RECOVER]"];
                 -    n0 -> n3 [label="RECOVER"];

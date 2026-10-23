@@ -19,6 +19,7 @@ import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -781,9 +782,11 @@ class PublishedArtifactSmokeTest {
         }
         assertTrue(entries("graphmaquina-test", ".jar").contains("io/github/graphmaquina/test/GraphAssertions.class"),
                 "the binary jar must carry the compiled facade");
-        assertTrue(entries("graphmaquina-test", "-sources.jar").contains("io/github/graphmaquina/test/GraphAssertions.java"),
+        assertTrue(entries("graphmaquina-test", "-sources.jar")
+                        .contains("io/github/graphmaquina/test/GraphAssertions.java"),
                 "the sources jar must carry the sources, not just a manifest");
-        assertTrue(entries("graphmaquina-test", "-javadoc.jar").contains("io/github/graphmaquina/test/GraphAssertions.html"),
+        assertTrue(entries("graphmaquina-test", "-javadoc.jar")
+                        .contains("io/github/graphmaquina/test/GraphAssertions.html"),
                 "the javadoc jar must carry the rendered documentation, not just a manifest");
     }
 
@@ -812,7 +815,8 @@ class PublishedArtifactSmokeTest {
     @Test
     void aConsumerCompilesAndRunsAgainstThePublishedJarsAlone(@TempDir Path workDir)
             throws IOException, InterruptedException {
-        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator + artifact("graphmaquina-test", ".jar");
+        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator
+                + artifact("graphmaquina-test", ".jar");
         runConsumer(workDir, jars);
     }
 
@@ -861,17 +865,11 @@ class PublishedArtifactSmokeTest {
             }
         }, "published-consumer-interruption");
         runner.setDaemon(true);
-        long childPid = -1;
         try (WatchService watch = FileSystems.getDefault().newWatchService()) {
             workDir.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
             runner.start();
-            while (!Files.isRegularFile(pidFile)) {
-                WatchKey event = watch.poll(30, TimeUnit.SECONDS);
-                assertNotNull(event, "the child did not publish its PID");
-                event.pollEvents();
-                assertTrue(event.reset(), "the watched consumer directory became unavailable");
-            }
-            childPid = Long.parseLong(Files.readString(pidFile, UTF_8));
+            awaitPidFile(watch, pidFile);
+            long childPid = Long.parseLong(Files.readString(pidFile, UTF_8));
             assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
             Process owned = launched.get();
             assertNotNull(owned, "the fixture did not report the Process it launched");
@@ -884,16 +882,31 @@ class PublishedArtifactSmokeTest {
             assertFalse(owned.isAlive(), "the interrupted runner left its consumer JVM alive: " + owned.pid());
         } finally {
             runner.interrupt();
-            Process owned = launched.get();
-            if (owned != null && owned.isAlive()) {
-                owned.destroyForcibly();
-                try {
-                    owned.waitFor(10, TimeUnit.SECONDS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                }
-            }
+            destroyLaunchedChild(launched);
             runner.join(10_000);
+        }
+    }
+
+    /** Waits until the child has written its PID file, which the watch reports as a new entry of the directory. */
+    private static void awaitPidFile(WatchService watch, Path pidFile) throws InterruptedException {
+        while (!Files.isRegularFile(pidFile)) {
+            WatchKey event = watch.poll(30, TimeUnit.SECONDS);
+            assertNotNull(event, "the child did not publish its PID");
+            event.pollEvents();
+            assertTrue(event.reset(), "the watched consumer directory became unavailable");
+        }
+    }
+
+    /** Forcibly stops the child that the runner launched if it is still alive, and waits ten seconds for it. */
+    private static void destroyLaunchedChild(AtomicReference<Process> launched) {
+        Process owned = launched.get();
+        if (owned != null && owned.isAlive()) {
+            owned.destroyForcibly();
+            try {
+                owned.waitFor(10, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -948,51 +961,28 @@ class PublishedArtifactSmokeTest {
                 .redirectErrorStream(true)
                 .redirectOutput(transcript.toFile())
                 .start();
-        Throwable originalFailure = null;
+        Optional<Throwable> originalFailure = Optional.empty();
         try {
             onStart.accept(process);
-            if (!process.waitFor(2, TimeUnit.MINUTES)) {
-                fail("the consumer process did not terminate");
-            }
-            String output = Files.readString(transcript, UTF_8);
-            assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
-            String lastLine = output.lines().reduce((String earlier, String later) -> later).orElse("");
-            assertEquals(marker, lastLine, "the consumer did not print its marker on the last line: " + output);
+            assertEndsWithItsMarker(process, transcript, marker);
         } catch (IOException | InterruptedException | RuntimeException | Error failure) {
-            originalFailure = failure;
+            originalFailure = Optional.of(failure);
             throw failure;
         } finally {
-            try {
-                if (process.isAlive()) {
-                    process.destroyForcibly();
-                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                    boolean reaped = false;
-                    boolean cleanupInterrupted = false;
-                    while (!reaped) {
-                        long remaining = deadline - System.nanoTime();
-                        if (remaining <= 0) {
-                            break;
-                        }
-                        try {
-                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
-                        } catch (InterruptedException interrupted) {
-                            cleanupInterrupted = true;
-                        }
-                    }
-                    if (cleanupInterrupted) {
-                        Thread.currentThread().interrupt();
-                    }
-                    if (!reaped) {
-                        throw new AssertionError("the consumer process remained alive after forcible destruction");
-                    }
-                }
-            } catch (RuntimeException | Error cleanupFailure) {
-                if (originalFailure == null) {
-                    throw cleanupFailure;
-                }
-                originalFailure.addSuppressed(cleanupFailure);
-            }
+            ChildProcesses.reap(process, originalFailure,
+                    "the consumer process remained alive after forcible destruction");
         }
+    }
+
+    private static void assertEndsWithItsMarker(Process process, Path transcript, String marker)
+            throws IOException, InterruptedException {
+        if (!process.waitFor(2, TimeUnit.MINUTES)) {
+            fail("the consumer process did not terminate");
+        }
+        String output = Files.readString(transcript, UTF_8);
+        assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
+        String lastLine = output.lines().reduce((String earlier, String later) -> later).orElse("");
+        assertEquals(marker, lastLine, "the consumer did not print its marker on the last line: " + output);
     }
 
     /**
@@ -1024,7 +1014,8 @@ class PublishedArtifactSmokeTest {
     }
 
     /** Each dependency of the POM as {@code group:artifact:version:scope}, in declaration order. */
-    private static List<String> dependenciesOf(Path pom) throws IOException, ParserConfigurationException, SAXException {
+    private static List<String> dependenciesOf(Path pom)
+            throws IOException, ParserConfigurationException, SAXException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         factory.setXIncludeAware(false);
@@ -1051,16 +1042,18 @@ class PublishedArtifactSmokeTest {
      * A module with no arm here raises an {@link AssertionError} that names it.
      */
     private static Optional<String> expectedAutomaticModuleName(String module) {
-        return switch (module) {
-            case "graphmaquina-core" -> Optional.of("io.github.graphmaquina.core");
-            case "graphmaquina-codegen" -> Optional.of("io.github.graphmaquina.codegen");
-            case "graphmaquina-processor" -> Optional.of("io.github.graphmaquina.processor");
-            case "graphmaquina-test" -> Optional.of("io.github.graphmaquina.test");
-            case "graphmaquina-maven-plugin" -> Optional.of("io.github.graphmaquina.maven");
-            case "graphmaquina-gradle-plugin" -> Optional.empty();
-            default -> throw new AssertionError(module + " has no Automatic-Module-Name expectation: list it in "
+        Map<String, Optional<String>> expected = Map.of(
+                "graphmaquina-core", Optional.of("io.github.graphmaquina.core"),
+                "graphmaquina-codegen", Optional.of("io.github.graphmaquina.codegen"),
+                "graphmaquina-processor", Optional.of("io.github.graphmaquina.processor"),
+                "graphmaquina-test", Optional.of("io.github.graphmaquina.test"),
+                "graphmaquina-maven-plugin", Optional.of("io.github.graphmaquina.maven"),
+                "graphmaquina-gradle-plugin", Optional.empty());
+        if (!expected.containsKey(module)) {
+            throw new AssertionError(module + " has no Automatic-Module-Name expectation: list it in "
                     + "expectedAutomaticModuleName");
-        };
+        }
+        return expected.get(module);
     }
 
     private static String automaticModuleName(String module) throws IOException {

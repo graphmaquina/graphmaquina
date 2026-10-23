@@ -679,14 +679,13 @@ class ProbeTest {
 
     /** A context that answers what a probe reads on entry and refuses everything else. */
     private static InvocationHandler contextOf(Entity entity) {
-        return (Object proxy, Method method, Object[] arguments) -> switch (method.getName()) {
-            case "entity" -> entity;
-            case "from" -> State.NEW;
-            case "transition" -> Id.PREPARE;
-            case "to" -> State.READY;
-            case "depth" -> 0;
-            case "input" -> Optional.empty();
-            default -> throw new UnsupportedOperationException(method.getName());
+        Map<String, Object> answers = Map.of("entity", entity, "from", State.NEW, "transition", Id.PREPARE,
+                "to", State.READY, "depth", 0, "input", Optional.empty());
+        return (Object proxy, Method method, Object[] arguments) -> {
+            if (!answers.containsKey(method.getName())) {
+                throw new UnsupportedOperationException(method.getName());
+            }
+            return answers.get(method.getName());
         };
     }
 

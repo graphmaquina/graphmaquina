@@ -1,5 +1,7 @@
 package consumer;
 
+import static consumer.BoundedWaits.awaitBlocked;
+import static consumer.BoundedWaits.awaitLatch;
 import static io.github.graphmaquina.test.fixtures.TestDomain.KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,17 +12,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
-import io.github.graphmaquina.api.AsyncTransitionAction;
-import io.github.graphmaquina.api.AsyncTransitionGuard;
 import io.github.graphmaquina.api.GraphDefinition;
-import io.github.graphmaquina.api.GuardContext;
-import io.github.graphmaquina.api.GuardResult;
-import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.runtime.MachineRegistry;
-import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.AsyncAssertions;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.fixtures.PublicationFixture;
@@ -36,8 +32,6 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.probe.ActionCall;
 import io.github.graphmaquina.test.probe.ControlledAsyncAction;
-import io.github.graphmaquina.test.probe.ControlledAsyncGuard;
-import io.github.graphmaquina.test.probe.GuardCall;
 import io.github.graphmaquina.test.probe.PendingInvocation;
 import java.time.Duration;
 import java.util.List;
@@ -54,15 +48,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /**
- * Contract of the controlled asynchronous fixtures. Nothing here sleeps: the test resumes when the engine has
- * entered the action or the guard, and the engine resumes when the test answers that very invocation. A mismatch
- * is read off the fields of the {@link GraphAssertionError}, not off its type, except in the two cases that
- * only need an execution or a wait to fail as an assertion.
+ * Contract of the controlled asynchronous action fixture; {@link ControlledAsyncGuardTest} holds the guard's. Nothing
+ * here sleeps: the test resumes when the engine has entered the action, and the engine resumes when the test answers
+ * that very invocation. A mismatch is read off the fields of the {@link GraphAssertionError}, not off its type,
+ * except in the two cases that only need an execution or a wait to fail as an assertion.
  */
 class ControlledAsyncTest {
 
-    private static final MachineKey<Parcel, Status, Move> PARCEL =
-            MachineKey.of(Parcel.class, Status.class, Move.class);
     private static final Duration BUDGET = Duration.ofMillis(50);
     private static final Duration GENEROUS = Duration.ofSeconds(2);
 
@@ -183,249 +175,6 @@ class ControlledAsyncTest {
         }
     }
 
-    // --- an asynchronous guard decides before the action is ever entered -------------------------------
-
-    @Test
-    void anAsyncGuardRejectionLeavesTheActionUnreached() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        CompletableFuture<String> seen = new CompletableFuture<>();
-        gate.onCall(context -> seen.complete(context.entity().id() + ":" + context.to()));
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
-            assertEquals("p:SENT", seen.getNow(null));
-            assertEquals(List.of(call), gate.invocations());
-            assertSame(parcel, call.call().entity());
-            assertEquals(Status.NEW, call.call().from());
-            assertEquals(Status.SENT, call.call().to());
-            assertTrue(call.complete(GuardResult.reject("closed for the day")));
-            AsyncAssertions.await(result, GENEROUS).isRejected()
-                    .isRejectedByGuardNamed("gate")
-                    .hasReason("closed for the day")
-                    .hasRecordedState(Status.NEW);
-            assertEquals(List.of(), send.invocations());
-            assertEquals(Status.NEW, parcel.status());
-        }
-    }
-
-    @Test
-    void guardInvocationsAreListedInEntryOrderAndTheListIsACopy() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel first = new Parcel("first", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> firstResult =
-                    registry.of(PARCEL).async().execute(first, Move.SEND);
-            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
-            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
-            assertEquals(List.of(call), recorded);
-            assertTrue(call.complete(GuardResult.reject("closed for the day")));
-            AsyncAssertions.await(firstResult, GENEROUS).isRejected().hasReason("closed for the day");
-
-            Parcel later = new Parcel("later", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> secondResult =
-                    registry.of(PARCEL).async().execute(later, Move.SEND);
-            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> laterCall =
-                    gate.awaitInvocation(GENEROUS);
-            assertTrue(laterCall.complete(GuardResult.reject("still closed")));
-            AsyncAssertions.await(secondResult, GENEROUS).isRejected().hasReason("still closed");
-            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> history = gate.invocations();
-            assertEquals(List.of(call, laterCall), history, "the invocation that entered first is listed first");
-            assertSame(first, history.get(0).call().entity());
-            assertSame(later, history.get(1).call().entity());
-            assertEquals(List.of(call), recorded, "a list already handed out does not grow");
-        }
-    }
-
-    /**
-     * As for the action fixture, a guard handle is delivered once its side effect has returned, so delivery can
-     * overtake an invocation that entered earlier, while the history keeps the order in which they entered.
-     */
-    @Test
-    void guardDeliveryFollowsPublicationAfterSuccessfulSideEffectsWhileHistoryKeepsEntryOrder() {
-        CountDownLatch firstEntered = new CountDownLatch(1);
-        CountDownLatch releaseFirst = new CountDownLatch(1);
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
-                .onCall((GuardContext<Parcel, Status, Move> context) -> {
-                    if (context.entity().id().equals("first")) {
-                        firstEntered.countDown();
-                        awaitLatch(releaseFirst, "first side effect was not released");
-                    }
-                });
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel first = new Parcel("first", Status.NEW);
-            Parcel second = new Parcel("second", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> firstResult =
-                    registry.of(PARCEL).async().execute(first, Move.SEND);
-            try {
-                awaitLatch(firstEntered, "first side effect was not entered");
-                CompletableFuture<Outcome<Parcel, Status, Move>> secondResult =
-                        registry.of(PARCEL).async().execute(second, Move.SEND);
-                PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> secondCall =
-                        gate.awaitInvocation(GENEROUS);
-
-                assertSame(second, secondCall.call().entity());
-                List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> history = gate.invocations();
-                assertEquals(2, history.size());
-                assertSame(first, history.get(0).call().entity());
-                assertSame(second, history.get(1).call().entity());
-                assertTrue(secondCall.complete(GuardResult.reject("closed for the day")));
-                AsyncAssertions.await(secondResult, GENEROUS).isRejected().hasEntitySameAs(second);
-            } finally {
-                releaseFirst.countDown();
-            }
-
-            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> firstCall =
-                    gate.awaitInvocation(GENEROUS);
-            assertSame(first, firstCall.call().entity());
-            assertTrue(firstCall.complete(GuardResult.reject("closed for the day")));
-            AsyncAssertions.await(firstResult, GENEROUS).isRejected().hasEntitySameAs(first);
-        }
-    }
-
-    @Test
-    void closingTheGuardFixtureCancelsItsPendingInvocations() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
-            gate.close();
-            gate.close();
-            assertTrue(call.isCancelled());
-            assertFalse(call.complete(GuardResult.pass()));
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
-            assertEquals(Status.NEW, parcel.status());
-        }
-    }
-
-    @Test
-    void aClosedGuardFixtureRefusesFurtherInvocations() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        gate.close();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(IllegalStateException.class);
-            assertEquals(List.of(), gate.invocations());
-            assertEquals(Status.NEW, parcel.status());
-        }
-    }
-
-    @Test
-    void aClosedGuardFixtureHandsOutNoHandleAndFailsItsWaitAtOnce() {
-        CountDownLatch entered = new CountDownLatch(1);
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
-                .onCall((GuardContext<Parcel, Status, Move> context) -> entered.countDown());
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            awaitLatch(entered, "the guard was not entered");
-            gate.close();
-            GraphAssertionError error =
-                    assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(GENEROUS));
-            assertEquals("controlled async guard", error.context());
-            assertEquals("invocation", error.property());
-            assertEquals("an open fixture", error.expected());
-            assertEquals("closed", error.actual());
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
-        }
-    }
-
-    @Test
-    void aGuardInvocationInItsSideEffectWhenTheFixtureClosesIsNotPublishedAfterwards() {
-        CountDownLatch entered = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
-                .onCall((GuardContext<Parcel, Status, Move> context) -> {
-                    entered.countDown();
-                    awaitLatch(release, "the side effect was not released");
-                });
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            awaitLatch(entered, "the guard was not entered");
-            gate.close();
-            release.countDown();
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
-            GraphAssertionError error =
-                    assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(BUDGET));
-            assertEquals("closed", error.actual());
-            assertEquals(1, gate.invocations().size());
-            assertTrue(gate.invocations().get(0).isCancelled());
-        }
-    }
-
-    @Test
-    void closingTheGuardFixtureWakesAWaiterThatIsAlreadyBlocked() throws Exception {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        CompletableFuture<Throwable> ended = new CompletableFuture<>();
-        Thread waiter = new Thread(() -> {
-            try {
-                gate.awaitInvocation(Duration.ofSeconds(30));
-                ended.complete(null);
-            } catch (RuntimeException | Error failure) {
-                ended.complete(failure);
-            }
-        }, "guard-waiter");
-        waiter.setDaemon(true);
-        waiter.start();
-        try {
-            awaitBlocked(waiter);
-            gate.close();
-            GraphAssertionError error =
-                    assertInstanceOf(GraphAssertionError.class, ended.get(2, TimeUnit.SECONDS));
-            assertEquals("controlled async guard", error.context());
-            assertEquals("invocation", error.property());
-            assertEquals("an open fixture", error.expected());
-            assertEquals("closed", error.actual());
-        } finally {
-            waiter.interrupt();
-            waiter.join(2_000);
-        }
-    }
-
-    @Test
-    void aGuardSideEffectThatThrowsSettlesItsOwnInvocation() {
-        IllegalStateException boom = new IllegalStateException("gate hook down");
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        gate.onCall(context -> {
-            throw boom;
-        });
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
-            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
-            assertEquals(1, recorded.size());
-            assertTrue(recorded.get(0).isDone());
-            assertFalse(recorded.get(0).complete(GuardResult.pass()));
-            assertEquals(List.of(), send.invocations());
-        }
-    }
-
     // --- closing the control ---------------------------------------------------------------------------
 
     @Test
@@ -464,16 +213,10 @@ class ControlledAsyncTest {
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService workers = Executors.newFixedThreadPool(2);
             try {
-                Future<Boolean> first = workers.submit(() -> {
-                    ready.countDown();
-                    awaitLatch(start, "first cancellation worker did not start");
-                    return call.cancelStage();
-                });
-                Future<Boolean> second = workers.submit(() -> {
-                    ready.countDown();
-                    awaitLatch(start, "second cancellation worker did not start");
-                    return call.cancelStage();
-                });
+                Future<Boolean> first =
+                        cancelOnStart(workers, call, ready, start, "first cancellation worker did not start");
+                Future<Boolean> second =
+                        cancelOnStart(workers, call, ready, start, "second cancellation worker did not start");
                 awaitLatch(ready, "cancellation workers did not become ready");
                 start.countDown();
 
@@ -709,34 +452,6 @@ class ControlledAsyncTest {
     }
 
     @Test
-    void aGuardSideEffectThatThrowsAnErrorSettlesItsOwnInvocation() {
-        AssertionError boom = new AssertionError("gate assertion failed");
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
-        gate.onCall(context -> {
-            throw boom;
-        });
-        MachineRegistry registry = gatedRegistry(gate, send);
-        try (registry; gate; send) {
-            Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status, Move>> result =
-                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
-            ExecutionException raised =
-                    assertThrows(ExecutionException.class, () -> result.get(2, TimeUnit.SECONDS));
-            assertSame(boom, raised.getCause());
-            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
-            assertEquals(1, recorded.size());
-            assertTrue(recorded.get(0).isDone(), "the stage of a hook that threw an Error is settled");
-            assertFalse(recorded.get(0).complete(GuardResult.pass()));
-            GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                    () -> gate.awaitInvocation(BUDGET));
-            assertEquals("no invocation arrived", error.actual());
-            assertEquals(List.of(), send.invocations());
-            assertEquals(Status.NEW, parcel.status());
-        }
-    }
-
-    @Test
     void aHandleIsPublishedOnlyOnceTheSideEffectHasReturned() throws Exception {
         ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         CompletableFuture<Void> release = new CompletableFuture<>();
@@ -821,18 +536,6 @@ class ControlledAsyncTest {
     }
 
     @Test
-    void theGuardFixtureFailsItsOwnWaitUnderItsOwnContext() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        GraphAssertionError error =
-                assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(BUDGET));
-        assertEquals("controlled async guard", error.context());
-        assertEquals("invocation", error.property());
-        assertEquals("within " + BUDGET, error.expected());
-        assertEquals("no invocation arrived", error.actual());
-        gate.close();
-    }
-
-    @Test
     void anInterruptedAwaitInvocationKeepsTheInterruptFlag() {
         ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         Thread.currentThread().interrupt();
@@ -843,37 +546,6 @@ class ControlledAsyncTest {
         assertEquals("an invocation", error.expected());
         assertEquals("test thread interrupted", error.actual());
         action.close();
-    }
-
-    @Test
-    void anInterruptedGuardWaitKeepsTheInterruptFlag() {
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        Thread.currentThread().interrupt();
-        GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                () -> gate.awaitInvocation(Duration.ofSeconds(30)));
-        assertTrue(Thread.interrupted(), "the wait must leave the interrupt flag set");
-        assertEquals("controlled async guard", error.context());
-        assertEquals("test thread interrupted", error.actual());
-        gate.close();
-    }
-
-    @Test
-    void aBudgetThatIsNotPositiveOrDoesNotFitInNanosecondsIsRejected() {
-        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
-        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
-        Duration tooLong = Duration.ofSeconds(Long.MAX_VALUE);
-        assertThrows(NullPointerException.class, () -> action.awaitInvocation(null));
-        assertThrows(NullPointerException.class, () -> gate.awaitInvocation(null));
-        assertEquals("the budget must be positive, not PT0S",
-                assertThrows(IllegalArgumentException.class,
-                        () -> action.awaitInvocation(Duration.ZERO)).getMessage());
-        assertThrows(IllegalArgumentException.class, () -> action.awaitInvocation(Duration.ofMillis(-1)));
-        assertThrows(IllegalArgumentException.class, () -> gate.awaitInvocation(Duration.ZERO));
-        assertThrows(IllegalArgumentException.class, () -> gate.awaitInvocation(Duration.ofSeconds(-1)));
-        assertThrows(IllegalArgumentException.class, () -> action.awaitInvocation(tooLong));
-        assertThrows(IllegalArgumentException.class, () -> gate.awaitInvocation(tooLong));
-        action.close();
-        gate.close();
     }
 
     @Test
@@ -934,10 +606,7 @@ class ControlledAsyncTest {
                         .hasNoCause();
                 assertEquals(TicketState.REJECTED_BY_PROVIDER, ticket.state());
             } finally {
-                if (result != null) {
-                    result.cancel(true);
-                }
-                publish.close();
+                cancelAndClose(publish, result);
             }
         }
     }
@@ -964,10 +633,7 @@ class ControlledAsyncTest {
                         .hasCauseSameAs(down);
                 assertEquals(TicketState.RETRY_PENDING, ticket.state());
             } finally {
-                if (result != null) {
-                    result.cancel(true);
-                }
-                publish.close();
+                cancelAndClose(publish, result);
             }
         }
     }
@@ -1024,80 +690,31 @@ class ControlledAsyncTest {
                 assertEquals(TicketState.REJECTED_BY_PROVIDER, first.state());
                 assertEquals(TicketState.RETRY_PENDING, second.state());
             } finally {
-                if (firstResult != null) {
-                    firstResult.cancel(true);
-                }
-                if (secondResult != null) {
-                    secondResult.cancel(true);
-                }
-                publish.close();
+                cancelAndClose(publish, firstResult, secondResult);
             }
         }
     }
 
-    /** Waits until the thread sits in a timed wait, which is where a blocked {@code awaitInvocation} is. */
-    private static void awaitBlocked(Thread thread) {
-        long start = System.nanoTime();
-        while (thread.getState() != Thread.State.TIMED_WAITING) {
-            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(2)) {
-                throw new AssertionError("the waiter never blocked, it is " + thread.getState());
+    /**
+     * Submits a worker that reports it is ready, waits for the start signal and then tries to cancel the stage of
+     * the call; the future holds whether this worker was the one that cancelled it.
+     */
+    private static Future<Boolean> cancelOnStart(ExecutorService workers, PendingInvocation<?, ?> call,
+            CountDownLatch ready, CountDownLatch start, String startTimeoutMessage) {
+        return workers.submit(() -> {
+            ready.countDown();
+            awaitLatch(start, startTimeoutMessage);
+            return call.cancelStage();
+        });
+    }
+
+    /** Cancels the results that a test may not have reached yet, then closes the fixture it was answering. */
+    private static void cancelAndClose(ControlledAsyncAction<?, ?, ?> publish, CompletableFuture<?>... results) {
+        for (CompletableFuture<?> result : results) {
+            if (result != null) {
+                result.cancel(true);
             }
-            Thread.onSpinWait();
         }
-    }
-
-    private static void awaitLatch(CountDownLatch latch, String timeoutMessage) {
-        try {
-            if (!latch.await(2, TimeUnit.SECONDS)) {
-                throw new AssertionError(timeoutMessage);
-            }
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError("test thread interrupted while waiting on a latch", interrupted);
-        }
-    }
-
-    private static MachineRegistry gatedRegistry(AsyncTransitionGuard<Parcel, Status, Move> guard,
-                                                 AsyncTransitionAction<Parcel, Status, Move> action) {
-        GraphDefinition<Parcel, Status, Move> graph = StateGraph.define(PARCEL)
-                .initial(Status.NEW).terminal(Status.SENT)
-                .statePolicy(Status.NEW, "only sending")
-                .transition(Move.SEND, Status.NEW, Status.SENT)
-                    .asyncAction("send", action).asyncGuard("gate", guard).endTransition()
-                .build();
-        return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Parcel::status, Parcel::setStatus)
-                        .identity(Parcel::id).asyncTimeout(Duration.ofSeconds(5)))
-                .build();
-    }
-
-    /** States of the parcel machine: a parcel stays {@code NEW} until the gated send moves it to {@code SENT}. */
-    private enum Status { NEW, SENT }
-
-    /** Transition identifiers of the parcel machine. */
-    private enum Move { SEND }
-
-    /** Entity of the parcel machine: an id and a mutable {@link Status}. */
-    private static final class Parcel {
-
-        private final String id;
-        private Status status;
-
-        Parcel(String id, Status status) {
-            this.id = id;
-            this.status = status;
-        }
-
-        String id() {
-            return id;
-        }
-
-        Status status() {
-            return status;
-        }
-
-        void setStatus(Status status) {
-            this.status = status;
-        }
+        publish.close();
     }
 }
