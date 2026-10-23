@@ -238,30 +238,98 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
                     : where + " declares " + actions + " actions, but an edge runs at most one");
             valid = false;
         } else if (syncAction.isPresent() || asyncAction.isPresent()) {
-            Object instance = syncAction.isPresent() ? syncAction.get() : asyncAction.orElseThrow();
-            Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex,
-                    problems);
-            if (name.isEmpty()) {
-                valid = false;
-            } else if (syncAction.isPresent()) {
-                actionRef = Optional.of(new ActionRef.Sync<>(name.get(), syncAction.get()));
-            } else {
-                actionRef = Optional.of(new ActionRef.Async<>(name.get(), asyncAction.orElseThrow()));
-            }
+            actionRef = actionRef(where, fromIndex, idIndex, problems);
+            valid = actionRef.isPresent();
         } else {
-            if (onFailure.isPresent() || !failsOn.isEmpty()) {
-                problems.add("SG507", fromIndex, idIndex, where + " declares onFailure or failsOn without an action");
-                valid = false;
-            }
-            if (!recoveries.isEmpty()) {
-                problems.add("SG507", fromIndex, idIndex, where + " declares recover without an action");
-                valid = false;
-            }
-            if (timeout.isPresent()) {
-                problems.add("SG507", fromIndex, idIndex, where + " declares a timeout without an asynchronous action");
+            valid = checkWithoutAction(where, fromIndex, idIndex, problems);
+        }
+        if (!checkTimeoutAndOnFailure(where, fromIndex, idIndex, problems)) {
+            valid = false;
+        }
+        List<GuardRef<E, S, T>> guardRefs = new ArrayList<>();
+        if (!collectGuards(where, fromIndex, idIndex, problems, guardRefs)) {
+            valid = false;
+        }
+        if (!checkFailsOn(where, fromIndex, idIndex, problems)) {
+            valid = false;
+        }
+        if (!checkRecoveries(where, fromIndex, idIndex, problems)) {
+            valid = false;
+        }
+        if (!valid) {
+            return Optional.empty();
+        }
+        List<RecoveryRule<T>> rules = recoveryRules();
+        return Optional.of(new TransitionSpec<>(from, transition, to, actionRef, guardRefs, onFailure, failsOn, timeout,
+                afterCommit, rules));
+    }
+
+    /** Records SG302 for each forbidden throwable type in failsOn, and answers whether it recorded none. */
+    private boolean checkFailsOn(String where, int fromIndex, int idIndex, Problems problems) {
+        boolean valid = true;
+        for (Class<? extends Throwable> type : failsOn) {
+            if (FailureTypes.isForbiddenThrowable(type)) {
+                problems.add("SG302", fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
+                        + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
                 valid = false;
             }
         }
+        return valid;
+    }
+
+    /** The declared recovery rules, in declaration order, built once every check of the edge has passed. */
+    private List<RecoveryRule<T>> recoveryRules() {
+        List<RecoveryRule<T>> rules = new ArrayList<>();
+        for (DeclaredRecovery<T> recovery : recoveries) {
+            rules.add(new RecoveryRule<>(recovery.kind(), recovery.transition(), recovery.failsOn()));
+        }
+        return rules;
+    }
+
+    /**
+     * The single action declared, under the name it resolves to, or empty once {@link Names#resolve} recorded why it
+     * has none.
+     */
+    private Optional<ActionRef<E, S, T>> actionRef(String where, int fromIndex, int idIndex, Problems problems) {
+        Object instance = syncAction.isPresent() ? syncAction.get() : asyncAction.orElseThrow();
+        Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex,
+                problems);
+        if (name.isEmpty()) {
+            return Optional.empty();
+        } else if (syncAction.isPresent()) {
+            return Optional.of(new ActionRef.Sync<>(name.get(), syncAction.get()));
+        } else {
+            return Optional.of(new ActionRef.Async<>(name.get(), asyncAction.orElseThrow()));
+        }
+    }
+
+    /**
+     * Records SG507 for each part an edge without an action cannot declare, onFailure or failsOn, recover and a
+     * timeout, and answers whether it recorded nothing.
+     */
+    private boolean checkWithoutAction(String where, int fromIndex, int idIndex, Problems problems) {
+        boolean valid = true;
+        if (onFailure.isPresent() || !failsOn.isEmpty()) {
+            problems.add("SG507", fromIndex, idIndex, where + " declares onFailure or failsOn without an action");
+            valid = false;
+        }
+        if (!recoveries.isEmpty()) {
+            problems.add("SG507", fromIndex, idIndex, where + " declares recover without an action");
+            valid = false;
+        }
+        if (timeout.isPresent()) {
+            problems.add("SG507", fromIndex, idIndex, where + " declares a timeout without an asynchronous action");
+            valid = false;
+        }
+        return valid;
+    }
+
+    /**
+     * Records SG507 for a timeout on a synchronous action and for more than one onFailure or timeout, then SG511 for
+     * a timeout that is not positive, and answers whether it recorded nothing.
+     */
+    private boolean checkTimeoutAndOnFailure(String where, int fromIndex, int idIndex, Problems problems) {
+        boolean valid = true;
         if (timeout.isPresent() && syncAction.isPresent()) {
             problems.add("SG507", fromIndex, idIndex, where + " declares a timeout on a synchronous action");
             valid = false;
@@ -280,7 +348,17 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             problems.add("SG511", fromIndex, idIndex, where + " declares a timeout that is not positive");
             valid = false;
         }
-        List<GuardRef<E, S, T>> guardRefs = new ArrayList<>();
+        return valid;
+    }
+
+    /**
+     * Adds to {@code guardRefs}, in declaration order, each guard under the name it resolves to, and answers whether
+     * every guard got one: SG105 for a guard declared twice and for two guards with one name, and what
+     * {@link Names#resolve} records for a guard it cannot name.
+     */
+    private boolean collectGuards(String where, int fromIndex, int idIndex, Problems problems,
+                                  List<GuardRef<E, S, T>> guardRefs) {
+        boolean valid = true;
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         // A rejection names the guard that rejected, so the name of each guard of the edge must be its own.
         Set<String> named = new HashSet<>();
@@ -303,25 +381,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             }
             guardRefs.add(guard.toRef(name.get()));
         }
-        for (Class<? extends Throwable> type : failsOn) {
-            if (FailureTypes.isForbiddenThrowable(type)) {
-                problems.add("SG302", fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
-                        + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
-                valid = false;
-            }
-        }
-        if (!checkRecoveries(where, fromIndex, idIndex, problems)) {
-            valid = false;
-        }
-        if (!valid) {
-            return Optional.empty();
-        }
-        List<RecoveryRule<T>> rules = new ArrayList<>();
-        for (DeclaredRecovery<T> recovery : recoveries) {
-            rules.add(new RecoveryRule<>(recovery.kind(), recovery.transition(), recovery.failsOn()));
-        }
-        return Optional.of(new TransitionSpec<>(from, transition, to, actionRef, guardRefs, onFailure, failsOn, timeout,
-                afterCommit, rules));
+        return valid;
     }
 
     /**

@@ -111,7 +111,7 @@ final class UnitOfWork {
      * to of the last log entry for the entity, if any. An empty log has no entry for any reference, so the early
      * return is the same answer without building the index or handing ref to the map: the reference stays local
      * to the caller and the JIT can drop it. The calls that find the log empty are the first state read of every
-     * root, made by Transaction.currentState before anything is appended, and the reads of a guard that looks at
+     * root, made by Steps.currentState before anything is appended, and the reads of a guard that looks at
      * peers through DefaultPeerView before that first append. The first call that finds the log non-empty builds
      * the index.
      */

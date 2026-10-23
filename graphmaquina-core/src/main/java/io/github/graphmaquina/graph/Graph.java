@@ -46,7 +46,8 @@ public final class Graph<N> {
      * @throws NullPointerException if a node is {@code null}: no search of this class could walk it
      * @throws IllegalArgumentException if an edge has an endpoint outside the declared nodes
      */
-    public static <N> Graph<N> of(@NonNull Collection<? extends N> nodes, @NonNull Collection<? extends GraphEdge<N>> edges) {
+    public static <N> Graph<N> of(@NonNull Collection<? extends N> nodes,
+                                  @NonNull Collection<? extends GraphEdge<N>> edges) {
         Set<N> declared = new LinkedHashSet<>();
         for (N node : nodes) {
             declared.add(Objects.requireNonNull(node, "node"));
@@ -240,36 +241,46 @@ public final class Graph<N> {
                 continue;
             }
             int rootIndex = declarationIndex(root);
-            List<N> path = new ArrayList<>();
-            Set<N> onPath = new HashSet<>();
-            Deque<Frame<N>> stack = new ArrayDeque<>();
-            path.add(root);
-            onPath.add(root);
-            stack.addLast(new Frame<>(root, successors.get(root).iterator()));
-            while (!stack.isEmpty()) {
-                Frame<N> frame = stack.peekLast();
-                if (!frame.next().hasNext()) {
-                    stack.removeLast();
-                    onPath.remove(frame.node());
-                    path.remove(path.size() - 1);
-                    continue;
-                }
-                N next = frame.next().next();
-                if (!componentOf.get(next).equals(rootComponent)) {
-                    continue;
-                }
-                if (declarationIndex(next) < rootIndex) {
-                    continue;
-                }
-                if (next.equals(root)) {
-                    cycles.add(List.copyOf(path));
-                } else if (onPath.add(next)) {
-                    path.add(next);
-                    stack.addLast(new Frame<>(next, successors.get(next).iterator()));
-                }
-            }
+            addCyclesFrom(root, rootComponent, rootIndex, componentOf, cycles);
         }
         return List.copyOf(cycles);
+    }
+
+    /**
+     * Appends to {@code cycles}, in the order the search closes them, the elementary cycles that start at
+     * {@code root}: the search follows only the members of {@code rootComponent}, the root's component, whose
+     * declaration index is not below {@code rootIndex}, the root's.
+     */
+    private void addCyclesFrom(N root, Integer rootComponent, int rootIndex, Map<N, Integer> componentOf,
+                               List<List<N>> cycles) {
+        List<N> path = new ArrayList<>();
+        Set<N> onPath = new HashSet<>();
+        Deque<Frame<N>> stack = new ArrayDeque<>();
+        path.add(root);
+        onPath.add(root);
+        stack.addLast(new Frame<>(root, successors.get(root).iterator()));
+        while (!stack.isEmpty()) {
+            Frame<N> frame = stack.peekLast();
+            if (!frame.next().hasNext()) {
+                stack.removeLast();
+                onPath.remove(frame.node());
+                path.remove(path.size() - 1);
+                continue;
+            }
+            N next = frame.next().next();
+            if (!componentOf.get(next).equals(rootComponent)) {
+                continue;
+            }
+            if (declarationIndex(next) < rootIndex) {
+                continue;
+            }
+            if (next.equals(root)) {
+                cycles.add(List.copyOf(path));
+            } else if (onPath.add(next)) {
+                path.add(next);
+                stack.addLast(new Frame<>(next, successors.get(next).iterator()));
+            }
+        }
     }
 
     /** One node of the path under construction, together with the successors of that node still to examine. */

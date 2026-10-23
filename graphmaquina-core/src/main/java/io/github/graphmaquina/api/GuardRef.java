@@ -25,7 +25,8 @@ public sealed interface GuardRef<E, S extends Enum<S>, T extends Enum<T>> permit
     }
 
     /** An asynchronous {@link GuardRef}. */
-    record Async<E, S extends Enum<S>, T extends Enum<T>>(@NonNull String name, @NonNull AsyncTransitionGuard<E, S, T> guard)
+    record Async<E, S extends Enum<S>, T extends Enum<T>>(@NonNull String name,
+                                                          @NonNull AsyncTransitionGuard<E, S, T> guard)
             implements GuardRef<E, S, T> {
         public Async {
             if (name.isBlank()) {

@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import lombok.NonNull;
 
@@ -92,8 +93,29 @@ public final class StrongComponents {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
-        List<Member<N>> roots = new ArrayList<>();
         Set<N> members = new HashSet<>();
+        List<Member<N>> roots = roots(graph, component, members);
+        Map<N, N> parent = new HashMap<>();
+        Set<N> done = new LinkedHashSet<>();
+        for (Member<N> root : roots) {
+            N start = root.node();
+            if (done.contains(start)) {
+                continue;
+            }
+            Optional<List<N>> witness = witnessFrom(graph, start, members, parent, done);
+            if (witness.isPresent()) {
+                return witness.get();
+            }
+        }
+        throw new IllegalArgumentException("the component " + component + " holds no cycle");
+    }
+
+    /**
+     * The members of {@code component}, each as the graph's own instance with its position in the declared order,
+     * sorted by that position; each one also joins {@code members}. A node outside the graph is refused.
+     */
+    private static <N> List<Member<N>> roots(Graph<N> graph, Set<N> component, Set<N> members) {
+        List<Member<N>> roots = new ArrayList<>();
         for (N node : component) {
             if (!graph.nodes().contains(node)) {
                 throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
@@ -102,49 +124,58 @@ public final class StrongComponents {
             roots.add(new Member<>(graph.declarationIndex(node), graph.declaredNode(node)));
         }
         roots.sort(Comparator.comparingInt((Member<N> member) -> member.position()));
-        Map<N, N> parent = new HashMap<>();
+        return roots;
+    }
+
+    /**
+     * The depth-first search of {@link #cycleWitness} from {@code start} through {@code members}: the cycle that the
+     * first back edge it meets closes, or empty when it finishes every node it reaches without meeting one. It
+     * records in {@code parent} the node each one was reached from, and adds each node it finishes to {@code done},
+     * which a later search skips.
+     */
+    private static <N> Optional<List<N>> witnessFrom(Graph<N> graph, N start, Set<N> members, Map<N, N> parent,
+                                                     Set<N> done) {
         Set<N> onPath = new LinkedHashSet<>();
-        Set<N> done = new LinkedHashSet<>();
         Deque<N> stack = new ArrayDeque<>();
         Deque<List<N>> successors = new ArrayDeque<>();
         Deque<int[]> cursors = new ArrayDeque<>();
-        for (Member<N> root : roots) {
-            N start = root.node();
-            if (done.contains(start)) {
+        push(graph, start, members, stack, successors, cursors, onPath);
+        while (!stack.isEmpty()) {
+            N current = stack.peekLast();
+            List<N> next = successors.peekLast();
+            int[] cursor = cursors.peekLast();
+            if (cursor[0] == next.size()) {
+                stack.removeLast();
+                successors.removeLast();
+                cursors.removeLast();
+                onPath.remove(current);
+                done.add(current);
                 continue;
             }
-            stack.addLast(start);
-            successors.addLast(inside(graph, start, members));
-            cursors.addLast(new int[] {0});
-            onPath.add(start);
-            while (!stack.isEmpty()) {
-                N current = stack.peekLast();
-                List<N> next = successors.peekLast();
-                int[] cursor = cursors.peekLast();
-                if (cursor[0] == next.size()) {
-                    stack.removeLast();
-                    successors.removeLast();
-                    cursors.removeLast();
-                    onPath.remove(current);
-                    done.add(current);
-                    continue;
-                }
-                N candidate = next.get(cursor[0]);
-                cursor[0]++;
-                if (onPath.contains(candidate)) {
-                    return close(parent, current, candidate);
-                }
-                if (done.contains(candidate)) {
-                    continue;
-                }
-                parent.put(candidate, current);
-                stack.addLast(candidate);
-                successors.addLast(inside(graph, candidate, members));
-                cursors.addLast(new int[] {0});
-                onPath.add(candidate);
+            N candidate = next.get(cursor[0]);
+            cursor[0]++;
+            if (onPath.contains(candidate)) {
+                return Optional.of(close(parent, current, candidate));
             }
+            if (done.contains(candidate)) {
+                continue;
+            }
+            parent.put(candidate, current);
+            push(graph, candidate, members, stack, successors, cursors, onPath);
         }
-        throw new IllegalArgumentException("the component " + component + " holds no cycle");
+        return Optional.empty();
+    }
+
+    /**
+     * Puts {@code node} at the end of the search's path: on {@code stack}, with its successors inside
+     * {@code members} and a cursor at the first of them, and in {@code onPath}.
+     */
+    private static <N> void push(Graph<N> graph, N node, Set<N> members, Deque<N> stack, Deque<List<N>> successors,
+                                 Deque<int[]> cursors, Set<N> onPath) {
+        stack.addLast(node);
+        successors.addLast(inside(graph, node, members));
+        cursors.addLast(new int[] {0});
+        onPath.add(node);
     }
 
     /** A member of the searched set: the graph's own instance of it, and its position in the declared order. */

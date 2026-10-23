@@ -76,6 +76,15 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {
             throw new IllegalArgumentException(where + ": timeout must be positive");
         }
+        requireDistinctRules(where, recoveryRules, failsOn);
+    }
+
+    /**
+     * Refuses, for the edge {@code where} names, a failure kind that two of {@code recoveryRules} declare, and a
+     * throwable type that two rules declare or that a rule and {@code failsOn} both declare, in the rules' order.
+     */
+    private static <T extends Enum<T>> void requireDistinctRules(String where, List<RecoveryRule<T>> recoveryRules,
+                                                                 List<Class<? extends Throwable>> failsOn) {
         Set<Class<? extends FailureKind>> kinds = new HashSet<>();
         Set<Class<? extends Throwable>> ruleTypes = new HashSet<>();
         for (RecoveryRule<T> rule : recoveryRules) {
