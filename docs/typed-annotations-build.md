@@ -59,8 +59,7 @@ The ZIP contains only the current release's expected files, excluding repository
 The command uploads nothing: only once it succeeds is `build/graphmaquina-central-bundle.zip` ready to go to
 Central Portal, through the release script or by hand. Portal validation, namespace ownership and availability
 of the public signing key remain external requirements; these local structural checks do not replace Portal
-validation. While existing code still violates the
-[size and complexity checks](guide.md#build-verify-and-release-this-repository), this command stops at them.
+validation.
 
 ## Where the artifacts come from
 
@@ -83,10 +82,7 @@ choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina
 The second command is a separate invocation because the Gradle adapter is an included build. It installs both
 `io.github.graphmaquina:graphmaquina-gradle-plugin` and the marker `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is
 what `plugins { id("io.github.graphmaquina") version … }` resolves. Replace `publishToMavenLocal` with
-`publishAllPublicationsTo<Name>Repository` to publish to a file or internal repository instead. While existing
-code still violates the
-[size and complexity checks](guide.md#build-verify-and-release-this-repository), both commands stop at them,
-the second after it has installed the plugin marker.
+`publishAllPublicationsTo<Name>Repository` to publish to a file or internal repository instead.
 
 **Gradle** does not read the local Maven repository unless it is declared, and the plugin marker is resolved
 through `pluginManagement`, so a consumer's `settings.gradle.kts` needs both halves:
