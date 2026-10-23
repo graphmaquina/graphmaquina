@@ -18,9 +18,10 @@ import org.junit.jupiter.api.Test;
 /**
  * The guides quote the shop as it is: every Java block of the testing guide that a link to one of the shop's tests
  * introduces appears verbatim in that test, and the four Java blocks of the guide's section on the call's flow are the
- * shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes. A block
- * may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing, so it
- * fails.
+ * shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes. The Java
+ * blocks of the guide's section on sub-machines over the same entity, from its mention of
+ * {@code SameEntitySubmachineTest} on, appear verbatim in that test. A block may sit deeper in the source than in the
+ * guide, by whole levels of four spaces. A blank block quotes nothing, so it fails.
  */
 class GuideCopiesTest {
 
@@ -100,6 +101,27 @@ class GuideCopiesTest {
                 missing.add(quote.source() + " " + quote.declaration());
             }
         }
+        assertEquals(List.of(), missing);
+    }
+
+    @Test
+    void theGuideQuotesTheSameEntitySubmachineTestVerbatim() throws IOException {
+        String guide = read(path("graphmaquina.docs", "guide.md"));
+        int mention = guide.indexOf("`SameEntitySubmachineTest`");
+        assertTrue(mention >= 0, "the guide no longer names SameEntitySubmachineTest");
+        int sectionEnd = guide.indexOf("\n### ", mention);
+        Matcher blocks = JAVA_BLOCK.matcher(guide).region(mention, sectionEnd < 0 ? guide.length() : sectionEnd);
+        String source = read(path("graphmaquina.example.tests", "billing/SameEntitySubmachineTest.java"));
+        List<String> quoted = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        while (blocks.find()) {
+            String where = "docs/guide.md:" + guide.substring(0, blocks.start()).split("\n", -1).length;
+            quoted.add(where);
+            if (blocks.group(1).isBlank() || !holds(source, blocks.group(1), 0, 4, 8, 12)) {
+                missing.add(where + " SameEntitySubmachineTest");
+            }
+        }
+        assertFalse(quoted.isEmpty(), "no Java block follows the guide's mention of SameEntitySubmachineTest");
         assertEquals(List.of(), missing);
     }
 
