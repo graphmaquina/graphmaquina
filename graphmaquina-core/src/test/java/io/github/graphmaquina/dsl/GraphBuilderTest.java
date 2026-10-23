@@ -125,7 +125,8 @@ class GraphBuilderTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .build();
-        assertEquals(List.of("DRAFT/SUBMIT", "DRAFT/RETOUCH", "REVIEW/PUBLISH", "REVIEW/SEND_BACK", "PUBLISHED/ARCHIVE"),
+        assertEquals(List.of("DRAFT/SUBMIT", "DRAFT/RETOUCH", "REVIEW/PUBLISH", "REVIEW/SEND_BACK",
+                        "PUBLISHED/ARCHIVE"),
                 graph.transitions().stream()
                         .map((TransitionSpec<Doc, DocStatus, DocTransition> spec) -> spec.key().toString()).toList());
     }
@@ -262,7 +263,8 @@ class GraphBuilderTest {
                     .afterCommit("notePublished", (Doc doc) -> seen.add("published")).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        assertEquals("noteReview", graph.findTransition(DRAFT, SUBMIT).orElseThrow().afterCommit().orElseThrow().name());
+        assertEquals("noteReview",
+                graph.findTransition(DRAFT, SUBMIT).orElseThrow().afterCommit().orElseThrow().name());
         assertEquals("notePublished",
                 graph.findTransition(REVIEW, PUBLISH).orElseThrow().afterCommit().orElseThrow().name());
         assertTrue(graph.findTransition(PUBLISHED, ARCHIVE).orElseThrow().afterCommit().isEmpty());

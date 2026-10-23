@@ -101,7 +101,8 @@ class WatchTest {
      * its identity is the watched one, and the observer reacts from PUBLISHED. An absent notification is then
      * observable, because a notification would archive the observer.
      */
-    private MachineRegistry docsWatching(Doc observer, String watchedId, Probe<Doc, DocStatus, DocTransition> onSubmit) {
+    private MachineRegistry docsWatching(Doc observer, String watchedId,
+            Probe<Doc, DocStatus, DocTransition> onSubmit) {
         GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW)
                 .statePolicy(DRAFT, "a draft is submitted")
@@ -182,7 +183,40 @@ class WatchTest {
         List<String> calls = new ArrayList<>();
         Doc peer = new Doc("peer", REVIEW);
         boolean[] nullIdentity = {false};
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = graphWhoseWatchReadsThePeerTwice(calls, peer);
+        try (MachineRegistry docs = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state((Doc doc) -> { calls.add("state:" + doc.id()); return doc.status(); }, Doc::setStatus)
+                .identity((Doc doc) -> {
+                    calls.add("identity:" + doc.id());
+                    return nullIdentity[0] ? null : doc.id();
+                })).build()) {
+            Outcome.Ignored<?, ?, ?> outcome = assertInstanceOf(Outcome.Ignored.class,
+                    docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertEquals(IgnoreReason.NO_RULE_MATCHED, outcome.reason());
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer",
+                    "identity:peer", "state:peer", "second", "identity:peer", "state:peer"), calls);
+            calls.clear();
+            nullIdentity[0] = true;
+            TransitionAbortedException identityError = assertThrows(TransitionAbortedException.class,
+                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            NullPointerException nullIdentityCause =
+                    assertInstanceOf(NullPointerException.class, identityError.getCause());
+            assertEquals("identity of " + DOCS + " returned null", nullIdentityCause.getMessage());
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer"), calls);
+            calls.clear();
+            nullIdentity[0] = false;
+            peer.setStatus(null);
+            TransitionAbortedException uninitialized = assertThrows(TransitionAbortedException.class,
+                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertInstanceOf(UninitializedStateException.class, uninitialized.getCause());
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer"), calls);
+        }
+    }
+
+    /** A watch from PUBLISHED on {@code peer} alone, whose two rules note themselves in {@code calls} and say no. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> graphWhoseWatchReadsThePeerTwice(
+            List<String> calls, Doc peer) {
+        return StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "submit").statePolicy(REVIEW, "publish").statePolicy(PUBLISHED, "archive")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
@@ -206,30 +240,6 @@ class WatchTest {
                         return false;
                     }).execute(ARCHIVE)
                 .endWatch().build();
-        try (MachineRegistry docs = MachineRegistry.builder().add(StateMachines.from(graph)
-                .state((Doc doc) -> { calls.add("state:" + doc.id()); return doc.status(); }, Doc::setStatus)
-                .identity((Doc doc) -> { calls.add("identity:" + doc.id()); return nullIdentity[0] ? null : doc.id(); })).build()) {
-            Outcome.Ignored<?, ?, ?> outcome = assertInstanceOf(Outcome.Ignored.class,
-                    docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
-            assertEquals(IgnoreReason.NO_RULE_MATCHED, outcome.reason());
-            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer",
-                    "identity:peer", "state:peer", "second", "identity:peer", "state:peer"), calls);
-            calls.clear();
-            nullIdentity[0] = true;
-            TransitionAbortedException identityError = assertThrows(TransitionAbortedException.class,
-                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
-            NullPointerException nullIdentityCause =
-                    assertInstanceOf(NullPointerException.class, identityError.getCause());
-            assertEquals("identity of " + DOCS + " returned null", nullIdentityCause.getMessage());
-            assertEquals(List.of("state:owner", "peers", "first", "identity:peer"), calls);
-            calls.clear();
-            nullIdentity[0] = false;
-            peer.setStatus(null);
-            TransitionAbortedException uninitialized = assertThrows(TransitionAbortedException.class,
-                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
-            assertInstanceOf(UninitializedStateException.class, uninitialized.getCause());
-            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer"), calls);
-        }
     }
 
     @Test
@@ -411,45 +421,7 @@ class WatchTest {
                 if (direct && function.equals("ownerOf")) {
                     continue;
                 }
-                Doc observer = new Doc("observer", PUBLISHED);
-                Doc peer = new Doc("peer", DRAFT);
-                Doc bystander = new Doc("bystander", DRAFT);
-                AtomicReference<MachineRegistry> registry = new AtomicReference<>();
-                Runnable moveBystander = () -> registry.get().of(DOCS).execute(bystander, SUBMIT);
-                try (MachineRegistry docs = docsWatchingThrough(
-                        (Doc owner) -> {
-                            if (function.equals("peersOf")) {
-                                moveBystander.run();
-                            }
-                            return List.of(peer);
-                        },
-                        (Doc moved) -> {
-                            if (function.equals("ownerOf")) {
-                                moveBystander.run();
-                            }
-                            return moved == peer ? Optional.of(observer) : Optional.<Doc>empty();
-                        },
-                        (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
-                            if (function.equals("condition")) {
-                                moveBystander.run();
-                            }
-                            return true;
-                        })) {
-                    registry.set(docs);
-                    String end;
-                    try {
-                        Outcome<Doc, DocStatus, DocTransition> outcome = direct
-                                ? docs.of(DOCS).reevaluate(observer) : docs.of(DOCS).execute(peer, SUBMIT);
-                        end = outcome.status().name();
-                        if (outcome instanceof Outcome.Applied<Doc, DocStatus, DocTransition> applied && !direct) {
-                            end += " with reactions " + applied.reactions().stream().map(WatchTest::describe).toList();
-                        }
-                    } catch (StateMachineException thrown) {
-                        end = withCause(thrown);
-                    }
-                    ends.add(function + (direct ? " in a direct reevaluation: " : " in a reaction: ") + end
-                            + ", bystander " + bystander.status() + ", observer " + observer.status());
-                }
+                ends.add(endOfTheWatchFunctionThatMovesTheBystander(function, direct));
             }
         }
         assertEquals(List.of(
@@ -464,6 +436,61 @@ class WatchTest {
                 "condition in a direct reevaluation: TransitionAbortedException caused by ReentrantTransitionException,"
                         + " bystander DRAFT, observer PUBLISHED"),
                 ends);
+    }
+
+    /** Runs the call with the watch function named {@code function} moving a bystander, and says how it ended. */
+    private static String endOfTheWatchFunctionThatMovesTheBystander(String function, boolean direct) {
+        Doc observer = new Doc("observer", PUBLISHED);
+        Doc peer = new Doc("peer", DRAFT);
+        Doc bystander = new Doc("bystander", DRAFT);
+        AtomicReference<MachineRegistry> registry = new AtomicReference<>();
+        Runnable moveBystander = () -> registry.get().of(DOCS).execute(bystander, SUBMIT);
+        try (MachineRegistry docs = docsWhoseWatchFunctionRuns(function, observer, peer, moveBystander)) {
+            registry.set(docs);
+            String end = endOfTheCall(docs, observer, peer, direct);
+            return function + (direct ? " in a direct reevaluation: " : " in a reaction: ") + end
+                    + ", bystander " + bystander.status() + ", observer " + observer.status();
+        }
+    }
+
+    /** Docs whose watch function named {@code function} runs {@code action}, the others doing nothing special. */
+    private static MachineRegistry docsWhoseWatchFunctionRuns(String function, Doc observer, Doc peer,
+            Runnable action) {
+        return docsWatchingThrough(
+                (Doc owner) -> {
+                    if (function.equals("peersOf")) {
+                        action.run();
+                    }
+                    return List.of(peer);
+                },
+                (Doc moved) -> {
+                    if (function.equals("ownerOf")) {
+                        action.run();
+                    }
+                    return moved == peer ? Optional.of(observer) : Optional.<Doc>empty();
+                },
+                (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
+                    if (function.equals("condition")) {
+                        action.run();
+                    }
+                    return true;
+                });
+    }
+
+    /** The status of the outcome, with its reactions when the peer moved, or the failure the call ended in. */
+    private static String endOfTheCall(MachineRegistry docs, Doc observer, Doc peer, boolean direct) {
+        String end;
+        try {
+            Outcome<Doc, DocStatus, DocTransition> outcome = direct
+                    ? docs.of(DOCS).reevaluate(observer) : docs.of(DOCS).execute(peer, SUBMIT);
+            end = outcome.status().name();
+            if (outcome instanceof Outcome.Applied<Doc, DocStatus, DocTransition> applied && !direct) {
+                end += " with reactions " + applied.reactions().stream().map(WatchTest::describe).toList();
+            }
+        } catch (StateMachineException thrown) {
+            end = withCause(thrown);
+        }
+        return end;
     }
 
     /**
@@ -559,11 +586,13 @@ class WatchTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .watch(DRAFT, DOCS, (Doc d) -> List.of(d), (Doc d) -> Optional.of(d))
-                    .when("always", (Doc d, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> true)
+                    .when("always", (Doc d, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true)
                         .execute(SUBMIT)
                     .endWatch()
                 .watch(REVIEW, DOCS, (Doc d) -> List.of(d), (Doc d) -> Optional.of(d))
-                    .when("always", (Doc d, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> true)
+                    .when("always", (Doc d, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true)
                         .execute(SEND_BACK)
                     .endWatch()
                 .build();
@@ -574,7 +603,8 @@ class WatchTest {
         Doc doc = new Doc("d1", DRAFT);
         Outcome<Doc, DocStatus, DocTransition> rootOutcome = docs.of(DOCS).execute(doc, SUBMIT);
         assertInstanceOf(Outcome.Applied.class, rootOutcome);
-        Outcome.Applied<Doc, DocStatus, DocTransition> root = (Outcome.Applied<Doc, DocStatus, DocTransition>) rootOutcome;
+        Outcome.Applied<Doc, DocStatus, DocTransition> root =
+                (Outcome.Applied<Doc, DocStatus, DocTransition>) rootOutcome;
         Reaction.Done first = assertInstanceOf(Reaction.Done.class, root.reactions().get(0));
         assertInstanceOf(Outcome.Applied.class, first.outcome());
         Outcome.Applied<?, ?, ?> firstOutcome = (Outcome.Applied<?, ?, ?>) first.outcome();

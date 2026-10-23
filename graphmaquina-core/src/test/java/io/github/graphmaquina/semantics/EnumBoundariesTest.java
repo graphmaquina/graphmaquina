@@ -20,10 +20,13 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -62,24 +65,39 @@ class EnumBoundariesTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void refusesForeignEnumsBeforeAcceptingADeclaration(String role) {
         GraphBuilder raw = StateGraph.define(KEY);
-        assertThrows(IllegalArgumentException.class, () -> {
-            switch (role) {
-                case "initial" -> raw.initial(Foreign.OPEN);
-                case "terminal" -> raw.terminal(Foreign.DONE);
-                case "cycle" -> raw.allowsCycle(Foreign.OPEN);
-                case "policy" -> raw.statePolicy(Foreign.OPEN, "no");
-                case "reject-state" -> raw.reject(Foreign.OPEN, Id.GO, "no");
-                case "reject-id" -> raw.reject(State.OPEN, Foreign.GO, "no");
-                case "from" -> raw.transition(Id.GO, Foreign.OPEN, State.DONE);
-                case "to" -> raw.transition(Id.GO, State.OPEN, Foreign.DONE);
-                case "id" -> raw.transition(Foreign.GO, State.OPEN, State.DONE);
-                case "failure" -> raw.transition(Id.GO, State.OPEN, State.DONE).onFailure(Foreign.RECOVER);
-                case "watch-state" -> raw.watch(Foreign.OPEN, KEY, e -> List.of(), e -> Optional.empty());
-                case "watch-id" -> raw.watch(State.OPEN, KEY, e -> List.of(), e -> Optional.empty())
-                        .when("ready", (e, peers, view) -> true).execute(Foreign.GO);
-                default -> throw new AssertionError(role);
-            }
-        });
+        assertThrows(IllegalArgumentException.class, () -> applyNamed(foreignDeclarations(), role, raw));
+    }
+
+    /** Applies the action that {@code table} lists under {@code name} to {@code target}; an unlisted name is a bug. */
+    private static <T> void applyNamed(Map<String, Consumer<T>> table, String name, T target) {
+        Consumer<T> action = table.get(name);
+        if (action == null) {
+            throw new AssertionError(name);
+        }
+        action.accept(target);
+    }
+
+    /** Each role of a declaration, with a declaration that uses an enum that is not the machine's. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Map<String, Consumer<GraphBuilder>> foreignDeclarations() {
+        Map<String, Consumer<GraphBuilder>> declarations = new LinkedHashMap<>();
+        declarations.put("initial", (GraphBuilder raw) -> raw.initial(Foreign.OPEN));
+        declarations.put("terminal", (GraphBuilder raw) -> raw.terminal(Foreign.DONE));
+        declarations.put("cycle", (GraphBuilder raw) -> raw.allowsCycle(Foreign.OPEN));
+        declarations.put("policy", (GraphBuilder raw) -> raw.statePolicy(Foreign.OPEN, "no"));
+        declarations.put("reject-state", (GraphBuilder raw) -> raw.reject(Foreign.OPEN, Id.GO, "no"));
+        declarations.put("reject-id", (GraphBuilder raw) -> raw.reject(State.OPEN, Foreign.GO, "no"));
+        declarations.put("from", (GraphBuilder raw) -> raw.transition(Id.GO, Foreign.OPEN, State.DONE));
+        declarations.put("to", (GraphBuilder raw) -> raw.transition(Id.GO, State.OPEN, Foreign.DONE));
+        declarations.put("id", (GraphBuilder raw) -> raw.transition(Foreign.GO, State.OPEN, State.DONE));
+        declarations.put("failure", (GraphBuilder raw) ->
+                raw.transition(Id.GO, State.OPEN, State.DONE).onFailure(Foreign.RECOVER));
+        declarations.put("watch-state", (GraphBuilder raw) ->
+                raw.watch(Foreign.OPEN, KEY, e -> List.of(), e -> Optional.empty()));
+        declarations.put("watch-id", (GraphBuilder raw) ->
+                raw.watch(State.OPEN, KEY, e -> List.of(), e -> Optional.empty())
+                        .when("ready", (e, peers, view) -> true).execute(Foreign.GO));
+        return declarations;
     }
 
     @Test void enumConstantsWithClassBodiesRemainExecutable() {
@@ -125,16 +143,19 @@ class EnumBoundariesTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void structuralQueriesDoNotTreatForeignEnumsAsAbsentEdges(String query) {
         GraphDefinition raw = graph(new int[1]);
-        assertThrows(IllegalArgumentException.class, () -> {
-            switch (query) {
-                case "lookup-state" -> raw.findTransition(Foreign.OPEN, Id.GO);
-                case "lookup-id" -> raw.findTransition(State.OPEN, Foreign.GO);
-                case "watch" -> raw.watch(Foreign.OPEN);
-                case "policy" -> raw.policy(Foreign.OPEN);
-                case "outgoing" -> raw.outgoingFrom(Foreign.OPEN);
-                default -> throw new AssertionError(query);
-            }
-        });
+        assertThrows(IllegalArgumentException.class, () -> applyNamed(foreignQueries(), query, raw));
+    }
+
+    /** Each structural query, asked with an enum that is not the machine's. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Map<String, Consumer<GraphDefinition>> foreignQueries() {
+        Map<String, Consumer<GraphDefinition>> queries = new LinkedHashMap<>();
+        queries.put("lookup-state", (GraphDefinition raw) -> raw.findTransition(Foreign.OPEN, Id.GO));
+        queries.put("lookup-id", (GraphDefinition raw) -> raw.findTransition(State.OPEN, Foreign.GO));
+        queries.put("watch", (GraphDefinition raw) -> raw.watch(Foreign.OPEN));
+        queries.put("policy", (GraphDefinition raw) -> raw.policy(Foreign.OPEN));
+        queries.put("outgoing", (GraphDefinition raw) -> raw.outgoingFrom(Foreign.OPEN));
+        return queries;
     }
 
     @Test
@@ -168,15 +189,7 @@ class EnumBoundariesTest {
         int[] effects = new int[1];
         GraphDefinition<Entity, State, Id> graph = StateGraph.define(KEY).initial(State.OPEN).terminal(State.DONE)
                 .statePolicy(State.OPEN, "no").transition(Id.GO, State.OPEN, State.DONE).action("go", ctx -> {
-                    TransitionContext raw = ctx;
-                    switch (mode) {
-                        case "single" -> raw.cascade(KEY, peer, Foreign.GO);
-                        case "fail-fast", "empty-fail-fast" -> raw.cascadeAll(KEY,
-                                mode.startsWith("empty") ? List.of() : List.of(peer), Foreign.GO, CascadePolicy.FAIL_FAST);
-                        case "collect", "empty-collect" -> raw.cascadeAll(KEY,
-                                mode.startsWith("empty") ? List.of() : List.of(peer), Foreign.GO, CascadePolicy.COLLECT);
-                        default -> throw new AssertionError(mode);
-                    }
+                    cascadeForeign(ctx, mode, peer);
                     return ActionOutcome.ok();
                 }).afterCommit("hook", e -> effects[0]++).endTransition().build();
         try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph).identity(e -> {
@@ -199,6 +212,22 @@ class EnumBoundariesTest {
             assertEquals(0, peerReads[0]);
             assertEquals(0, effects[0]);
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void cascadeForeign(TransitionContext raw, String mode, Entity peer) {
+        switch (mode) {
+            case "single" -> raw.cascade(KEY, peer, Foreign.GO);
+            case "fail-fast", "empty-fail-fast" ->
+                    raw.cascadeAll(KEY, elementsFor(mode, peer), Foreign.GO, CascadePolicy.FAIL_FAST);
+            case "collect", "empty-collect" ->
+                    raw.cascadeAll(KEY, elementsFor(mode, peer), Foreign.GO, CascadePolicy.COLLECT);
+            default -> throw new AssertionError(mode);
+        }
+    }
+
+    private static List<Entity> elementsFor(String mode, Entity peer) {
+        return mode.startsWith("empty") ? List.of() : List.of(peer);
     }
 
     @ParameterizedTest

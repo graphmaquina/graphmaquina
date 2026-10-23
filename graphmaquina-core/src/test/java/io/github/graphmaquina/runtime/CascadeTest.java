@@ -158,7 +158,8 @@ class CascadeTest {
         Item i2 = new Item("i2", ItemStatus.PACKED, Optional.of(order));
         Item i3 = new Item("i3", ItemStatus.PENDING, Optional.of(order));
         StateMachine<Order, OrderStatus, OrderTransition> orders = registry(10).of(ORDERS);
-        CascadeException error = assertThrows(CascadeException.class, () -> orders.execute(order, OrderTransition.CANCEL));
+        CascadeException error = assertThrows(CascadeException.class,
+                () -> orders.execute(order, OrderTransition.CANCEL));
         assertEquals(1, error.errors().size());
         assertEquals(OrderStatus.NEW, order.status());
         assertEquals(ItemStatus.PENDING, i1.status());
@@ -385,7 +386,8 @@ class CascadeTest {
             return ActionOutcome.ok();
         };
         StateMachine<Order, OrderStatus, OrderTransition> orders = registry(10).of(ORDERS);
-        CascadeException error = assertThrows(CascadeException.class, () -> orders.execute(order, OrderTransition.SHIP));
+        CascadeException error = assertThrows(CascadeException.class,
+                () -> orders.execute(order, OrderTransition.SHIP));
         assertEquals(ItemStatus.PACKING, seen.get());
         assertEquals(1, error.errors().size());
         assertEquals(List.of("ShipOrder:Order#o1:THREW", "PackItem:Item#a:OK", "PackItem:Item#b:THREW",

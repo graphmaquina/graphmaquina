@@ -108,28 +108,60 @@ class RuntimeInitializationTest {
     void noClassOfTheLibraryInitialisesOnceARegistryIsAssembled() throws Exception {
         List<String> output = runJava(List.of("-Xlog:class+init=info"), CallsAfterAssembly.class);
         Set<String> library = mainClassNames();
-        Pattern initializing = Pattern.compile("Initializing '([^']+)'(\\(no method\\))?");
-        Set<String> beforeAssembly = new TreeSet<>();
-        List<String> afterAssembly = new ArrayList<>();
-        boolean assembled = false;
-        List<String> calls = new ArrayList<>();
-        for (String line : output) {
+        InitializationLog log = new InitializationLog(output, library);
+        assertEquals(List.of("SUBMIT APPLIED", "PUBLISH TransitionAbortedException",
+                "SUBMIT TransitionAbortedException", "SUBMIT AssertionError", "SUBMIT CascadeException",
+                "PUBLISH GUARD_REJECTED", "reevaluate NO_WATCH", "ARCHIVE APPLIED", "supplyAsync done"), log.calls,
+                String.join("\n", output));
+        List<String> notBefore = new ArrayList<>();
+        for (Class<?> type : MachineRegistry.staticallyInitialized()) {
+            if (!log.beforeAssembly.contains(type.getName())) {
+                notBefore.add(type.getName());
+            }
+        }
+        assertEquals(List.of(), notBefore);
+        assertEquals(List.of(), log.afterAssembly);
+    }
+
+    /**
+     * What the lines of a JVM that logs class initialisation say: the classes of the library that ran an initializer
+     * before and after the line {@code ASSEMBLED}, and the calls the JVM printed.
+     */
+    private static final class InitializationLog {
+
+        final Set<String> beforeAssembly = new TreeSet<>();
+        final List<String> afterAssembly = new ArrayList<>();
+        final List<String> calls = new ArrayList<>();
+        private final Pattern initializing = Pattern.compile("Initializing '([^']+)'(\\(no method\\))?");
+        private final Set<String> library;
+        private boolean assembled = false;
+
+        InitializationLog(List<String> output, Set<String> library) {
+            this.library = library;
+            for (String line : output) {
+                read(line);
+            }
+        }
+
+        private void read(String line) {
             if (line.equals("ASSEMBLED")) {
                 assembled = true;
-                continue;
-            }
-            if (line.startsWith("CALL ")) {
+            } else if (line.startsWith("CALL ")) {
                 calls.add(line.substring(5));
-                continue;
+            } else {
+                readInitialization(line);
             }
+        }
+
+        private void readInitialization(String line) {
             Matcher matcher = initializing.matcher(line);
             if (!matcher.find()) {
-                continue;
+                return;
             }
             String name = matcher.group(1).replace('/', '.');
             boolean runsAnInitializer = matcher.group(2) == null;
             if (!library.contains(name) || !runsAnInitializer) {
-                continue;
+                return;
             }
             if (assembled) {
                 afterAssembly.add(name);
@@ -137,18 +169,6 @@ class RuntimeInitializationTest {
                 beforeAssembly.add(name);
             }
         }
-        assertEquals(List.of("SUBMIT APPLIED", "PUBLISH TransitionAbortedException",
-                "SUBMIT TransitionAbortedException", "SUBMIT AssertionError", "SUBMIT CascadeException",
-                "PUBLISH GUARD_REJECTED", "reevaluate NO_WATCH", "ARCHIVE APPLIED", "supplyAsync done"), calls,
-                String.join("\n", output));
-        List<String> notBefore = new ArrayList<>();
-        for (Class<?> type : MachineRegistry.staticallyInitialized()) {
-            if (!beforeAssembly.contains(type.getName())) {
-                notBefore.add(type.getName());
-            }
-        }
-        assertEquals(List.of(), notBefore);
-        assertEquals(List.of(), afterAssembly);
     }
 
     /**
@@ -234,59 +254,8 @@ class RuntimeInitializationTest {
 
         public static void main(String[] args) throws Exception {
             FlowKey<String> note = FlowKey.of("note", String.class);
-            GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
-                    .initial(DRAFT).terminal(ARCHIVED)
-                    .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                    .transition(SUBMIT, DRAFT, REVIEW)
-                        .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            String id = ctx.entity().id();
-                            if (id.startsWith("cascade")) {
-                                ctx.cascade(DOCS, new Doc("peer", REVIEW), PUBLISH);
-                            } else if (id.startsWith("abort")) {
-                                swallow(() -> ctx.cascade(DOCS, new Doc("bad", REVIEW), PUBLISH));
-                            } else if (id.startsWith("error")) {
-                                swallow(() -> ctx.cascade(DOCS, new Doc("error", REVIEW), PUBLISH));
-                                throw new AssertionError("after the swallowed Error");
-                            } else if (id.startsWith("collect")) {
-                                ctx.cascadeAll(DOCS, List.of(new Doc("bad", REVIEW), new Doc("draft", DRAFT)),
-                                        PUBLISH, CascadePolicy.COLLECT);
-                            }
-                            ctx.flow().put(note, id);
-                            return ActionOutcome.ok();
-                        })
-                        .afterCommitWith("Note", (Doc doc, CommitContext<DocStatus, DocTransition> commit) ->
-                                commit.flow().put(note, doc.id()))
-                        .endTransition()
-                    .transition(PUBLISH, REVIEW, PUBLISHED)
-                        .guard("Throws", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            if (ctx.entity().id().equals("bad")) {
-                                throw new IllegalStateException("bad");
-                            }
-                            return ctx.entity().id().equals("rejected") ? GuardResult.reject("rejected")
-                                    : GuardResult.pass();
-                        })
-                        .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            if (ctx.entity().id().equals("error")) {
-                                throw new AssertionError("in a nested action");
-                            }
-                            return ActionOutcome.ok();
-                        })
-                        .endTransition()
-                    .transition(ARCHIVE, PUBLISHED, ARCHIVED)
-                        .asyncAction("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                                CompletableFuture.completedFuture(ActionOutcome.ok()))
-                        .endTransition()
-                    .build();
-            MachineRegistry registry = MachineRegistry.builder()
-                    .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                            .asyncTimeout(Duration.ofSeconds(10)).recordTrail())
-                    .observer(new MachineObserver() {
-                        @Override
-                        public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
-                            failure.phase();
-                        }
-                    })
-                    .build();
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = graph(note);
+            MachineRegistry registry = assemble(graph);
             StateMachine<Doc, DocStatus, DocTransition> docs = registry.of(DOCS);
             System.out.println("ASSEMBLED");
             call("SUBMIT", () -> docs.execute(new Doc("cascade", DRAFT), SUBMIT));
@@ -299,6 +268,74 @@ class RuntimeInitializationTest {
             call("ARCHIVE", () -> docs.execute(new Doc("archived", PUBLISHED), ARCHIVE));
             System.out.println("CALL supplyAsync " + docs.supplyAsync(() -> "done").get(10, TimeUnit.SECONDS));
             registry.close();
+        }
+
+        private static GraphDefinition<Doc, DocStatus, DocTransition> graph(FlowKey<String> note) {
+            return StateGraph.define(DOCS)
+                    .initial(DRAFT).terminal(ARCHIVED)
+                    .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                    .transition(SUBMIT, DRAFT, REVIEW)
+                        .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                submit(ctx, note))
+                        .afterCommitWith("Note", (Doc doc, CommitContext<DocStatus, DocTransition> commit) ->
+                                commit.flow().put(note, doc.id()))
+                        .endTransition()
+                    .transition(PUBLISH, REVIEW, PUBLISHED)
+                        .guard("Throws", (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                throwsForBadAndRejectsRejected(ctx))
+                        .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> publish(ctx))
+                        .endTransition()
+                    .transition(ARCHIVE, PUBLISHED, ARCHIVED)
+                        .asyncAction("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.completedFuture(ActionOutcome.ok()))
+                        .endTransition()
+                    .build();
+        }
+
+        private static MachineRegistry assemble(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+            return MachineRegistry.builder()
+                    .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
+                            .asyncTimeout(Duration.ofSeconds(10)).recordTrail())
+                    .observer(new MachineObserver() {
+                        @Override
+                        public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                            failure.phase();
+                        }
+                    })
+                    .build();
+        }
+
+        private static ActionOutcome submit(TransitionContext<Doc, DocStatus, DocTransition> ctx,
+                FlowKey<String> note) {
+            String id = ctx.entity().id();
+            if (id.startsWith("cascade")) {
+                ctx.cascade(DOCS, new Doc("peer", REVIEW), PUBLISH);
+            } else if (id.startsWith("abort")) {
+                swallow(() -> ctx.cascade(DOCS, new Doc("bad", REVIEW), PUBLISH));
+            } else if (id.startsWith("error")) {
+                swallow(() -> ctx.cascade(DOCS, new Doc("error", REVIEW), PUBLISH));
+                throw new AssertionError("after the swallowed Error");
+            } else if (id.startsWith("collect")) {
+                ctx.cascadeAll(DOCS, List.of(new Doc("bad", REVIEW), new Doc("draft", DRAFT)),
+                        PUBLISH, CascadePolicy.COLLECT);
+            }
+            ctx.flow().put(note, id);
+            return ActionOutcome.ok();
+        }
+
+        private static GuardResult throwsForBadAndRejectsRejected(GuardContext<Doc, DocStatus, DocTransition> ctx) {
+            if (ctx.entity().id().equals("bad")) {
+                throw new IllegalStateException("bad");
+            }
+            return ctx.entity().id().equals("rejected") ? GuardResult.reject("rejected")
+                    : GuardResult.pass();
+        }
+
+        private static ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
+            if (ctx.entity().id().equals("error")) {
+                throw new AssertionError("in a nested action");
+            }
+            return ActionOutcome.ok();
         }
 
         private static void swallow(Runnable cascade) {

@@ -196,7 +196,8 @@ class BuilderReuseTest {
         StateMachine<Doc, DocStatus, DocTransition> machine = docs.build();
         assertInstanceOf(Outcome.Applied.class, machine.execute(new Doc("1", DocStatus.DRAFT), DocTransition.SUBMIT));
 
-        StateMachines.Builder<Order, OrderStatus, OrderTransition> orders = StateMachines.from(OrderGraphs.orderWithoutWatch(
+        StateMachines.Builder<Order, OrderStatus, OrderTransition> orders =
+                StateMachines.from(OrderGraphs.orderWithoutWatch(
                         (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
                                 CompletableFuture.completedFuture(ActionOutcome.ok()),
                         (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> ActionOutcome.ok(),

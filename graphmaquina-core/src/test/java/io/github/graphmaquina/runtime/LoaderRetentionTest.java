@@ -50,7 +50,8 @@ class LoaderRetentionTest {
                     .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                     .build();
             MachineRegistry.builder()
-                    .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)).build().close();
+                    .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                    .build().close();
         }
     }
 

@@ -61,7 +61,8 @@ class OperationInputTest {
 
     static final MachineKey<Entity, S, T> KEY = MachineKey.of(Entity.class, S.class, T.class);
 
-    private StateMachine<Entity, S, T> machine(TransitionGuard<Entity, S, T> guard, TransitionAction<Entity, S, T> action,
+    private StateMachine<Entity, S, T> machine(TransitionGuard<Entity, S, T> guard,
+                                               TransitionAction<Entity, S, T> action,
                                                TransitionAction<Entity, S, T> recovery) {
         GraphDefinition<Entity, S, T> graph = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
                 .statePolicy(S.OPEN, "closed")
@@ -144,7 +145,10 @@ class OperationInputTest {
         AtomicReference<Object> seen = new AtomicReference<>();
         StateMachine<Entity, S, T> m = machine((GuardContext<Entity, S, T> ctx) -> GuardResult.pass(),
                 (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.failed("declined"),
-                (TransitionContext<Entity, S, T> ctx) -> { seen.set(ctx.input().orElse(null)); return ActionOutcome.ok(); });
+                (TransitionContext<Entity, S, T> ctx) -> {
+                    seen.set(ctx.input().orElse(null));
+                    return ActionOutcome.ok();
+                });
         Verdict fromAFailure = new Verdict(true);
         m.execute(new Entity(), T.WORK, fromAFailure);
         assertSame(fromAFailure, seen.get());
@@ -202,13 +206,20 @@ class OperationInputTest {
         Entity peer = new Entity();
         Verdict callers = new Verdict(true);
         List<Optional<?>> seen = new ArrayList<>();
-        GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
+        GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE)
+                .terminal(S.FAILED)
                 .statePolicy(S.OPEN, "closed")
                 .transition(T.WORK, S.OPEN, S.DONE)
-                    .action("work", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
+                    .action("work", (TransitionContext<Entity, S, T> ctx) -> {
+                        seen.add(ctx.input());
+                        return ActionOutcome.ok();
+                    })
                     .endTransition()
                 .transition(T.WATCH_IT, S.OPEN, S.FAILED)
-                    .action("watched", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
+                    .action("watched", (TransitionContext<Entity, S, T> ctx) -> {
+                        seen.add(ctx.input());
+                        return ActionOutcome.ok();
+                    })
                     .endTransition()
                 .watch(S.OPEN, KEY, (Entity e) -> List.of(peer),
                         (Entity moved) -> moved == peer ? Optional.of(owner) : Optional.<Entity>empty())
@@ -240,7 +251,8 @@ class OperationInputTest {
         m.execute(new Entity(), T.WORK, v);
         assertSame(v, guard.get().input().orElseThrow());
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            assertSame(v, executor.submit(() -> action.get().input(Verdict.class).orElseThrow()).get(5, TimeUnit.SECONDS));
+            assertSame(v,
+                    executor.submit(() -> action.get().input(Verdict.class).orElseThrow()).get(5, TimeUnit.SECONDS));
         }
     }
 

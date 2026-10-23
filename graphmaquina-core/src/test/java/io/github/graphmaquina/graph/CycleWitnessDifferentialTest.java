@@ -61,9 +61,44 @@ class CycleWitnessDifferentialTest {
      * and no others: the method is private and renamed, the Lombok {@code @NonNull} on its two parameters is
      * dropped because Lombok is not on the test compile classpath and the corpus never passes null, and this
      * comment replaces the original's own. Every call the original makes still exists on {@link Graph}, so nothing
-     * else had to be adapted.
+     * else had to be adapted. The one change since is structural: the membership scan and the stack bookkeeping
+     * are cut into {@code membersOf}, {@code enter} and {@code leave}, which run the same statements in the same
+     * order, to meet the size checks of the test sources.
      */
     private static <N> List<N> baseCycleWitness(Graph<N> graph, Set<N> component) {
+        Set<N> members = membersOf(graph, component);
+        N start = members.iterator().next();
+        Map<N, N> parent = new HashMap<>();
+        Set<N> onPath = new LinkedHashSet<>();
+        Set<N> done = new LinkedHashSet<>();
+        Deque<N> stack = new ArrayDeque<>();
+        Deque<List<N>> successors = new ArrayDeque<>();
+        Deque<int[]> cursors = new ArrayDeque<>();
+        enter(graph, members, start, stack, successors, cursors, onPath);
+        while (!stack.isEmpty()) {
+            N current = stack.peekLast();
+            List<N> next = successors.peekLast();
+            int[] cursor = cursors.peekLast();
+            if (cursor[0] == next.size()) {
+                leave(current, stack, successors, cursors, onPath, done);
+                continue;
+            }
+            N candidate = next.get(cursor[0]);
+            cursor[0]++;
+            if (onPath.contains(candidate)) {
+                return close(parent, current, candidate);
+            }
+            if (done.contains(candidate)) {
+                continue;
+            }
+            parent.put(candidate, current);
+            enter(graph, members, candidate, stack, successors, cursors, onPath);
+        }
+        throw new IllegalArgumentException("the component " + component + " holds no cycle");
+    }
+
+    /** The component's nodes in the graph's declaration order, refusing an empty component or a foreign node. */
+    private static <N> Set<N> membersOf(Graph<N> graph, Set<N> component) {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
@@ -76,44 +111,26 @@ class CycleWitnessDifferentialTest {
         if (members.size() != component.size()) {
             throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
         }
-        N start = members.iterator().next();
-        Map<N, N> parent = new HashMap<>();
-        Set<N> onPath = new LinkedHashSet<>();
-        Set<N> done = new LinkedHashSet<>();
-        Deque<N> stack = new ArrayDeque<>();
-        Deque<List<N>> successors = new ArrayDeque<>();
-        Deque<int[]> cursors = new ArrayDeque<>();
-        stack.addLast(start);
-        successors.addLast(inside(graph, start, members));
+        return members;
+    }
+
+    /** Pushes {@code node} on the search stack with its successors inside the component and a fresh cursor. */
+    private static <N> void enter(Graph<N> graph, Set<N> members, N node, Deque<N> stack,
+            Deque<List<N>> successors, Deque<int[]> cursors, Set<N> onPath) {
+        stack.addLast(node);
+        successors.addLast(inside(graph, node, members));
         cursors.addLast(new int[] {0});
-        onPath.add(start);
-        while (!stack.isEmpty()) {
-            N current = stack.peekLast();
-            List<N> next = successors.peekLast();
-            int[] cursor = cursors.peekLast();
-            if (cursor[0] == next.size()) {
-                stack.removeLast();
-                successors.removeLast();
-                cursors.removeLast();
-                onPath.remove(current);
-                done.add(current);
-                continue;
-            }
-            N candidate = next.get(cursor[0]);
-            cursor[0]++;
-            if (onPath.contains(candidate)) {
-                return close(parent, current, candidate);
-            }
-            if (done.contains(candidate)) {
-                continue;
-            }
-            parent.put(candidate, current);
-            stack.addLast(candidate);
-            successors.addLast(inside(graph, candidate, members));
-            cursors.addLast(new int[] {0});
-            onPath.add(candidate);
-        }
-        throw new IllegalArgumentException("the component " + component + " holds no cycle");
+        onPath.add(node);
+    }
+
+    /** Pops {@code current}, whose successors are all visited, off the search stack and marks it done. */
+    private static <N> void leave(N current, Deque<N> stack, Deque<List<N>> successors, Deque<int[]> cursors,
+            Set<N> onPath, Set<N> done) {
+        stack.removeLast();
+        successors.removeLast();
+        cursors.removeLast();
+        onPath.remove(current);
+        done.add(current);
     }
 
     /** Walks the parents from {@code last} back to {@code first} and closes the list on {@code first}. */

@@ -23,29 +23,35 @@ class NullBoundariesTest {
 
     static Stream<Arguments> entries() {
         return Stream.of(
-                Arguments.of("from", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(null, Month.JANUARY,
+                Arguments.of("from", (Executable) () ->
+                        new TransitionSpec<String, DayOfWeek, Month>(null, Month.JANUARY,
                         DayOfWeek.MONDAY, Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(),
                         Optional.empty())),
-                Arguments.of("transition", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
-                        null, DayOfWeek.MONDAY, Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(),
-                        Optional.empty())),
+                Arguments.of("transition", (Executable) () ->
+                        new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
+                        null, DayOfWeek.MONDAY, Optional.empty(), List.of(), Optional.empty(), List.of(),
+                        Optional.empty(), Optional.empty())),
                 Arguments.of("guards", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
                         Month.JANUARY, DayOfWeek.MONDAY, Optional.empty(), null, Optional.empty(), List.of(),
                         Optional.empty(), Optional.empty())),
-                Arguments.of("afterCommit", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
+                Arguments.of("afterCommit", (Executable) () ->
+                        new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
                         Month.JANUARY, DayOfWeek.TUESDAY, Optional.empty(), List.of(), Optional.empty(), List.of(),
                         Optional.empty(), null)),
                 Arguments.of("from", (Executable) () -> new TransitionKey<DayOfWeek, Month>(null, Month.JANUARY)),
                 Arguments.of("state", (Executable) () -> new StatePolicy<DayOfWeek, Month>(null, "why", Map.of())),
-                Arguments.of("otherwise", (Executable) () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, null, Map.of())),
+                Arguments.of("otherwise", (Executable) () ->
+                        new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, null, Map.of())),
                 Arguments.of("transition", (Executable) () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, "why",
                         Map.of()).reasonFor(null)),
                 Arguments.of("condition", (Executable) () ->
                         new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(null, Month.JANUARY)),
-                Arguments.of("transition", (Executable) () -> new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(
+                Arguments.of("transition", (Executable) () ->
+                        new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(
                         new NamedCondition<>("c", (String e, Collection<? extends String> peers,
                                 PeerView<String, DayOfWeek, Month> v) -> true), null)),
-                Arguments.of("peer", (Executable) () -> new WatchSpec<String, DayOfWeek, Month, String, DayOfWeek, Month>(
+                Arguments.of("peer", (Executable) () ->
+                        new WatchSpec<String, DayOfWeek, Month, String, DayOfWeek, Month>(
                         DayOfWeek.MONDAY, null, (String e) -> List.of(), (String p) -> Optional.empty(), List.of())),
                 Arguments.of("entity", (Executable) () ->
                         new Outcome.Ignored<String, DayOfWeek, Month>(null, DayOfWeek.MONDAY, IgnoreReason.NO_WATCH)),

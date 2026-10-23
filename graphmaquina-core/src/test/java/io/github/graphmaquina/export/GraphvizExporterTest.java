@@ -192,8 +192,10 @@ class GraphvizExporterTest {
         GraphView view = new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
                 List.of(new PolicyView("B", "no way back", List.of("GO: B is final"))), List.of());
         String rendered = GraphvizExporter.render(view);
-        assertEquals(1, rendered.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count());
-        assertTrue(rendered.contains("n1 [label=\"B\", shape=doublecircle, tooltip=\"otherwise: no way back; GO: B is final\"];"),
+        assertEquals(1,
+                rendered.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count());
+        assertTrue(rendered.contains(
+                "n1 [label=\"B\", shape=doublecircle, tooltip=\"otherwise: no way back; GO: B is final\"];"),
                 rendered);
     }
 
@@ -230,8 +232,8 @@ class GraphvizExporterTest {
         String special = "quote\" slash\\N\r\nnext\rline\n雪";
         String escaped = "quote\\\" slash\\\\N\\nnext\\nline\\n雪";
         GraphView view = new GraphView(special, special, Set.of("n0"), List.of(special, "n0"), List.of(
-                new TransitionView(special, special, "n0", TransitionKind.ACTION, Optional.of(special), List.of(special),
-                        true, Optional.of(special), Optional.of(special))),
+                new TransitionView(special, special, "n0", TransitionKind.ACTION, Optional.of(special),
+                        List.of(special), true, Optional.of(special), Optional.of(special))),
                 List.of(new PolicyView("n0", special, List.of())),
                 List.of(new WatchView(special, special, List.of())));
         String rendered = GraphvizExporter.render(view);

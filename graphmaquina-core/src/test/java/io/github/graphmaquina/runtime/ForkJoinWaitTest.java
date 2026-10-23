@@ -83,7 +83,8 @@ class ForkJoinWaitTest {
         @Override
         public void close() {
             release.countDown();
-            CompletableFuture.allOf(blockers.toArray(new CompletableFuture<?>[0])).orTimeout(10, TimeUnit.SECONDS).join();
+            CompletableFuture.allOf(blockers.toArray(new CompletableFuture<?>[0]))
+                    .orTimeout(10, TimeUnit.SECONDS).join();
         }
     }
 
@@ -266,7 +267,8 @@ class ForkJoinWaitTest {
             end = endOf(pool.run(() -> end(() -> machine.execute(a, SUBMIT))), 3_000);
         }
         String fromTask = task.get().get(10, TimeUnit.SECONDS);
-        String refusal = List.of("StaleContextException", "WrongThreadException").contains(fromTask) ? "refused" : fromTask;
+        String refusal = List.of("StaleContextException", "WrongThreadException").contains(fromTask)
+                ? "refused" : fromTask;
         assertEquals("a: APPLIED, task refused, a REVIEW, peer REVIEW",
                 "a: " + end + ", task " + refusal + ", a " + a.status() + ", peer " + peer.status());
     }
@@ -328,7 +330,8 @@ class ForkJoinWaitTest {
                     (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> late(), Optional.empty());
             end = endOf(CompletableFuture.supplyAsync(() -> end(() -> machine.execute(a, SUBMIT)), pool), 3_000);
         }
-        assertEquals("TransitionAbortedException caused by RejectedExecutionException, a DRAFT", end + ", a " + a.status());
+        assertEquals("TransitionAbortedException caused by RejectedExecutionException, a DRAFT",
+                end + ", a " + a.status());
     }
 
     /**
@@ -371,7 +374,8 @@ class ForkJoinWaitTest {
         String end;
         try (ForkJoinPool pool = new ForkJoinPool(1, slowSpares, null, false)) {
             StateMachine<Doc, DocStatus, DocTransition> machine = machine(
-                    (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> late(), Optional.of(Duration.ofSeconds(1)));
+                    (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> late(),
+                    Optional.of(Duration.ofSeconds(1)));
             end = endOf(CompletableFuture.supplyAsync(() -> end(() -> machine.execute(a, SUBMIT)), pool), 1_600);
         }
         assertEquals("TransitionAbortedException caused by TimeoutException, a DRAFT", end + ", a " + a.status());

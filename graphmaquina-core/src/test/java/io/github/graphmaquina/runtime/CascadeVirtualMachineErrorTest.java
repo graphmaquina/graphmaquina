@@ -423,7 +423,7 @@ class CascadeVirtualMachineErrorTest {
         List<String> outside = new ArrayList<>();
         boolean accepted = false;
         for (Instruction instruction : code.instructions()) {
-            if (accepted && instruction.callsOrAllocates() && !code.condemnedAt(instruction.offset())) {
+            if (accepted && code.callsOrAllocatesOutsideACondemningCatch(instruction)) {
                 outside.add(instruction.offset() + ": " + instruction.text());
             }
             accepted = accepted || instruction.text().equals("invokestatic requireTransition");
@@ -458,32 +458,51 @@ class CascadeVirtualMachineErrorTest {
         int started = 0;
         for (int padding = 0; padding < 60; padding++) {
             StateMachine<Cell, CellStatus, CellTransition> cells = CellChains.cells(padding, true, Integer.MAX_VALUE);
-            for (int warm = 0; warm < 50; warm++) {
-                cells.execute(CellChains.chain(3)[0], CellTransition.GO);
-            }
+            warmUp(cells);
             Cell[] chain = CellChains.chain(200_000);
             AtomicReference<Outcome<Cell, CellStatus, CellTransition>> outcome = new AtomicReference<>();
             Throwable thrown = CellChains.onStack(256 * 1024,
                     () -> outcome.set(cells.execute(chain[0], CellTransition.GO)));
-            Optional<Cell> caughtOnceStarted = Optional.empty();
-            for (int index = 0; index + 1 < chain.length && caughtOnceStarted.isEmpty(); index++) {
-                if (chain[index].caught && chain[index + 1].identified) {
-                    caughtOnceStarted = Optional.of(chain[index]);
-                }
-            }
+            Optional<Cell> caughtOnceStarted = caughtOnceStarted(chain);
             if (caughtOnceStarted.isEmpty()) {
                 continue;
             }
             started++;
             long done = Stream.of(chain).filter((Cell cell) -> cell.status() == CellStatus.DONE).count();
             if (outcome.get() != null || done > 0) {
-                violations.add("padding " + padding + ": " + caughtOnceStarted.get() + " caught the Error of a"
-                        + " cascade that read the next cell's identity, yet the root " + (outcome.get() != null
-                        ? "returned " + outcome.get().code() : "threw " + thrown) + " and " + done + " cells are DONE");
+                violations.add(overflowViolation(padding, caughtOnceStarted.get(), outcome.get(), thrown, done));
             }
         }
-        assertEquals(List.of(), violations.size() > 3 ? violations.subList(0, 3) : violations);
+        assertEquals(List.of(), firstThree(violations));
         assertTrue(started > 0, "no action caught the Error of a cascade that had started");
+    }
+
+    private static void warmUp(StateMachine<Cell, CellStatus, CellTransition> cells) {
+        for (int warm = 0; warm < 50; warm++) {
+            cells.execute(CellChains.chain(3)[0], CellTransition.GO);
+        }
+    }
+
+    /** The first cell that caught the Error of a cascade whose next cell had already been identified, if any. */
+    private static Optional<Cell> caughtOnceStarted(Cell[] chain) {
+        Optional<Cell> caughtOnceStarted = Optional.empty();
+        for (int index = 0; index + 1 < chain.length && caughtOnceStarted.isEmpty(); index++) {
+            if (chain[index].caught && chain[index + 1].identified) {
+                caughtOnceStarted = Optional.of(chain[index]);
+            }
+        }
+        return caughtOnceStarted;
+    }
+
+    private static String overflowViolation(int padding, Cell caughtOnceStarted,
+            Outcome<Cell, CellStatus, CellTransition> outcome, Throwable thrown, long done) {
+        return "padding " + padding + ": " + caughtOnceStarted + " caught the Error of a"
+                + " cascade that read the next cell's identity, yet the root " + (outcome != null
+                ? "returned " + outcome.code() : "threw " + thrown) + " and " + done + " cells are DONE";
+    }
+
+    private static List<String> firstThree(List<String> violations) {
+        return violations.size() > 3 ? violations.subList(0, 3) : violations;
     }
 
     /** An instruction of a method: its offset, and its mnemonic followed by the member or class it names, if any. */
@@ -497,7 +516,18 @@ class CascadeVirtualMachineErrorTest {
     }
 
     /** A row of an exception table: the offsets it covers, {@code to} excluded, its handler's, and what it catches. */
-    private record Handler(int from, int to, int target, String type) { }
+    private record Handler(int from, int to, int target, String type) {
+
+        /** Whether the row covers {@code offset}. */
+        boolean covers(int offset) {
+            return from <= offset && offset < to;
+        }
+
+        /** Whether the row catches any throwable. */
+        boolean catchesAnyThrowable() {
+            return type.equals("any") || type.equals("Class java/lang/Throwable");
+        }
+    }
 
     /** The code of a method of the compiled main classes as {@code javap -c} prints it, and its exception table. */
     private record MethodCode(List<Instruction> instructions, List<Handler> handlers) {
@@ -507,39 +537,60 @@ class CascadeVirtualMachineErrorTest {
 
         /** The code of the only method of {@code type} named {@code name}. */
         static MethodCode of(Class<?> type, String name) throws IOException, URISyntaxException {
+            List<String> lines = javapListing(type);
+            List<Integer> declarations = new ArrayList<>();
+            for (int index = 0; index < lines.size(); index++) {
+                String line = lines.get(index);
+                if (declaresMethod(line, name)) {
+                    declarations.add(index);
+                }
+            }
+            assertEquals(1, declarations.size(), "methods named " + name + " in " + type.getName());
+            return parse(lines, declarations.get(0) + 1);
+        }
+
+        /** The lines {@code javap -c -p} prints for the compiled {@code type}. */
+        private static List<String> javapListing(Class<?> type) throws URISyntaxException {
             Path classes = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
             StringWriter out = new StringWriter();
             StringWriter err = new StringWriter();
             int code = ToolProvider.findFirst("javap").orElseThrow().run(new PrintWriter(out), new PrintWriter(err),
                     "-c", "-p", "-cp", classes.toString(), type.getName());
             assertEquals(0, code, "javap " + type.getName() + ": " + err);
-            List<String> lines = out.toString().lines().toList();
-            List<Integer> declarations = new ArrayList<>();
-            for (int index = 0; index < lines.size(); index++) {
-                String line = lines.get(index);
-                if (line.startsWith("  ") && !line.startsWith("   ") && line.contains(" " + name + "(")
-                        && line.endsWith(");")) {
-                    declarations.add(index);
-                }
-            }
-            assertEquals(1, declarations.size(), "methods named " + name + " in " + type.getName());
+            return out.toString().lines().toList();
+        }
+
+        /** Whether {@code line} declares the method {@code name}, as the listing indents a member. */
+        private static boolean declaresMethod(String line, String name) {
+            return line.startsWith("  ") && !line.startsWith("   ") && line.contains(" " + name + "(")
+                    && line.endsWith(");");
+        }
+
+        /** The instructions and the exception table of the listing from line {@code first} to its blank line. */
+        private static MethodCode parse(List<String> lines, int first) {
             List<Instruction> instructions = new ArrayList<>();
             List<Handler> handlers = new ArrayList<>();
             boolean table = false;
-            for (int index = declarations.get(0) + 1; index < lines.size() && !lines.get(index).isEmpty(); index++) {
+            for (int index = first; index < lines.size() && !lines.get(index).isEmpty(); index++) {
                 String line = lines.get(index);
                 table = table || line.trim().equals("Exception table:");
-                Matcher instruction = INSTRUCTION.matcher(line);
-                Matcher handler = HANDLER.matcher(line);
-                if (!table && instruction.matches()) {
-                    instructions.add(new Instruction(Integer.parseInt(instruction.group(1)),
-                            instruction.group(2) + named(instruction.group(3))));
-                } else if (table && handler.matches()) {
-                    handlers.add(new Handler(Integer.parseInt(handler.group(1)), Integer.parseInt(handler.group(2)),
-                            Integer.parseInt(handler.group(3)), handler.group(4).trim()));
-                }
+                addRow(line, table, instructions, handlers);
             }
             return new MethodCode(instructions, handlers);
+        }
+
+        /** Adds the instruction or the exception table row that {@code line} holds, if it holds one. */
+        private static void addRow(String line, boolean table, List<Instruction> instructions,
+                List<Handler> handlers) {
+            Matcher instruction = INSTRUCTION.matcher(line);
+            Matcher handler = HANDLER.matcher(line);
+            if (!table && instruction.matches()) {
+                instructions.add(new Instruction(Integer.parseInt(instruction.group(1)),
+                        instruction.group(2) + named(instruction.group(3))));
+            } else if (table && handler.matches()) {
+                handlers.add(new Handler(Integer.parseInt(handler.group(1)), Integer.parseInt(handler.group(2)),
+                        Integer.parseInt(handler.group(3)), handler.group(4).trim()));
+            }
         }
 
         /**
@@ -557,11 +608,15 @@ class CascadeVirtualMachineErrorTest {
             return " " + (descriptor < 0 ? member : member.substring(0, descriptor));
         }
 
+        /** Whether {@code instruction} calls or allocates where no handler of any throwable condemns the call first. */
+        boolean callsOrAllocatesOutsideACondemningCatch(Instruction instruction) {
+            return instruction.callsOrAllocates() && !condemnedAt(instruction.offset());
+        }
+
         /** Whether a handler of any throwable that condemns the call first covers {@code offset}. */
         boolean condemnedAt(int offset) {
             for (Handler handler : handlers) {
-                if (handler.from() <= offset && offset < handler.to() && condemnsFirst(handler)
-                        && (handler.type().equals("any") || handler.type().equals("Class java/lang/Throwable"))) {
+                if (handler.covers(offset) && condemnsFirst(handler) && handler.catchesAnyThrowable()) {
                     return true;
                 }
             }
@@ -570,14 +625,20 @@ class CascadeVirtualMachineErrorTest {
 
         /** Whether {@code handler}, once it stored what it caught, first stores true into condemned. */
         boolean condemnsFirst(Handler handler) {
+            List<String> first = firstFourFrom(handler.target());
+            return first.size() == 4 && first.get(0).startsWith("astore")
+                    && first.subList(1, 4).equals(List.of("aload_0", "iconst_1", "putfield condemned"));
+        }
+
+        /** The texts of the first four instructions at or after {@code target}. */
+        private List<String> firstFourFrom(int target) {
             List<String> first = new ArrayList<>();
             for (Instruction instruction : instructions) {
-                if (instruction.offset() >= handler.target() && first.size() < 4) {
+                if (instruction.offset() >= target && first.size() < 4) {
                     first.add(instruction.text());
                 }
             }
-            return first.size() == 4 && first.get(0).startsWith("astore")
-                    && first.subList(1, 4).equals(List.of("aload_0", "iconst_1", "putfield condemned"));
+            return first;
         }
     }
 }

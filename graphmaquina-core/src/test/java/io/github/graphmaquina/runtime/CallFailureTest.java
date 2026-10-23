@@ -95,6 +95,14 @@ class CallFailureTest {
         return actions;
     }
 
+    private static List<String> failureKindsOf(List<CallFailedException> failures) {
+        List<String> ends = new ArrayList<>();
+        for (CallFailedException failure : failures) {
+            ends.add(failure.getClass().getSimpleName() + " " + failure.phase() + " " + failure.statesWritten());
+        }
+        return ends;
+    }
+
     /** DRAFT -SUBMIT-> REVIEW runs {@code submit}; REVIEW -PUBLISH-> PUBLISHED runs {@code publish}. */
     private static GraphDefinition<Doc, DocStatus, DocTransition> cascading(
             TransitionAction<Doc, DocStatus, DocTransition> submit,
@@ -249,12 +257,8 @@ class CallFailureTest {
                 }, ok), Doc::setStatus).execute(collecting, SUBMIT));
         assertEquals(1, collected.errors().size());
 
-        List<String> ends = new ArrayList<>();
-        for (CallFailedException failure : List.<CallFailedException>of(cycle, depth, collected)) {
-            ends.add(failure.getClass().getSimpleName() + " " + failure.phase() + " " + failure.statesWritten());
-        }
         assertEquals(List.of("CascadeCycleException ACTION NONE", "CascadeDepthExceededException ACTION NONE",
-                "CascadeException ACTION NONE"), ends);
+                "CascadeException ACTION NONE"), failureKindsOf(List.<CallFailedException>of(cycle, depth, collected)));
         assertSame(looping, cycle.call().entity());
         assertSame(deep, depth.call().entity());
         assertSame(collecting, collected.call().entity());

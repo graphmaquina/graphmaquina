@@ -40,19 +40,41 @@ class CommitCascadeTest {
         AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> retained =
                 new AtomicReference<>(Optional.empty());
         List<IllegalStateException> refused = new ArrayList<>();
-        Runnable attempt = () -> {
-            try {
-                TransitionContext<Doc, DocStatus, DocTransition> context = retained.get().orElseThrow();
-                if (cascade.equals("single")) {
-                    context.cascade(DOCS, child, SUBMIT);
-                } else {
-                    context.cascadeAll(DOCS, List.of(child), SUBMIT, CascadePolicy.COLLECT);
-                }
-            } catch (IllegalStateException failure) {
-                refused.add(failure);
+        Runnable attempt = () -> tryToCascadeFromTheRetainedContext(retained, cascade, child, refused);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = graphWhoseRootRetainsItsContext(root, retained,
+                childNote);
+        try (MachineRegistry registry = registryWhoseCallbackAttempts(graph, root, retained, callback, attempt)) {
+            Outcome<Doc, DocStatus, DocTransition> outcome = registry.of(DOCS).execute(root, SUBMIT);
+            assertInstanceOf(Outcome.Applied.class, outcome);
+            assertEquals(1, refused.size());
+            assertEquals(REVIEW, root.status());
+            assertEquals(DRAFT, child.status());
+            assertEquals(1, outcome.records().size());
+            assertEquals(1, outcome.flow().trail().size());
+            assertEquals(Optional.empty(), outcome.flow().get(childNote));
+        }
+    }
+
+    private static void tryToCascadeFromTheRetainedContext(
+            AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> retained, String cascade,
+            Doc child, List<IllegalStateException> refused) {
+        try {
+            TransitionContext<Doc, DocStatus, DocTransition> context = retained.get().orElseThrow();
+            if (cascade.equals("single")) {
+                context.cascade(DOCS, child, SUBMIT);
+            } else {
+                context.cascadeAll(DOCS, List.of(child), SUBMIT, CascadePolicy.COLLECT);
             }
-        };
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+        } catch (IllegalStateException failure) {
+            refused.add(failure);
+        }
+    }
+
+    /** SUBMIT keeps the context of the root's action, and writes a note in the flow of any other entity. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> graphWhoseRootRetainsItsContext(Doc root,
+            AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> retained,
+            FlowKey<String> childNote) {
+        return StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "submit a draft").statePolicy(REVIEW, "publish a review")
                 .statePolicy(PUBLISHED, "archive a publication")
@@ -68,9 +90,15 @@ class CommitCascadeTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .transition(ARCHIVE, DRAFT, ARCHIVED).endTransition().build();
-        try (MachineRegistry registry = MachineRegistry.builder()
+    }
+
+    /** The root's state getter, or its setter, runs {@code attempt} as {@code callback} says. */
+    private static MachineRegistry registryWhoseCallbackAttempts(GraphDefinition<Doc, DocStatus, DocTransition> graph,
+            Doc root, AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> retained,
+            String callback, Runnable attempt) {
+        return MachineRegistry.builder()
                 .add(StateMachines.from(graph).state((Doc entity) -> {
-                    if (entity == root && retained.get().isPresent() && callback.equals("getter")) {
+                    if (attemptsFromTheGetter(entity, root, retained, callback)) {
                         attempt.run();
                     }
                     return entity.status();
@@ -79,15 +107,11 @@ class CommitCascadeTest {
                     if (entity == root && callback.equals("setter")) {
                         attempt.run();
                     }
-                }).identity(Doc::id).recordTrail()).build()) {
-            Outcome<Doc, DocStatus, DocTransition> outcome = registry.of(DOCS).execute(root, SUBMIT);
-            assertInstanceOf(Outcome.Applied.class, outcome);
-            assertEquals(1, refused.size());
-            assertEquals(REVIEW, root.status());
-            assertEquals(DRAFT, child.status());
-            assertEquals(1, outcome.records().size());
-            assertEquals(1, outcome.flow().trail().size());
-            assertEquals(Optional.empty(), outcome.flow().get(childNote));
-        }
+                }).identity(Doc::id).recordTrail()).build();
+    }
+
+    private static boolean attemptsFromTheGetter(Doc entity, Doc root,
+            AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> retained, String callback) {
+        return entity == root && retained.get().isPresent() && callback.equals("getter");
     }
 }

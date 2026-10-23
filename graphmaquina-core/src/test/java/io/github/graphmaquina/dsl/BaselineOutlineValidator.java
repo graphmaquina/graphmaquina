@@ -20,13 +20,15 @@ import java.util.Set;
  * {@code @NonNull} on the public entry point is dropped with its import because Lombok is not on the test
  * compile classpath, this comment replaces the original's own, and {@code failureRoutes} first runs
  * {@code recoveryRoutes}, which checks the recovery transitions {@link TransitionOutline} gained after that
- * commit the way this copy checks onFailure, once per distinct identifier. Nothing else was touched, nothing here
- * may be copied back into production, and nothing here may be optimised: its whole value is that it computes the
- * problems the way the base did, and for an outline without recovery transitions it answers exactly what the base
- * answered. The graph code it calls is not frozen: it builds and queries the live {@code Graph} and runs the live
- * {@code StrongComponents.find} and {@code cycleWitness}, so the differential compares validator logic and not
- * graph algorithms; the cycle search and the cycle witness have their own frozen-copy differentials
- * ({@code CycleEnumerationDifferentialTest}, {@code CycleWitnessDifferentialTest}).
+ * commit the way this copy checks onFailure, once per distinct identifier. The one change since is structural: the
+ * longer methods are cut into helpers that make the same calls in the same order, to meet the size checks of the
+ * test sources. Nothing else was touched, nothing here may be copied back into production, and nothing here may be
+ * optimised: its whole value is that it computes the problems the way the base did, and for an outline without
+ * recovery transitions it answers exactly what the base answered. The graph code it calls is not frozen: it builds
+ * and queries the live {@code Graph} and runs the live {@code StrongComponents.find} and {@code cycleWitness}, so
+ * the differential compares validator logic and not graph algorithms; the cycle search and the cycle witness have
+ * their own frozen-copy differentials ({@code CycleEnumerationDifferentialTest},
+ * {@code CycleWitnessDifferentialTest}).
  *
  * @see MachineOutlineValidator the live validator this oracle is compared against
  */
@@ -70,20 +72,7 @@ final class BaselineOutlineValidator {
                         "the state " + policy.state() + " declares two policies");
                 continue;
             }
-            if (policy.otherwise().isBlank()) {
-                problems.add("SG103", outline.indexOf(policy.state()), -1,
-                        "the policy of " + policy.state() + " has a blank reason");
-            }
-            for (Map.Entry<String, String> rejection : policy.rejections().entrySet()) {
-                if (rejection.getValue().isBlank()) {
-                    problems.add("SG103", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
-                            "the rejection of " + rejection.getKey() + " in " + policy.state() + " has a blank reason");
-                }
-                if (byKey.containsKey(policy.state() + "/" + rejection.getKey())) {
-                    problems.add("SG702", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
-                            policy.state() + " both declares and rejects " + rejection.getKey());
-                }
-            }
+            policyReasons(outline, byKey, policy, problems);
         }
         for (String state : outline.states()) {
             if (!declared.contains(state)) {
@@ -92,20 +81,53 @@ final class BaselineOutlineValidator {
         }
     }
 
+    private static void policyReasons(MachineOutline outline, Map<String, TransitionOutline> byKey,
+            PolicyOutline policy, Problems problems) {
+        if (policy.otherwise().isBlank()) {
+            problems.add("SG103", outline.indexOf(policy.state()), -1,
+                    "the policy of " + policy.state() + " has a blank reason");
+        }
+        for (Map.Entry<String, String> rejection : policy.rejections().entrySet()) {
+            rejectionFindings(outline, byKey, policy, rejection, problems);
+        }
+    }
+
+    private static void rejectionFindings(MachineOutline outline, Map<String, TransitionOutline> byKey,
+            PolicyOutline policy, Map.Entry<String, String> rejection, Problems problems) {
+        if (rejection.getValue().isBlank()) {
+            problems.add("SG103", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
+                    "the rejection of " + rejection.getKey() + " in " + policy.state()
+                            + " has a blank reason");
+        }
+        if (byKey.containsKey(policy.state() + "/" + rejection.getKey())) {
+            problems.add("SG702", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
+                    policy.state() + " both declares and rejects " + rejection.getKey());
+        }
+    }
+
     private static void exits(MachineOutline outline, Problems problems) {
         for (String state : outline.states()) {
-            List<String> exits = new ArrayList<>();
-            for (TransitionOutline edge : outline.outgoing(state)) {
-                exits.add(edge.transition());
-            }
-            boolean terminal = outline.terminals().contains(state);
-            if (exits.isEmpty() && !terminal) {
-                problems.add("SG202", outline.indexOf(state), -1,
-                        state + " declares no outgoing transition: declare it as a terminal state");
-            }
-            if (!exits.isEmpty() && terminal) {
-                problems.add("SG202", outline.indexOf(state), -1, state + " is terminal but declares " + exits);
-            }
+            terminalityAgainstExits(outline, state, problems);
+        }
+    }
+
+    private static List<String> transitionsLeaving(MachineOutline outline, String state) {
+        List<String> exits = new ArrayList<>();
+        for (TransitionOutline edge : outline.outgoing(state)) {
+            exits.add(edge.transition());
+        }
+        return exits;
+    }
+
+    private static void terminalityAgainstExits(MachineOutline outline, String state, Problems problems) {
+        List<String> exits = transitionsLeaving(outline, state);
+        boolean terminal = outline.terminals().contains(state);
+        if (exits.isEmpty() && !terminal) {
+            problems.add("SG202", outline.indexOf(state), -1,
+                    state + " declares no outgoing transition: declare it as a terminal state");
+        }
+        if (!exits.isEmpty() && terminal) {
+            problems.add("SG202", outline.indexOf(state), -1, state + " is terminal but declares " + exits);
         }
     }
 
@@ -130,9 +152,18 @@ final class BaselineOutlineValidator {
         Set<String> participating = new HashSet<>();
         for (Set<String> component : StrongComponents.find(full))
             if (cyclic(component, full)) participating.addAll(component);
+        unusedCyclePermissions(outline, participating, problems);
+        unauthorizedCycles(outline, full, problems);
+    }
+
+    private static void unusedCyclePermissions(MachineOutline outline, Set<String> participating,
+            Problems problems) {
         for (String allowed : outline.cycleAllowed())
             if (!participating.contains(allowed))
                 problems.add("SG205", outline.indexOf(allowed), -1, "unused cycle permission " + allowed);
+    }
+
+    private static void unauthorizedCycles(MachineOutline outline, Graph<String> full, Problems problems) {
         Graph<String> restricted = full.inducedSubgraph(
             full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
         for (Set<String> component : StrongComponents.find(restricted))
@@ -152,26 +183,31 @@ final class BaselineOutlineValidator {
     private static void failureRoutes(MachineOutline outline, Map<String, TransitionOutline> byKey, Problems problems) {
         for (TransitionOutline edge : outline.transitions()) {
             recoveryRoutes(outline, edge, byKey, problems);
-            if (edge.onFailure().isEmpty()) {
-                continue;
-            }
-            String recovery = edge.onFailure().get();
-            String where = edge.describe();
-            if (edge.kind() != TransitionKind.ACTION) {
-                problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
-                        where + " declares onFailure without an action");
-                continue;
-            }
-            if (recovery.equals(edge.transition())) {
-                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
-                        where + " declares onFailure = " + recovery + ", which is its own key");
-                continue;
-            }
-            if (!byKey.containsKey(edge.from() + "/" + recovery)) {
-                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
-                        where + " declares onFailure = " + recovery + ", but no transition " + recovery
-                                + " leaves " + edge.from());
-            }
+            onFailureRoute(outline, edge, byKey, problems);
+        }
+    }
+
+    private static void onFailureRoute(MachineOutline outline, TransitionOutline edge,
+            Map<String, TransitionOutline> byKey, Problems problems) {
+        if (edge.onFailure().isEmpty()) {
+            return;
+        }
+        String recovery = edge.onFailure().get();
+        String where = edge.describe();
+        if (edge.kind() != TransitionKind.ACTION) {
+            problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares onFailure without an action");
+            return;
+        }
+        if (recovery.equals(edge.transition())) {
+            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares onFailure = " + recovery + ", which is its own key");
+            return;
+        }
+        if (!byKey.containsKey(edge.from() + "/" + recovery)) {
+            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares onFailure = " + recovery + ", but no transition " + recovery
+                            + " leaves " + edge.from());
         }
     }
 
@@ -191,16 +227,21 @@ final class BaselineOutlineValidator {
             return;
         }
         for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
-            if (recovery.equals(edge.transition())) {
-                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
-                        where + " declares recovery " + recovery + ", which is its own key");
-                continue;
-            }
-            if (!byKey.containsKey(edge.from() + "/" + recovery)) {
-                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
-                        where + " declares recovery " + recovery + ", but no transition " + recovery
-                                + " leaves " + edge.from());
-            }
+            recoveryRoute(outline, edge, recovery, where, byKey, problems);
+        }
+    }
+
+    private static void recoveryRoute(MachineOutline outline, TransitionOutline edge, String recovery, String where,
+            Map<String, TransitionOutline> byKey, Problems problems) {
+        if (recovery.equals(edge.transition())) {
+            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares recovery " + recovery + ", which is its own key");
+            return;
+        }
+        if (!byKey.containsKey(edge.from() + "/" + recovery)) {
+            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares recovery " + recovery + ", but no transition " + recovery
+                            + " leaves " + edge.from());
         }
     }
 

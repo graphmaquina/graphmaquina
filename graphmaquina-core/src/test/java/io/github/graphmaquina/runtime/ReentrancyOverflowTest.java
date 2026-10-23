@@ -75,19 +75,7 @@ class ReentrancyOverflowTest {
         int overflowed = 0;
         for (int round = 0; round < 8 && stuck.isEmpty(); round++) {
             int[] overflows = new int[1];
-            Throwable thrown = CellChains.onStack(STACK, () -> {
-                int threshold = 0;
-                while (threshold < 1_000_000 && fits(threshold, cells)) {
-                    threshold += 32;
-                }
-                for (int frames = Math.max(0, threshold - 96); frames <= threshold + 200 && stuck.isEmpty(); frames++) {
-                    Throwable deep = deepCall(frames, cells);
-                    if (deep instanceof StackOverflowError) {
-                        overflows[0]++;
-                    }
-                    shallowCall(cells, "a call " + frames + " frames deep ended in " + deep, stuck);
-                }
-            });
+            Throwable thrown = CellChains.onStack(STACK, () -> sweepTheBandOfDepths(cells, stuck, overflows));
             assertEquals(null, thrown);
             overflowed += overflows[0];
         }
@@ -111,30 +99,62 @@ class ReentrancyOverflowTest {
         for (int round = 0; round < 8 && stuck.isEmpty(); round++) {
             long stack = STACK + 64 * 1024 * (round % 4);
             int[] overflows = new int[1];
-            Throwable thrown = CellChains.onStack(stack, () -> {
-                for (int padding = 0; padding < 400 && stuck.isEmpty(); padding++) {
-                    Throwable deep = null;
-                    try {
-                        CellChains.padded(padding, () -> endless.execute(pair("deep"), Flip.FLIP));
-                    } catch (Throwable error) {
-                        deep = error;
-                    }
-                    if (deep instanceof StackOverflowError) {
-                        overflows[0]++;
-                    }
-                    try {
-                        bounded.execute(pair("after"), Flip.FLIP);
-                    } catch (RuntimeException refused) {
-                        stuck.add("stack " + stack + ", padding " + padding + ": the watch chain ended in " + deep
-                                + ", then a call of another registry on the same thread threw " + refused);
-                    }
-                }
-            });
+            Throwable thrown = CellChains.onStack(stack,
+                    () -> sweepThePaddings(endless, bounded, stack, stuck, overflows));
             assertEquals(null, thrown);
             overflowed += overflows[0];
         }
         assertEquals(List.of(), stuck);
         assertTrue(overflowed > 0, "no watch chain overflowed");
+    }
+
+    /** Runs a deep call at each depth of the band where a call ends in an overflow, then a shallow one. */
+    private static void sweepTheBandOfDepths(StateMachine<Cell, CellStatus, CellTransition> cells,
+                                             List<String> stuck, int[] overflows) {
+        int threshold = firstDepthThatDoesNotFit(cells);
+        for (int frames = Math.max(0, threshold - 96); frames <= threshold + 200 && stuck.isEmpty(); frames++) {
+            Throwable deep = deepCall(frames, cells);
+            if (deep instanceof StackOverflowError) {
+                overflows[0]++;
+            }
+            shallowCall(cells, "a call " + frames + " frames deep ended in " + deep, stuck);
+        }
+    }
+
+    private static int firstDepthThatDoesNotFit(StateMachine<Cell, CellStatus, CellTransition> cells) {
+        int threshold = 0;
+        while (threshold < 1_000_000 && fits(threshold, cells)) {
+            threshold += 32;
+        }
+        return threshold;
+    }
+
+    /** Starts the endless watch chain under each padding, then a call of the bounded registry on the same thread. */
+    private static void sweepThePaddings(StateMachine<Pong, Side, Flip> endless,
+                                         StateMachine<Pong, Side, Flip> bounded, long stack,
+                                         List<String> stuck, int[] overflows) {
+        for (int padding = 0; padding < 400 && stuck.isEmpty(); padding++) {
+            Throwable deep = endlessChainThrew(padding, endless);
+            if (deep instanceof StackOverflowError) {
+                overflows[0]++;
+            }
+            try {
+                bounded.execute(pair("after"), Flip.FLIP);
+            } catch (RuntimeException refused) {
+                stuck.add("stack " + stack + ", padding " + padding + ": the watch chain ended in " + deep
+                        + ", then a call of another registry on the same thread threw " + refused);
+            }
+        }
+    }
+
+    /** What the endless watch chain started under {@code padding} frames threw, if anything. */
+    private static Throwable endlessChainThrew(int padding, StateMachine<Pong, Side, Flip> endless) {
+        try {
+            CellChains.padded(padding, () -> endless.execute(pair("deep"), Flip.FLIP));
+            return null;
+        } catch (Throwable error) {
+            return error;
+        }
     }
 
     /** Whether a call of {@code cells} fits under {@code frames} frames of the current thread's stack. */

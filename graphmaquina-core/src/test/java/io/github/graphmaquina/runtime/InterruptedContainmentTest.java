@@ -2,6 +2,7 @@ package io.github.graphmaquina.runtime;
 
 import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -30,7 +31,6 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.CallFailedException;
@@ -191,29 +191,10 @@ class InterruptedContainmentTest {
         }
     }
 
-    /** The doc graph, with {@code submit} decorating its submit edge. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return docs(submit, UnaryOperator.identity());
-    }
-
-    /** The doc graph, with {@code submit} decorating its submit edge and {@code discard} its discard edge. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
-        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
-                .statePolicy(PUBLISHED, "a publication is archived");
-        graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
-        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
     @Test
     void aLevelCheckThatIsInterruptedCountsAsOffAndKeepsTheInterrupt() {
-        Interrupted<CallLog> opened = onInterruptedThread(() -> CallLog.open(new BlockingLogger(true), Optional.empty()));
+        Interrupted<CallLog> opened =
+                onInterruptedThread(() -> CallLog.open(new BlockingLogger(true), Optional.empty()));
         assertSame(CallLog.OFF, opened.result());
         assertTrue(opened.interrupted(), "the thread lost its interrupt");
     }
@@ -394,8 +375,8 @@ class InterruptedContainmentTest {
                 submit.action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                     throw new BlockingMessage();
                 }).failsOn(BlockingMessage.class).onFailure(DISCARD));
-        for (Map.Entry<Class<? extends Throwable>, UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>> route
-                : routes.entrySet()) {
+        for (Map.Entry<Class<? extends Throwable>, UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>>
+                route : routes.entrySet()) {
             Doc doc = new Doc("1", DRAFT);
             CompletableFuture<ActionOutcome> pending = CompletableFuture.supplyAsync(ActionOutcome::ok,
                     CompletableFuture.delayedExecutor(200, TimeUnit.MILLISECONDS));

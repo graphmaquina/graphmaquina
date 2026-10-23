@@ -209,11 +209,13 @@ class CommitContextHooksTest {
                     context.cascade(ITEMS, item, ItemTransition.START_PACKING);
                     context.cascade(ITEMS, item, ItemTransition.PACK);
                     return ActionOutcome.failed("nothing to pack");
-                }).afterCommitWith("submitted", (doc, context) -> seen.add("submitted")).onFailure(DISCARD).endTransition()
+                }).afterCommitWith("submitted", (doc, context) -> seen.add("submitted"))
+                    .onFailure(DISCARD).endTransition()
                 .transition(DISCARD, DRAFT, ARCHIVED).action("close", context -> {
                     seen.add("peer:" + context.peer(ITEMS).stateOf(item));
                     return ActionOutcome.ok();
-                }).afterCommitWith("closed", (doc, context) -> seen.add("closed:" + context.from() + ":" + context.to()))
+                }).afterCommitWith("closed",
+                        (doc, context) -> seen.add("closed:" + context.from() + ":" + context.to()))
                     .endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
@@ -241,14 +243,16 @@ class CommitContextHooksTest {
                 .statePolicy(PUBLISHED, "published only archives")
                 .transition(SUBMIT, DRAFT, REVIEW).afterCommitWith("committed", hook).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).asyncAction("publish", context ->
-                        CompletableFuture.completedFuture(fail ? ActionOutcome.failed("not ready") : ActionOutcome.ok()))
+                        CompletableFuture.completedFuture(
+                                fail ? ActionOutcome.failed("not ready") : ActionOutcome.ok()))
                     .afterCommitWith("committed", hook).onFailure(SEND_BACK).endTransition()
                 .transition(SEND_BACK, REVIEW, ARCHIVED).afterCommitWith("committed", hook).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).afterCommitWith("committed", hook).endTransition()
                 .build();
     }
 
-    private static StateMachine<Doc, DocStatus, DocTransition> machine(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+    private static StateMachine<Doc, DocStatus, DocTransition> machine(
+            GraphDefinition<Doc, DocStatus, DocTransition> graph) {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
     }
 }

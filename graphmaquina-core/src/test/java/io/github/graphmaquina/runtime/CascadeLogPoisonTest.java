@@ -73,6 +73,36 @@ class CascadeLogPoisonTest {
         @Override public void close() { }
     }
 
+    private static GraphDefinition<Node, State, Step> graphWhoseRootCatchesTheCascadeError(String scenario,
+            MachineKey<Node, State, Step> key, MachineKey<Missing, State, Step> missing, Node root,
+            List<Error> caught) {
+        return StateGraph.define(key).initial(State.A).terminal(State.B)
+                .statePolicy(State.A, "GO leaves A")
+                .transition(Step.GO, State.A, State.B)
+                .guard("allowed", (GuardContext<Node, State, Step> ctx) -> ctx.entity().blocked
+                        ? GuardResult.reject("blocked") : GuardResult.pass())
+                .action("cascade", (TransitionContext<Node, State, Step> ctx) -> {
+                    if (ctx.entity() == root) {
+                        try {
+                            cascadeAsTheScenarioSays(scenario, ctx, key, missing, root);
+                        } catch (Error thrown) {
+                            caught.add(thrown);
+                        }
+                    }
+                    return ActionOutcome.ok();
+                }).endTransition().build();
+    }
+
+    private static void cascadeAsTheScenarioSays(String scenario, TransitionContext<Node, State, Step> ctx,
+            MachineKey<Node, State, Step> key, MachineKey<Missing, State, Step> missing, Node root) {
+        switch (scenario) {
+            case "cycle" -> ctx.cascade(key, root, Step.GO);
+            case "unknown" -> ctx.cascade(missing, new Missing(), Step.GO);
+            case "empty-unknown" -> ctx.cascadeAll(missing, List.of(), Step.GO, CascadePolicy.COLLECT);
+            default -> ctx.cascadeAll(key, root.children, Step.GO, CascadePolicy.COLLECT);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"collect-rollback", "aggregate", "cycle", "unknown", "empty-unknown"})
     void catchingAnErrorOfTheCascadeLogStillPreventsCommit(String scenario) {
@@ -84,27 +114,8 @@ class CascadeLogPoisonTest {
         Node root = new Node("root", false, List.of(first, refused, last));
         AssertionError fatal = new AssertionError("the TRACE backend failed");
         List<Error> caught = new ArrayList<>();
-        GraphDefinition<Node, State, Step> graph = StateGraph.define(key).initial(State.A).terminal(State.B)
-                .statePolicy(State.A, "GO leaves A")
-                .transition(Step.GO, State.A, State.B)
-                .guard("allowed", (GuardContext<Node, State, Step> ctx) -> ctx.entity().blocked
-                        ? GuardResult.reject("blocked") : GuardResult.pass())
-                .action("cascade", (TransitionContext<Node, State, Step> ctx) -> {
-                    if (ctx.entity() == root) {
-                        try {
-                            switch (scenario) {
-                                case "cycle" -> ctx.cascade(key, root, Step.GO);
-                                case "unknown" -> ctx.cascade(missing, new Missing(), Step.GO);
-                                case "empty-unknown" ->
-                                        ctx.cascadeAll(missing, List.of(), Step.GO, CascadePolicy.COLLECT);
-                                default -> ctx.cascadeAll(key, root.children, Step.GO, CascadePolicy.COLLECT);
-                            }
-                        } catch (Error thrown) {
-                            caught.add(thrown);
-                        }
-                    }
-                    return ActionOutcome.ok();
-                }).endTransition().build();
+        GraphDefinition<Node, State, Step> graph = graphWhoseRootCatchesTheCascadeError(scenario, key, missing, root,
+                caught);
         String line = scenario.equals("collect-rollback") ? "collect-rollback" : "depth=0 poison error=";
         BreakingHandler handler = new BreakingHandler(line, fatal);
         Logger logger = Logger.getLogger("io.github.graphmaquina.runtime");
@@ -128,21 +139,9 @@ class CascadeLogPoisonTest {
         }
     }
 
-    /**
-     * A COLLECT element that ends in an abort the cascade throws without poisoning, a cycle or the depth limit, poisons
-     * the call, which stays poisoned while the element is rolled back and logged: an Error of its poison line or of its
-     * collect-rollback line, which the action catches, still aborts the call.
-     */
-    @ParameterizedTest
-    @ValueSource(strings = {"cycle", "depth", "cycle poison", "depth poison"})
-    void anUnpoisonedCollectAbortStaysPoisonedThroughItsRollbackLine(String scenario) {
-        MachineKey<Node, State, Step> key = MachineKey.of(Node.class, State.class, Step.class);
-        Node grandchild = new Node("grandchild", false, List.of());
-        Node child = new Node("child", false, List.of(grandchild));
-        Node root = new Node("root", false, List.of(child));
-        AssertionError fatal = new AssertionError("the TRACE backend failed");
-        List<Error> caught = new ArrayList<>();
-        GraphDefinition<Node, State, Step> graph = StateGraph.define(key).initial(State.A).terminal(State.B)
+    private static GraphDefinition<Node, State, Step> graphWhoseRootCollectsItsElements(String scenario,
+            MachineKey<Node, State, Step> key, Node root, List<Error> caught) {
+        return StateGraph.define(key).initial(State.A).terminal(State.B)
                 .statePolicy(State.A, "GO leaves A")
                 .transition(Step.GO, State.A, State.B)
                 .action("cascade", (TransitionContext<Node, State, Step> ctx) -> {
@@ -157,8 +156,29 @@ class CascadeLogPoisonTest {
                     }
                     return ActionOutcome.ok();
                 }).endTransition().build();
-        String line = !scenario.endsWith(" poison") ? "collect-rollback" : "poison error=io.github.graphmaquina.error."
+    }
+
+    private static String lineToBreakFor(String scenario) {
+        return !scenario.endsWith(" poison") ? "collect-rollback" : "poison error=io.github.graphmaquina.error."
                 + (scenario.startsWith("cycle") ? "CascadeCycleException" : "CascadeDepthExceededException");
+    }
+
+    /**
+     * A COLLECT element that ends in an abort the cascade throws without poisoning, a cycle or the depth limit, poisons
+     * the call, which stays poisoned while the element is rolled back and logged: an Error of its poison line or of its
+     * collect-rollback line, which the action catches, still aborts the call.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"cycle", "depth", "cycle poison", "depth poison"})
+    void anUnpoisonedCollectAbortStaysPoisonedThroughItsRollbackLine(String scenario) {
+        MachineKey<Node, State, Step> key = MachineKey.of(Node.class, State.class, Step.class);
+        Node grandchild = new Node("grandchild", false, List.of());
+        Node child = new Node("child", false, List.of(grandchild));
+        Node root = new Node("root", false, List.of(child));
+        AssertionError fatal = new AssertionError("the TRACE backend failed");
+        List<Error> caught = new ArrayList<>();
+        GraphDefinition<Node, State, Step> graph = graphWhoseRootCollectsItsElements(scenario, key, root, caught);
+        String line = lineToBreakFor(scenario);
         BreakingHandler handler = new BreakingHandler(line, fatal);
         Logger logger = Logger.getLogger("io.github.graphmaquina.runtime");
         try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {

@@ -59,7 +59,8 @@ class DiagnosticsTest {
                 .build();
     }
 
-    private static StateMachine<Doc, DocStatus, DocTransition> standalone(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+    private static StateMachine<Doc, DocStatus, DocTransition> standalone(
+            GraphDefinition<Doc, DocStatus, DocTransition> graph) {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).build();
     }
 
@@ -117,9 +118,11 @@ class DiagnosticsTest {
             release.countDown();
             ExecutionException wrapped = assertThrows(ExecutionException.class, first::get);
             CommitFailedException error = assertInstanceOf(CommitFailedException.class, wrapped.getCause());
-            assertEquals("phase 2 failed: the state of Doc/DocStatus#@" + Integer.toHexString(System.identityHashCode(doc))
-                    + " changed during the transaction: expected DRAFT but is ARCHIVED; an action called the setter, or a"
-                    + " concurrent transition on the same entity wrote it first; applied 0, pending 1", error.getMessage());
+            assertEquals("phase 2 failed: the state of Doc/DocStatus#@"
+                    + Integer.toHexString(System.identityHashCode(doc))
+                    + " changed during the transaction: expected DRAFT but is ARCHIVED; an action called the setter,"
+                    + " or a concurrent transition on the same entity wrote it first; applied 0, pending 1",
+                    error.getMessage());
             assertEquals(ARCHIVED, doc.status());
         }
     }
@@ -134,7 +137,8 @@ class DiagnosticsTest {
                             throw anonymous;
                         })
                         .failsOn(IllegalStateException.class).onFailure(DISCARD)));
-        Outcome.Failed<?, ?, ?> failed = assertInstanceOf(Outcome.Failed.class, routed.execute(new Doc("1", DRAFT), SUBMIT));
+        Outcome.Failed<?, ?, ?> failed = assertInstanceOf(Outcome.Failed.class,
+                routed.execute(new Doc("1", DRAFT), SUBMIT));
         assertEquals(anonymous.getClass().getName(), failed.reason());
 
         StateMachine<Doc, DocStatus, DocTransition> unrouted = standalone(docs(

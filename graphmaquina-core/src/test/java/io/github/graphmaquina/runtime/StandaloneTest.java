@@ -46,7 +46,8 @@ class StandaloneTest {
         AtomicReference<DocStatus> seen = new AtomicReference<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                .transition(SUBMIT, DRAFT, REVIEW).action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                .transition(SUBMIT, DRAFT, REVIEW).action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                     ctx.cascade(Facades.Docs.class, peer, PUBLISH);
                     seen.set(ctx.peer(Facades.Docs.class).stateOf(peer));
                     return ActionOutcome.ok();

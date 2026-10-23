@@ -77,7 +77,8 @@ class CycleEnumerationDifferentialTest {
     @Test
     void oneNodeAndDuplicateEdgesMatchTheOracle() {
         GraphEdge<String> loop = new GraphEdge<>("A", "A");
-        for (List<GraphEdge<String>> edges : List.of(List.<GraphEdge<String>>of(), List.of(loop), List.of(loop, loop))) {
+        for (List<GraphEdge<String>> edges : List.of(List.<GraphEdge<String>>of(), List.of(loop),
+                List.of(loop, loop))) {
             Graph<String> graph = Graph.of(List.of("A"), edges);
             assertEquals(referenceCycles(graph), graph.cycles());
             assertEquals(edges.isEmpty() ? List.of() : List.of(List.of("A")), graph.cycles());

@@ -123,53 +123,109 @@ class CallFlowModelTest {
      * that an identity stopped midway does, and closes the steps it undid.
      */
     private static void run(long seed, int operations, Set<Boolean> indexed) {
-        Random random = new Random(seed);
-        WriteLog reference = new WriteLog();
-        CallFlow flow = new CallFlow(new Object());
-        Deque<Integer> savepoints = new ArrayDeque<>();
-        int logSize = 0;
-        FlowKey<?> lastKey = KEYS.get(0);
+        Simulation simulation = new Simulation(seed);
         for (int operation = 0; operation < operations; operation++) {
-            int dice = random.nextInt(100);
+            int dice = simulation.rollTheDice();
             String step = "seed " + seed + " operation " + operation;
+            simulation.apply(dice, operation);
+            assertSameReads(simulation.reference, simulation.flow, step);
+            indexed.add(simulation.flow.indexed());
+        }
+    }
+
+    /** One run: the reference and the flow under test, and the bookkeeping of the engine that drives them both. */
+    private static final class Simulation {
+
+        private final Random random;
+        private final WriteLog reference = new WriteLog();
+        private final CallFlow flow = new CallFlow(new Object());
+        private final Deque<Integer> savepoints = new ArrayDeque<>();
+        private int logSize = 0;
+        private FlowKey<?> lastKey = KEYS.get(0);
+
+        private Simulation(long seed) {
+            random = new Random(seed);
+        }
+
+        int rollTheDice() {
+            return random.nextInt(100);
+        }
+
+        void apply(int dice, int operation) {
             if (dice < 40) {
-                FlowKey<?> key = random.nextInt(3) == 0 ? lastKey : KEYS.get(random.nextInt(KEYS.size()));
-                Object value = valueFor(key, operation);
-                reference.write(key, Optional.of(value), logSize);
-                put(flow, key, value, logSize);
-                lastKey = key;
+                putAValue(operation);
             } else if (dice < 52) {
-                FlowKey<?> key = random.nextInt(3) == 0 ? lastKey : KEYS.get(random.nextInt(KEYS.size()));
-                reference.write(key, Optional.empty(), logSize);
-                flow.remove(key, logSize);
-                lastKey = key;
+                removeAKey();
             } else if (dice < 72) {
-                savepoints.push(logSize);
-                logSize++;
+                openStepWithSavepoint();
             } else if (dice < 77) {
-                logSize++;
-            } else if (dice < 87) {
-                if (!savepoints.isEmpty()) {
-                    int savepoint = savepoints.pop();
-                    reference.rollbackTo(savepoint);
-                    flow.rollbackTo(savepoint);
-                    logSize = savepoint;
-                }
-            } else if (dice < 95) {
-                if (!savepoints.isEmpty()) {
-                    savepoints.pop();
-                }
+                appendHop();
             } else {
-                int savepoint = random.nextInt(logSize + 1);
+                closeOrRollBack(dice);
+            }
+        }
+
+        private FlowKey<?> pickKey() {
+            return random.nextInt(3) == 0 ? lastKey : KEYS.get(random.nextInt(KEYS.size()));
+        }
+
+        private void putAValue(int operation) {
+            FlowKey<?> key = pickKey();
+            Object value = valueFor(key, operation);
+            reference.write(key, Optional.of(value), logSize);
+            put(flow, key, value, logSize);
+            lastKey = key;
+        }
+
+        private void removeAKey() {
+            FlowKey<?> key = pickKey();
+            reference.write(key, Optional.empty(), logSize);
+            flow.remove(key, logSize);
+            lastKey = key;
+        }
+
+        private void openStepWithSavepoint() {
+            savepoints.push(logSize);
+            logSize++;
+        }
+
+        private void appendHop() {
+            logSize++;
+        }
+
+        private void closeOrRollBack(int dice) {
+            if (dice < 87) {
+                rollBackTheInnermostStep();
+            } else if (dice < 95) {
+                keepTheInnermostStep();
+            } else {
+                rollBackToAnySize();
+            }
+        }
+
+        private void rollBackTheInnermostStep() {
+            if (!savepoints.isEmpty()) {
+                int savepoint = savepoints.pop();
                 reference.rollbackTo(savepoint);
                 flow.rollbackTo(savepoint);
                 logSize = savepoint;
-                while (!savepoints.isEmpty() && savepoints.peek() >= savepoint) {
-                    savepoints.pop();
-                }
             }
-            assertSameReads(reference, flow, step);
-            indexed.add(flow.indexed());
+        }
+
+        private void keepTheInnermostStep() {
+            if (!savepoints.isEmpty()) {
+                savepoints.pop();
+            }
+        }
+
+        private void rollBackToAnySize() {
+            int savepoint = random.nextInt(logSize + 1);
+            reference.rollbackTo(savepoint);
+            flow.rollbackTo(savepoint);
+            logSize = savepoint;
+            while (!savepoints.isEmpty() && savepoints.peek() >= savepoint) {
+                savepoints.pop();
+            }
         }
     }
 

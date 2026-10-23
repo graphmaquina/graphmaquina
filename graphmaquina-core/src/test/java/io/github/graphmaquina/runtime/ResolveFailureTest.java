@@ -387,22 +387,8 @@ class ResolveFailureTest {
         MachineKey<Ticket, Review, ReviewStep> reviews = MachineKey.of(Ticket.class, Review.class, ReviewStep.class);
         Ticket root = new Ticket("t1");
         Ticket peer = new Ticket("t2");
-        GraphDefinition<Ticket, Stage, StageStep> stageGraph = StateGraph.define(stages).initial(Stage.OPEN)
-                .terminal(Stage.CLOSED).statePolicy(Stage.OPEN, "x").statePolicy(Stage.WORKING, "x")
-                .transition(StageStep.START, Stage.OPEN, Stage.WORKING)
-                    .action("Start", (TransitionContext<Ticket, Stage, StageStep> ctx) -> {
-                        if (ctx.entity() == root) {
-                            ctx.cascade(stages, peer, StageStep.START);
-                            ctx.cascade(reviews, root, ReviewStep.APPROVE);
-                            ctx.cascade(stages, peer, StageStep.CLOSE);
-                            ctx.cascade(reviews, peer, ReviewStep.APPROVE);
-                            armed.set(true);
-                        }
-                        return ActionOutcome.ok();
-                    })
-                    .endTransition()
-                .transition(StageStep.CLOSE, Stage.WORKING, Stage.CLOSED).endTransition()
-                .build();
+        GraphDefinition<Ticket, Stage, StageStep> stageGraph = stageGraphWhoseRootCascadesToBothMachines(stages,
+                reviews, root, peer, armed);
         GraphDefinition<Ticket, Review, ReviewStep> reviewGraph = StateGraph.define(reviews).initial(Review.PENDING)
                 .terminal(Review.DONE).statePolicy(Review.PENDING, "x")
                 .transition(ReviewStep.APPROVE, Review.PENDING, Review.DONE).endTransition()
@@ -434,6 +420,28 @@ class ResolveFailureTest {
         assertEquals(List.of(Review.PENDING, Review.PENDING), List.of(root.review, peer.review));
     }
 
+    /** START of the root moves {@code peer} twice and both tickets in {@code reviews}, then arms the state read. */
+    private static GraphDefinition<Ticket, Stage, StageStep> stageGraphWhoseRootCascadesToBothMachines(
+            MachineKey<Ticket, Stage, StageStep> stages, MachineKey<Ticket, Review, ReviewStep> reviews,
+            Ticket root, Ticket peer, AtomicBoolean armed) {
+        return StateGraph.define(stages).initial(Stage.OPEN)
+                .terminal(Stage.CLOSED).statePolicy(Stage.OPEN, "x").statePolicy(Stage.WORKING, "x")
+                .transition(StageStep.START, Stage.OPEN, Stage.WORKING)
+                    .action("Start", (TransitionContext<Ticket, Stage, StageStep> ctx) -> {
+                        if (ctx.entity() == root) {
+                            ctx.cascade(stages, peer, StageStep.START);
+                            ctx.cascade(reviews, root, ReviewStep.APPROVE);
+                            ctx.cascade(stages, peer, StageStep.CLOSE);
+                            ctx.cascade(reviews, peer, ReviewStep.APPROVE);
+                            armed.set(true);
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(StageStep.CLOSE, Stage.WORKING, Stage.CLOSED).endTransition()
+                .build();
+    }
+
     /** A passing guard arms the grouping callback without adding an action to the journal. */
     private static GraphDefinition<Doc, DocStatus, DocTransition> guardArmed(Runnable arm, AtomicInteger hooks) {
         return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
@@ -459,7 +467,8 @@ class ResolveFailureTest {
         AtomicInteger writes = new AtomicInteger();
         AtomicInteger hooks = new AtomicInteger();
         Doc root = new Doc("root", DRAFT);
-        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(guardArmed(() -> armed.set(true), hooks))
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines
+                .from(guardArmed(() -> armed.set(true), hooks))
                 .state(Doc::status, (Doc doc, DocStatus state) -> {
                     writes.incrementAndGet();
                     doc.setStatus(state);
