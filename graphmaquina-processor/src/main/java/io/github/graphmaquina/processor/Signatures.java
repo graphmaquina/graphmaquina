@@ -24,6 +24,10 @@ import javax.lang.model.util.Types;
  */
 final class Signatures {
 
+    static final String COLLECTION = "java.util.Collection";
+    static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
+    static final String OPTIONAL = "java.util.Optional";
+
     private final Elements elements;
     private final Types types;
     private final MemberIndex members;

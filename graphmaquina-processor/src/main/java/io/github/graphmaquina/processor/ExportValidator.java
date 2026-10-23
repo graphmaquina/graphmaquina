@@ -45,15 +45,6 @@ import javax.lang.model.util.ElementFilter;
 final class ExportValidator {
 
     private static final String INVALID = "SG604";
-    private static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
-    private static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
-    private static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
-    private static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
-    private static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
-    private static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
-    private static final String COLLECTION = "java.util.Collection";
-    private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
-    private static final String OPTIONAL = "java.util.Optional";
 
     private final Signatures signatures;
     private final EffectiveMethods effective;
@@ -242,16 +233,17 @@ final class ExportValidator {
         List<? extends Element> parameters = method.getParameters();
         TypeMirror returned = method.getReturnType();
         return switch (role) {
-            case ACTION -> shapedAsVerdict(parameters, returned, TRANSITION_CONTEXT, ACTION_OUTCOME);
-            case GUARD -> shapedAsVerdict(parameters, returned, GUARD_CONTEXT, GUARD_RESULT);
+            case ACTION -> shapedAsVerdict(parameters, returned, Bindings.TRANSITION_CONTEXT, Bindings.ACTION_OUTCOME);
+            case GUARD -> shapedAsVerdict(parameters, returned, Bindings.GUARD_CONTEXT, Bindings.GUARD_RESULT);
             case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
-                    && signatures.erasureIs(parameters.get(1).asType(), COMMIT_CONTEXT)))
+                    && signatures.erasureIs(parameters.get(1).asType(), Bindings.COMMIT_CONTEXT)))
                     && returned.getKind() == TypeKind.VOID;
             case CONDITION -> parameters.size() == 3 && returned.getKind() == TypeKind.BOOLEAN
-                    && signatures.erasureAssignable(signatures.declared(COLLECTION), parameters.get(1).asType())
-                    && signatures.erasureIs(parameters.get(2).asType(), PEER_VIEW);
+                    && signatures.erasureAssignable(signatures.declared(Signatures.COLLECTION),
+                            parameters.get(1).asType())
+                    && signatures.erasureIs(parameters.get(2).asType(), Bindings.PEER_VIEW);
             case PROPERTY -> false;
-            case LOOKUP -> parameters.size() == 1 && signatures.erasureIs(returned, OPTIONAL);
+            case LOOKUP -> parameters.size() == 1 && signatures.erasureIs(returned, Signatures.OPTIONAL);
         };
     }
 
@@ -272,7 +264,8 @@ final class ExportValidator {
      */
     private boolean result(TypeMirror returned, String verdict) {
         return signatures.same(returned, signatures.declared(verdict))
-                || signatures.subtypeOf(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(verdict)));
+                || signatures.subtypeOf(returned,
+                        signatures.declared(Signatures.COMPLETION_STAGE, signatures.declared(verdict)));
     }
 
     /** The declarations of {@code declaring} that {@code candidate} names and that carry a role of their own. */

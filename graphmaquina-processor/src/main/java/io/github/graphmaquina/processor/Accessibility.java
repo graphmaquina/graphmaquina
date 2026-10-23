@@ -29,14 +29,20 @@ final class Accessibility {
 
     private Accessibility() { }
 
-    /** The qualified names of the types among {@code type} and its enclosing types that code in {@code packageName} cannot access. */
+    /**
+     * The qualified names of the types among {@code type} and its enclosing types that code in {@code packageName}
+     * cannot access.
+     */
     static Set<String> inaccessible(TypeElement type, String packageName) {
         Set<String> found = new LinkedHashSet<>();
         collect(type, packageName, found);
         return found;
     }
 
-    /** The qualified names of every type a reference to {@code type} names that code in {@code packageName} cannot access. */
+    /**
+     * The qualified names of every type a reference to {@code type} names that code in {@code packageName} cannot
+     * access.
+     */
     static Set<String> inaccessible(TypeMirror type, String packageName) {
         Set<String> found = new LinkedHashSet<>();
         collect(type, packageName, found);

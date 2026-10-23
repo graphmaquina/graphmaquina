@@ -23,15 +23,12 @@ final class Bindings {
     /** What the method is used for; it fixes the expected signature. */
     enum Role { ACTION, GUARD, HOOK, CONDITION, LOOKUP }
 
-    private static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
-    private static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
-    private static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
-    private static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
-    private static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
-    private static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
-    private static final String COLLECTION = "java.util.Collection";
-    private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
-    private static final String OPTIONAL = "java.util.Optional";
+    static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
+    static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
+    static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
+    static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
+    static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
+    static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
 
     private final Signatures signatures;
 
@@ -50,7 +47,7 @@ final class Bindings {
             case CONDITION -> peer.isPresent() && fitsCondition(parameters, returned, machine, peer.get());
             case LOOKUP -> peer.isPresent() && parameters.size() == 1
                     && signatures.same(parameters.get(0), peer.get().entity())
-                    && signatures.same(returned, signatures.declared(OPTIONAL, machine.entity()));
+                    && signatures.same(returned, signatures.declared(Signatures.OPTIONAL, machine.entity()));
         };
     }
 
@@ -64,7 +61,7 @@ final class Bindings {
                 && signatures.same(parameters.get(0), parameterized(context, machine))
                 && (signatures.same(returned, signatures.declared(verdict))
                     || signatures.subtypeOf(returned,
-                            signatures.declared(COMPLETION_STAGE, signatures.declared(verdict))));
+                            signatures.declared(Signatures.COMPLETION_STAGE, signatures.declared(verdict))));
     }
 
     /** Whether the method fits a hook of {@code machine}: it takes the entity, then optionally the commit context. */
@@ -83,7 +80,8 @@ final class Bindings {
                                   MachineTypes peer) {
         return parameters.size() == 3
                 && signatures.same(parameters.get(0), machine.entity())
-                && signatures.assignable(signatures.declared(COLLECTION, signatures.extendsWildcard(peer.entity())),
+                && signatures.assignable(
+                        signatures.declared(Signatures.COLLECTION, signatures.extendsWildcard(peer.entity())),
                         parameters.get(1))
                 && signatures.same(parameters.get(2), parameterized(PEER_VIEW, peer))
                 && returned.getKind() == TypeKind.BOOLEAN;
@@ -109,7 +107,7 @@ final class Bindings {
                             signatures.declared(COMMIT_CONTEXT, machine.states(), machine.transitions()));
             case CONDITION -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(
                     machine.entity(),
-                    signatures.declared(COLLECTION, signatures.extendsWildcard(found.entity())),
+                    signatures.declared(Signatures.COLLECTION, signatures.extendsWildcard(found.entity())),
                     parameterized(PEER_VIEW, found))).orElseGet(List::of);
             case LOOKUP -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(found.entity()))
                     .orElseGet(List::of);
@@ -121,7 +119,8 @@ final class Bindings {
         if (role != Role.ACTION && role != Role.GUARD) {
             return false;
         }
-        return signatures.erasureIs(returned, COMPLETION_STAGE) || signatures.subtype(returned, COMPLETION_STAGE);
+        return signatures.erasureIs(returned, Signatures.COMPLETION_STAGE)
+                || signatures.subtype(returned, Signatures.COMPLETION_STAGE);
     }
 
     /** The exported category a role is served by; one symbol may export several of them. */

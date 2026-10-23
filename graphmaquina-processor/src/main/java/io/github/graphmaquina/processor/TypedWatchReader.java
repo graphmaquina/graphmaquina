@@ -39,7 +39,6 @@ final class TypedWatchReader {
     private static final String TWO_WATCHES = "SG403";
     private static final String NO_RULES = "SG404";
     private static final String ALTERNATIVE = "SG508";
-    private static final String OPTIONAL = "java.util.Optional";
 
     /** The four elements of a rule, exactly one of which a {@code When} declares. */
     private static final List<String> ALTERNATIVES = List.of("condition", "allIn", "anyIn", "noneIn");
@@ -208,7 +207,7 @@ final class TypedWatchReader {
     /** Whether the owner accessor answers with an {@code Optional}, which decides how the peer is followed back. */
     private boolean isOptional(Property owner, MachineTypes machine) {
         return signatures.same(owner.accessor().effectiveType().getReturnType(),
-                signatures.declared(OPTIONAL, machine.entity()));
+                signatures.declared(Signatures.OPTIONAL, machine.entity()));
     }
 
     /** The values of an array element, and none when this annotation does not declare that element at all. */

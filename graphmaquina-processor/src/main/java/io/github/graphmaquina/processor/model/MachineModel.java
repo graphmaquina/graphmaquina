@@ -26,7 +26,9 @@ public record MachineModel(MachineTypes types, String packageName, String initia
         return types.facade().getSimpleName().toString();
     }
 
-    /** Every declared edge: the ones the interface declares itself first, then the operations', in declaration order. */
+    /**
+     * Every declared edge: the ones the interface declares itself first, then the operations', in declaration order.
+     */
     public List<TransitionModel> allTransitions() {
         List<TransitionModel> all = new ArrayList<>(transitions);
         for (OperationModel operation : operations) {

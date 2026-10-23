@@ -165,7 +165,9 @@ final class Names {
         types.putIfAbsent(type.getQualifiedName().toString(), packageOf(type).getQualifiedName().toString());
     }
 
-    /** The same for a top-level type known by its qualified name only, whose package is everything before the last dot. */
+    /**
+     * The same for a top-level type known by its qualified name only, whose package is everything before the last dot.
+     */
     static void claim(Map<String, String> types, String qualifiedName) {
         int dot = qualifiedName.lastIndexOf('.');
         types.putIfAbsent(qualifiedName, dot < 0 ? "" : qualifiedName.substring(0, dot));

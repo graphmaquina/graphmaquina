@@ -40,8 +40,8 @@ import javax.lang.model.util.Elements;
  * its enum, and a symbol must still name a member that exists. A claim that no longer holds means the
  * generation is stale, and the whole manifest is refused rather than used in part.</p>
  *
- * <p>Existence, identity and the declared signature are checked here. Whether a member's effective signature suits the role it
- * declares is the frontend's work, once the model is being built.</p>
+ * <p>Existence, identity and the declared signature are checked here. Whether a member's effective signature suits the
+ * role it declares is the frontend's work, once the model is being built.</p>
  *
  * <p>Every type a claim names is looked up by its canonical name as {@link CanonicalNames} looks one up: for the
  * package of the declaration the claim was read from, the facade's for its enums and its vocabulary and the host's for

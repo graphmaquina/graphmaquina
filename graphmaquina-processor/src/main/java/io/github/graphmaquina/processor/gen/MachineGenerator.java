@@ -73,13 +73,13 @@ import javax.lang.model.util.Elements;
  * otherwise. The types an operation takes as its input, the parameter types that pin a bound overload, the
  * {@code failsOn} classes, and the kind and the throwable classes of each recovery rule are written by
  * {@link TypeSource}, every declared type in them by its qualified name, together with their type annotations.
- * A qualified name starts with a package or, for a type of the unnamed
- * package, with the top-level type it is or is nested in, which is the whole name of a top-level one. A type of
- * the companion's scope takes that first segment wherever it heads a name; a field of that scope takes it, or a
- * simple name, only where an expression reads it: as the qualifier of a member the companion calls or reads, or
- * in an enum constant an annotation value names. So {@link #emit} answers, beside the source, every first segment
- * and simple name the companion writes and which of them an expression reads, and the processor refuses, as
- * {@code SG603} and before writing it, a facade whose companion would write one that its scope takes.</p>
+ * A qualified name starts with a package or, for a type of the unnamed package, with the top-level type it is or is
+ * nested in, which is the whole name of a top-level one. A type of the companion's scope takes that first segment
+ * wherever it heads a name; a field of that scope takes it, or a simple name, only where an expression reads it: as the
+ * qualifier of a member the companion calls or reads, or in an enum constant an annotation value names. So
+ * {@link #emit} answers, beside the source, every first segment and simple name the companion writes and which of them
+ * an expression reads, and the processor refuses, as {@code SG603} and before writing it, a facade whose companion
+ * would write one that its scope takes.</p>
  *
  * <p>Variables are named after the types they hold, or after their role, but for the parameters of an operation, which
  * take the names the facade's method declares them with. The parameter that takes the definition of a child is the
