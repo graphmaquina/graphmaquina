@@ -27,8 +27,11 @@ import java.util.stream.Stream;
  */
 final class CarrierTimestamp {
 
-    /** The package the generator emits the carrier of every compilation into. */
-    private static final String CARRIER_PACKAGE = "io/github/graphmaquina/generated/bootstrap";
+    /**
+     * The package the generator emits the carrier of every compilation into, as a path below its source root, which
+     * {@link CompiledSources} also matches the patterns of the compiler against.
+     */
+    static final String CARRIER_PACKAGE = "io/github/graphmaquina/generated/bootstrap";
 
     /** How far past the newest previous output a refreshed carrier is dated. */
     private static final long MARGIN_MILLIS = 2_000L;
