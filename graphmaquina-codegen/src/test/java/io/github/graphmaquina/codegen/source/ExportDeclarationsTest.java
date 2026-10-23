@@ -92,31 +92,8 @@ class ExportDeclarationsTest {
                         "fx.ConcreteActionsRefs.Check"),
                 symbols.stream().map(SymbolDescriptor::qualifiedName).toList());
 
-        SymbolDescriptor authorize = symbol(symbols, "fx.ConcreteActionsRefs.Authorize");
-        assertEquals("fx.ConcreteActions", authorize.host());
-        assertEquals("authorize", authorize.member());
-        assertEquals(Set.of(SymbolKind.ACTION), authorize.kinds());
-        assertEquals(Optional.empty(), authorize.property());
-        assertEquals(1, authorize.candidates().size());
-
-        MemberDescriptor inherited = authorize.candidates().get(0);
-        assertEquals("fx.BaseActions", inherited.declaringType());
-        assertEquals("authorize", inherited.name());
-        assertEquals(List.of("E"), inherited.parameterTypes());
-        assertEquals("void", inherited.returnType());
-        assertEquals(SymbolKind.ACTION, inherited.role());
-        assertFalse(inherited.staticMember());
-        assertEquals("fx/BaseActions.java", inherited.origin().path());
-        assertEquals(4L, inherited.origin().line());
-
-        SymbolDescriptor check = symbol(symbols, "fx.ConcreteActionsRefs.Check");
-        assertEquals(Set.of(SymbolKind.GUARD, SymbolKind.HOOK), check.kinds());
-        assertEquals(List.of(SymbolKind.GUARD, SymbolKind.HOOK),
-                check.candidates().stream().map(MemberDescriptor::role).toList());
-        assertEquals(List.of(List.of("fx.Order"), List.of("fx.Order", "java.lang.String")),
-                check.candidates().stream().map(MemberDescriptor::parameterTypes).toList());
-        assertEquals(List.of("fx.ConcreteActions", "fx.ConcreteActions"),
-                check.candidates().stream().map(MemberDescriptor::declaringType).toList());
+        assertInheritedAuthorizeIsExportedUnderTheConcreteHost(symbols);
+        assertOverloadsOfCheckUnionTheirRoles(symbols);
     }
 
     @Test
@@ -220,13 +197,7 @@ class ExportDeclarationsTest {
                     }
                     """));
 
-        assertEquals(List.of("fx.HostRefs.Approve", "fx.HostRefs.Keep"), symbols.stream()
-                .map(SymbolDescriptor::qualifiedName).filter((String name) -> name.startsWith("fx.HostRefs.")).toList());
-        assertEquals(List.of("fx.MiddleActions"), symbol(symbols, "fx.HostRefs.Approve").candidates().stream()
-                .map(MemberDescriptor::declaringType).toList());
-        assertEquals(List.of("fx.BaseActions"), symbol(symbols, "fx.HostRefs.Keep").candidates().stream()
-                .map(MemberDescriptor::declaringType).toList());
-        assertEquals(Set.of(SymbolKind.HOOK), symbol(symbols, "fx.HooksRefs.Announced").kinds());
+        assertOnlyTheStaticsTheHostInheritsAreExported(symbols);
     }
 
     @Test
@@ -881,54 +852,7 @@ class ExportDeclarationsTest {
     void refusesAMarkerWrittenInALocalOrAnonymousClass() {
         Map<String, Long> lines = new LinkedHashMap<>();
         Map<String, String> shops = new LinkedHashMap<>();
-        shops.put("GraphAction", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphAction;
-                public class Shop {
-                    public static Object handlers() {
-                        class Handlers {
-                            @GraphAction
-                            public void archive(Order order) {}
-                        }
-                        return new Handlers();
-                    }
-                }
-                """);
-        lines.put("GraphAction", 6L);
-        shops.put("io.github.graphmaquina.annotation.GraphGuard", """
-                package fx;
-                public class Shop {
-                    private final Object handlers = new Object() {
-                        @io.github.graphmaquina.annotation.GraphGuard
-                        public void approved(Order order) {}
-                    };
-                }
-                """);
-        lines.put("io.github.graphmaquina.annotation.GraphGuard", 4L);
-        shops.put("GraphProperty", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphProperty;
-                public enum Shop {
-                    OPEN {
-                        @GraphProperty
-                        public String label() { return "open"; }
-                    };
-                }
-                """);
-        lines.put("GraphProperty", 5L);
-        shops.put("GraphBindings", """
-                package fx;
-                import io.github.graphmaquina.annotation.GraphBindings;
-                public class Shop {
-                    static {
-                        Runnable runnable = () -> {
-                            @GraphBindings
-                            class Handlers {}
-                        };
-                    }
-                }
-                """);
-        lines.put("GraphBindings", 6L);
+        putShopsWithAMarkerInALocalOrAnonymousClass(shops, lines);
         for (Map.Entry<String, String> shop : shops.entrySet()) {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.getValue())), shop.getKey());
@@ -991,80 +915,9 @@ class ExportDeclarationsTest {
                     }
                 }
                 """;
-        Map<String, String> bodies = new LinkedHashMap<>();
-        bodies.put("an anonymous class of a type that declares it", """
-                        return new Lib() {
-                            @GraphAction
-                            void run() {}
-                        };
-                """);
-        bodies.put("an anonymous class of a type that inherits it", """
-                        return new Base() {
-                            @GraphBindings
-                            void run() {}
-                        };
-                """);
-        bodies.put("an anonymous class of a member class of a local class", """
-                        class Handlers {
-                            class Holder extends Lib {}
-                            Object inner() {
-                                return new Holder() {
-                                    @GraphAction
-                                    void run() {}
-                                };
-                            }
-                        }
-                        return new Handlers();
-                """);
-        bodies.put("a local class in a local class that inherits it", """
-                        class Outer extends Lib {
-                            Object inner() {
-                                class Inner {
-                                    @GraphAction
-                                    void run() {}
-                                }
-                                return new Inner();
-                            }
-                        }
-                        return new Outer();
-                """);
-        bodies.put("a supertype a local class takes over", """
-                        class Outer extends Lib {
-                            Object inner() {
-                                return new Holder() {
-                                    @GraphGuard
-                                    void run() {}
-                                };
-                            }
-                        }
-                        return new Outer();
-                """);
-        bodies.put("a local class named like a type of the package", """
-                        class Holder extends Lib.Holder {}
-                        return new Holder() {
-                            @GraphGuard
-                            void run() {}
-                        };
-                """);
-        bodies.put("an anonymous class of a member of the type of an expression", """
-                        return new Lib().new Part() {
-                            @GraphGuard
-                            void run() {}
-                        };
-                """);
-        int compiled = 0;
-        for (Map.Entry<String, String> body : bodies.entrySet()) {
-            List<Path> files = SourceFiles.write(directory, Map.of("fx.Order", ORDER, "fx.Lib", lib,
-                    "fx.Base", "package fx; public class Base extends Lib {}", "fx.Holder",
-                    "package fx; public class Holder {}", "fx.Part", "package fx; public class Part {}",
-                    "fx.Shop", shop.formatted(body.getValue())));
-            SourceFiles.Compilation compilation =
-                    SourceFiles.compileStrict(files, directory.resolve("classes-" + compiled++));
-            assertTrue(compilation.success(), body.getKey() + ": " + compilation.messages());
-
-            assertEquals(List.of("fx.ShopRefs.Archive"),
-                    collect(files).stream().map(SymbolDescriptor::qualifiedName).toList(), body.getKey());
-        }
+        Map<String, String> bodies = bodiesWritingAMemberTypeOfLibAsAMarker();
+        bodies.putAll(bodiesWritingAMemberTypeOfLibHolderAsAMarker());
+        assertEachBodyExportsOnlyTheMarkerOfShop(lib, shop, bodies);
 
         assertEquals(List.of("fx.ShopRefs.Archive"), collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.formatted("""
                         return new Generated() {
@@ -1073,31 +926,7 @@ class ExportDeclarationsTest {
                         };
                 """))).stream().map(SymbolDescriptor::qualifiedName).toList());
 
-        Map<String, String> refused = new LinkedHashMap<>();
-        refused.put("GraphBindings", """
-                        @GraphBindings
-                        class Handlers extends Lib {}
-                        return new Handlers();
-                """);
-        refused.put("GraphAction", """
-                        enum Kind {
-                            OPEN {
-                                @GraphAction
-                                void run() {}
-                            }
-                        }
-                        return Kind.OPEN;
-                """);
-        for (Map.Entry<String, String> body : refused.entrySet()) {
-            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of("fx.Order", ORDER,
-                    "fx.Lib", lib, "fx.Shop", shop.formatted(body.getValue()))), body.getKey());
-
-                assertEquals("SG604", failure.code());
-            assertEquals("the marker @" + body.getKey() + " is written in a local or anonymous class of fx.Shop, which"
-                    + " no references container can name, so it exports nothing: mark a member of a top-level or"
-                    + " member class instead", failure.getMessage());
-            assertEquals(body.getKey().equals("GraphBindings") ? 9L : 11L, failure.location().orElseThrow().line());
-        }
+        assertEachMarkerOnALocalClassOrEnumConstantIsRefused(lib, shop);
     }
 
     /**
@@ -1130,15 +959,7 @@ class ExportDeclarationsTest {
                         }
                     }
                     """);
-        for (Map.Entry<String, String> host : hosts.entrySet()) {
-            CodegenException failure = assertThrows(CodegenException.class,
-                    () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", host.getValue())));
-
-            assertEquals("SG604", failure.code());
-            assertTrue(failure.getMessage().startsWith("the host fx.Shop."), failure.getMessage());
-            assertTrue(failure.getMessage().endsWith(": " + host.getKey() + " is private"), failure.getMessage());
-            assertEquals("fx/Shop.java", failure.location().orElseThrow().path());
-        }
+        assertEachPrivateHostIsRefusedAtTheHost(hosts);
 
         List<SymbolDescriptor> accepted = collect(Map.of(
                 "fx.Order", ORDER,
@@ -1572,6 +1393,239 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * The bodies of {@code Shop.handlers()} in which {@code GraphAction} or {@code GraphBindings} is a member type
+     * of {@code Lib}.
+     */
+    private static Map<String, String> bodiesWritingAMemberTypeOfLibAsAMarker() {
+        Map<String, String> bodies = new LinkedHashMap<>();
+        bodies.put("an anonymous class of a type that declares it", """
+                        return new Lib() {
+                            @GraphAction
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a type that inherits it", """
+                        return new Base() {
+                            @GraphBindings
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member class of a local class", """
+                        class Handlers {
+                            class Holder extends Lib {}
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphAction
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Handlers();
+                """);
+        bodies.put("a local class in a local class that inherits it", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                class Inner {
+                                    @GraphAction
+                                    void run() {}
+                                }
+                                return new Inner();
+                            }
+                        }
+                        return new Outer();
+                """);
+        return bodies;
+    }
+
+    /** The bodies of {@code Shop.handlers()} in which {@code GraphGuard} is a member type of {@code Lib.Holder}. */
+    private static Map<String, String> bodiesWritingAMemberTypeOfLibHolderAsAMarker() {
+        Map<String, String> bodies = new LinkedHashMap<>();
+        bodies.put("a supertype a local class takes over", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphGuard
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Outer();
+                """);
+        bodies.put("a local class named like a type of the package", """
+                        class Holder extends Lib.Holder {}
+                        return new Holder() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member of the type of an expression", """
+                        return new Lib().new Part() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        return bodies;
+    }
+
+    /**
+     * Asserts that each of {@code bodies}, placed in {@code shop} beside {@code lib}, compiles and still exports the
+     * one real marker of the file.
+     */
+    private void assertEachBodyExportsOnlyTheMarkerOfShop(String lib, String shop, Map<String, String> bodies) {
+        int compiled = 0;
+        for (Map.Entry<String, String> body : bodies.entrySet()) {
+            List<Path> files = SourceFiles.write(directory, Map.of("fx.Order", ORDER, "fx.Lib", lib,
+                    "fx.Base", "package fx; public class Base extends Lib {}", "fx.Holder",
+                    "package fx; public class Holder {}", "fx.Part", "package fx; public class Part {}",
+                    "fx.Shop", shop.formatted(body.getValue())));
+            SourceFiles.Compilation compilation =
+                    SourceFiles.compileStrict(files, directory.resolve("classes-" + compiled++));
+            assertTrue(compilation.success(), body.getKey() + ": " + compilation.messages());
+
+            assertEquals(List.of("fx.ShopRefs.Archive"),
+                    collect(files).stream().map(SymbolDescriptor::qualifiedName).toList(), body.getKey());
+        }
+    }
+
+    /** Asserts that a marker on a local class itself and one in a constant of a local enum are still refused. */
+    private void assertEachMarkerOnALocalClassOrEnumConstantIsRefused(String lib, String shop) {
+        Map<String, String> refused = new LinkedHashMap<>();
+        refused.put("GraphBindings", """
+                        @GraphBindings
+                        class Handlers extends Lib {}
+                        return new Handlers();
+                """);
+        refused.put("GraphAction", """
+                        enum Kind {
+                            OPEN {
+                                @GraphAction
+                                void run() {}
+                            }
+                        }
+                        return Kind.OPEN;
+                """);
+        for (Map.Entry<String, String> body : refused.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of("fx.Order", ORDER,
+                    "fx.Lib", lib, "fx.Shop", shop.formatted(body.getValue()))), body.getKey());
+
+            assertEquals("SG604", failure.code());
+            assertEquals("the marker @" + body.getKey() + " is written in a local or anonymous class of fx.Shop, which"
+                    + " no references container can name, so it exports nothing: mark a member of a top-level or"
+                    + " member class instead", failure.getMessage());
+            assertEquals(body.getKey().equals("GraphBindings") ? 9L : 11L, failure.location().orElseThrow().line());
+        }
+    }
+
+    private static void assertInheritedAuthorizeIsExportedUnderTheConcreteHost(List<SymbolDescriptor> symbols) {
+        SymbolDescriptor authorize = symbol(symbols, "fx.ConcreteActionsRefs.Authorize");
+        assertEquals("fx.ConcreteActions", authorize.host());
+        assertEquals("authorize", authorize.member());
+        assertEquals(Set.of(SymbolKind.ACTION), authorize.kinds());
+        assertEquals(Optional.empty(), authorize.property());
+        assertEquals(1, authorize.candidates().size());
+
+        MemberDescriptor inherited = authorize.candidates().get(0);
+        assertEquals("fx.BaseActions", inherited.declaringType());
+        assertEquals("authorize", inherited.name());
+        assertEquals(List.of("E"), inherited.parameterTypes());
+        assertEquals("void", inherited.returnType());
+        assertEquals(SymbolKind.ACTION, inherited.role());
+        assertFalse(inherited.staticMember());
+        assertEquals("fx/BaseActions.java", inherited.origin().path());
+        assertEquals(4L, inherited.origin().line());
+    }
+
+    private static void assertOverloadsOfCheckUnionTheirRoles(List<SymbolDescriptor> symbols) {
+        SymbolDescriptor check = symbol(symbols, "fx.ConcreteActionsRefs.Check");
+        assertEquals(Set.of(SymbolKind.GUARD, SymbolKind.HOOK), check.kinds());
+        assertEquals(List.of(SymbolKind.GUARD, SymbolKind.HOOK),
+                check.candidates().stream().map(MemberDescriptor::role).toList());
+        assertEquals(List.of(List.of("fx.Order"), List.of("fx.Order", "java.lang.String")),
+                check.candidates().stream().map(MemberDescriptor::parameterTypes).toList());
+        assertEquals(List.of("fx.ConcreteActions", "fx.ConcreteActions"),
+                check.candidates().stream().map(MemberDescriptor::declaringType).toList());
+    }
+
+    private static void assertOnlyTheStaticsTheHostInheritsAreExported(List<SymbolDescriptor> symbols) {
+        assertEquals(List.of("fx.HostRefs.Approve", "fx.HostRefs.Keep"), symbols.stream()
+                .map(SymbolDescriptor::qualifiedName)
+                .filter((String name) -> name.startsWith("fx.HostRefs.")).toList());
+        assertEquals(List.of("fx.MiddleActions"), symbol(symbols, "fx.HostRefs.Approve").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(List.of("fx.BaseActions"), symbol(symbols, "fx.HostRefs.Keep").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(Set.of(SymbolKind.HOOK), symbol(symbols, "fx.HooksRefs.Announced").kinds());
+    }
+
+    /**
+     * Puts in {@code shops}, by the marker it writes, a class {@code fx.Shop} that writes that marker in a local or
+     * anonymous class, and in {@code lines} the line of the file where it writes it.
+     */
+    private static void putShopsWithAMarkerInALocalOrAnonymousClass(Map<String, String> shops,
+            Map<String, Long> lines) {
+        shops.put("GraphAction", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Shop {
+                    public static Object handlers() {
+                        class Handlers {
+                            @GraphAction
+                            public void archive(Order order) {}
+                        }
+                        return new Handlers();
+                    }
+                }
+                """);
+        lines.put("GraphAction", 6L);
+        shops.put("io.github.graphmaquina.annotation.GraphGuard", """
+                package fx;
+                public class Shop {
+                    private final Object handlers = new Object() {
+                        @io.github.graphmaquina.annotation.GraphGuard
+                        public void approved(Order order) {}
+                    };
+                }
+                """);
+        lines.put("io.github.graphmaquina.annotation.GraphGuard", 4L);
+        shops.put("GraphProperty", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public enum Shop {
+                    OPEN {
+                        @GraphProperty
+                        public String label() { return "open"; }
+                    };
+                }
+                """);
+        lines.put("GraphProperty", 5L);
+        shops.put("GraphBindings", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                public class Shop {
+                    static {
+                        Runnable runnable = () -> {
+                            @GraphBindings
+                            class Handlers {}
+                        };
+                    }
+                }
+                """);
+        lines.put("GraphBindings", 6L);
+    }
+
+    private void assertEachPrivateHostIsRefusedAtTheHost(Map<String, String> hosts) {
+        for (Map.Entry<String, String> host : hosts.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", host.getValue())));
+
+            assertEquals("SG604", failure.code());
+            assertTrue(failure.getMessage().startsWith("the host fx.Shop."), failure.getMessage());
+            assertTrue(failure.getMessage().endsWith(": " + host.getKey() + " is private"), failure.getMessage());
+            assertEquals("fx/Shop.java", failure.location().orElseThrow().path());
+        }
+    }
+
+    /**
      * Compiles the same fixture for real and renders the parameter types javac gives {@code type.method} the way
      * the processor renders them before comparing them with a candidate: qualified, with an enclosing type only
      * for an inner class.
@@ -1611,22 +1665,26 @@ class ExportDeclarationsTest {
     /** The rendering of the processor's {@code ManifestTypes}, for the declared and array types these fixtures use. */
     private static String render(TypeMirror type) {
         if (type instanceof DeclaredType declared) {
-            TypeElement element = (TypeElement) declared.asElement();
-            String name = declared.getEnclosingType().getKind() == TypeKind.NONE
-                    ? element.getQualifiedName().toString()
-                    : render(declared.getEnclosingType()) + '.' + element.getSimpleName();
-            if (declared.getTypeArguments().isEmpty()) {
-                return name;
-            }
-            List<String> arguments = new ArrayList<>();
-            for (TypeMirror argument : declared.getTypeArguments()) {
-                arguments.add(render(argument));
-            }
-            return name + '<' + String.join(", ", arguments) + '>';
+            return renderDeclared(declared);
         }
         if (type instanceof ArrayType array) {
             return render(array.getComponentType()) + "[]";
         }
         return type.toString();
+    }
+
+    private static String renderDeclared(DeclaredType declared) {
+        TypeElement element = (TypeElement) declared.asElement();
+        String name = declared.getEnclosingType().getKind() == TypeKind.NONE
+                ? element.getQualifiedName().toString()
+                : render(declared.getEnclosingType()) + '.' + element.getSimpleName();
+        if (declared.getTypeArguments().isEmpty()) {
+            return name;
+        }
+        List<String> arguments = new ArrayList<>();
+        for (TypeMirror argument : declared.getTypeArguments()) {
+            arguments.add(render(argument));
+        }
+        return name + '<' + String.join(", ", arguments) + '>';
     }
 }

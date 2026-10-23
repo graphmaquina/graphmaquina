@@ -834,24 +834,29 @@ class MachineHeadersTest {
                     .toList());
             Elements elements = task.getElements();
             Types types = task.getTypes();
-            Deque<TypeMirror> pending = new ArrayDeque<>();
-            pending.add(elements.getTypeElement(facade).asType());
-            while (!pending.isEmpty()) {
-                TypeMirror current = pending.removeFirst();
-                if (current instanceof DeclaredType declared
-                        && ((TypeElement) declared.asElement()).getQualifiedName()
-                                .contentEquals("io.github.graphmaquina.api.Machine")) {
-                    List<String> arguments = new ArrayList<>();
-                    for (TypeMirror argument : declared.getTypeArguments()) {
-                        arguments.add(argument.toString());
-                    }
-                    return List.copyOf(arguments);
-                }
-                pending.addAll(types.directSupertypes(current));
-            }
-            throw new IllegalStateException("javac found no Machine supertype");
+            return machineArguments(types, elements.getTypeElement(facade).asType());
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }
+    }
+
+    /** The type arguments of the {@code Machine} among the supertypes of {@code facade}, breadth first. */
+    private static List<String> machineArguments(Types types, TypeMirror facade) {
+        Deque<TypeMirror> pending = new ArrayDeque<>();
+        pending.add(facade);
+        while (!pending.isEmpty()) {
+            TypeMirror current = pending.removeFirst();
+            if (current instanceof DeclaredType declared
+                    && ((TypeElement) declared.asElement()).getQualifiedName()
+                            .contentEquals("io.github.graphmaquina.api.Machine")) {
+                List<String> arguments = new ArrayList<>();
+                for (TypeMirror argument : declared.getTypeArguments()) {
+                    arguments.add(argument.toString());
+                }
+                return List.copyOf(arguments);
+            }
+            pending.addAll(types.directSupertypes(current));
+        }
+        throw new IllegalStateException("javac found no Machine supertype");
     }
 }

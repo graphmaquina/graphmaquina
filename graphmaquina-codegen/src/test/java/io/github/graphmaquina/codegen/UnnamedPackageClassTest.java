@@ -866,25 +866,7 @@ class UnnamedPackageClassTest {
         List<Executable> checks = new ArrayList<>();
         for (String file : List.of("shop", "zzz")) {
             for (String name : List.of("X", "Y")) {
-                checks.add(() -> {
-                    String label = "homonym-header-" + name + "-" + file;
-                    Map<String, String> layout = new LinkedHashMap<>(sources);
-                    layout.put(file, "import shop.X;\n" + (file.equals("shop") ? "public " : "") + """
-                            final class shop extends X {
-                                private shop() { }
-                                @io.github.graphmaquina.annotation.GraphBindings
-                                public static class %s extends N { }
-                            }
-                            """.formatted(name));
-                    Generation generation = generate(label, layout, List.of());
-                    List<String> symbols = new ArrayList<>();
-                    for (SymbolDescriptor symbol : generation.model().symbols()) {
-                        symbols.add(symbol.qualifiedName() + " " + symbol.candidates().get(0).declaringType());
-                    }
-                    assertEquals(List.of("Shop" + name + "Refs.Done shop.Hooks.N", "shop.HooksNRefs.Done shop.Hooks.N"),
-                            symbols, label);
-                    assertCompiles(generation, file.equals("zzz") ? List.of("-Xlint:-auxiliaryclass") : List.of());
-                });
+                checks.add(() -> assertTheHookOfTheHeaderNameIsExported(sources, file, name));
             }
         }
         assertAll(checks);
@@ -1139,6 +1121,58 @@ class UnnamedPackageClassTest {
         return sources;
     }
 
+    /** The class {@code shop.Hosts} of {@link #nested()}: a host overrides, unmarked, the action its base marks. */
+    private static final String NESTED_HOSTS = """
+                package shop;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                import shop.Model.Order;
+                import shop.Statuses.OrderStatus;
+                import shop.Statuses.OrderTransition;
+                public final class Hosts {
+                    private Hosts() { }
+                    public static class Charging {
+                        @GraphAction
+                        public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                            return ActionOutcome.ok();
+                        }
+                    }
+                    @GraphBindings
+                    public static final class Payments extends Charging {
+                        @Override
+                        public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
+                            return ActionOutcome.ok();
+                        }
+                    }
+                }
+                """;
+
+    /** The machine {@code shop.Orders} of {@link #nested()}, over its enums and entity and bound to its host. */
+    private static final String NESTED_ORDERS = """
+                package shop;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import shop.Model.Order;
+                import shop.Statuses.OrderStatus;
+                import shop.Statuses.OrderTransition;
+                import static shop.Statuses.OrderStatus.*;
+                import static shop.Statuses.OrderTransition.*;
+                @GenerateGraphApi
+                @OrdersGraph.Definition(initial = NEW, terminals = {PAID, CANCELLED},
+                    state = ModelOrderRefs.Status.class, id = ModelOrderRefs.Id.class)
+                @OrdersGraph.StatePolicy(state = NEW, otherwise = "a new order is paid or cancelled")
+                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
+                    @OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = HostsPaymentsRefs.Charge.class)
+                    Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
+
+                    @OrdersGraph.Transition(id = CANCEL, from = NEW, to = CANCELLED)
+                    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order);
+                }
+                """;
+
     /**
      * A machine of the package {@code shop} whose enums, entity and action hosts are member types: the concrete host
      * {@code Hosts.Payments} overrides, without marking it, the action its base {@code Hosts.Charging} marks.
@@ -1166,54 +1200,8 @@ class UnnamedPackageClassTest {
                     }
                 }
                 """);
-        sources.put("shop.Hosts", """
-                package shop;
-                import io.github.graphmaquina.annotation.GraphAction;
-                import io.github.graphmaquina.annotation.GraphBindings;
-                import io.github.graphmaquina.api.ActionOutcome;
-                import io.github.graphmaquina.api.TransitionContext;
-                import shop.Model.Order;
-                import shop.Statuses.OrderStatus;
-                import shop.Statuses.OrderTransition;
-                public final class Hosts {
-                    private Hosts() { }
-                    public static class Charging {
-                        @GraphAction
-                        public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
-                            return ActionOutcome.ok();
-                        }
-                    }
-                    @GraphBindings
-                    public static final class Payments extends Charging {
-                        @Override
-                        public ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition> context) {
-                            return ActionOutcome.ok();
-                        }
-                    }
-                }
-                """);
-        sources.put("shop.Orders", """
-                package shop;
-                import io.github.graphmaquina.annotation.GenerateGraphApi;
-                import io.github.graphmaquina.api.Machine;
-                import io.github.graphmaquina.api.Outcome;
-                import shop.Model.Order;
-                import shop.Statuses.OrderStatus;
-                import shop.Statuses.OrderTransition;
-                import static shop.Statuses.OrderStatus.*;
-                import static shop.Statuses.OrderTransition.*;
-                @GenerateGraphApi
-                @OrdersGraph.Definition(initial = NEW, terminals = {PAID, CANCELLED},
-                    state = ModelOrderRefs.Status.class, id = ModelOrderRefs.Id.class)
-                @OrdersGraph.StatePolicy(state = NEW, otherwise = "a new order is paid or cancelled")
-                public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
-                    @OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = HostsPaymentsRefs.Charge.class)
-                    Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
-
-                    @OrdersGraph.Transition(id = CANCEL, from = NEW, to = CANCELLED)
-                    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order);
-                }
-                """);
+        sources.put("shop.Hosts", NESTED_HOSTS);
+        sources.put("shop.Orders", NESTED_ORDERS);
         return sources;
     }
 
@@ -1252,13 +1240,8 @@ class UnnamedPackageClassTest {
         return homonyms;
     }
 
-    /**
-     * The declarations of {@link #nested()} as member types of a class {@code shop} of the unnamed package, declared in
-     * {@code file}, with a machine {@code Orders} of that package over them and a machine {@code Docs} that watches it.
-     */
-    private static Map<String, String> unnamedNested(String file) {
-        Map<String, String> sources = new LinkedHashMap<>();
-        sources.put(file, """
+    /** The class {@code shop} of the unnamed package of {@link #unnamedNested}, nesting the declarations it names. */
+    private static final String UNNAMED_NESTED_SHOP = """
                 import io.github.graphmaquina.annotation.GraphAction;
                 import io.github.graphmaquina.annotation.GraphBindings;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -1299,7 +1282,15 @@ class UnnamedPackageClassTest {
                         }
                     }
                 }
-                """);
+                """;
+
+    /**
+     * The declarations of {@link #nested()} as member types of a class {@code shop} of the unnamed package, declared in
+     * {@code file}, with a machine {@code Orders} of that package over them and a machine {@code Docs} that watches it.
+     */
+    private static Map<String, String> unnamedNested(String file) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put(file, UNNAMED_NESTED_SHOP);
         sources.put("Orders", """
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import io.github.graphmaquina.api.Machine;
@@ -1403,6 +1394,32 @@ class UnnamedPackageClassTest {
                     }
                 }
                 """.formatted(parameter);
+    }
+
+    /**
+     * Asserts that a class {@code shop} of the unnamed package, declared in {@code file} beside {@code sources},
+     * extends {@code shop.X} and nests a {@code @GraphBindings} class {@code name} extending {@code N}, exports the
+     * hook that {@code shop.Hooks.N} marks, and that the sources and what was generated compile.
+     */
+    private void assertTheHookOfTheHeaderNameIsExported(Map<String, String> sources, String file, String name)
+            throws IOException {
+        String label = "homonym-header-" + name + "-" + file;
+        Map<String, String> layout = new LinkedHashMap<>(sources);
+        layout.put(file, "import shop.X;\n" + (file.equals("shop") ? "public " : "") + """
+                final class shop extends X {
+                    private shop() { }
+                    @io.github.graphmaquina.annotation.GraphBindings
+                    public static class %s extends N { }
+                }
+                """.formatted(name));
+        Generation generation = generate(label, layout, List.of());
+        List<String> symbols = new ArrayList<>();
+        for (SymbolDescriptor symbol : generation.model().symbols()) {
+            symbols.add(symbol.qualifiedName() + " " + symbol.candidates().get(0).declaringType());
+        }
+        assertEquals(List.of("Shop" + name + "Refs.Done shop.Hooks.N", "shop.HooksNRefs.Done shop.Hooks.N"),
+                symbols, label);
+        assertCompiles(generation, file.equals("zzz") ? List.of("-Xlint:-auxiliaryclass") : List.of());
     }
 
     /**

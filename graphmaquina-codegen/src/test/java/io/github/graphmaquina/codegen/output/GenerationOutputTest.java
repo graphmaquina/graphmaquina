@@ -200,23 +200,8 @@ class GenerationOutputTest {
         for (Path generated : initial.generatedSources()) {
             Files.delete(generated);
         }
-        List<Path> oldFiles = SourceFiles.write(output(), Map.of(
-            "fx.Outer_InnerRefs", """
-                package fx;
-                public final class Outer_InnerRefs { public static final class __id {} }
-                """,
-            "io.github.graphmaquina.generated.bootstrap." + oldCarrierType,
-            "package io.github.graphmaquina.generated.bootstrap; public final class " + oldCarrierType + " {}",
-            "fx.Outer_InnerRefsManual", "package fx; public final class Outer_InnerRefsManual {}"));
-        SourceFiles.Compilation compiled = SourceFiles.compileStrict(oldFiles, request().classesOutput());
-        assertTrue(compiled.success(), () -> String.valueOf(compiled.messages()));
-        ManifestCodec.writeCompile(initial.annotationManifest(), new CompileManifest(current.schemaVersion(),
-            "2.0.0-test", current.local(), current.dependencies(), current.processorInventory(),
-            List.of("fx/Outer_InnerRefs.java", oldCarrier)));
-        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(2,
-            List.of("fx/Outer_InnerRefs.java", oldCarrier),
-            List.of("fx/Outer_InnerRefs.class", "fx/Outer_InnerRefs$__id.class"), List.of(),
-            List.of(oldCarrier.replace(".java", ".class"))));
+        assertThePriorSpellingSourcesCompile(oldCarrierType);
+        writeTheInventoriesOfThePriorSpelling(initial, current, oldCarrier);
         Path manualSource = output().resolve("fx/Outer_InnerRefsManual.java");
         Path manualClass = request().classesOutput().resolve("fx/Outer_InnerRefsManual.class");
         String manualBefore = Files.readString(manualSource);
@@ -931,6 +916,35 @@ class GenerationOutputTest {
         GenerationResult result = StateGraphCodegen.generate(withClasspathEntry(settings));
 
         assertTrue(Files.isRegularFile(result.annotationManifest()));
+    }
+
+    /**
+     * Writes the sources of the prior spelling of the outputs for {@code fx.Outer}, among them a manual one and the
+     * prior carrier of the type {@code oldCarrierType}, and asserts that they compile.
+     */
+    private void assertThePriorSpellingSourcesCompile(String oldCarrierType) {
+        List<Path> oldFiles = SourceFiles.write(output(), Map.of(
+            "fx.Outer_InnerRefs", """
+                package fx;
+                public final class Outer_InnerRefs { public static final class __id {} }
+                """,
+            "io.github.graphmaquina.generated.bootstrap." + oldCarrierType,
+            "package io.github.graphmaquina.generated.bootstrap; public final class " + oldCarrierType + " {}",
+            "fx.Outer_InnerRefsManual", "package fx; public final class Outer_InnerRefsManual {}"));
+        SourceFiles.Compilation compiled = SourceFiles.compileStrict(oldFiles, request().classesOutput());
+        assertTrue(compiled.success(), () -> String.valueOf(compiled.messages()));
+    }
+
+    /** Records the sources and class files of the prior spelling in the manifest and the owned inventory. */
+    private void writeTheInventoriesOfThePriorSpelling(GenerationResult initial, CompileManifest current,
+            String oldCarrier) throws IOException {
+        ManifestCodec.writeCompile(initial.annotationManifest(), new CompileManifest(current.schemaVersion(),
+            "2.0.0-test", current.local(), current.dependencies(), current.processorInventory(),
+            List.of("fx/Outer_InnerRefs.java", oldCarrier)));
+        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(2,
+            List.of("fx/Outer_InnerRefs.java", oldCarrier),
+            List.of("fx/Outer_InnerRefs.class", "fx/Outer_InnerRefs$__id.class"), List.of(),
+            List.of(oldCarrier.replace(".java", ".class"))));
     }
 
     /** The request of {@link #request()} with {@code sources} as its sources instead. */

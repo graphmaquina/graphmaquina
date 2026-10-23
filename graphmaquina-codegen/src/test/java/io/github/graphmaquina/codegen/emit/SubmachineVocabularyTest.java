@@ -36,6 +36,13 @@ class SubmachineVocabularyTest {
 
     private static Map<String, String> originals() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putOrderAndPaymentEnums(sources);
+        putOrderAndPaymentEntities(sources);
+        putLookupsAndMachines(sources);
+        return Map.copyOf(sources);
+    }
+
+    private static void putOrderAndPaymentEnums(Map<String, String> sources) {
         sources.put("fx.OrderStatus", """
             package fx;
             /** Fixture type for the sub-machine vocabulary compilation. */
@@ -56,6 +63,9 @@ class SubmachineVocabularyTest {
             /** Fixture type for the sub-machine vocabulary compilation. */
             public enum PaymentTransition { CAPTURE, DECLINE }
             """);
+    }
+
+    private static void putOrderAndPaymentEntities(Map<String, String> sources) {
         sources.put("fx.Order", """
             package fx;
             import io.github.graphmaquina.annotation.GraphProperty;
@@ -81,6 +91,9 @@ class SubmachineVocabularyTest {
                 public Optional<Order> order() { return order; }
             }
             """);
+    }
+
+    private static void putLookupsAndMachines(Map<String, String> sources) {
         sources.put("fx.OrderLookups", """
             package fx;
             import io.github.graphmaquina.annotation.GraphLookup;
@@ -109,7 +122,6 @@ class SubmachineVocabularyTest {
             @GenerateGraphApi
             public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransition> {}
             """);
-        return Map.copyOf(sources);
     }
 
     /** The three sub-machine annotations, exactly as the vocabulary of the pair declares them after its watch. */
@@ -120,7 +132,8 @@ class SubmachineVocabularyTest {
                  * how to reach the child from the parent and back, and the transition of {@link fx.Orders}
                  * each terminal state of the child selects.
                  */
-                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.SUBMACHINE)
+                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, \
+            peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.SUBMACHINE)
                 @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE)
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 @java.lang.annotation.Repeatable(OrdersPayments.Submachines.class)
@@ -140,7 +153,8 @@ class SubmachineVocabularyTest {
                 /**
                  * Holds the repeated {@link OrdersPayments.Submachine} declarations of {@link fx.Orders} over {@link fx.Payments}.
                  */
-                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.SUBMACHINES)
+                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, \
+            peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.SUBMACHINES)
                 @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE)
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 public @interface Submachines {
@@ -152,7 +166,8 @@ class SubmachineVocabularyTest {
                  * One exit in the {@code exits} of a {@link OrdersPayments.Submachine}: a terminal state of {@link fx.Payments}
                  * and the transition of {@link fx.Orders} it selects.
                  */
-                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.EXIT)
+                @io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Orders.class, \
+            peer = fx.Payments.class, value = io.github.graphmaquina.annotation.internal.VocabularyKind.EXIT)
                 @java.lang.annotation.Target({})
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 public @interface Exit {

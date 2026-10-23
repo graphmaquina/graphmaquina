@@ -40,6 +40,13 @@ class WatchVocabularyTest {
 
     private static Map<String, String> originals() {
         Map<String, String> sources = new LinkedHashMap<>();
+        putDocAndPageEnums(sources);
+        putDocAndPageEntities(sources);
+        putMachinesAndConditions(sources);
+        return Map.copyOf(sources);
+    }
+
+    private static void putDocAndPageEnums(Map<String, String> sources) {
         sources.put("fx.DocStatus", """
             package fx;
             public enum DocStatus { DRAFT, REVIEW, PUBLISHED }
@@ -56,6 +63,9 @@ class WatchVocabularyTest {
             package fx;
             public enum PageTransition { OPEN_PAGE, CLOSE_PAGE }
             """);
+    }
+
+    private static void putDocAndPageEntities(Map<String, String> sources) {
         sources.put("fx.Doc", """
             package fx;
             import io.github.graphmaquina.annotation.GraphProperty;
@@ -81,6 +91,9 @@ class WatchVocabularyTest {
                 public Doc doc() { return doc; }
             }
             """);
+    }
+
+    private static void putMachinesAndConditions(Map<String, String> sources) {
         sources.put("fx.Docs", """
             package fx;
             import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -106,7 +119,6 @@ class WatchVocabularyTest {
                 public boolean everyPageClosed(Doc doc, Collection<Page> pages) { return pages.isEmpty(); }
             }
             """);
-        return Map.copyOf(sources);
     }
 
     /** Repeats the watch and, across its three rules, omits each optional array in some and fills it in another. */
@@ -200,8 +212,8 @@ class WatchVocabularyTest {
         GraphDescriptor owner = new GraphDescriptor("fx.Docs", "fx", "fx.Doc", "fx.DocStatus",
                 List.of("DRAFT"), "fx.DocTransition", List.of("SUBMIT"), List.of("other.Bills"),
                 new SourceLocation("fx/Docs.java", 7L, 1L));
-        CodegenException failure = assertThrows(CodegenException.class,
-                () -> ApiEmitter.emit(new GenerationModel(List.of(owner), List.of()), "io.github.graphmaquina:test:main"));
+        CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(
+                new GenerationModel(List.of(owner), List.of()), "io.github.graphmaquina:test:main"));
 
         assertEquals("SG608", failure.code());
         assertEquals("fx/Docs.java", failure.location().orElseThrow().path());

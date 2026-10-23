@@ -149,12 +149,23 @@ class SourceDeclarationsTest {
         InvocationHandler behaviour = (Object proxy, Method method, Object[] arguments) -> switch (method.getName()) {
             case "toAbsolutePath", "normalize" -> proxy;
             case "getFileSystem" -> backslash;
+            default -> answerObjectMethod(text, proxy, method, arguments);
+        };
+        return (Path) Proxy.newProxyInstance(Path.class.getClassLoader(), new Class<?>[] {Path.class}, behaviour);
+    }
+
+    /**
+     * The answer of the path {@code proxy}, which renders as {@code text}, to a question of {@code Object}: its
+     * {@code toString}, {@code hashCode} and {@code equals}. Any other method throws
+     * {@code UnsupportedOperationException}, since no other question is ever asked of it.
+     */
+    private static Object answerObjectMethod(String text, Object proxy, Method method, Object[] arguments) {
+        return switch (method.getName()) {
             case "toString" -> text;
             case "hashCode" -> text.hashCode();
             case "equals" -> proxy == arguments[0];
             default -> throw new UnsupportedOperationException(method.getName());
         };
-        return (Path) Proxy.newProxyInstance(Path.class.getClassLoader(), new Class<?>[] {Path.class}, behaviour);
     }
 
     /** A file system that only answers its separator, a backslash as on Windows. */
