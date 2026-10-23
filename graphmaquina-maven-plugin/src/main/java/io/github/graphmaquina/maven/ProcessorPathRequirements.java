@@ -27,6 +27,9 @@ final class ProcessorPathRequirements {
     private static final String PROCESSOR_GROUP = "io.github.graphmaquina";
     private static final String PROCESSOR_ARTIFACT = "graphmaquina-processor";
 
+    /** The processor's {@code group:artifact}, as a failure names it. */
+    static final String PROCESSOR = PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT;
+
     /** That annotation processor, as a {@code -processor} list names it. */
     private static final String PROCESSOR_CLASS = "io.github.graphmaquina.processor.StateGraphProcessor";
 
@@ -139,7 +142,7 @@ final class ProcessorPathRequirements {
             throw new MojoExecutionException(modulePath.get() + " of the " + configuration.id() + " execution of"
                 + " maven-compiler-plugin makes javac look for annotation processors on a module path, which"
                 + " StateGraph does not support: it reads the processor path javac takes. Remove that argument, and"
-                + " declare " + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " in <annotationProcessorPaths> of that"
+                + " declare " + PROCESSOR + " in <annotationProcessorPaths> of that"
                 + " execution, after Lombok when the project uses Lombok.");
         }
         Optional<CompilerConfiguration.Setting> pathArgument = configuration.lastOption(PROCESSOR_PATH_OPTIONS);
@@ -152,8 +155,8 @@ final class ProcessorPathRequirements {
                 + " maven-compiler-plugin gives javac the processor path it takes, the only place it then looks for"
                 + " annotation processors, and that path reaches no " + PROCESSOR_FILE + ", so javac would compile the"
                 + " generated vocabulary and publish no index of what it accepted, and the preparation that follows"
-                + " would retire the index of the previous compilation. Add the jar of " + PROCESSOR_GROUP + ':'
-                + PROCESSOR_ARTIFACT + ", and the jars it depends on, to that path, or remove that argument and declare"
+                + " would retire the index of the previous compilation. Add the jar of " + PROCESSOR
+                + ", and the jars it depends on, to that path, or remove that argument and declare"
                 + " the processor in <annotationProcessorPaths> of that execution, after Lombok when the project uses"
                 + " Lombok.");
         }
@@ -190,7 +193,7 @@ final class ProcessorPathRequirements {
                     && PROCESSOR_ARTIFACT.equals(artifact.getArtifactId())) {
                 int release = Jdk.release(javac.home());
                 if (release >= REQUESTED_PROCESSING_RELEASE && !requested) {
-                    throw new MojoExecutionException(PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is only a"
+                    throw new MojoExecutionException(PROCESSOR + " is only a"
                         + " dependency of this project, and the " + configuration.id() + " execution of"
                         + " maven-compiler-plugin, which declares no path in <annotationProcessorPaths>, "
                         + javac.description() + ", a JDK of Java " + release + ": from Java "
@@ -235,7 +238,7 @@ final class ProcessorPathRequirements {
     private static MojoExecutionException noProcessing(CompilerConfiguration configuration, String setting) {
         return new MojoExecutionException(setting + " switches annotation processing off for the "
             + configuration.id() + " execution of maven-compiler-plugin, which StateGraph does not support: "
-            + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is what publishes the index of what javac"
+            + PROCESSOR + " is what publishes the index of what javac"
             + " accepted, so this build would retire the index of the previous compilation and publish"
             + " nothing in its place. Run with annotation processing on.");
     }
@@ -288,7 +291,7 @@ final class ProcessorPathRequirements {
         if (!Arrays.asList(names).contains(PROCESSOR_CLASS)) {
             throw new MojoExecutionException(gives + " javac the processor list '" + list + "', which leaves out "
                 + PROCESSOR_CLASS + ", and javac runs only the annotation processors that list names: "
-                + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is what publishes the index of what javac accepted,"
+                + PROCESSOR + " is what publishes the index of what javac accepted,"
                 + " so this build would retire the index of the previous compilation and publish nothing in its"
                 + " place. Add " + PROCESSOR_CLASS + " to that list, after the processors of Lombok when the project"
                 + " uses Lombok, or " + removal + '.');
@@ -297,7 +300,7 @@ final class ProcessorPathRequirements {
     }
 
     private static MojoExecutionException missingProcessor(String where) {
-        return new MojoExecutionException(PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is not on " + where
+        return new MojoExecutionException(PROCESSOR + " is not on " + where
             + ", so javac would compile the generated vocabulary and publish no index of what it accepted,"
             + " and the preparation that follows would retire the index of the previous compilation. Declare it"
             + " in <annotationProcessorPaths> of that execution, after Lombok when the project uses Lombok.");

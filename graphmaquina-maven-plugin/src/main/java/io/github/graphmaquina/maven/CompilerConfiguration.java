@@ -55,14 +55,13 @@ import java.util.TreeMap;
  *
  * <p>A setting is read the way Maven itself resolves a parameter: the effective configuration of the compiler
  * execution first — the one Maven merged the configuration the plugin declares for all of its executions into,
- * where what the execution declares itself, a list included, wins over the plugin's — and then the
- * user property the parameter is bound to, from the command line, from the properties of the JVM and from the
- * properties of the project, in that order. Reading only the XML would miss a project that configures its
- * compiler entirely through {@code maven.compiler.*} properties, which is a common and fully supported way to
- * write a POM. Every value is read as Maven evaluates it for the compiler, through Maven's own evaluator of plugin
- * parameters, so an expression the effective model leaves for that evaluator, such as
- * {@code ${session.executionRootDirectory}}, is completed before the value is compared with anything or handed to
- * the generator.</p>
+ * where what the execution declares itself, a list included, wins over the plugin's — and then the user property the
+ * parameter is bound to, from the command line, from the properties of the JVM and from the properties of the project,
+ * in that order. Reading only the XML would miss a project that configures its compiler entirely through
+ * {@code maven.compiler.*} properties, which is a common and fully supported way to write a POM. Every value is read as
+ * Maven evaluates it for the compiler, through Maven's own evaluator of plugin parameters, so an expression the
+ * effective model leaves for that evaluator, such as {@code ${session.executionRootDirectory}}, is completed before the
+ * value is compared with anything or handed to the generator.</p>
  *
  * <p>{@link CompilerExecutionOrder} checks where the executions of the compiler run in the build, and
  * {@link ProcessorPathRequirements} and {@link CompiledSources} check the annotation processor javac runs and the
