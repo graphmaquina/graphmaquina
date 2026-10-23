@@ -4,9 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures shared by the processor tests. Everything lives in
- * package {@code fx}, and every generated type a fixture names is one the pre-javac generator produces from
- * these very sources, so a fixture is prepared and compiled exactly as a consumer build does.
+ * Source fixtures shared by the processor tests. Everything lives in package {@code fx}, and every generated type a
+ * fixture names is one the pre-javac generator produces from these very sources, so a fixture is prepared and compiled
+ * exactly as a consumer build does.
  */
 final class Fixtures {
 

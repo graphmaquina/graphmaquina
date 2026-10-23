@@ -4,9 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures, one entry per compilation unit. Everything lives in
- * package {@code fx}, and no entry names a generated type the pre-javac generator does not produce from these
- * very sources, so the fixture can be prepared and compiled exactly as a consumer build does.
+ * Source fixtures, one entry per compilation unit. Everything lives in package {@code fx}, and no entry names a
+ * generated type the pre-javac generator does not produce from these very sources, so the fixture can be prepared and
+ * compiled exactly as a consumer build does.
  */
 final class TypedFixtures {
 
@@ -336,5 +336,16 @@ final class TypedFixtures {
                 @GenerateGraphApi
                 """ + header + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n"
                 + members + "}\n";
+    }
+
+    /** The operations of the fixture, publishing with the asynchronous action and {@code extra} declared on it. */
+    static String archive(String extra) {
+        return """
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
+                action = DocActionsRefs.Archive.class%s)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
+                """.formatted(extra);
     }
 }

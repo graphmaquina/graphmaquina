@@ -177,7 +177,10 @@ class CommitHookTest {
         return (String) result.load("fx.Probe").getMethod("run").invoke(null);
     }
 
-    /** Rewrites a fixture source and fails when the text to replace is no longer there, instead of silently testing something else. */
+    /**
+     * Rewrites a fixture source and fails when the text to replace is no longer there, instead of silently testing
+     * something else.
+     */
     private static String edit(String source, String target, String replacement) {
         assertTrue(source.contains(target), "fixture no longer contains: " + target);
         return source.replace(target, replacement);

@@ -108,7 +108,9 @@ class DeclaredCheckedExceptionTest {
         return sources;
     }
 
-    /** Compiles {@code sources} with {@code fx.Scenario}, as {@link #compile} does, runs it and answers what it returns. */
+    /**
+     * Compiles {@code sources} with {@code fx.Scenario}, as {@link #compile} does, runs it and answers what it returns.
+     */
     private static Object run(Map<String, String> sources, String body) throws Exception {
         return run(compile(sources, body));
     }

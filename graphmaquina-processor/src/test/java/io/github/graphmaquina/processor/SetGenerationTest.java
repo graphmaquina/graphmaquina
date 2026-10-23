@@ -203,7 +203,9 @@ class SetGenerationTest {
         assertInstanceOf(IllegalArgumentException.class, error.getCause());
     }
 
-    /** The generated maxWatchChain says what MachineRegistry.Builder's does: a call that a hook starts is not counted. */
+    /**
+     * The generated maxWatchChain says what MachineRegistry.Builder's does: a call that a hook starts is not counted.
+     */
     @Test
     void theGeneratedMaxWatchChainSaysThatACallAHookStartsIsNotCounted() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(

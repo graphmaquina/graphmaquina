@@ -103,7 +103,9 @@ class GeneratedScopeTest {
                 .invoke(builder, java.time.InstantSource.system()));
     }
 
-    /** The types of the set's package {@code app}: the host {@code Builder}, three simple names the JDK has, the set. */
+    /**
+     * The types of the set's package {@code app}: the host {@code Builder}, three simple names the JDK has, the set.
+     */
     private static void putAppTypes(Map<String, String> sources) {
         sources.put("app.Builder", """
                 package app;
@@ -302,7 +304,9 @@ class GeneratedScopeTest {
         assertTrue(companion.contains("pay(Order order, billing.Payment payment)"), companion);
     }
 
-    /** The companion reads the constants of the state enum, where a constant of the facade of that name is read instead. */
+    /**
+     * The companion reads the constants of the state enum, where a constant of the facade of that name is read instead.
+     */
     @Test
     void sg603AConstantOfTheFacadeNamedLikeATypeWhoseMembersTheCompanionReads() {
         Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
@@ -778,7 +782,10 @@ class GeneratedScopeTest {
         return sources;
     }
 
-    /** The shop domain: orders paid with {@code action} and the facade over them, with {@code header} added to its definition. */
+    /**
+     * The shop domain: orders paid with {@code action} and the facade over them, with {@code header} added to its
+     * definition.
+     */
     private static Map<String, String> shop(String action, String header) {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("shop.OrderStatus", "package shop;\npublic enum OrderStatus { NEW, PAID, CANCELLED }\n");

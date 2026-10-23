@@ -115,7 +115,9 @@ final class Compilation {
             }
         }
 
-        /** Every class comes from the same loader, so reflection over two generated types sees one identity per type. */
+        /**
+         * Every class comes from the same loader, so reflection over two generated types sees one identity per type.
+         */
         Class<?> load(String qualifiedName) {
             try {
                 return classes.loadClass(qualifiedName);

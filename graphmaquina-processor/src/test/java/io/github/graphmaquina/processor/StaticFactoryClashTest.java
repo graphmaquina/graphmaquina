@@ -195,7 +195,10 @@ class StaticFactoryClashTest {
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
     }
 
-    /** Docs is asynchronous and binds DocActions, so {@code builder(Duration, DocActions)} is what the companion declares. */
+    /**
+     * Docs is asynchronous and binds DocActions, so {@code builder(Duration, DocActions)} is what the companion
+     * declares.
+     */
     @Test
     void sg510ABuilderMethodWithTheParametersOfTheCompanions() {
         Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY,
@@ -240,7 +243,9 @@ class StaticFactoryClashTest {
                 abstractOne.describe());
     }
 
-    /** A {@code builder(String)} is an overload of the companion's {@code builder()}, and a static one is not inherited. */
+    /**
+     * A {@code builder(String)} is an overload of the companion's {@code builder()}, and a static one is not inherited.
+     */
     @Test
     void aBuilderMethodThatOnlyOverloadsTheCompanionsIsAccepted() {
         Compilation.Result result = Compilation.compileTyped(pagesLibrary("", """

@@ -27,7 +27,7 @@ class TypedTimeoutTest {
     @Test
     void keepsANanosecondOfTimeout() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(nanos = 1)")));
+                TypedFixtures.archive(", timeout = @Timeout(nanos = 1)")));
 
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT0.000000001S\"))"),
@@ -37,7 +37,7 @@ class TypedTimeoutTest {
     @Test
     void keepsTheLongestTimeoutTheDurationHolds() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 999999999)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 999999999)")));
 
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime")
@@ -48,7 +48,7 @@ class TypedTimeoutTest {
     @Test
     void refusesATimeoutOfZero() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout")));
+                TypedFixtures.archive(", timeout = @Timeout")));
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG511"), result.describe());
@@ -57,7 +57,7 @@ class TypedTimeoutTest {
     @Test
     void refusesANegativeTimeout() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = -1)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = -1)")));
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG511"), result.describe());
@@ -66,13 +66,13 @@ class TypedTimeoutTest {
     @Test
     void refusesANanosecondAdjustmentOutOfRange() {
         Compilation.Result above = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = 1, nanos = 1000000000)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = 1, nanos = 1000000000)")));
 
         assertFalse(above.success(), above.describe());
         assertTrue(above.hasError("SG511"), above.describe());
 
         Compilation.Result below = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = 1, nanos = -1)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = 1, nanos = -1)")));
 
         assertFalse(below.success(), below.describe());
         assertTrue(below.hasError("SG511"), below.describe());
@@ -88,7 +88,7 @@ class TypedTimeoutTest {
         assertThrows(ArithmeticException.class, () -> Duration.ofSeconds(Long.MAX_VALUE, 1_000_000_000));
 
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 1000000000)")));
+                TypedFixtures.archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 1000000000)")));
 
         assertFalse(result.success(), result.describe());
         assertEquals(List.of("[SG511] timeout must be a positive duration: seconds 9223372036854775807 and nanos"
@@ -109,16 +109,5 @@ class TypedTimeoutTest {
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG507"), result.describe());
-    }
-
-    /** The operations of the fixture, publishing with the asynchronous action and {@code extra} declared on it. */
-    private static String archive(String extra) {
-        return """
-                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
-                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, \
-                action = DocActionsRefs.Archive.class%s)
-                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
-                """.formatted(extra);
     }
 }

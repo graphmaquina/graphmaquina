@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** Compiles the generated facade of a default after-commit hook and runs it, asserting its observable runtime behavior. */
+/**
+ * Compiles the generated facade of a default after-commit hook and runs it, asserting its observable runtime behavior.
+ */
 class DefaultAfterCommitRuntimeTest {
     private static Map<String, String> sources() {
         Map<String, String> sources = DefaultHookFixtures.sources(

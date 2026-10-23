@@ -27,13 +27,13 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * What the processor checks of the recovery rules a {@code Transition} declares in its {@code recoveries}, including
  * admission and source anchors for the edge's own {@code failsOn}. Each problem is reported once, with its SG code,
- * at the value the author wrote, and names a kind or a type by its binary
- * name: SG302 for a throwable type a failsOn may not name, SG303 for a kind that is not a failure kind, SG304 at the
- * second occurrence of a kind or a type one edge declares twice, and SG507 for rules on an edge that runs no action.
- * Whether a rule's transition leaves every origin of its edge is the graph's own SG301, which the outline validator
- * the DSL runs as well reports where the {@code Definition} is, as it reports the SG301 of {@code onFailure}. Kinds
- * and types nested in a class, or held by a dependency's jar, are read as the classes they are, and a kind the
- * facade's package cannot access is javac's to refuse, never an SG303.
+ * at the value the author wrote, and names a kind or a type by its binary name: SG302 for a throwable type a failsOn
+ * may not name, SG303 for a kind that is not a failure kind, SG304 at the second occurrence of a kind or a type one
+ * edge declares twice, and SG507 for rules on an edge that runs no action. Whether a rule's transition leaves every
+ * origin of its edge is the graph's own SG301, which the outline validator the DSL runs as well reports where the
+ * {@code Definition} is, as it reports the SG301 of {@code onFailure}. Kinds and types nested in a class, or held by a
+ * dependency's jar, are read as the classes they are, and a kind the facade's package cannot access is javac's to
+ * refuse, never an SG303.
  */
 class TypedRecoveryDiagnosticsTest {
 
