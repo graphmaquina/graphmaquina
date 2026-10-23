@@ -45,7 +45,8 @@ class SameEntitySubmachineTest {
             MachineKey.of(Stay.class, PaymentStatus.class, PaymentTransition.class);
 
     /** Built once: the payment machine must be built from the very definition the stay binds. */
-    static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRAPH = StateGraph.define(STAY_PAYMENTS)
+    static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRAPH =
+            StateGraph.define(STAY_PAYMENTS)
             .initial(PaymentStatus.AUTHORIZING)
             .terminal(PaymentStatus.CAPTURED)
             .terminal(PaymentStatus.DECLINED)

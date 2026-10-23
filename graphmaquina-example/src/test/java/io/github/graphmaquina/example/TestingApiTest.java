@@ -39,7 +39,8 @@ class TestingApiTest {
     final FakeGateway gateway = new FakeGateway();
     final FakeCarrier carrier = new FakeCarrier();
     final TransitionRecorder recorder = TransitionRecorder.create();
-    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
+                    new ItemActions())
             .observer(recorder)
             .build();
     final Orders orders = shop.orders();
