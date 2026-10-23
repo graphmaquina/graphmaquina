@@ -286,9 +286,9 @@ class CompilationOutputsTest {
 
     /**
      * After an interrupted cycle, an inventory entry that is not the kind of file its list holds, a binary or an
-     * excluded binary that is no class file or a source that is no Java source, is refused with {@code SG603} naming the
-     * inventory and the entry, before the pending inventory is rewritten: the next preparation refuses it again, rather
-     * than failing on what this one wrote. So is an owned source of the manifest that is no Java source, with
+     * excluded binary that is no class file or a source that is no Java source, is refused with {@code SG603} naming
+     * the inventory and the entry, before the pending inventory is rewritten: the next preparation refuses it again,
+     * rather than failing on what this one wrote. So is an owned source of the manifest that is no Java source, with
      * {@code SG602} naming the manifest.
      */
     @ParameterizedTest

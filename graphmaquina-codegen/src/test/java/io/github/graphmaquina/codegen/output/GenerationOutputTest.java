@@ -385,9 +385,8 @@ class GenerationOutputTest {
     }
 
     /**
-     * A previous manifest this run cannot read, here one of a schema it does not know, stays
-     * where it is: the refusal repeats until the user cleans the build, instead of the next run calling the
-     * files that manifest owned unowned.
+     * A previous manifest this run cannot read, here one of a schema it does not know, stays where it is: the refusal
+     * repeats until the user cleans the build, instead of the next run calling the files that manifest owned unowned.
      */
     @Test
     void keepsAPreviousManifestItCannotReadSoTheRefusalRepeats() throws IOException {
