@@ -87,17 +87,20 @@ public final class LineDiff {
     }
 
     private static void middle(List<Op> ops, List<Line> left, List<Line> right, int base) {
+        if ((long) (left.size() + 1) * (right.size() + 1) > MAX_CELLS) {
+            deleteThenAdd(ops, left, right, base, 0, 0);
+        } else {
+            align(ops, left, right, base, commonLengths(left, right));
+        }
+    }
+
+    /**
+     * The table whose cell {@code [i][j]} is the length of the longest common subsequence of the two blocks
+     * from those lines on.
+     */
+    private static int[][] commonLengths(List<Line> left, List<Line> right) {
         int rows = left.size();
         int columns = right.size();
-        if ((long) (rows + 1) * (columns + 1) > MAX_CELLS) {
-            for (int index = 0; index < rows; index++) {
-                ops.add(new Op(Kind.DELETE, left.get(index), base + index, base));
-            }
-            for (int index = 0; index < columns; index++) {
-                ops.add(new Op(Kind.ADD, right.get(index), base + rows, base + index));
-            }
-            return;
-        }
         int[][] lcs = new int[rows + 1][columns + 1];
         for (int i = rows - 1; i >= 0; i--) {
             for (int j = columns - 1; j >= 0; j--) {
@@ -106,6 +109,16 @@ public final class LineDiff {
                         : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
             }
         }
+        return lcs;
+    }
+
+    /**
+     * Walks the table from its first cell, keeping the common lines and preferring a deletion over an addition
+     * on a tie, then deletes and adds what is left.
+     */
+    private static void align(List<Op> ops, List<Line> left, List<Line> right, int base, int[][] lcs) {
+        int rows = left.size();
+        int columns = right.size();
         int i = 0;
         int j = 0;
         while (i < rows && j < columns) {
@@ -121,13 +134,19 @@ public final class LineDiff {
                 j++;
             }
         }
-        while (i < rows) {
-            ops.add(new Op(Kind.DELETE, left.get(i), base + i, base + j));
-            i++;
+        deleteThenAdd(ops, left, right, base, i, j);
+    }
+
+    /**
+     * Deletes the lines of the left block from {@code row} on and then adds those of the right block from
+     * {@code column} on.
+     */
+    private static void deleteThenAdd(List<Op> ops, List<Line> left, List<Line> right, int base, int row, int column) {
+        for (int i = row; i < left.size(); i++) {
+            ops.add(new Op(Kind.DELETE, left.get(i), base + i, base + column));
         }
-        while (j < columns) {
-            ops.add(new Op(Kind.ADD, right.get(j), base + i, base + j));
-            j++;
+        for (int j = column; j < right.size(); j++) {
+            ops.add(new Op(Kind.ADD, right.get(j), base + left.size(), base + j));
         }
     }
 
