@@ -15,7 +15,7 @@ import static io.github.graphmaquina.maven.BuildAssertions.assertNothingWasRetir
 import static io.github.graphmaquina.maven.BuildAssertions.assertNothingWasRetiredOrPublished;
 import static io.github.graphmaquina.maven.MavenFixture.MAIN_EXPORTS;
 import static io.github.graphmaquina.maven.MavenFixture.TEST_EXPORTS;
-import static io.github.graphmaquina.maven.MavenFixture.graphmaquinaVersion;
+import static io.github.graphmaquina.maven.MavenFixture.goalPrefix;
 import static io.github.graphmaquina.maven.MavenFixture.requireProperty;
 import static io.github.graphmaquina.maven.MavenFixture.testDomain;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -101,8 +101,8 @@ class MavenExecutionOrderTest {
         List<String> executed = goalExecutions(redirected.output());
         assertTrue(indexOf(executed, ":generate (sg-generate)") >= 0, executed.toString());
         assertTrue(indexOf(executed, ":generate-test (sg-generate-test)") >= 0, executed.toString());
-        assertTrue(redirected.output().contains("Failed to execute goal io.github.graphmaquina:"
-                + "graphmaquina-maven-plugin:" + graphmaquinaVersion() + ":generate-test (sg-generate-test)"),
+        assertTrue(redirected.output().contains("Failed to execute goal " + goalPrefix()
+                + "generate-test (sg-generate-test)"),
                 redirected.output());
         assertTrue(redirected.output().contains("<generatedTestSourcesDirectory>"), redirected.output());
 

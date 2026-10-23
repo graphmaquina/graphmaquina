@@ -36,6 +36,7 @@ import java.util.zip.ZipFile;
 import static io.github.graphmaquina.maven.BuildAssertions.assertNothingWasRetired;
 import static io.github.graphmaquina.maven.MavenFixture.MAIN_EXPORTS;
 import static io.github.graphmaquina.maven.MavenFixture.TEST_EXPORTS;
+import static io.github.graphmaquina.maven.MavenFixture.goalPrefix;
 import static io.github.graphmaquina.maven.MavenFixture.graphmaquinaVersion;
 import static io.github.graphmaquina.maven.MavenFixture.requireProperty;
 import static io.github.graphmaquina.maven.MavenFixture.testDomain;
@@ -92,8 +93,7 @@ class MavenPluginIntegrationTest {
     @Test
     void publishedArtifactContainsAnExecutableDescriptor() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        MavenResult result = fixture.run(
-                "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ":generate");
+        MavenResult result = fixture.run(goalPrefix() + "generate");
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
         assertTrue(fixture.generatedSourcesContainGraphCompilation());
@@ -398,8 +398,7 @@ class MavenPluginIntegrationTest {
         assertEquals(0, fixture.run("package").exitCode());
         List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
 
-        MavenResult result = fixture.run("io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion()
-                + ":complete");
+        MavenResult result = fixture.run(goalPrefix() + "complete");
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("StateGraph completes nothing for fx.build:fixture:main"),
@@ -415,7 +414,7 @@ class MavenPluginIntegrationTest {
     @Test
     void completionOfAPreparedButUnpublishedCompilationFails() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ':';
+        String goal = goalPrefix();
 
         MavenResult result = fixture.run(goal + "generate", goal + "prepare", goal + "complete");
 
@@ -435,7 +434,7 @@ class MavenPluginIntegrationTest {
     @Test
     void aPreparationThatFindsNoCarrierAsksForTheGenerationAgain() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ':';
+        String goal = goalPrefix();
         assertEquals(0, fixture.run(goal + "generate").exitCode());
         Files.delete(fixture.carrierSource());
 

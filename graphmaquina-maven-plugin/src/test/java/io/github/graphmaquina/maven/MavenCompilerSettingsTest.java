@@ -22,7 +22,7 @@ import static io.github.graphmaquina.maven.MavenFixture.TEST_EXPORTS;
 import static io.github.graphmaquina.maven.MavenFixture.arguments;
 import static io.github.graphmaquina.maven.MavenFixture.fakeJavaHome;
 import static io.github.graphmaquina.maven.MavenFixture.fakeJdk;
-import static io.github.graphmaquina.maven.MavenFixture.graphmaquinaVersion;
+import static io.github.graphmaquina.maven.MavenFixture.goalPrefix;
 import static io.github.graphmaquina.maven.MavenFixture.requireProperty;
 import static io.github.graphmaquina.maven.MavenFixture.testDomain;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -809,8 +809,8 @@ class MavenCompilerSettingsTest {
      * encoding it is configured with, which then wins over every {@code -encoding} compiler argument, and without one
      * in the last {@code -encoding} compiler argument. The generator is told the encoding javac reads in either way: an
      * accented identifier of a project kept in ISO-8859-1 reaches the generated vocabulary intact, whether the project
-     * names no encoding and passes {@code -encoding ISO-8859-1}, or names ISO-8859-1 and passes {@code -encoding latin1},
-     * an alias of that charset, the request then naming the configured ISO-8859-1.
+     * names no encoding and passes {@code -encoding ISO-8859-1}, or names ISO-8859-1 and passes
+     * {@code -encoding latin1}, an alias of that charset, the request then naming the configured ISO-8859-1.
      */
     @Test
     void aJavacInsideMavenReadsTheConfiguredEncodingElseTheLastEncodingArgument() throws IOException {
@@ -836,11 +836,11 @@ class MavenCompilerSettingsTest {
     }
 
     /**
-     * {@code <forceJavacCompilerUse>} or {@code maven.compiler.forceLegacyJavacApi} keeps javac inside Maven but runs it
-     * through {@code com.sun.tools.javac.Main}, which reads and writes every source in the last {@code -encoding} it is
-     * given, as a forked javac does. A project kept in ISO-8859-1 whose {@code project.build.sourceEncoding} says UTF-8
-     * builds with {@code -encoding ISO-8859-1} as a compiler argument, either way: the generator is told ISO-8859-1,
-     * and the accented identifier reaches the generated vocabulary intact.
+     * {@code <forceJavacCompilerUse>} or {@code maven.compiler.forceLegacyJavacApi} keeps javac inside Maven but runs
+     * it through {@code com.sun.tools.javac.Main}, which reads and writes every source in the last {@code -encoding} it
+     * is given, as a forked javac does. A project kept in ISO-8859-1 whose {@code project.build.sourceEncoding} says
+     * UTF-8 builds with {@code -encoding ISO-8859-1} as a compiler argument, either way: the generator is told
+     * ISO-8859-1, and the accented identifier reaches the generated vocabulary intact.
      */
     @Test
     void aForcedLegacyJavacReadsTheLastEncodingArgumentLikeAForkedOne() throws IOException {
@@ -935,7 +935,7 @@ class MavenCompilerSettingsTest {
      */
     @Test
     void theGenerateTestGoalRefusesATestReleaseOrATestSourceBelowJava21() throws IOException {
-        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ':';
+        String goal = goalPrefix();
         MavenFixture released = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("released")),
                 fixtureRepository);
         released.editPom("<release>21</release>", "<release>21</release>\n          <testRelease>17</testRelease>");
@@ -975,7 +975,7 @@ class MavenCompilerSettingsTest {
      */
     @Test
     void aReleaseCompilerArgumentWinsOverTheConfiguredRelease() throws IOException {
-        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ":generate";
+        String goal = goalPrefix() + "generate";
         MavenFixture lowered = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("lowered")),
                 fixtureRepository);
         addMainCompilerArguments(lowered, "<arg>--release</arg><arg>17</arg>");
@@ -1019,8 +1019,7 @@ class MavenCompilerSettingsTest {
                 fixture.writeTestSource(source.getKey(), source.getValue());
             }
 
-            MavenResult result = fixture.run("io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion()
-                    + ":generate-test");
+            MavenResult result = fixture.run(goalPrefix() + "generate-test");
 
             assertEquals(0, result.exitCode(), result.output());
             assertEquals("21", fixture.requestValue("test", "release"));
@@ -1040,7 +1039,7 @@ class MavenCompilerSettingsTest {
     @Test
     void theTestRequestCarriesTheReleaseOfTheTestCompilation() throws IOException {
         assumeTrue(Runtime.version().feature() >= 22, "a JDK 21 javac compiles at no release above 21");
-        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ':';
+        String goal = goalPrefix();
         MavenFixture released = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("released")),
                 fixtureRepository);
         released.editPom("<release>21</release>", "<release>21</release>\n          <testRelease>22</testRelease>");

@@ -1211,6 +1211,11 @@ public final class MavenFixture {
         return requireProperty("graphmaquina.version");
     }
 
+    /** The plugin's coordinates with the version, ending in the colon that precedes a goal name. */
+    static String goalPrefix() {
+        return "io.github.graphmaquina:graphmaquina-maven-plugin:" + graphmaquinaVersion() + ':';
+    }
+
     /** The value of {@code name}, which the Gradle test task sets and these tests cannot run without. */
     static String requireProperty(String name) {
         String value = System.getProperty(name);
