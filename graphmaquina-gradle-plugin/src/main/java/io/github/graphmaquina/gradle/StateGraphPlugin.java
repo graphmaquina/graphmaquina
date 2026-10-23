@@ -66,10 +66,9 @@ import java.util.concurrent.Callable;
  * {@link GenerateGraphApi#getEncoding() encoding} and {@link GenerateGraphApi#getRelease() release} describe.
  * What it generates joins the source set's java sources as a source directory set of its own, which the source set's
  * patterns do not filter, so javac compiles all of it unless a pattern of the compilation task leaves some of it out,
- * which the preparation refuses. The locations the generation task holds are the ones the
- * compilation follows — the source root it writes, and the work directory the manifest, the request and the
- * sealed inventory live in — and so are the launcher and the generator classpath it holds, which run the
- * preparation and the completion too.
+ * which the preparation refuses. The locations the generation task holds are the ones the compilation follows — the
+ * source root it writes, and the work directory the manifest, the request and the sealed inventory live in — and so are
+ * the launcher and the generator classpath it holds, which run the preparation and the completion too.
  * Each of them is a convention of the task, so a value a build sets for any of them wins whenever the build sets
  * it, and so does one it sets for whether the task takes part or for the compilation's output locations it names.
  * Paths a build adds to the generator classpath join the plugin's default only when they are added after the
