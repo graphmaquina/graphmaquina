@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
+import static io.github.graphmaquina.fixtures.DocMachines.registry;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -37,7 +39,6 @@ import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.AfterCommitException;
@@ -51,6 +52,7 @@ import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.Fatal;
 import io.github.graphmaquina.internal.FrozenFlow;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -84,44 +86,6 @@ class FlowDeliveryTest {
     private static final FlowKey<String> RECOVERED = FlowKey.of("recovered", String.class);
     @SuppressWarnings("rawtypes")
     private static final FlowKey<List> LINES = FlowKey.of("lines", List.class);
-
-    /** An Error of its own, so the test can tell it from anything the engine could throw. */
-    private static final class Fatal extends Error {
-        private static final long serialVersionUID = 1L;
-
-        Fatal() {
-            super("fatal");
-        }
-    }
-
-    /**
-     * DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED, shaped by {@code discard};
-     * REVIEW -PUBLISH-> PUBLISHED and PUBLISHED -ARCHIVE-> ARCHIVED are plain moves.
-     */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
-        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "a draft is submitted or discarded")
-                .statePolicy(REVIEW, "a review is published")
-                .statePolicy(PUBLISHED, "a publication is archived");
-        graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
-        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return docs(submit, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity());
-    }
-
-    private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .build();
-    }
 
     private static StateMachine<Doc, DocStatus, DocTransition> standalone(
             GraphDefinition<Doc, DocStatus, DocTransition> graph) {
@@ -755,7 +719,7 @@ class FlowDeliveryTest {
     /** Spec D17: an Error propagates as itself and carries no flow; the hook's Error too. */
     @Test
     void anErrorPropagatesUnchangedAndCarriesNoFlow() {
-        Fatal fatal = new Fatal();
+        Fatal fatal = new Fatal("fatal");
         StateMachine<Doc, DocStatus, DocTransition> acting = standalone(docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                         .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {

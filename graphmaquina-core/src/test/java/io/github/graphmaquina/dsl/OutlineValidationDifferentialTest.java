@@ -88,7 +88,10 @@ class OutlineValidationDifferentialTest {
         return List.copyOf(corpus);
     }
 
-    /** The nine edges three states admit, identified {@code E0..E8}: {@code Ek} runs from {@code k / 3} to {@code k % 3}. */
+    /**
+     * The nine edges three states admit, identified {@code E0..E8}: {@code Ek} runs from {@code k / 3} to
+     * {@code k % 3}.
+     */
     private static List<String> catalog() {
         List<String> catalog = new ArrayList<>();
         for (int edge = 0; edge < 9; edge++) {

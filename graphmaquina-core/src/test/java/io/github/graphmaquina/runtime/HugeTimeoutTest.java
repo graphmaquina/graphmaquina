@@ -102,12 +102,16 @@ class HugeTimeoutTest {
         return new CompletableFuture<ActionOutcome>().completeOnTimeout(ActionOutcome.ok(), 200, TimeUnit.MILLISECONDS);
     }
 
-    /** A stage nobody completes in time. It completes itself after five seconds, so a regression cannot hang the build. */
+    /**
+     * A stage nobody completes in time. It completes itself after five seconds, so a regression cannot hang the build.
+     */
     private static CompletableFuture<ActionOutcome> late() {
         return new CompletableFuture<ActionOutcome>().completeOnTimeout(ActionOutcome.ok(), 5, TimeUnit.SECONDS);
     }
 
-    /** Runs {@code call} on {@code thread}, so that a marker the call leaks stays there instead of reaching other tests. */
+    /**
+     * Runs {@code call} on {@code thread}, so that a marker the call leaks stays there instead of reaching other tests.
+     */
     private static End end(ExecutorService thread, Supplier<Outcome<Doc, DocStatus, DocTransition>> call)
             throws Exception {
         return thread.submit(() -> {

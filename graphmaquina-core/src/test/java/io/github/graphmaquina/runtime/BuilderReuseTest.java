@@ -186,7 +186,10 @@ class BuilderReuseTest {
         }
     }
 
-    /** The same for a standalone machine: a build missing its accessors, then its asyncTimeout, is retried until it works. */
+    /**
+     * The same for a standalone machine: a build missing its accessors, then its asyncTimeout, is retried until it
+     * works.
+     */
     @Test
     void aMachineBuildThatFailsConsumesNothing() {
         StateMachines.Builder<Doc, DocStatus, DocTransition> docs = StateMachines.from(docs());

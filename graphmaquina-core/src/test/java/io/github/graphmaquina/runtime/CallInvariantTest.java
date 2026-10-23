@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
+import static io.github.graphmaquina.fixtures.DocGraphs.plain;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -92,22 +94,6 @@ class CallInvariantTest {
     /** One way to end a call in an exception: the registry it runs on and the call it makes. */
     private interface Scenario {
         void run(Recorder recorder);
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> plain() {
-        return docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity());
     }
 
     private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph,

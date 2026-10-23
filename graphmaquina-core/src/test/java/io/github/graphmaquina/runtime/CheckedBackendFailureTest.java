@@ -1,12 +1,9 @@
 package io.github.graphmaquina.runtime;
 
-import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
-import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
-import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
-import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,8 +21,6 @@ import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.GraphBuilder;
-import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
@@ -138,19 +133,6 @@ class CheckedBackendFailureTest {
                 events.add("failed " + failure.phase());
             }
         };
-    }
-
-    /** The doc graph, with {@code submit} decorating its submit edge. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
-                .statePolicy(PUBLISHED, "a publication is archived");
-        graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        return graph.transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
     }
 
     @Test

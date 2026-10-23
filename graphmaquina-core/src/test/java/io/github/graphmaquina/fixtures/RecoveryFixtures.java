@@ -1,11 +1,15 @@
 package io.github.graphmaquina.fixtures;
 
+import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
+import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -132,6 +136,18 @@ public final class RecoveryFixtures {
                 exampleRules(publish.asyncAction("publish", action)));
     }
 
+    /**
+     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and returns a failure
+     * of the kind Unavailable, whose rule selects SCHEDULE_RETRY.
+     */
+    public static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailable() {
+        return (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> exampleRules(
+                publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                    ctx.entity().calls.add("publish");
+                    return ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy");
+                }));
+    }
+
     /** A standalone machine over {@code graph}; its setter counts every state write in {@link Ticket#stateWrites}. */
     public static StateMachine<Ticket, TicketState, TicketChange> machine(
             GraphDefinition<Ticket, TicketState, TicketChange> graph) {
@@ -143,5 +159,15 @@ public final class RecoveryFixtures {
                 .identity((Ticket ticket) -> ticket.id)
                 .asyncTimeout(Duration.ofSeconds(5))
                 .build();
+    }
+
+    /** Each hop the outcome committed, as {@code FROM -ID-> TO KIND action at depth N}. */
+    public static List<String> hops(Outcome<?, ?, ?> outcome) {
+        List<String> hops = new ArrayList<>();
+        for (TransitionRecord<?, ?, ?> record : outcome.records()) {
+            hops.add(record.from() + " -" + record.transition() + "-> " + record.to() + " " + record.kind() + " "
+                    + record.action().orElse("no action") + " at depth " + record.depth());
+        }
+        return hops;
     }
 }

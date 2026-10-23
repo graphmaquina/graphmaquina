@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -77,19 +78,6 @@ import org.junit.jupiter.api.Test;
  * throws a chain of wrappers looping back on itself still ends in a technical abort.
  */
 class CheckedExceptionTest {
-
-    /** DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED is the route a failure can take. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
 
     private static StateMachine<Doc, DocStatus, DocTransition> standalone(
             GraphDefinition<Doc, DocStatus, DocTransition> graph) {

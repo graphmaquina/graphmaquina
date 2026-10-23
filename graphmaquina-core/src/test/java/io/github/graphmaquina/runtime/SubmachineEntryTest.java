@@ -3,6 +3,8 @@ package io.github.graphmaquina.runtime;
 import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
 import static io.github.graphmaquina.fixtures.Billing.RISKS;
+import static io.github.graphmaquina.fixtures.RecordTexts.describe;
+import static io.github.graphmaquina.fixtures.RecordTexts.described;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -59,15 +61,6 @@ class SubmachineEntryTest {
     private static <T> T single(List<T> values) {
         assertEquals(1, values.size(), values.toString());
         return values.get(0);
-    }
-
-    private static String describe(TransitionRecord<?, ?, ?> record) {
-        return record.entity() + ":" + record.from() + "-" + record.transition() + ">" + record.to() + "@"
-                + record.depth();
-    }
-
-    private static List<String> described(List<TransitionRecord<?, ?, ?>> records) {
-        return records.stream().map(SubmachineEntryTest::describe).toList();
     }
 
     @Test

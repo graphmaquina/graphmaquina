@@ -6,7 +6,9 @@ import io.github.graphmaquina.runtime.StateMachines;
 import java.time.Duration;
 import java.util.function.BiConsumer;
 
-/** Registries that hold the doc fixture machine over a graph that the test shapes, for example with {@link DocGraphs}. */
+/**
+ * Registries that hold the doc fixture machine over a graph that the test shapes, for example with {@link DocGraphs}.
+ */
 public final class DocMachines {
 
     private DocMachines() { }

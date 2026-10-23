@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.plain;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -48,16 +49,6 @@ import org.junit.jupiter.api.Test;
  * written, which carries what was thrown as its cause, never in what was thrown.
  */
 class ResolveFailureTest {
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> plain() {
-        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
 
     /** A doc in PUBLISHED watches itself and archives itself when its rule holds; {@code failing} picks what throws. */
     private static StateMachine<Doc, DocStatus, DocTransition> watching(String failing, RuntimeException boom) {

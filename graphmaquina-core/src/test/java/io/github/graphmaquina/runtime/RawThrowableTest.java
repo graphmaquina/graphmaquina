@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -74,18 +75,6 @@ class RawThrowableTest {
     @SuppressWarnings("unchecked")
     private static <X extends Throwable> RuntimeException sneaky(Throwable throwable) throws X {
         throw (X) throwable;
-    }
-
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
     }
 
     private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph,

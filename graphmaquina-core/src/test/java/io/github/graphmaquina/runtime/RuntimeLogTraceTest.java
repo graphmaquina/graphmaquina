@@ -56,7 +56,7 @@ import io.github.graphmaquina.fixtures.ItemStatus;
 import io.github.graphmaquina.fixtures.ItemTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Order;
-import io.github.graphmaquina.fixtures.OrderGraphs;
+import io.github.graphmaquina.fixtures.OrderMachines;
 import io.github.graphmaquina.fixtures.OrderStatus;
 import io.github.graphmaquina.fixtures.OrderTransition;
 import io.github.graphmaquina.fixtures.Probe;
@@ -172,19 +172,7 @@ class RuntimeLogTraceTest {
 
     /** Orders that watch their items from PAID and ship once every item is packed; {@code cancel} cancels them. */
     private static MachineRegistry orders(Probe<Order, OrderStatus, OrderTransition> cancel) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(OrderGraphs.order(
-                                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
-                                        CompletableFuture.completedFuture(ActionOutcome.ok()),
-                                new Probe<>(), cancel,
-                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass(),
-                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass()))
-                        .state(Order::status, Order::setStatus).identity(Order::id)
-                        .asyncTimeout(Duration.ofSeconds(5)))
-                .add(StateMachines.from(OrderGraphs.item(
-                                (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> ActionOutcome.ok()))
-                        .state(Item::status, Item::setStatus).identity(Item::id))
-                .build();
+        return OrderMachines.registry(new Probe<>(), cancel);
     }
 
     @Test

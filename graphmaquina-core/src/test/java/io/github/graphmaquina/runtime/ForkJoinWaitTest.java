@@ -141,7 +141,9 @@ class ForkJoinWaitTest {
         return new CompletableFuture<ActionOutcome>().completeOnTimeout(ActionOutcome.ok(), 100, TimeUnit.MILLISECONDS);
     }
 
-    /** A stage nobody completes in time. It completes itself after five seconds, so a regression cannot hang the build. */
+    /**
+     * A stage nobody completes in time. It completes itself after five seconds, so a regression cannot hang the build.
+     */
     private static CompletableFuture<ActionOutcome> late() {
         return new CompletableFuture<ActionOutcome>().completeOnTimeout(ActionOutcome.ok(), 5, TimeUnit.SECONDS);
     }

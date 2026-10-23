@@ -358,9 +358,9 @@ class InterruptedContainmentTest {
 
     /**
      * A routed interrupt, or one contained on the way to the route, leaves the rest of the call on an interrupted
-     * thread, as an interrupt asks: the recovery's wait for a stage that is still pending, which would complete a moment
-     * later, sees the interrupt at once and aborts the call, which holds the exception that selected the route as
-     * suppressed.
+     * thread, as an interrupt asks: the recovery's wait for a stage that is still pending, which would complete a
+     * moment later, sees the interrupt at once and aborts the call, which holds the exception that selected the route
+     * as suppressed.
      */
     @Test
     void aRecoveryThatWaitsForAPendingStageAfterAnInterruptAbortsAsInterruptedAndKeepsTheInterrupt() {
@@ -395,7 +395,9 @@ class InterruptedContainmentTest {
         }
     }
 
-    /** A recovery that need not wait, a sync action or a stage already completed, completes on the interrupted thread. */
+    /**
+     * A recovery that need not wait, a sync action or a stage already completed, completes on the interrupted thread.
+     */
     @Test
     void aRecoveryThatNeedNotWaitAfterARoutedInterruptCompletesAndKeepsTheInterrupt() {
         List<UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>>> recoveries = List.of(

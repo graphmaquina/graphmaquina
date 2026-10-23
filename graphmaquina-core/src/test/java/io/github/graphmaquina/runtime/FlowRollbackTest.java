@@ -1,13 +1,11 @@
 package io.github.graphmaquina.runtime;
 
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
+import static io.github.graphmaquina.fixtures.DocMachines.registry;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
-import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
-import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
-import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
-import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,8 +19,6 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.GraphBuilder;
-import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.fixtures.Billing;
@@ -40,7 +36,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -55,31 +50,6 @@ class FlowRollbackTest {
     private static final FlowKey<String> RECOVERED = FlowKey.of("recovered", String.class);
     @SuppressWarnings("rawtypes")
     private static final FlowKey<List> LINES = FlowKey.of("lines", List.class);
-
-    /**
-     * DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED, shaped by {@code discard};
-     * REVIEW -PUBLISH-> PUBLISHED and PUBLISHED -ARCHIVE-> ARCHIVED are plain moves.
-     */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
-        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                .statePolicy(DRAFT, "a draft is submitted or discarded")
-                .statePolicy(REVIEW, "a review is published")
-                .statePolicy(PUBLISHED, "a publication is archived");
-        graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
-        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
-
-    private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                        .asyncTimeout(Duration.ofSeconds(5)))
-                .build();
-    }
 
     /** The root's own failure route: the failed action's writes are gone, and the recovery action writes anew. */
     @Test
@@ -102,7 +72,7 @@ class FlowRollbackTest {
                             recovered.add(List.copyOf(ctx.flow().keys()));
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertEquals(OutcomeCode.FAILURE_ROUTED, registry.of(DOCS).execute(doc, SUBMIT).code());
         }
         assertEquals(List.of(List.of(), List.of(RECOVERED)), recovered);
@@ -131,7 +101,7 @@ class FlowRollbackTest {
                             recovered.add(ctx.flow().get(LINES).isPresent());
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertEquals(OutcomeCode.FAILURE_ROUTED, registry.of(DOCS).execute(doc, SUBMIT).code());
         }
         assertEquals(List.of(false), recovered);
@@ -167,7 +137,7 @@ class FlowRollbackTest {
                             }
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertThrows(CascadeException.class, () -> registry.of(DOCS).execute(parent, DISCARD));
         }
         assertEquals(List.of("Doc#2 sees [parent:String]", "Doc#3 sees [parent:String]", List.of(PARENT, CHILD),
@@ -204,7 +174,7 @@ class FlowRollbackTest {
                             seen.add("parent sees " + ctx.flow().keys());
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(parent, DISCARD));
         }
         assertEquals(List.of("recovery sees [parent:String]", OutcomeCode.FAILURE_ROUTED,
@@ -236,7 +206,7 @@ class FlowRollbackTest {
                             seen.add("recovery sees " + ctx.flow().keys());
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertEquals(OutcomeCode.FAILURE_ROUTED, registry.of(DOCS).execute(parent, SUBMIT).code());
         }
         assertEquals(List.of("failing sees [parent:String, child:String]", "recovery sees []"), seen);
@@ -297,7 +267,7 @@ class FlowRollbackTest {
                             recovered.add(ctx.flow().get(PARENT));
                             return ActionOutcome.ok();
                         }));
-        try (MachineRegistry registry = registry(graph)) {
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(5))) {
             assertEquals(OutcomeCode.FAILURE_ROUTED, registry.of(DOCS).execute(doc, SUBMIT).code());
         }
         assertEquals(List.of(Optional.empty()), recovered);

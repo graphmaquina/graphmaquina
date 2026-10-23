@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.RecoveryFixtures.hops;
+import static io.github.graphmaquina.fixtures.RecoveryFixtures.unavailable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -16,7 +18,6 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -171,28 +172,6 @@ class CascadeRecoveryTest {
             ctx.entity().calls.add(name);
             return ActionOutcome.ok();
         };
-    }
-
-    /**
-     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and returns a failure
-     * of the kind Unavailable, whose rule selects SCHEDULE_RETRY.
-     */
-    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailable() {
-        return (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                    ctx.entity().calls.add("publish");
-                    return ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy");
-                }));
-    }
-
-    /** Each hop the outcome committed, as {@code FROM -ID-> TO KIND action at depth N}. */
-    private static List<String> hops(Outcome<?, ?, ?> outcome) {
-        List<String> hops = new ArrayList<>();
-        for (TransitionRecord<?, ?, ?> record : outcome.records()) {
-            hops.add(record.from() + " -" + record.transition() + "-> " + record.to() + " " + record.kind() + " "
-                    + record.action().orElse("no action") + " at depth " + record.depth());
-        }
-        return hops;
     }
 
     /** Each action of the abort's journal, as {@code name STATUS}. */

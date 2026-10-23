@@ -1,14 +1,10 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocGraphs.docs;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
-import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
-import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
-import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
-import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
-import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -20,7 +16,6 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
@@ -36,7 +31,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,19 +39,6 @@ import org.junit.jupiter.api.Test;
  * without a message.
  */
 class DiagnosticsTest {
-
-    /** DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED is the route a failure can take. */
-    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
-            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit) {
-        return submit.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
-                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
-                        .transition(SUBMIT, DRAFT, REVIEW))
-                .endTransition()
-                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
-                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
-    }
 
     private static StateMachine<Doc, DocStatus, DocTransition> standalone(
             GraphDefinition<Doc, DocStatus, DocTransition> graph) {

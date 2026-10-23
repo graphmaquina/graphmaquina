@@ -60,6 +60,7 @@ import io.github.graphmaquina.fixtures.ItemTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Order;
 import io.github.graphmaquina.fixtures.OrderGraphs;
+import io.github.graphmaquina.fixtures.OrderMachines;
 import io.github.graphmaquina.fixtures.OrderStatus;
 import io.github.graphmaquina.fixtures.OrderTransition;
 import io.github.graphmaquina.fixtures.Probe;
@@ -133,23 +134,6 @@ class RuntimeLogDebugTest {
                 .watch(DRAFT, DOCS, (Doc doc) -> List.of(doc), (Doc moved) -> Optional.<Doc>empty())
                     .when("rule", rule).execute(SUBMIT)
                     .endWatch()
-                .build();
-    }
-
-    /** Orders that watch their items from PAID and ship once every item is packed; {@code ship} ships them. */
-    private static MachineRegistry orders(Probe<Order, OrderStatus, OrderTransition> ship,
-                                          Probe<Order, OrderStatus, OrderTransition> cancel) {
-        return MachineRegistry.builder()
-                .add(StateMachines.from(OrderGraphs.order(
-                                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
-                                        CompletableFuture.completedFuture(ActionOutcome.ok()),
-                                ship, cancel,
-                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass(),
-                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass()))
-                        .state(Order::status, Order::setStatus).identity(Order::id).asyncTimeout(Duration.ofSeconds(5)))
-                .add(StateMachines.from(OrderGraphs.item(
-                                (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> ActionOutcome.ok()))
-                        .state(Item::status, Item::setStatus).identity(Item::id))
                 .build();
     }
 
@@ -292,7 +276,7 @@ class RuntimeLogDebugTest {
             ctx.cascade(ITEMS, ctx.entity().items().get(0), ItemTransition.CANCEL);
             return ActionOutcome.ok();
         };
-        try (MachineRegistry registry = orders(new Probe<>(), cancel);
+        try (MachineRegistry registry = OrderMachines.registry(new Probe<>(), cancel);
              LibraryLog log = LibraryLog.runtime(Level.FINE)) {
             registry.of(ORDERS).execute(order, OrderTransition.CANCEL);
             assertEquals(List.of(
@@ -326,7 +310,7 @@ class RuntimeLogDebugTest {
         new Item("i1", ItemStatus.PACKED, Optional.of(order));
         Item last = new Item("i2", ItemStatus.PACKING, Optional.of(order));
         Probe<Order, OrderStatus, OrderTransition> ship = new Probe<>();
-        try (MachineRegistry registry = orders(ship, new Probe<>());
+        try (MachineRegistry registry = OrderMachines.registry(ship, new Probe<>());
              LibraryLog log = LibraryLog.runtime(Level.FINE)) {
             registry.of(ITEMS).execute(last, ItemTransition.PACK);
             ship.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
