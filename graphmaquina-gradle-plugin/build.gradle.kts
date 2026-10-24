@@ -3,8 +3,9 @@ plugins {
     `maven-publish`
     signing
 }
-// This build cannot see buildSrc, so it applies the shared Checkstyle script directly.
+// This build cannot see buildSrc, so it applies the shared Checkstyle and delombok scripts directly.
 apply(from = "../config/checkstyle/checkstyle.gradle.kts")
+apply(from = "../config/lombok/delombok.gradle.kts")
 group = "io.github.graphmaquina"
 // Same resolution as the root build's convention plugin; this build is separate and cannot see buildSrc,
 // so the six lines are repeated here for the same reason the POM metadata below is.

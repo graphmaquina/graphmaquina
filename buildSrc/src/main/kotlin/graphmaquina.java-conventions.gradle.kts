@@ -87,6 +87,8 @@ pluginManager.withPlugin("maven-publish") {
         withSourcesJar()
         withJavadocJar()
     }
+    // The javadoc jar documents what Lombok generates too; the script is shared with the included plugin build.
+    apply(from = rootDir.resolve("config/lombok/delombok.gradle.kts"))
     extensions.configure<PublishingExtension> {
         publications.withType<MavenPublication>().configureEach {
             pom {
