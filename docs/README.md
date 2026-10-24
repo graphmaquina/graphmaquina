@@ -18,7 +18,7 @@ time; each page links the next one in that order.
 - [Test your machines](#test-your-machines)
 - [Build tooling reference](#build-tooling-reference)
 - [Find a feature](#find-a-feature)
-- [Maintainers](#maintainers)
+- [Release signatures](#release-signatures)
 - [Illustrations](#illustrations)
 
 ## Start here
@@ -108,12 +108,11 @@ time; each page links the next one in that order.
 | Decide in a test when an async callback answers | [Controlled asynchronous invocations](testing-samples.md#controlled-asynchronous-invocations) |
 | Understand an `SG` error code | [Diagnostics](diagnostics.md) |
 
-## Maintainers
+## Release signatures
 
 | Page | What it covers |
 | --- | --- |
-| [Build, verify and release this repository](repository-build.md) | Verification commands, the size, complexity and documentation checks, publishing an unreleased build, the Central release |
-| [Release signing](release-signing.md) | The signing key, verifying a release, signing with 1Password CLI |
+| [Release signing](release-signing.md) | The signing key's fingerprint and how to verify a release's signature |
 
 ## Illustrations
 

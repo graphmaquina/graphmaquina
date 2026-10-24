@@ -122,4 +122,4 @@ what javac actually accepted, so:
 
 ---
 
-Next: [Build, verify and release this repository](repository-build.md). Back to the [documentation index](README.md).
+Next: [Release signing](release-signing.md). Back to the [documentation index](README.md).

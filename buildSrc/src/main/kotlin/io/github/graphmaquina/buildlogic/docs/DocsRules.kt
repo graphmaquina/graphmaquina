@@ -13,6 +13,8 @@ object DocsLimits {
     const val CONTENTS_FROM_LINES: Int = 100
     const val MAX_SECTION_LINES: Int = 150
     const val INDEX: String = "docs/README.md"
+    const val INTERNAL: String = "internal-docs"
+    const val INTERNAL_INDEX: String = "internal-docs/README.md"
 }
 
 /** One broken rule: the page, the 1-based line it points at, the rule's id and what was measured. */
@@ -20,7 +22,10 @@ data class Violation(val path: String, val line: Int, val rule: String, val deta
     override fun toString(): String = "$path:$line: $rule $detail"
 }
 
-/** Rules 1 to 5 of the documentation check: file size, contents list, section size, headings and the index. */
+/**
+ * Rules 1 to 5 and 7 of the documentation check: file size, contents list, section size, headings, the indexes and the
+ * public pages' links to internal ones.
+ */
 object DocsRules {
 
     private val TOP_LEVEL_ENTRY: Regex = Regex("^[-*+][ \t]+\\[([^\\]]+)\\]\\(#[^)]*\\)")
@@ -101,22 +106,58 @@ object DocsRules {
         return violations
     }
 
-    /** Rule 4: [DocsLimits.INDEX] exists and links every other page of [scope] but the root `README.md` directly. */
+    /**
+     * Rule 4: each index exists and links every other page it covers directly: [DocsLimits.INDEX] every public page of
+     * [scope] but the root `README.md`, and, when [scope] holds internal pages, [DocsLimits.INTERNAL_INDEX] every
+     * other internal page.
+     */
     fun index(root: File, scope: List<String>): List<Violation> {
-        val index: File = root.resolve(DocsLimits.INDEX)
-        if (!index.isFile) {
-            return listOf(Violation(DocsLimits.INDEX, 1, "index",
-                "is missing; it must link every page other than itself and README.md"))
-        }
-        val base: File = index.parentFile
-        val linked: Set<String> = INLINE_LINK.findAll(index.readText(Charsets.UTF_8))
-            .map { it.groupValues[1] }
-            .filter { target: String -> !target.startsWith("#") && !URL_SCHEME.containsMatchIn(target) }
-            .map { target: String -> base.resolve(target.substringBefore('#')).normalize() }
-            .map { file: File -> file.relativeTo(root).invariantSeparatorsPath }
-            .toSet()
-        return scope
-            .filter { path: String -> path != "README.md" && path != DocsLimits.INDEX && path !in linked }
-            .map { path: String -> Violation(DocsLimits.INDEX, 1, "index", "does not link $path") }
+        val internal: List<String> = scope.filter { path: String -> isInternal(path) }
+        val public: List<String> = scope.filter { path: String -> !isInternal(path) && path != "README.md" }
+        val internalIndex: List<Violation> = if (internal.isEmpty()) listOf() else
+            covers(root, DocsLimits.INTERNAL_INDEX, internal, "every other internal page")
+        return covers(root, DocsLimits.INDEX, public, "every page other than itself and README.md") + internalIndex
     }
+
+    /**
+     * Rule 7: a public page links no internal page, which exists only where the internal docs are kept, so the link
+     * would resolve here and break for every other reader.
+     */
+    fun internalLinks(root: File, page: DocPage): List<Violation> {
+        if (isInternal(page.path)) {
+            return listOf()
+        }
+        val base: File = root.resolve(page.path).parentFile
+        return page.lines.flatMapIndexed { index: Int, line: String ->
+            INLINE_LINK.findAll(line)
+                .map { it.groupValues[1] }
+                .filter { target: String -> isInternal(resolve(root, base, target) ?: "") }
+                .map { target: String -> Violation(page.path, index + 1, "internal-link", "links $target") }
+                .toList()
+        }
+    }
+
+    private fun covers(root: File, path: String, pages: List<String>, what: String): List<Violation> {
+        val index: File = root.resolve(path)
+        if (!index.isFile) {
+            return listOf(Violation(path, 1, "index", "is missing; it must link $what"))
+        }
+        val linked: Set<String> = INLINE_LINK.findAll(index.readText(Charsets.UTF_8))
+            .mapNotNull { resolve(root, index.parentFile, it.groupValues[1]) }
+            .toSet()
+        return pages
+            .filter { page: String -> page != path && page !in linked }
+            .map { page: String -> Violation(path, 1, "index", "does not link $page") }
+    }
+
+    /** The file a relative [target] written in [base] names, relative to [root]; null for an anchor or a URL. */
+    private fun resolve(root: File, base: File, target: String): String? {
+        if (target.startsWith("#") || URL_SCHEME.containsMatchIn(target)) {
+            return null
+        }
+        return base.resolve(target.substringBefore('#')).normalize().relativeTo(root).invariantSeparatorsPath
+    }
+
+    private fun isInternal(path: String): Boolean =
+        path == DocsLimits.INTERNAL || path.startsWith("${DocsLimits.INTERNAL}/")
 }

@@ -8,9 +8,7 @@ GraphMaquina releases use a dedicated RSA 4096-bit OpenPGP signing key. Its publ
 ```
 
 The full fingerprint identifies the key; an email address or short key ID alone does not. The public key
-is distributed through `hkps://keyserver.ubuntu.com`. The private key is protected with a generated
-passphrase. The release maintainer stores the encrypted private key, passphrase, public key, fingerprint
-and revocation certificate together in 1Password. None of the private material belongs in this repository.
+is distributed through `hkps://keyserver.ubuntu.com`.
 
 ## Retrieve the public key and verify a release
 
@@ -37,45 +35,6 @@ These download commands require the release to be publicly available. Verify the
 against the value above. GnuPG may warn that the key is not certified by a trusted signature; that concerns
 your local trust database. A bad signature or a different fingerprint is a separate problem and must not
 be ignored.
-
-## Sign using 1Password CLI
-
-The build reads `SIGNING_KEY` and `SIGNING_PASSWORD`. The first is an ASCII-armored private key, not a path.
-The signing item has `Private PGP key` and `password` fields. 1Password shows the first under two names, the
-id `private_key` and the label `Private PGP key`; they are one field, and the commands below address it by
-its label. Replace the placeholders with your vault and item names or IDs after signing in to 1Password CLI:
-
-```bash
-./gradlew --no-daemon :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
-          :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
-          :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
-./gradlew --no-daemon test
-./gradlew --no-daemon :graphmaquina-gradle-plugin:test
-
-SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
-SIGNING_PASSWORD='op://<vault>/<item>/password' \
-op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
-```
-
-The publication, `test` and `centralBundle` commands above first run the
-[documentation check](repository-build.md#build-verify-and-release-this-repository), which needs lychee 0.24 on the
-`PATH`; `:graphmaquina-gradle-plugin:test` does not run it.
-
-The resulting `build/graphmaquina-central-bundle.zip` contains six modules and the Gradle plugin marker.
-The build checks metadata, required files and checksums. Before uploading, independently verify every
-signature with GnuPG. The ZIP contains public artifacts and detached signatures; it must never contain
-private keys or the passphrase. Upload it through Central Portal, wait for validation, then publish and
-confirm the artifacts can be resolved from Maven Central.
-
-For key recovery, import the encrypted backup directly from 1Password without writing it into the checkout:
-
-```bash
-op read 'op://<vault>/<item>/Private PGP key' | gpg --import
-```
-
-Keep the revocation certificate available in the vault for a lost or compromised key. Do not import or
-publish that certificate during normal setup: revocation is an exceptional recovery operation. Check key
-expiration before each release and distribute updated public key material after renewing it.
 
 ---
 

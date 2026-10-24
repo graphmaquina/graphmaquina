@@ -10,7 +10,8 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * The check reads every Markdown page the repository versions, wherever it is: in a git checkout what git tracks or
- * would track, and without `.git` every page outside the build outputs.
+ * would track, and without `.git` every page outside the build outputs. The internal pages, which the repository
+ * ignores, are read from the disk in both cases.
  */
 class DocsScopeTest {
 
@@ -51,6 +52,24 @@ class DocsScopeTest {
     fun readsACheckoutWithoutGitAsVersionedOutsideTheBuildOutputs() {
         write("README.md", "docs/a.md", "docs/x.svg", "other/z.md", "build/x.md", "module/build/y.md", ".gradle/z.md")
         assertEquals(listOf("README.md", "docs/a.md", "other/z.md"), DocsScope.files(root))
+    }
+
+    @Test
+    fun addsTheInternalPagesTheRepositoryIgnores() {
+        git("init", "-q")
+        root.resolve(".gitignore").writeText("internal-docs/\n")
+        write("README.md", "docs/a.md", "internal-docs/README.md", "internal-docs/sub/b.md", "internal-docs/x.txt",
+            "internal-docs/.git/c.md", "internal-docs/build/d.md", "internal-docs/.gradle/e.md")
+        assertEquals(
+            listOf("README.md", "docs/a.md", "internal-docs/README.md", "internal-docs/sub/b.md"),
+            DocsScope.files(root),
+        )
+    }
+
+    @Test
+    fun readsTheInternalPagesOfACheckoutWithoutGitOnce() {
+        write("README.md", "internal-docs/README.md", "internal-docs/.git/c.md")
+        assertEquals(listOf("README.md", "internal-docs/README.md"), DocsScope.files(root))
     }
 
     @Test

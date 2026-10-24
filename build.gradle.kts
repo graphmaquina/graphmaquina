@@ -79,11 +79,13 @@ tasks.register<Zip>("centralBundle") {
     destinationDirectory = layout.buildDirectory
 }
 
-// Size and navigation limits for the public Markdown docs, checked before every Java compilation of this build
-// (see the Java conventions); the rules and their limits live in buildSrc's io.github.graphmaquina.buildlogic.docs.
+// Size and navigation limits for the Markdown docs, public and internal, checked before every Java compilation of
+// this build (see the Java conventions); the rules and their limits live in buildSrc's
+// io.github.graphmaquina.buildlogic.docs.
 tasks.register("checkDocs") {
     group = "verification"
-    description = "Checks every versioned Markdown file against the documentation size, structure and link rules"
+    description = "Checks every versioned and internal Markdown file against the documentation size, " +
+        "structure and link rules"
     doNotTrackState("Links point at files outside the checked pages, so the check runs every time")
     val root: File = rootDir
     doLast { DocsCheck.verify(root) }
