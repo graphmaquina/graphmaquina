@@ -107,7 +107,9 @@ public GuardResult allItemsPacked(GuardContext<Order, OrderStatus, OrderTransiti
 This is a method from the shop's `OrderActions`. In a guard or an action, `PeerView.stateOf(peer)` reads pending
 state from the current unit of work before falling back to the entity's getter. Calling the entity getter directly
 during a cascade can therefore miss an uncommitted state change. The view a watch condition receives reads only the
-entity's getter, since a watch runs outside any transaction. `PeerView.key()` names the peer machine.
+entity's getter, since a watch runs outside any transaction. `PeerView.key()` names the peer machine. `stateOf` calls the
+peer machine's identity function and, when the call holds no pending state for the peer, its getter, on the calling
+thread; what either throws reaches the guard or action as it is.
 
 | Peer helper | Empty collection | Nonempty collection |
 | --- | --- | --- |
@@ -149,6 +151,13 @@ and once the entity is no longer in flight the request is resolved from its pend
 | --- | --- |
 | `FAIL_FAST` | Run the elements in order. An unknown machine poisons the transaction before the first element runs; otherwise the first element whose transition throws, aborts, cycles or exceeds the depth limit poisons the transaction and propagates into the action. An element whose failure route is taken returns `Outcome.Failed`, and the cascade continues. |
 | `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose sub-machine binding check could not read a parent or a child, such as a parent whose state is null, an element whose step a nested cascade poisoned with a failure that is no failure of the call, or an identity whose `equals` or `hashCode` throws while a failed element is rolled back. |
+
+`cascadeAll` returns an unmodifiable list with one `Outcome` per element, in the iteration order of the collection it
+copied, each `Applied` or `Failed` as `cascade` returns it; with a registered machine, an empty collection returns an
+empty list. It returns only when every element ended that way: `FAIL_FAST` throws at the first element that aborts,
+and `COLLECT` throws its `CascadeException` after the last. Once a failure has poisoned the call, only `peer(...)`,
+`cascade(...)` and `cascadeAll(...)` check the poison: a `PeerView` obtained before it still reads, `ctx.flow()` still
+reads and writes, and the call still commits nothing.
 
 `COLLECT` is not partial commit. A nested transition that is rejected, because no edge carries it, a guard rejected it
 or a sub-machine refused it, is an abort rather than an ordinary root-level `Rejected` result. A handled domain

@@ -159,7 +159,10 @@ each exception exposes what identifies its cause:
 | `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
 | `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
 
-In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
+An abort describes one step. A cycle, the depth limit, a failed cascade, `COLLECT`'s `CascadeException` and a
+`PoisonedUnitOfWorkException` describe the cascading caller's own step, so their `key()`, `entity()`, `from()`,
+`transition()` and `to()` are the action's, not the peer's; an abort raised because a sub-machine's exit cannot run
+describes the child's step that ended. In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
 identifier, a recovery, an exit or the identifier a watch selected rather than the call's own; `action()` is empty for
 a guard, a rejection, the watch-chain limit and an abort raised for the caller of a cascade or a peer read; and
 `cascadePath()` lists the entities in flight, outermost first, as `key#identity`. A call failure's message names states

@@ -236,7 +236,11 @@ the same machine identity in one unit of work ends the call in a `TransitionAbor
 `AmbiguousIdentityException`; this prevents silently
 treating two representations of one row as separate entities.
 
-An identity function that returns null throws `NullPointerException("identity of <key> returned null")`. A machine
+An identity function that returns null raises `NullPointerException("identity of <key> returned null")`. At the root,
+the call ends in a `TransitionAbortedException` of phase `RESOLVE`, `reading the entity threw …`, with that exception as
+its cause and no `from()`; for a cascaded entity, the action receives the cascade's abort that carries it, which
+poisons the call; a peer read throws it into the guard or action, and a watch's owner lookup reports it in
+`Reaction.Aborted`. A machine
 built standalone without `identity(...)` tells entities apart by reference; a registry requires an identity for every
 machine.
 

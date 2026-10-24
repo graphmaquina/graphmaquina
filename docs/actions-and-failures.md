@@ -48,7 +48,8 @@ cascades, exits and hooks of the same call. Hooks, observers and transition reco
 
 An action returns `ActionOutcome.ok()`, `ActionOutcome.failed("reason")`, or `ActionOutcome.failed(kind, "reason")`
 with a failure kind, a final class or record that implements `FailureKind`; a blank reason or an invalid kind throws
-`IllegalArgumentException`. A failed action is a handled business
+`IllegalArgumentException`. An action that returns null, or an asynchronous one whose stage is null or completes with
+null, aborts the call with a `TransitionAbortedException`, as a guard does. A failed action is a handled business
 result when a recovery rule of the edge declares its failure kind, which selects that rule's recovery identifier, or
 else when the edge names an `onFailure` identifier, which takes every other returned failure and keeps its kind in
 `Outcome.Failed.failureKind()`. Without either, the runtime throws `UnhandledFailureException` and does not commit the
@@ -388,7 +389,10 @@ move or an action:
 Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery fails,
 because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that failure
 always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions that ran, but
-not the kind or the cause of the first failure. When the recovery action throws, or completes its stage with, a
+not the kind or the cause of the first failure. A recovery action that returns a failed outcome ends the call in a
+`TransitionAbortedException` whose message reads `the failure route action <name> returned failed (<its reason>) after
+the original failure (<reason>)`, whose `transition()` and `action()` are the recovery's, and whose cause is the
+throwable that selected the route, when one did. When the recovery action throws, or completes its stage with, a
 throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also holds
 the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these aborts
 that the engine builds for the recovery step: when its action returns a null outcome or stage, or its wait times out, is

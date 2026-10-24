@@ -211,6 +211,10 @@ grandchild too, and `starts()` lists it with its depth. A child that ends while 
 state, as when that edge's action captures the payment, exits once that edge's step is over. That exit runs one level
 below the edge's step, at the same depth as the capture, and counts for `maxCascadeDepth` at that depth.
 
+In a definition assembled without the DSL, a child that reaches a terminal state its binding maps to no exit aborts
+the call in `ACTION` (`the terminal <T> of <child> has no exit in <node>`), and an exit identifier with no edge from the
+bound state aborts it as a rejection inside the exit; the DSL and the annotations refuse both graphs.
+
 An exit is an ordinary edge of the parent, so its failure routes apply as on any edge. When the desk answers that no
 room is left, `holdRoom` fails: the booking takes the route `NO_ROOM` to `CANCELLED`, the whole call commits, and the
 capture's outcome is still `Applied`. The payment stays `CAPTURED`, since the route moves the booking and not the
