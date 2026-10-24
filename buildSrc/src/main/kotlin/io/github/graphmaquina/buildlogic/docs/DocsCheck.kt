@@ -5,7 +5,7 @@ import org.gradle.api.GradleException
 
 /**
  * The documentation check the root build runs before every compilation: the lychee prerequisite first, then rules 1
- * to 5 on every page in [DocsScope], then the links. Every violation is listed before the build stops.
+ * to 5 and 7 on every page in [DocsScope], then the links. Every violation is listed before the build stops.
  */
 object DocsCheck {
 
@@ -19,7 +19,8 @@ object DocsCheck {
         val scope: List<String> = DocsScope.files(root)
         val pages: List<DocPage> = scope.map { path: String -> DocPage.read(root, path) }
         val rules: List<Violation> = pages.flatMap { page: DocPage ->
-            DocsRules.fileSize(page) + DocsRules.contents(page) + DocsRules.sections(page) + DocsRules.headings(page)
+            DocsRules.fileSize(page) + DocsRules.contents(page) + DocsRules.sections(page) + DocsRules.headings(page) +
+                DocsRules.internalLinks(root, page)
         }
         val found: List<Violation> = rules + DocsRules.index(root, scope) + Lychee.brokenLinks(root, scope, lychee)
         return found.sortedWith(compareBy<Violation>({ it.path }, { it.line }, { it.rule })).map { it.toString() }

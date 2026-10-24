@@ -35,12 +35,15 @@ val verifyCentralStaging = tasks.register("verifyCentralStaging") {
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToCentralStagingRepository"))
     inputs.dir(centralStaging)
+    // Locals for the action: the configuration cache cannot store an action that holds this script.
+    val staging = centralStaging
+    val artifacts = centralArtifacts
     doLast {
-        val root = centralStaging.get().asFile
+        val root = staging.get().asFile
         val xml = DocumentBuilderFactory.newInstance().apply {
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         }.newDocumentBuilder()
-        centralArtifacts.get().forEach { path ->
+        artifacts.get().forEach { path ->
             val artifact = root.resolve(path)
             check(artifact.isFile && artifact.length() > 0) { "Missing Central artifact: $path" }
             val signature = root.resolve("$path.asc")
@@ -71,19 +74,23 @@ tasks.register<Zip>("centralBundle") {
     group = "publishing"
     description = "Builds and validates the signed release bundle for a manual Central Portal upload"
     dependsOn(verifyCentralStaging)
+    // A local for the spec, for the same reason as the verification's action.
+    val paths = bundlePaths
     from(centralStaging) {
-        include { it.isDirectory || it.relativePath.pathString in bundlePaths.get() }
+        include { it.isDirectory || it.relativePath.pathString in paths.get() }
     }
     includeEmptyDirs = false
     archiveFileName = "graphmaquina-central-bundle.zip"
     destinationDirectory = layout.buildDirectory
 }
 
-// Size and navigation limits for the public Markdown docs, checked before every Java compilation of this build
-// (see the Java conventions); the rules and their limits live in buildSrc's io.github.graphmaquina.buildlogic.docs.
+// Size and navigation limits for the Markdown docs, public and internal, checked before every Java compilation of
+// this build (see the Java conventions); the rules and their limits live in buildSrc's
+// io.github.graphmaquina.buildlogic.docs.
 tasks.register("checkDocs") {
     group = "verification"
-    description = "Checks every versioned Markdown file against the documentation size, structure and link rules"
+    description = "Checks every versioned and internal Markdown file against the documentation size, " +
+        "structure and link rules"
     doNotTrackState("Links point at files outside the checked pages, so the check runs every time")
     val root: File = rootDir
     doLast { DocsCheck.verify(root) }

@@ -8,6 +8,9 @@ build/
 
 .worktrees/
 
+# Internal maintainer docs, versioned apart in a git repository of their own
+internal-docs/
+
 # Internal design, planning and verification records
 docs/*-verification.md
 docs/audit-64-decisions.md

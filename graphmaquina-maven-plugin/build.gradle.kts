@@ -32,8 +32,10 @@ tasks.jar {
 // and nothing else, so Maven's own ${project}, ${session} and ${plugin.artifacts} expressions reach it intact.
 tasks.processResources {
     inputs.property("graphmaquinaVersion", project.version.toString())
+    // Read now: the filter runs while the task copies, when the configuration cache leaves it no project to ask.
+    val release = project.version.toString()
     filesMatching("META-INF/maven/plugin.xml") {
-        filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", project.version.toString()) }
+        filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", release) }
     }
 }
 
@@ -88,9 +90,11 @@ tasks.test {
         ":graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository",
         ":graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository"
     )
+    // Their files at this version only: the maven-metadata.xml beside them changes on every publication.
+    val release = project.version.toString()
     inputs.files(listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor",
         "graphmaquina-maven-plugin").map {
-        rootProject.layout.buildDirectory.dir("adapter-test-repository/io/github/graphmaquina/$it")
+        rootProject.layout.buildDirectory.dir("adapter-test-repository/io/github/graphmaquina/$it/$release")
     }).withPropertyName("fixtureReleaseArtifacts")
     systemProperty(
         "graphmaquina.fixtureRepository",

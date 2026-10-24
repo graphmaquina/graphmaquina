@@ -130,4 +130,39 @@ class DocsRulesTest {
             texts(DocsRules.index(root, scope)),
         )
     }
+
+    @Test
+    fun internalPagesHaveAnIndexOfTheirOwn() {
+        page("# Docs\n- [Guide](guide.md)\n", "docs/README.md")
+        val scope: List<String> = listOf("README.md", "docs/README.md", "docs/guide.md", "internal-docs/README.md",
+            "internal-docs/release.md", "internal-docs/keys/signing.md")
+        assertEquals(
+            listOf("internal-docs/README.md:1: index is missing; it must link every other internal page"),
+            texts(DocsRules.index(root, scope)),
+        )
+        page("# Internal\n- [Release](release.md)\n- [Guide](../docs/guide.md)\n", "internal-docs/README.md")
+        assertEquals(
+            listOf("internal-docs/README.md:1: index does not link internal-docs/keys/signing.md"),
+            texts(DocsRules.index(root, scope)),
+        )
+        page("# Internal\n- [Release](release.md)\n- [Signing](keys/signing.md#sign)\n", "internal-docs/README.md")
+        assertEquals(listOf<Violation>(), DocsRules.index(root, scope))
+    }
+
+    @Test
+    fun publicPagesDoNotLinkInternalOnes() {
+        val guide: DocPage = page("# Guide\n\nSee [release](../internal-docs/release.md#tag) and [x](guide.md).\n" +
+            "[index](../internal-docs/) [site](https://example.com/internal-docs/x.md)\n", "docs/guide.md")
+        assertEquals(
+            listOf("docs/guide.md:3: internal-link links ../internal-docs/release.md#tag",
+                "docs/guide.md:4: internal-link links ../internal-docs/"),
+            texts(DocsRules.internalLinks(root, guide)),
+        )
+        val readme: DocPage = page("# R\n[i](internal-docs/README.md)\n", "README.md")
+        assertEquals(listOf("README.md:2: internal-link links internal-docs/README.md"),
+            texts(DocsRules.internalLinks(root, readme)))
+        val internal: DocPage = page("# Release\n[guide](../docs/guide.md) [keys](keys/signing.md)\n",
+            "internal-docs/release.md")
+        assertEquals(listOf<Violation>(), DocsRules.internalLinks(root, internal))
+    }
 }

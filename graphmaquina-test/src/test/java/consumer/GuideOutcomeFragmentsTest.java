@@ -21,28 +21,29 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java fragments of the guide's "Handle transition outcomes" section, its failed-call handler included,
- * plus its async completion callback and observer examples, against the published core jar. A second test compiles
- * every fragment of the guide's "Recover by failure kind and exception type" section the same way, as a compilation
- * unit of its own, a third one every fragment of its "Compose machines" section, and a fourth one every fragment of
- * its "The call's flow" section. This test runs no generator, so the annotated declarations of the recovery and
+ * Compiles the Java fragments of the guide's "Handle transition outcomes" page, its failed-call handler included,
+ * plus the async completion callback of its "Asynchronous work and timeouts" page and the observer example of its
+ * "Commit, hooks, observers and persistence" page, against the published core jar. A second test compiles every
+ * fragment of the "Recover by failure kind and exception type" section of its "Actions, guards and failure routes"
+ * page the same way, as a compilation unit of its own, a third one every fragment of its "Compose machines" page, and
+ * a fourth one every fragment of its "The call's flow" page. This test runs no generator, so the annotated declarations of the recovery and
  * composition sections compile against stand-ins shaped like what the generator and the processor emit: the
  * {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing example's graph and
  * pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for the composition
  * section; the flow section's actions, hook, handler, registry factory and trail printer compile on stand-in hosts,
  * beside stand-ins for the shop's order, its items, their enums and facades, and its restock record. The fragments
- * are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a renamed accessor
- * in the guide breaks this test the way it would break a reader.
- * A heading or block that cannot be found fails the test instead of compiling nothing. The guide, the repository and
- * the release come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system
- * properties that {@code publishedArtifactTest} sets.
+ * are cut out of those pages of {@code docs} verbatim and wrapped only by stand-in types and methods, so a renamed
+ * accessor in the guide breaks this test the way it would break a reader.
+ * A heading or block that cannot be found fails the test instead of compiling nothing. The pages' directory, the
+ * repository and the release come from the {@code docsPath}, {@code artifactRepository} and {@code artifactVersion}
+ * system properties that {@code publishedArtifactTest} sets.
  */
 class GuideOutcomeFragmentsTest {
 
-    private static final String SECTION_HEADING = "## Handle transition outcomes";
-    private static final String RECOVERY_HEADING = "### Recover by failure kind and exception type";
-    private static final String COMPOSITION_HEADING = "## Compose machines";
-    private static final String FLOW_HEADING = "### The call's flow";
+    private static final String SECTION_HEADING = "# Handle transition outcomes";
+    private static final String RECOVERY_HEADING = "## Recover by failure kind and exception type";
+    private static final String COMPOSITION_HEADING = "# Compose machines";
+    private static final String FLOW_HEADING = "# The call's flow";
     private static final String FUTURE_PREFIX =
             "CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =";
     private static final String OBSERVER_PREFIX =
@@ -60,7 +61,7 @@ class GuideOutcomeFragmentsTest {
             import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
 
-            /** Every outcome fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            /** Every outcome fragment of docs/outcomes.md, extracted verbatim, compiled against core. */
             public final class GuideFragments {
                 private GuideFragments() { }
 
@@ -109,7 +110,7 @@ class GuideOutcomeFragmentsTest {
             import java.net.SocketTimeoutException;
             import java.util.Optional;
 
-            /** Every recovery fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            /** Every recovery fragment of docs/actions-and-failures.md, extracted verbatim, compiled against core. */
             public final class GuideRecoveryFragments {
                 private GuideRecoveryFragments() { }
 
@@ -212,7 +213,7 @@ class GuideOutcomeFragmentsTest {
             import java.util.concurrent.CompletionStage;
             import java.util.concurrent.ConcurrentHashMap;
 
-            /** Every composition fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            /** Every composition fragment of docs/composition.md, extracted verbatim, compiled against core. */
             public final class GuideCompositionFragments {
                 private GuideCompositionFragments() { }
 
@@ -468,7 +469,7 @@ class GuideOutcomeFragmentsTest {
             import java.util.List;
             import java.util.Optional;
 
-            /** Every flow fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            /** Every flow fragment of docs/call-flow.md, extracted verbatim, compiled against core. */
             public final class GuideFlowFragments {
                 private GuideFlowFragments() { }
 
@@ -515,7 +516,7 @@ class GuideOutcomeFragmentsTest {
 
     @Test
     void everyOutcomeFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
-        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        List<String> guide = page("outcomes.md");
         Path coreJar = publishedCoreJar();
 
         assertJavaBlockCount(guide, SECTION_HEADING, 5);
@@ -533,10 +534,10 @@ class GuideOutcomeFragmentsTest {
         source.append(blockAfter(guide, SECTION_HEADING, 5)).append('\n');
         source.append("    // --- the async completion callback block, wrapped in a method\n").append(STUBS);
         source.append("    static void handle(StubTickets tickets, Ticket ticket) {\n");
-        source.append(blockStarting(guide, FUTURE_PREFIX)).append("    }\n\n");
+        source.append(blockStarting(page("async.md"), FUTURE_PREFIX)).append("    }\n\n");
         source.append("    // --- the observer example, wrapped in a method\n");
         source.append("    static void observeTheSet() {\n");
-        source.append(blockStarting(guide, OBSERVER_PREFIX)).append("    }\n}\n");
+        source.append(blockStarting(page("commit-and-persistence.md"), OBSERVER_PREFIX)).append("    }\n}\n");
 
         List<String> diagnostics = compile(workDir, "GuideFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's outcome fragments must compile against the published core:\n"
@@ -546,7 +547,7 @@ class GuideOutcomeFragmentsTest {
     /** Compiles the recovery section's five Java blocks against the staged core jar. */
     @Test
     void everyRecoveryFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
-        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        List<String> guide = page("actions-and-failures.md");
         Path coreJar = publishedCoreJar();
 
         assertJavaBlockCount(guide, RECOVERY_HEADING, 5);
@@ -578,7 +579,7 @@ class GuideOutcomeFragmentsTest {
     /** Compiles the composition section's eight Java blocks against the staged core jar. */
     @Test
     void everyCompositionFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
-        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        List<String> guide = page("composition.md");
         Path coreJar = publishedCoreJar();
 
         assertJavaBlockCount(guide, COMPOSITION_HEADING, 8);
@@ -624,7 +625,7 @@ class GuideOutcomeFragmentsTest {
     /** Compiles the flow section's seven Java blocks against the staged core jar. */
     @Test
     void everyFlowFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
-        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        List<String> guide = page("call-flow.md");
         Path coreJar = publishedCoreJar();
 
         assertJavaBlockCount(guide, FLOW_HEADING, 7);
@@ -659,8 +660,8 @@ class GuideOutcomeFragmentsTest {
     }
 
     /**
-     * Fails unless {@code heading} has {@code expected} java blocks after it and before the next level-two
-     * heading. Headings are matched outside code fences only.
+     * Fails unless {@code heading} has {@code expected} java blocks after it and before the next heading of its
+     * level or higher. Headings are matched outside code fences only.
      */
     private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
         int count = javaBlocksAfter(guide, heading).size();
@@ -669,8 +670,8 @@ class GuideOutcomeFragmentsTest {
     }
 
     /**
-     * Returns the {@code n}th java block after {@code heading} and before the next level-two heading. Headings
-     * are matched outside code fences only. Fails when the block is missing or blank.
+     * Returns the {@code n}th java block after {@code heading} and before the next heading of its level or higher.
+     * Headings are matched outside code fences only. Fails when the block is missing or blank.
      */
     private static String blockAfter(List<String> guide, String heading, int n) {
         List<MarkdownPage.Block> blocks = javaBlocksAfter(guide, heading);
@@ -681,11 +682,16 @@ class GuideOutcomeFragmentsTest {
     }
 
     /**
-     * Returns the java blocks after {@code heading} and before the next level-two heading. Headings are matched
-     * outside code fences only.
+     * Returns the java blocks after {@code heading} and before the next heading of its level or higher. Headings
+     * are matched outside code fences only.
      */
     private static List<MarkdownPage.Block> javaBlocksAfter(List<String> guide, String heading) {
-        return MarkdownPage.blocksAfter(guide, heading, (String line) -> line.startsWith("## "), "java");
+        return MarkdownPage.sectionBlocks(guide, heading, "java");
+    }
+
+    /** Reads the guide's page {@code name} from the directory the {@code docsPath} property names. */
+    private static List<String> page(String name) throws IOException {
+        return MarkdownPage.read(Path.of(property("docsPath")), name);
     }
 
     /** Returns the first java block whose first line starts with the prefix. Fails when there is none. */

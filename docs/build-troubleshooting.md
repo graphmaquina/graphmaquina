@@ -1,0 +1,125 @@
+# Build troubleshooting and limits
+
+## Contents
+
+- [Troubleshooting](#troubleshooting)
+- [Limits](#limits)
+
+## Troubleshooting
+
+| Symptom | Cause and remedy |
+| --- | --- |
+| `SG599` "could not write …" | the processor could not create or write an output. Follow the named type/path and underlying error using [processor output failures](#processor-output-failures-sg599), then rerun the full lifecycle after correcting the cause. |
+| `SG602` "…names no annotation manifest…" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
+| `SG602` "the annotation manifest … does not exist", "…there is no manifest at …" / stale manifest | the generation step did not run before javac or before the preparation. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
+| `SG602` "…which this compilation never processed…" | javac compiled a machine implicitly, from the source path, and javac does not process such a source. Pass every source of the compilation to javac. |
+| `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
+| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. Both plugins refuse such a setting before anything is retired when they can read it. |
+| `SG602` "…which carries no export index META-INF/graphmaquina/exports.json…" | a dependency on the classpath, a jar or a directory of classes, carries a machine a set holds or a generated symbol a declaration binds, but no export index, which is what lists them: an assembly step dropped `META-INF/graphmaquina`, or the dependency was not built through the complete lifecycle. The message names that jar or directory. Package the index with the classes it describes, or rebuild the dependency through the complete lifecycle. |
+| `SG602` "…whose export index META-INF/graphmaquina/exports.json does not list it, so that index is stale or another build's…" | a dependency on the classpath, a jar or a directory of classes, carries a machine a set holds or a generated symbol a declaration binds, but its export index does not list it: the index is stale, as one an older build left is, or another dependency's, as an assembly step that overwrites `META-INF/graphmaquina` leaves it. The message names that jar or directory. Package the index the dependency's StateGraph build publishes with the classes it describes, or rebuild the dependency through the complete lifecycle. |
+| `SG602` "inventory path '…' …" | a manifest of the work directory lists an owned source that is not a relative path to a Java source: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, one that names the directory itself, such as `.`, or one that is no `.java` file, such as `x`. Clean the build. |
+| `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven the encoding javac reads in, from `<encoding>` or its property `encoding`, `project.build.sourceEncoding` or an `-encoding` compiler argument; in Gradle the generation task's `encoding`, by convention the encoding javac reads the sources in, from `options.encoding` or an `-encoding` compiler argument. Name a charset that JVM supports, such as `UTF-8`. |
+| `SG602` "number with an exponent out of range in …" | the request, a manifest, an inventory or a dependency's export index holds a number whose exponent is out of range, such as `1e99999999999`, so it was edited or damaged after the tools wrote it. Clean the build, or rebuild the dependency that published the index. |
+| `SG602` "malformed JSON in …: an unpaired surrogate …" | the request, a manifest, an inventory or a dependency's export index escapes, in a string or a name, a surrogate that is not half of a pair, such as `\ud800`, which no UTF-8 file can hold, so the tools did not write it. Clean the build, or rebuild the dependency that published the index. |
+| `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
+| `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type that an original source already declares, that would shadow a class of the classpath or overwrite a file of the generated directory the previous generation did not own, or that differs from an original only in case where the volume does not tell names apart; two generated types, or two symbol types of one references container, whose names differ only in case where a volume that holds their files does not tell names apart, such as the containers `OuterInnerRefs` and `OuterinnerRefs` of the hosts `Outer.Inner` and `Outerinner`, or the companions `LibraryRuntime` and `LIBRARYRuntime` of the sets `Library` and `LIBRARY`; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
+| `SG603` "…would overwrite the unowned file …: nothing in the work directory … records a file a previous generation wrote…" | a file stands where a generated source goes, and nothing in the work directory records that a previous generation wrote it, as after that directory, `build/graphmaquina/<sourceSet>` in Gradle or `target/graphmaquina/main` and `target/graphmaquina/test` in Maven, was deleted while the generated sources stayed. The generator never overwrites a file it cannot tell from one somebody else put there. Run `clean`, or delete the generated sources, then build again; move a hand-written file out of the generated source directory first. |
+| `SG603` "…share one canonical name…", "the class file of … of the unnamed package names both …" | a class of the unnamed package is named like a package, as a class `shop` beside the package `shop`, so one canonical name names two types: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. Rename one of them, or the class. |
+| `SG603` "…which a symbolic link takes out of …", "…would be written through a symbolic link that leads out of …" | a symbolic link inside an output directory, the class output or a generated source directory, leads out of it, and the step would remove or write a file outside it through that link. Nothing outside the directory is touched. Remove the link, then run the lifecycle again. |
+| `SG603` "…claims '…', which is not a file under …", "…which is not a class file under …", "…which is not a source file under …" | an inventory of the work directory names an entry that is not a file under its output root: a blank one, one that no path can spell, such as one holding a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; or a binary that is no `.class` file, or a source that is no `.java` file, such as `x`. Clean the build. |
+| `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
+| "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | in Gradle, raise the JDK javac compiles with, from the project's toolchain or the compile task's own, or the generation task's `javaLauncher` when the build sets one, to 21+; in Maven, point `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "…needs the jdk.compiler module…" | the installation the Gradle generation task's `javaLauncher` names, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
+| "…cannot parse the sources of … at release … under its javaLauncher…" (Gradle) | the `javaLauncher` the build gives the generation task is a JDK older than the release javac compiles at. Give it a JDK of that release or later, or leave it unset, so the generator runs on the JDK javac compiles with. |
+| "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
+| "…is not on the `<annotationProcessorPaths>` …", "…is not on the dependencies of this project, and the … declares no path in `<annotationProcessorPaths>`…" (Maven) | the processor is missing from the compiler's processor path, or, when the execution declares none, from the project's dependencies. Declare it in `<annotationProcessorPaths>`, after Lombok. |
+| "…gives javac the processor path it takes, the only place it then looks for annotation processors, and that path reaches no …StateGraphProcessor.class…" (Maven) | a `-processorpath` or `--processor-path` compiler argument does not reach the processor. When the path the message names is another compiler argument, the value after the option is missing or evaluated to nothing, as `${project.file}` does, so javac takes the next argument as the path. Add the processor's jar and the jars it depends on to that path, or remove the argument and declare the processor in `<annotationProcessorPaths>`. |
+| "…makes javac look for annotation processors on a module path…" (Maven) | remove the `--processor-module-path` argument, and declare the processor in `<annotationProcessorPaths>`. |
+| "…is only a dependency of this project…: from Java 23 on, javac runs no annotation processor it finds on the class path unless annotation processing is requested…" (Maven) | configure `<proc>full</proc>` for that execution, or declare the processor in `<annotationProcessorPaths>`, after Lombok. |
+| "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
+| "…which leaves out io.github.graphmaquina.processor.StateGraphProcessor…" | the `-processor` list javac gets, from a compiler argument or, in Maven, from `<annotationProcessors>`, leaves out the StateGraph processor, and javac runs only the processors such a list names. Add `io.github.graphmaquina.processor.StateGraphProcessor` to it, after Lombok's processors when the project uses Lombok, or remove the list so javac runs every processor on its processor path. |
+| "…whose name '…' is not a valid qualified class name…" | that list holds a name that is not a valid qualified class name, which the compiler cannot load: an empty or blank one, one with spaces around it, or, in Maven, a value of `<annotationProcessors>` left empty. Correct or remove that name. |
+| "…run the annotation processors and compile nothing…", "…lets the build continue past a compilation…" | remove `proc=only` / `-proc:only`, or leave `failOnError` at its default, `true`. |
+| "…compile only the sources whose class file is missing or older than the source…" | `useIncrementalCompilation` is set to false. Leave it at its default, `true`. |
+| "…select no …/GraphCompilation….java…", "…leaves out …/GraphCompilation….java…" | the compiler's includes or excludes leave out the compilation carrier. Add `<include>io/github/graphmaquina/generated/**</include>`, or change the exclude so it matches nothing under `io/github/graphmaquina/generated`. |
+| "…hold only empty values, which Maven turns into null…" | the compiler's includes hold only empty values, so it would select no source. Remove those empty values, so that `maven-compiler-plugin` includes every source. |
+| "…reads the annotation manifest X…, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. A relative path is resolved where javac runs, so, when javac compiles inside Maven, in a module of a build started from its parent it names another file; the printed argument is absolute. |
+| "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
+| "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
+| "…name two charsets for a javac that compiles inside Maven through the javax.tools API…" (Maven) | the configured encoding and the last `-encoding` compiler argument name different charsets, and javac would read back the sources annotation processors write in the other one. Remove that `-encoding`, or configure `<encoding>` to the charset it names. |
+| "…execution of maven-compiler-plugin, bound to …, runs after the … execution of graphmaquina-maven-plugin, …, which completes this compilation…", "…runs before the … execution of graphmaquina-maven-plugin, …, which prepares this compilation…" (Maven) | declare `maven-compiler-plugin` before `graphmaquina-maven-plugin` in `<plugins>`, and bind the compiling execution to the phase of `complete`, as the message says. |
+| "…runs the executions … of its compile goal for this project, and each of them compiles …" (Maven) | two executions of the compiler would compile the generated vocabulary. Keep one of them, bind the others to the phase `none`, or give them `<compileSourceRoots>` of their own that leave out the generated directory. |
+| "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
+| "…the `<compileSourceRoots>` of … replace the source roots of the project and leave out …" (Maven) | add the `<compileSourceRoot>` the message prints, or leave `compileSourceRoots` unset. |
+| "…the `<incrementalExcludes>` pattern … leaves … out of the check the compiler makes for stale sources…" (Maven) | change that pattern so it matches nothing under `io/github/graphmaquina/generated`. |
+| `[INFO] StateGraph skips <id>: …` | the project is packaged as `pom`, `maven.main.skip` / `<skipMain>` / `maven.test.skip` / `<skip>` switches that compilation off, or the default lifecycle runs no execution of the compiler's goal for it, as when `default-compile` is bound to `none`. Nothing was generated, retired or published; this is not an error. |
+| "…cannot run with options.failOnError = false…", "…cannot run with -proc:only…", "…cannot run with -proc:none…" (Gradle) | remove that setting from the compile task. |
+| "…cannot run with an options.annotationProcessorPath that is empty or null…" (Gradle) | a setting of the compile task empties its annotation processor path. Remove it, so the path holds the source set's annotation processors again. |
+| "…javac then leaves the SourceFile attribute out of every class file…" (Gradle) | a debug setting of the compile task drops the attribute the completion reads. Remove it, or add a `-g:` list that names `source`, such as `-g:source,lines,vars`, to the compiler arguments. |
+| "…cannot run with options.encoding = "…" and the compiler argument -encoding …" (Gradle) | the two name different charsets, and Gradle's own compiler would read back the sources the StateGraph processor writes in the other one. Remove that `-encoding`, or set `options.encoding` to the charset it names. |
+| "…cannot run with the compiler arguments its argument providers give…" (Gradle) | an argument provider changes the release or the encoding javac takes, which the generation never reads. Give `--release` or `-encoding` in `options.compilerArgs`, or set `options.release` or `options.encoding`, instead. |
+| "the StateGraph generation … reads …, which task ':compileJava' does not compile…" (Gradle) | the compile task has a filter given as a spec or a closure, or a source put in place of the source set's. Give the filter to the source set's java sources, or to the task as an include or exclude pattern; for a replaced source, paste the line the message prints for your DSL into the source set's block and remove the source from the task. |
+| "task ':compileJava' compiles …, which the StateGraph generation … does not read…" (Gradle) | a source was given to the compile task beside the source set's. Give the directory the message names to the source set with `java.srcDir(...)`, and remove it from the task. |
+| "task ':compileJava' does not compile …" (Gradle) | the compilation leaves out a generated file. Add directories with `java.srcDir(...)` instead of replacing them, or add the generated directory back with the line the message prints, or remove a source or pattern set on the compile task. |
+| "…there is no compilation carrier of … under …, although every generation emits one there…" (Maven) | the carrier source the generation emitted was missing when `prepare` or `prepare-test` ran, as when it was deleted after `generate`. Run the lifecycle again, so that `generate` or `generate-test` emits it before the preparation. |
+| `complete` (Maven) or `complete-compile` (Gradle, `SG602`) fails naming `pending-exports.json` | javac ran but the annotation processor published no index: it was not on the processor path of that compilation, or did not run. |
+| `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
+
+### Processor output failures (SG599)
+
+SG599 reports a technical failure while producing compiler outputs. The message identifies which of the
+three paths failed and includes the underlying error:
+
+| Message | Output and corrective action |
+| --- | --- |
+| `could not write <qualified type>` | A generated Java source could not be created or written through javac's `Filer`. Check the processor's generated-sources directory, write permissions and available space. If the error reports an attempt to recreate a file, resolve the competing generated type or processor output. |
+| `could not write META-INF/graphmaquina/pending-exports.json` | Encoding the provisional export index, staging its temporary file, or writing the resource under javac's class output failed. Inspect the underlying error and check both the class-output directory and the JVM temporary directory (`java.io.tmpdir`), including permissions and available space. |
+| `could not write the processor inventory <path>` | The manifest's `processorInventory` path is invalid, its parent could not be created, or the inventory could not be written. Correct the work-directory configuration or the filesystem condition named in the message; verify that a regular file is not occupying a required directory. |
+
+After correcting the reported cause, rerun the normal Gradle or Maven generation/compilation lifecycle so
+preparation, javac and completion run together. SG599 is an error: a compilation that reports it has not
+successfully completed publication of its outputs.
+
+### Repeated builds, renames and deletions
+
+Both adapters retire what the previous compilation owned before the next javac, and publish an index only for
+what javac actually accepted, so:
+
+- building twice without changes regenerates nothing and republishes nothing (Gradle reports
+  `UP-TO-DATE`; Maven rewrites identical artifacts);
+- renaming or deleting a machine, an action, a property or a state removes the generated symbols and facades
+  of the old names from the next jar, **without `clean`**;
+- deleting the last graph declaration together with every marker that exports a symbol, such as `@GraphAction`
+  or `@GraphProperty`, leaves an empty index and a jar with no generated class in it; while such markers remain,
+  the index lists their symbols and the jar keeps the references containers generated for them;
+- a javac failure leaves the pending inventory behind, seals nothing and publishes no index, so a broken
+  compilation can never ship the index of the previous one.
+
+## Limits
+
+- **A pair must be generated by the same compilation.** `@GraphPeers` may only name machines this very
+  compilation generates an API for, because the vocabulary of a pair, which declares the owner's watches and
+  sub-machines over the peer, is typed with both machines' states; a peer that lives in another module or in a
+  dependency jar is refused with SG608, and cross-jar watches and sub-machines are deferred.
+- **The generator parses without `--enable-preview`.** No member of the request carries it, whatever javac is
+  given. An original source using a preview feature that javac's parser checks, such as string templates on
+  JDK 21, is refused with SG601; one using a preview feature javac checks only after parsing, such as primitive
+  patterns at release 25, is read like any other source.
+- **The generator reads Java sources only.** It parses the `.java` sources of the compilation, so a marker on a
+  Kotlin declaration is never read. In a Gradle source set that mixes Kotlin and Java, a Java machine whose entity
+  or state enum a Kotlin source declares is refused with SG601, that type unresolved. Declare the machines, the
+  sets, the types a machine is over and every class that carries a marker, such as a binding host, in the Java
+  sources of the compilation, not in its Kotlin sources; a marked class can also come from a dependency built
+  through the GraphMaquina lifecycle.
+- **`graphmaquina-core` is an automatic module.** Its jar carries no `module-info` and names the module
+  `io.github.graphmaquina.core` in its manifest, and javac can warn about a module that requires an automatic one.
+  `requires transitive io.github.graphmaquina.core` gets the `requires-transitive-automatic` warning, which javac
+  reports by default, so `-Werror` alone fails on it; turn it off with `-Xlint:-requires-transitive-automatic`, and
+  under `-Xlint:all` turn off `requires-automatic` too, which javac reports in its place. A plain `requires` gets
+  no warning by default; under `-Xlint:all` it gets the `requires-automatic` one, and the `exports` one for every
+  GraphMaquina type the API of an exported package names, the generated companions' included, which
+  `-requires-automatic` and `-exports` in the `-Xlint:` list turn off.
+
+---
+
+Next: [Release signing](release-signing.md). Back to the [documentation index](README.md).

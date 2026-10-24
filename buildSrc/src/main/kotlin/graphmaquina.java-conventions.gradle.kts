@@ -54,10 +54,14 @@ pluginManager.withPlugin("maven-publish") {
     // Everything a release needs beyond the binary: the two extra jars, the signatures, and a staging
     // directory laid out as a Maven repository so the whole set can be zipped into a Central bundle.
     apply(plugin = "signing")
+    // Both read here: an action that asks the project when it runs cannot be stored by the configuration cache. The
+    // repository is not set yet when this runs, but maven-publish names the task after it.
+    val signingKey = providers.environmentVariable("SIGNING_KEY")
     tasks.withType<PublishToMavenRepository>().configureEach {
+        val staging = name.endsWith("ToCentralStagingRepository")
         doFirst {
-            if (repository.name == "centralStaging") {
-                check(!providers.environmentVariable("SIGNING_KEY").orNull.isNullOrBlank()) {
+            if (staging) {
+                check(!signingKey.orNull.isNullOrBlank()) {
                     "Central staging requires SIGNING_KEY; use adapterTests or publishToMavenLocal for unsigned builds"
                 }
             }

@@ -1,9 +1,16 @@
 package consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -14,6 +21,8 @@ final class MarkdownPage {
 
     /** A fenced block: its content, each line followed by a newline, and whether a closing line ended it. */
     record Block(String content, boolean closed) { }
+
+    private static final Pattern HEADING = Pattern.compile("^(#{1,6})(?: |$)");
 
     private MarkdownPage() { }
 
@@ -42,6 +51,22 @@ final class MarkdownPage {
             String language) {
         int start = lineAfter(lines, heading);
         return start < 0 ? List.of() : blocksFrom(lines, start, endsSection, language);
+    }
+
+    /**
+     * Returns the blocks of {@code language} in the section that the first line outside any fence equal to the
+     * heading line {@code heading} opens, in order. The section ends at the next heading outside a fence whose level
+     * is the same as the heading's or higher, so a subsection belongs to it. There are none when no line outside a
+     * fence equals the heading.
+     */
+    static List<Block> sectionBlocks(List<String> lines, String heading, String language) {
+        int level = level(heading);
+        return blocksAfter(lines, heading, (String line) -> level(line) > 0 && level(line) <= level, language);
+    }
+
+    /** Reads the page {@code name} of the directory {@code docs}, as lines. */
+    static List<String> read(Path docs, String name) throws IOException {
+        return Files.readAllLines(docs.resolve(name), UTF_8);
     }
 
     /** Returns the blocks of {@code language} anywhere on the page, in order. */
@@ -75,6 +100,12 @@ final class MarkdownPage {
         return MarkdownFence.opening(opening)
                 .map((MarkdownFence fence) -> fence.closingLine(lines, index) + 1)
                 .orElse(index);
+    }
+
+    /** Returns the level of the ATX heading {@code line}, or 0 when the line is no heading. */
+    private static int level(String line) {
+        Matcher heading = HEADING.matcher(line);
+        return heading.find() ? heading.group(1).length() : 0;
     }
 
     private static String contentOf(List<String> blockLines) {

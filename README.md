@@ -8,7 +8,8 @@ Typed, graph-based state machines for Java 21. Declare the transitions your doma
 edges, give every state a reason for refusing the rest, and let the build validate the whole graph before the
 application runs.
 
-Documentation: **https://graphmaquina.dev**
+Documentation: the [documentation index](docs/README.md), the [quickstart](docs/quickstart.md) and
+**https://graphmaquina.dev**.
 
 ## License
 

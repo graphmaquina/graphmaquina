@@ -60,7 +60,7 @@ class ControlledAsyncTest {
 
     // --- the premise of this task: the test decides when the action answers ----------------------------
 
-    // This test alone lists the fixture before the registry, the reverse of the order docs/testing.md
+    // This test alone lists the fixture before the registry, the reverse of the order docs/testing-samples.md
     // recommends, because it closes the fixture twice on purpose — once in the finally block and once by the
     // try-with-resources — so it also covers that closing is idempotent; -Xlint:try flags exactly that shape.
     // The finally block closes the fixture while the registry is still open, so the header's order costs this

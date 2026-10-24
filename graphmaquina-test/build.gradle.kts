@@ -53,24 +53,26 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     dependsOn(":graphmaquina-maven-plugin:publishMavenPublicationToAdapterTestsRepository")
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToAdapterTestsRepository"))
-    val readme = rootProject.layout.projectDirectory.file("docs/guide.md")
+    // The quickstart, guide fragment and testing guide tests read their pages from this directory.
+    val docs = rootProject.layout.projectDirectory.dir("docs")
     val gradleExecutable = requireNotNull(gradle.gradleHomeDir).resolve(
         if (System.getProperty("os.name").startsWith("Windows")) "bin/gradle.bat" else "bin/gradle"
     )
-    systemProperty("readmePath", readme.asFile.absolutePath)
+    systemProperty("docsPath", docs.asFile.absolutePath)
     systemProperty("gradleExecutable", gradleExecutable.absolutePath)
-    inputs.file(readme).withPropertyName("readmeQuickstart")
-    val testingGuide = rootProject.layout.projectDirectory.file("docs/testing.md")
-    systemProperty("testingGuidePath", testingGuide.asFile.absolutePath)
-    inputs.file(testingGuide).withPropertyName("testingGuide")
+    inputs.files(docs.asFileTree.matching { include("*.md") }).withPropertyName("guidePages")
     inputs.property("gradleVersion", gradle.gradleVersion)
     val repository = rootProject.layout.buildDirectory.dir("adapter-test-repository")
     val release = project.version.toString()
     systemProperty("artifactRepository", repository.get().asFile.absolutePath)
     systemProperty("artifactVersion", release)
     inputs.property("artifactVersion", release)
-    // Includes core/test, the generator, the processor, both plugins and the plugin marker POM.
-    inputs.dir(repository).withPropertyName("publishedArtifacts")
+    // Core/test, the generator, the processor, both plugins and the plugin marker POM, at this release only: the
+    // maven-metadata.xml beside each changes on every publication.
+    inputs.files(listOf("graphmaquina-core", "graphmaquina-test", "graphmaquina-codegen", "graphmaquina-processor",
+        "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin", "io.github.graphmaquina.gradle.plugin").map {
+        repository.map { root -> root.dir("io/github/graphmaquina/$it/$release") }
+    }).withPropertyName("publishedArtifacts")
 }
 
 tasks.check { dependsOn(publishedArtifactTest) }
