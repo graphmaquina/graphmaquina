@@ -12,8 +12,7 @@ GraphMaquina combines a pre-compilation code generator, a javac annotation proce
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-This guide documents GraphMaquina 2.0.1, the API this repository builds. The [installation page](installation.md)
-installs it from a checkout of this repository into your local Maven repository; Maven Central publishes the
+This guide documents the latest GraphMaquina version, the API this repository builds; Maven Central publishes the
 modules of each release. The examples read the version
 from a `graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build, so
 no coordinate repeats it.
@@ -128,8 +127,7 @@ Application imports begin with `io.github.graphmaquina`.
 
 GraphMaquina publishes to Maven Central under the verified namespace `io.github.graphmaquina`. A release
 contains the runtime, generator, processor, testing module, Maven plugin, Gradle plugin and Gradle plugin
-marker; [installation](installation.md) shows the coordinates. These pages document 2.0.1: until Maven Central
-lists that version, install it from this repository as installation shows. Browse the
+marker; [installation](installation.md) shows the coordinates. Browse the
 [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
 [core artifact on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core).
 MVNRepository is an independent index; appearing in its search results is not required for Maven or Gradle
@@ -147,8 +145,8 @@ The repository's build checks that the examples of these pages still compile and
 | Guide fragments | [GuideOutcomeFragmentsTest](../graphmaquina-test/src/test/java/consumer/GuideOutcomeFragmentsTest.java) compiles the Java blocks of [outcomes](outcomes.md), of [recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type), of [composition](composition.md) and of [the call's flow](call-flow.md), plus the async completion callback and the observer example, against the staged core jar. |
 | Quotes of the example module | [GuideCopiesTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/GuideCopiesTest.java) checks that the testing pages quote the shop's tests verbatim, that [the call's flow](call-flow.md) quotes the shop's code, and that [composition](composition.md) quotes `SameEntitySubmachineTest`. |
 | Testing samples | [TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) compiles and runs the samples of [the recovery, sub-machine and flow testing page](testing-advanced.md) against the staged core and test jars. |
-| Maven quickstart | The [Maven configuration](installation.md#configure-maven) and the quickstart's sources were built with `mvn clean verify` and `App` was run, once by hand, with Maven 3.9.12 on JDK 21, against 2.0.1 installed from this repository. No automated check covers it. |
-| Async example | [The runnable async ticket](async.md#runnable-async-ticket-example) was built and `AsyncApp` was run, once by hand, through Gradle and through Maven against 2.0.1 installed from this repository, and printed the output documented below it. No automated check covers it. |
+| Maven quickstart | The [Maven configuration](installation.md#configure-maven) and the quickstart's sources were built with `mvn clean verify` and `App` was run, once by hand, with Maven 3.9.12 on JDK 21, against artifacts built from this repository. No automated check covers it. |
+| Async example | [The runnable async ticket](async.md#runnable-async-ticket-example) was built and `AsyncApp` was run, once by hand, through Gradle and through Maven against artifacts built from this repository, and printed the output documented below it. No automated check covers it. |
 | IDE import | IntelliJ IDEA 2026.2.3 imported the quickstart's Gradle project once, headless and then in a running IDE queried through its MCP server: it registered the generated vocabulary as a source root and the processor's output as a generated source root, resolved references into both, and renamed a binding method as [the IDE workflow](generation.md#ide-workflow) describes. Code completion was not exercised. No automated check covers it. |
 
 ## Known limitations

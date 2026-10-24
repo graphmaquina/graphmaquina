@@ -54,8 +54,8 @@ type-checks the application; no previously compiled machine is required.
 ## Where the artifacts come from
 
 GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which is all a consumer of a release
-needs; until Central lists the version these pages document, 2.0.1, a consumer installs it locally as below.
-The rest of this section covers the other two cases: testing a build that is not released yet, and serving
+needs.
+The rest of this section covers two other cases: testing a build that is not released yet, and serving
 every component, including the Gradle implementation and its marker, from an internal repository. The source
 repository is private and requires authorized access; the published artifacts are public.
 See the [guide](installation.md#configure-gradle) for a complete consumer configuration.
@@ -385,7 +385,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-graphmaquina { generatorVersion = "2.0.1" } // explicit override; keep all components aligned
+graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
 

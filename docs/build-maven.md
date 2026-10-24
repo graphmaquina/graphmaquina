@@ -4,13 +4,13 @@ Two plugins are required, and neither works without the other.
 
 The repositories of [where the artifacts come from](typed-annotations-build.md#where-the-artifacts-come-from) are
 assumed; `graphmaquina-core`, `graphmaquina-processor` and `graphmaquina-maven-plugin`, with the generator the plugin
-depends on, must be resolvable, which for Central or a locally installed build means nothing further to declare.
+depends on, must be resolvable, which for Maven Central means nothing further to declare.
 
 ```xml
 <properties>
   <maven.compiler.release>21</maven.compiler.release>
   <lombok.version>1.18.48</lombok.version>
-  <graphmaquina.version>2.0.1</graphmaquina.version>
+  <graphmaquina.version>x.y.z</graphmaquina.version>
 </properties>
 
 <dependencies>

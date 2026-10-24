@@ -357,9 +357,9 @@ request with no edge, a self-loop, a cycle and two parallel edges, and
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
 shows JUnit tests for payment, retries, cascades, watches, journals, and the flow and the trail of a call.
 
-The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. The
-[install command](installation.md#install-graphmaquina-201) wrote it to your local Maven repository with the runtime,
-at the same version, and [settings.gradle.kts](installation.md#settingsgradlekts) already resolves it from there. For
+The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. Every
+release publishes it with the runtime, at the same version, and [settings.gradle.kts](installation.md#settingsgradlekts)
+already resolves it. For
 a Gradle application using JUnit, add to `build.gradle.kts`:
 
 ```kotlin

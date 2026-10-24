@@ -2,8 +2,7 @@
 
 This page is for maintainers of GraphMaquina itself: the commands that verify the repository, the checks that run
 before every compilation, and the release to Maven Central. Applications that resolve a release from Maven Central
-need none of it; installing a version from a checkout, as [installation](installation.md) does for 2.0.1, runs the
-checks of this page.
+need none of it.
 
 ## Contents
 
@@ -97,8 +96,8 @@ need lychee are skipped unless lychee 0.24 is installed. The check runs alone wi
 Releasing is a maintainer operation. The version comes from git tags: both builds read `-PgraphmaquinaVersion`
 when a release passes it and otherwise derive it with `git describe --tags`, so no file in the repository states
 a release version and a release creates a tag and edits no file. On a tagged commit the version is the tag
-without its leading `v`, so tag `v2.0.1` builds as `2.0.1`, even with uncommitted changes; on any other commit it is the most recent tag followed by the commits since it and the abbreviated
-commit, as `2.0.0-12-g03952fd`, so a development build never takes the coordinates of a published release, and
+without its leading `v`, so tag `vX.Y.Z` builds as `X.Y.Z`, even with uncommitted changes; on any other commit it is the most recent tag followed by the commits since it and the abbreviated
+commit, as `X.Y.Z-12-g03952fd`, so a development build never takes the coordinates of a published release, and
 `centralBundle` refuses such a version. A checkout without `.git`, or without tags, builds as `0.0.0-dev`, which
 `centralBundle` refuses too, as it refuses a `-SNAPSHOT`. Pass the flag to stage another version. A published version can never be
 replaced or deleted.

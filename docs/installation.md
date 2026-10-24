@@ -2,8 +2,8 @@
 
 GraphMaquina needs three things from a build: `graphmaquina-core` on the application's class path, the
 GraphMaquina adapter for Gradle or Maven, which runs the generator before javac, and the annotation processor on
-javac's processor path, which you declare. This page installs GraphMaquina 2.0.1, the version this repository
-builds, into your local Maven repository, then configures Gradle and Maven to use it.
+javac's processor path, which you declare. This page configures Gradle and Maven to resolve the latest GraphMaquina
+version from Maven Central.
 
 ```mermaid
 flowchart LR
@@ -35,39 +35,15 @@ flowchart LR
 The following files build and run the [ticket quickstart](quickstart.md). Create a separate application
 directory, `tickets-demo`, and put these files at its root.
 
-### Install GraphMaquina 2.0.1
-
-First install GraphMaquina 2.0.1 into your local Maven repository, from a checkout of this repository, a different
-directory from `tickets-demo`:
-
-```bash
-./gradlew -PgraphmaquinaVersion=2.0.1 \
-    :graphmaquina-core:publishToMavenLocal \
-    :graphmaquina-codegen:publishToMavenLocal \
-    :graphmaquina-processor:publishToMavenLocal \
-    :graphmaquina-test:publishToMavenLocal \
-    :graphmaquina-maven-plugin:publishToMavenLocal \
-    :graphmaquina-gradle-plugin:publishToMavenLocal
-```
-
-That writes the runtime, the generator, the processor, the testing module, the Maven plugin, the Gradle plugin and
-the plugin marker under `~/.m2/repository`. The command compiles the modules, so it first runs the repository's
-[size, complexity and documentation checks](repository-build.md#build-verify-and-release-this-repository); the
-documentation check needs [lychee](https://github.com/lycheeverse/lychee) 0.24 on the `PATH`. Gradle does not read
-the local Maven repository unless a build declares it, which is why `settings.gradle.kts` below declares
-`mavenLocal()`; Maven reads it as its own local repository and needs no declaration.
-
-Maven Central publishes every module of each GraphMaquina release. Once it lists 2.0.1, a build can resolve it from
-there instead: skip the install command and the `mavenLocal()` lines. To try changes that are not released, install
-under a version string of your own instead of `2.0.1` and set that version below.
-
 ### gradle.properties
 
 ```properties
-graphmaquinaVersion=2.0.1
+graphmaquinaVersion=x.y.z
 ```
 
-The two scripts below read the version from here, so no coordinate repeats it.
+Replace `x.y.z` with the latest GraphMaquina version, the one
+[Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core) lists. The two scripts below read the
+version from here, so no coordinate repeats it.
 
 ### settings.gradle.kts
 
@@ -75,7 +51,6 @@ The two scripts below read the version from here, so no coordinate repeats it.
 pluginManagement {
     repositories {
         mavenCentral()
-        mavenLocal()
         gradlePluginPortal()
     }
     plugins {
@@ -86,7 +61,6 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
-        mavenLocal()
     }
 }
 
@@ -94,8 +68,8 @@ rootProject.name = "tickets-demo"
 ```
 
 A `plugins` block in a build script cannot interpolate a version, so the plugin request carries it here and
-the build script applies the plugin by ID alone. The plugin resolves through its plugin marker, which the install
-command wrote with the plugin, and the generator through the plugin, which defaults to the generator of its own
+the build script applies the plugin by ID alone. The plugin resolves through its plugin marker, which every
+release publishes with the plugin, and the generator through the plugin, which defaults to the generator of its own
 version. `gradlePluginPortal()` is there for other plugins only.
 
 ### build.gradle.kts
@@ -196,7 +170,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("2.0.1")  // defaults to the plugin's own version
+    generatorVersion.set("x.y.z")  // defaults to the plugin's own version
 }
 ```
 
@@ -208,10 +182,9 @@ refuses a manifest that a generator of another version wrote, with `SG602`.
 
 This is a complete alternative build for the same ticket source files. Save it as `pom.xml` in
 `tickets-demo`. It includes all six lifecycle executions and distinct main/test manifest arguments. Every
-GraphMaquina artifact comes from the single version the `graphmaquina.version` property sets. Run the same
-[install command](#install-graphmaquina-201) first: Maven reads `~/.m2/repository` as its local repository, so it
-resolves what that command wrote with no repository declaration in this POM, and once Maven Central lists 2.0.1,
-Maven resolves it from there with no install at all. For an internal repository, configure both dependency and plugin
+GraphMaquina artifact comes from the single version the `graphmaquina.version` property sets: replace `x.y.z`
+with the latest GraphMaquina version. Maven resolves every artifact from Maven Central with no repository
+declaration in this POM. For an internal repository, configure both dependency and plugin
 repositories as shown in [the build guide](typed-annotations-build.md#where-the-artifacts-come-from).
 
 ### pom.xml
@@ -229,7 +202,7 @@ repositories as shown in [the build guide](typed-annotations-build.md#where-the-
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <graphmaquina.version>2.0.1</graphmaquina.version>
+    <graphmaquina.version>x.y.z</graphmaquina.version>
   </properties>
 
   <dependencies>

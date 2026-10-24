@@ -31,8 +31,7 @@ Every Java sample of the testing pages runs in this repository. Most are copied 
 
 ## Install
 
-The [install command](installation.md#install-graphmaquina-201) installs `graphmaquina-test` with the other
-modules, at the same version, and Maven Central publishes it with every release. Its coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
+Maven Central publishes `graphmaquina-test` with the other modules of every release, at the same version. Its coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
 property or a `graphmaquina.version` Maven property, set once per build, never a literal repeated per
 dependency.
 

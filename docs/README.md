@@ -4,7 +4,7 @@ GraphMaquina builds typed, graph-based state machines for Java 21. You declare t
 as identified edges, the build generates a typed vocabulary and validates the whole graph before the application
 runs, and an in-process runtime executes each call against the entities you supply.
 
-These pages document GraphMaquina 2.0.1, the API this repository builds. Read them in the order below the first
+These pages document the latest GraphMaquina version, the API this repository builds. Read them in the order below the first
 time; each page links the next one in that order.
 
 ## Contents

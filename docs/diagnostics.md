@@ -188,7 +188,7 @@ that catches it can still commit. A cascade to an unknown machine does poison th
 | Symptom | Remedy |
 | --- | --- |
 | `TicketsGraph` / `TicketRefs` cannot be found | Run generation before javac; check processor participation and original source roots. |
-| Gradle plugin cannot resolve | Declare the repository that holds it in `pluginManagement.repositories`: `mavenCentral()` for a published version, `mavenLocal()` for a version you installed from a checkout. |
+| Gradle plugin cannot resolve | Declare the repository that holds it in `pluginManagement.repositories`: `mavenCentral()`, or the internal repository that serves your GraphMaquina artifacts. |
 | Core resolves but Maven plugin does not | Configure `<pluginRepositories>` as well as `<repositories>` for an internal repository. |
 | Processor reports no manifest | Use the Gradle plugin or add Maven's per-execution manifest arguments and six goals. |
 | A Lombok accessor is missing | Put Lombok first on the processor path, or provide a public handwritten accessor. |
