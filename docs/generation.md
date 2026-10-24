@@ -204,14 +204,13 @@ the configured build tool or run that lifecycle explicitly. Do not fix missing g
 empty source files with those names.
 
 The Gradle plugin's tests check that the generated vocabulary is a source root of its source set, the form an IDE
-import reads. IntelliJ IDEA 2026.2.3 was checked once by hand on the quickstart's Gradle project after a build. The
-import registered `build/generated/sources/graphmaquina/main` as a source root and
+import reads. IntelliJ IDEA 2026.2.3 was checked once on the quickstart's Gradle project after a build, through the IDE's MCP
+server. The import registered `build/generated/sources/graphmaquina/main` as a source root and
 `build/generated/sources/annotationProcessor/java/main` as a generated source root. References to `TicketsGraph`,
 `TicketRefs` and `TicketMachinesRuntime` resolved to their declarations in those files, and a reference to a
 `TicketRefs` member that does not exist was flagged as unresolved.
 
-Renaming the binding method `register` to `enroll` with the IDE's rename refactoring, run through its MCP server,
-changed the method and edited
+Renaming the binding method `register` to `enroll` with the IDE's rename refactoring changed the method and edited
 two generated files in place, the Javadoc link in `TicketActionsRefs` and the call in `TicketsRuntime`, but kept the
 generated class `TicketActionsRefs.Register` and the `action=TicketActionsRefs.Register.class` that names it. The next
 build regenerated the reference as `TicketActionsRefs.Enroll`, and javac, then the IDE, reported `Register` as missing
