@@ -10,8 +10,6 @@ tasks.jar {
 dependencies {
     implementation(project(":graphmaquina-core"))
     implementation(project(":graphmaquina-codegen"))
-    compileOnly(libs.lombok)
-    annotationProcessor(libs.lombok)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

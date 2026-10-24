@@ -805,6 +805,24 @@ class PublishedArtifactSmokeTest {
         }
     }
 
+    /**
+     * Lombok is compile-only tooling for this repository's own sources: no published jar carries its classes and no
+     * POM or Gradle module metadata names it, so a consumer never resolves it or needs it.
+     */
+    @Test
+    void noPublishedModuleCarriesOrNamesLombok() throws IOException {
+        for (String module : PublishedModules.ALL) {
+            assertTrue(entries(module, ".jar").stream().noneMatch(entry -> entry.startsWith("lombok/")),
+                    module + ": the binary jar must not carry Lombok");
+            for (String suffix : List.of(".pom", ".module")) {
+                Path metadata = artifact(module, suffix);
+                assertTrue(Files.isRegularFile(metadata), "missing published metadata: " + metadata);
+                assertFalse(Files.readString(metadata).contains("lombok"),
+                        module + suffix + " must not name Lombok: it is compile-only tooling");
+            }
+        }
+    }
+
     @Test
     void thePomPullsCoreAloneAtTheSameVersion() throws IOException, ParserConfigurationException, SAXException {
         assertEquals(List.of("io.github.graphmaquina:graphmaquina-core:" + version() + ":compile"),
