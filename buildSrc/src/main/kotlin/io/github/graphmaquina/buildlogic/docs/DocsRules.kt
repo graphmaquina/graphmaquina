@@ -101,11 +101,12 @@ object DocsRules {
         return violations
     }
 
-    /** Rule 4: [DocsLimits.INDEX] exists and links every page of [scope] under `docs/` directly. */
+    /** Rule 4: [DocsLimits.INDEX] exists and links every other page of [scope] but the root `README.md` directly. */
     fun index(root: File, scope: List<String>): List<Violation> {
         val index: File = root.resolve(DocsLimits.INDEX)
         if (!index.isFile) {
-            return listOf(Violation(DocsLimits.INDEX, 1, "index", "is missing; it must link every page under docs/"))
+            return listOf(Violation(DocsLimits.INDEX, 1, "index",
+                "is missing; it must link every page other than itself and README.md"))
         }
         val base: File = index.parentFile
         val linked: Set<String> = INLINE_LINK.findAll(index.readText(Charsets.UTF_8))

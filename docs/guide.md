@@ -4291,10 +4291,13 @@ wrap a long line: the rules honor no `@SuppressWarnings`, no `// CHECKSTYLE:OFF`
 list.
 
 Every Java compilation of the root build's modules also first runs `checkDocs`, the documentation check, over
-`README.md` and the Markdown files under `docs/`. A page has at most 500 lines and 40 960 bytes; a page over 100 lines
-opens with a list that links its `##` headings in order, each entry with its heading's text; a section, from one
-heading to the next, has at most 150 lines; a page has exactly one `#` heading, as its first, and no heading more than
-one level below the one before it; `docs/README.md` links every page under `docs/`; and every link relative to its page,
+every Markdown file the repository versions, wherever it is: each `*.md` that git tracks, or that is new and no ignore
+rule covers, so a new page is checked before it is added. git must be on the `PATH`, or the check stops the build;
+in a checkout without `.git` it is not needed, and every `*.md` outside the `build` and `.gradle` directories is
+checked. A page has at most 500 lines and 40 960 bytes; a page over 100 lines opens with a list that
+links its `##` headings in order, each entry with its heading's text; a section, from one heading to the next, has at
+most 150 lines; a page has exactly one `#` heading, as its first, and no heading more than one level below the one
+before it; `docs/README.md` links every other page except the root `README.md`; and every link relative to its page,
 and every anchor, resolves (a root-relative link such as `/docs/guide.md` is reported). The links are checked by
 [lychee](https://github.com/lycheeverse/lychee) 0.24, which must be on the `PATH`
 (`cargo install lychee --locked --version 0.24.2`, `brew install lychee` while Homebrew ships 0.24, or the 0.24.2

@@ -83,7 +83,7 @@ tasks.register<Zip>("centralBundle") {
 // (see the Java conventions); the rules and their limits live in buildSrc's io.github.graphmaquina.buildlogic.docs.
 tasks.register("checkDocs") {
     group = "verification"
-    description = "Checks README.md and docs/ against the documentation size, structure and link rules"
+    description = "Checks every versioned Markdown file against the documentation size, structure and link rules"
     doNotTrackState("Links point at files outside the checked pages, so the check runs every time")
     val root: File = rootDir
     doLast { DocsCheck.verify(root) }

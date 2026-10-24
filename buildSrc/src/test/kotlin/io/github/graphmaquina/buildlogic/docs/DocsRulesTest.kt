@@ -113,17 +113,18 @@ class DocsRulesTest {
     }
 
     @Test
-    fun indexMustExistAndLinkEveryDocsPage() {
-        val scope: List<String> =
-            listOf("README.md", "docs/README.md", "docs/guide.md", "docs/images/README.md", "docs/testing.md")
+    fun indexMustExistAndLinkEveryOtherPage() {
+        val scope: List<String> = listOf("README.md", "docs/README.md", "docs/guide.md", "docs/images/README.md",
+            "docs/testing.md", "module/README.md")
         assertEquals(
-            listOf("docs/README.md:1: index is missing; it must link every page under docs/"),
+            listOf("docs/README.md:1: index is missing; it must link every page other than itself and README.md"),
             texts(DocsRules.index(root, scope)),
         )
-        page("# Docs\n- [Guide](guide.md)\n- [Testing](./testing.md#x)\n- [Images](images/README.md)\n",
-            "docs/README.md")
+        page("# Docs\n- [Guide](guide.md)\n- [Testing](./testing.md#x)\n- [Images](images/README.md)\n" +
+            "- [Module](../module/README.md)\n", "docs/README.md")
         assertEquals(listOf<Violation>(), DocsRules.index(root, scope))
-        page("# Docs\n- [Guide](guide.md)\n- [Images](images/README.md)\n", "docs/README.md")
+        page("# Docs\n- [Guide](guide.md)\n- [Images](images/README.md)\n- [Module](../module/README.md)\n",
+            "docs/README.md")
         assertEquals(
             listOf("docs/README.md:1: index does not link docs/testing.md"),
             texts(DocsRules.index(root, scope)),

@@ -32,7 +32,7 @@ class DocsCheckTest {
         write("docs/a.md", "# A\n" + "x\n".repeat(500))
         write("docs/b.md", "# B\n\n[x](a.md#nope)\n")
         val expected: List<String> = listOf(
-            "docs/README.md:1: index is missing; it must link every page under docs/",
+            "docs/README.md:1: index is missing; it must link every page other than itself and README.md",
             "docs/a.md:1: file-size 501 lines, limit 500",
             "docs/a.md:1: section-size 501 lines, limit 150: A",
             "docs/b.md:3: links Cannot find fragment: docs/a.md#nope",
