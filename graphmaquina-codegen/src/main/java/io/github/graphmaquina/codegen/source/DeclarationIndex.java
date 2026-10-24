@@ -18,7 +18,9 @@ import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The headers the generator can see: every type declared by the original sources plus every type the
@@ -39,6 +41,7 @@ import lombok.NonNull;
  * member type and an enclosing declaration in the package of the type they belong to, and it carries a type it has
  * resolved on as that header rather than looking its canonical name up again.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class DeclarationIndex implements AutoCloseable {
 
     private static final String UNRESOLVED = "SG601";
@@ -51,14 +54,6 @@ public final class DeclarationIndex implements AutoCloseable {
     /** Every source declaration either map keeps, in the order the units declared them. */
     private final List<TypeHeader> sourceHeaders;
     private final ClasspathDeclarations classpath;
-
-    private DeclarationIndex(Map<String, TypeHeader> sources, Map<String, TypeHeader> unnamedSources,
-            List<TypeHeader> sourceHeaders, ClasspathDeclarations classpath) {
-        this.sources = sources;
-        this.unnamedSources = unnamedSources;
-        this.sourceHeaders = sourceHeaders;
-        this.classpath = classpath;
-    }
 
     /**
      * Reads every declaration of {@code units} and opens the classpath headers they resolve against, at release

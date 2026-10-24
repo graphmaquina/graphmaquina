@@ -1,6 +1,9 @@
 package io.github.graphmaquina.api;
 
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A typed key of the flow of a call: a name and the class of the values it holds. Two keys are equal when their names
@@ -13,17 +16,15 @@ import lombok.NonNull;
  *
  * @param <V> the type of the values the key holds
  */
+@Getter
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class FlowKey<V> {
 
     private final String name;
     private final Class<V> type;
-    private final boolean visible;
 
-    private FlowKey(String name, Class<V> type, boolean visible) {
-        this.name = name;
-        this.type = type;
-        this.visible = visible;
-    }
+    /** Whether the runtime log prints the value of a put made with this key. */
+    private final boolean visible;
 
     /**
      * A key whose writes the runtime log prints as {@code name:Type}, without the value.
@@ -56,19 +57,6 @@ public final class FlowKey<V> {
             throw new IllegalArgumentException("flow key type must be a reference type; use its wrapper class");
         }
         return new FlowKey<>(name, type, visible);
-    }
-
-    public String name() {
-        return name;
-    }
-
-    public Class<V> type() {
-        return type;
-    }
-
-    /** Whether the runtime log prints the value of a put made with this key. */
-    public boolean visible() {
-        return visible;
     }
 
     /** Equal to another key with an equal name and the same type, whatever the visibility of either. */

@@ -17,6 +17,9 @@ import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Writes the call to the method a binding selected, and only to that one.
@@ -37,6 +40,7 @@ import javax.lang.model.util.Types;
  * that machine from, selected a method javac has entered again since: it is recognized among those of the round by
  * the type that declares it, its name and the erasures of its parameters, so it never competes with itself.</p>
  */
+@RequiredArgsConstructor
 public final class BoundInvocation {
 
     /** What a lambda catches around a call that throws checked exceptions, all of them exceptions. */
@@ -45,19 +49,11 @@ public final class BoundInvocation {
     /** What a lambda catches around a call that throws a checked throwable that is no exception. */
     static final String THROWABLE = "java.lang.Throwable";
 
+    /** The element utilities of the compilation, with which a generator also looks up a type by its qualified name. */
+    @Getter(AccessLevel.PACKAGE)
     private final Elements elements;
     private final Types types;
     private final Map<TypeElement, Map<String, List<ExecutableElement>>> methods = new HashMap<>();
-
-    public BoundInvocation(Elements elements, Types types) {
-        this.elements = elements;
-        this.types = types;
-    }
-
-    /** The element utilities of the compilation, with which a generator also looks up a type by its qualified name. */
-    Elements elements() {
-        return elements;
-    }
 
     /** {@code receiver.method(arguments)}, with the parameter types that keep this exact overload selected. */
     public String emit(Binding binding, String receiver, List<String> arguments) {

@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.RandomAccess;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
+import lombok.Getter;
 
 /**
  * A call's journal as the runtime hands it out with a failure: the first {@code size} slots of the array the call keeps
@@ -26,6 +27,7 @@ import java.util.function.UnaryOperator;
 public final class JournalSnapshot extends AbstractList<ActionRecord> implements RandomAccess {
 
     private final ActionRecord[] entries;
+    @Getter
     private final int size;
 
     /** The first {@code size} slots of {@code entries}, which whoever passes them never writes again. */
@@ -38,9 +40,6 @@ public final class JournalSnapshot extends AbstractList<ActionRecord> implements
     public ActionRecord get(int index) {
         return entries[Objects.checkIndex(index, size)];
     }
-
-    @Override
-    public int size() { return size; }
 
     @Override
     public List<ActionRecord> subList(int fromIndex, int toIndex) {

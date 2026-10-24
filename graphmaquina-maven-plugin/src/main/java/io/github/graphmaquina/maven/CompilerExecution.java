@@ -1,5 +1,9 @@
 package io.github.graphmaquina.maven;
 
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
 /**
  * The two compilations of a project, the goal of {@code maven-compiler-plugin} that runs each of them, and the names
  * each of them is configured and skipped by.
@@ -10,6 +14,8 @@ package io.github.graphmaquina.maven;
  * {@code default-testCompile}. Reading the configuration of the execution that runs is what lets a goal say that the
  * compiler is going to read the manifest the generator is about to write, rather than assume it.</p>
  */
+@Getter(AccessLevel.PACKAGE)
+@RequiredArgsConstructor
 enum CompilerExecution {
 
     /** The compilation of {@code src/main/java}, which {@code compiler:compile} runs. */
@@ -20,53 +26,19 @@ enum CompilerExecution {
     TEST("test", "testCompile", "test-compile", "prepare-test", "process-test-sources", "complete-test",
         "test-compile", "skip", "maven.test.skip", "generatedTestSourcesDirectory", "testIncludes", "testExcludes");
 
-    private final String sourceSet;
-    private final String goal;
-    private final String defaultPhase;
-    private final String preparationGoal;
-    private final String preparationPhase;
-    private final String completionGoal;
-    private final String completionPhase;
-    private final String skipParameter;
-    private final String skipProperty;
-    private final String generatedSourcesParameter;
-    private final String includesParameter;
-    private final String excludesParameter;
-
-    CompilerExecution(String sourceSet, String goal, String defaultPhase, String preparationGoal,
-            String preparationPhase, String completionGoal, String completionPhase, String skipParameter,
-            String skipProperty, String generatedSourcesParameter, String includesParameter, String excludesParameter) {
-        this.sourceSet = sourceSet;
-        this.goal = goal;
-        this.defaultPhase = defaultPhase;
-        this.preparationGoal = preparationGoal;
-        this.preparationPhase = preparationPhase;
-        this.completionGoal = completionGoal;
-        this.completionPhase = completionPhase;
-        this.skipParameter = skipParameter;
-        this.skipProperty = skipProperty;
-        this.generatedSourcesParameter = generatedSourcesParameter;
-        this.includesParameter = includesParameter;
-        this.excludesParameter = excludesParameter;
-    }
-
     /**
      * The source set this execution compiles, as the identity of its compilation names it.
      *
      * @return {@code main} or {@code test}
      */
-    String sourceSet() {
-        return sourceSet;
-    }
+    private final String sourceSet;
 
     /**
      * The goal of {@code maven-compiler-plugin} that runs this compilation.
      *
      * @return {@code compile} or {@code testCompile}
      */
-    String goal() {
-        return goal;
-    }
+    private final String goal;
 
     /**
      * The phase maven-compiler-plugin 3.15.0 binds {@link #goal()} to by default, which is the phase of an execution
@@ -74,63 +46,49 @@ enum CompilerExecution {
      *
      * @return {@code compile} or {@code test-compile}
      */
-    String defaultPhase() {
-        return defaultPhase;
-    }
+    private final String defaultPhase;
 
     /**
      * The goal of this plugin that prepares this compilation, which has to run before javac.
      *
      * @return {@code prepare} or {@code prepare-test}
      */
-    String preparationGoal() {
-        return preparationGoal;
-    }
+    private final String preparationGoal;
 
     /**
      * The phase the descriptor of this plugin binds {@link #preparationGoal()} to by default.
      *
      * @return {@code process-sources} or {@code process-test-sources}
      */
-    String preparationPhase() {
-        return preparationPhase;
-    }
+    private final String preparationPhase;
 
     /**
      * The goal of this plugin that completes this compilation, which has to run after javac.
      *
      * @return {@code complete} or {@code complete-test}
      */
-    String completionGoal() {
-        return completionGoal;
-    }
+    private final String completionGoal;
 
     /**
      * The phase the descriptor of this plugin binds {@link #completionGoal()} to by default.
      *
      * @return {@code compile} or {@code test-compile}
      */
-    String completionPhase() {
-        return completionPhase;
-    }
+    private final String completionPhase;
 
     /**
      * The configuration parameter of {@code maven-compiler-plugin} that switches this compilation off.
      *
      * @return the name of the skip parameter
      */
-    String skipParameter() {
-        return skipParameter;
-    }
+    private final String skipParameter;
 
     /**
      * The user property that sets {@link #skipParameter()} from the command line.
      *
      * @return the name of the skip property
      */
-    String skipProperty() {
-        return skipProperty;
-    }
+    private final String skipProperty;
 
     /**
      * The configuration parameter this execution writes the sources of the annotation processor with. The two
@@ -139,18 +97,14 @@ enum CompilerExecution {
      *
      * @return the name of the generated-sources parameter
      */
-    String generatedSourcesParameter() {
-        return generatedSourcesParameter;
-    }
+    private final String generatedSourcesParameter;
 
     /**
      * The configuration parameter that lists the patterns of the sources this execution compiles.
      *
      * @return the name of the includes parameter
      */
-    String includesParameter() {
-        return includesParameter;
-    }
+    private final String includesParameter;
 
     /**
      * The configuration parameter that lists the patterns of the sources this execution leaves out. The test
@@ -159,7 +113,5 @@ enum CompilerExecution {
      *
      * @return the name of the excludes parameter
      */
-    String excludesParameter() {
-        return excludesParameter;
-    }
+    private final String excludesParameter;
 }

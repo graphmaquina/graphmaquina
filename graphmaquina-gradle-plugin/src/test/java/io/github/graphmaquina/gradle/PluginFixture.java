@@ -5,6 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 
@@ -37,6 +39,7 @@ import java.util.zip.ZipOutputStream;
  * in its name, so the functional tests that run a generation also exercise the request encoding and the process
  * invocation over a path that is not plain ASCII.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PluginFixture {
 
     /** The version every StateGraph artifact of the fixture repository is published under. */
@@ -133,11 +136,6 @@ public final class PluginFixture {
 
     /** Whether TestKit injects the plugin under development, instead of the build resolving a published one. */
     private final boolean injectedPluginClasspath;
-
-    private PluginFixture(Path directory, boolean injectedPluginClasspath) {
-        this.directory = directory;
-        this.injectedPluginClasspath = injectedPluginClasspath;
-    }
 
     /**
      * Writes a settings file and a build script that applies only the {@code java} and {@code io.github.graphmaquina}

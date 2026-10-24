@@ -1,11 +1,16 @@
 package io.github.graphmaquina.api;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
 /**
  * Why an {@link Outcome} is what it is, as one flat value: its variant, refined by the {@link RejectionKind} of a
  * rejection and by the {@link IgnoreReason} of a reevaluation that selected nothing. Each code belongs to exactly
  * one {@link OutcomeStatus}. The names are stable identifiers, safe to persist or serialize; a code is added only
  * together with a new variant, rejection kind or ignore reason.
  */
+@Getter
+@RequiredArgsConstructor
 public enum OutcomeCode {
 
     /** The selected edge ran: {@link Outcome.Applied}. */
@@ -35,14 +40,6 @@ public enum OutcomeCode {
     /** No rule of the state's watch held: {@link IgnoreReason#NO_RULE_MATCHED}. */
     NO_RULE_MATCHED(OutcomeStatus.IGNORED);
 
-    private final OutcomeStatus status;
-
-    OutcomeCode(OutcomeStatus status) {
-        this.status = status;
-    }
-
     /** The status this code refines. */
-    public OutcomeStatus status() {
-        return status;
-    }
+    private final OutcomeStatus status;
 }

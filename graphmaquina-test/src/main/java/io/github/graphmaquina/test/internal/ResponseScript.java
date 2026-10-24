@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Supplier;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The queue of responses a probe hands out, one per call, with an optional default once the queue runs dry.
@@ -16,16 +17,14 @@ import lombok.NonNull;
  *
  * @param <R> the value a scripted response returns
  */
+@RequiredArgsConstructor
 public final class ResponseScript<R> {
 
+    @NonNull
     private final String probeName;
     private final Deque<Supplier<R>> queue = new ArrayDeque<>();
     private Supplier<R> fallback;
     private int served;
-
-    public ResponseScript(@NonNull String probeName) {
-        this.probeName = probeName;
-    }
 
     /** Appends one response, served after every response queued before it. */
     public void then(@NonNull Supplier<R> response) {

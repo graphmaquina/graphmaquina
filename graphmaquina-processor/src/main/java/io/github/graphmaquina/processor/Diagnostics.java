@@ -9,6 +9,8 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.tools.Diagnostic;
+import lombok.AccessLevel;
+import lombok.Getter;
 
 /**
  * Reports and counts javac errors as "[SGnnn] message". Explicit annotation values use verified source expressions,
@@ -25,6 +27,7 @@ final class Diagnostics {
     private final Messager messager;
     private final Trees trees;
     private final AnnotationSources sources;
+    @Getter(AccessLevel.PACKAGE)
     private int errors;
 
     Diagnostics(ProcessingEnvironment environment) {
@@ -82,9 +85,5 @@ final class Diagnostics {
         } else {
             messager.printMessage(Diagnostic.Kind.ERROR, formatted, element, mirror, value);
         }
-    }
-
-    int errors() {
-        return errors;
     }
 }

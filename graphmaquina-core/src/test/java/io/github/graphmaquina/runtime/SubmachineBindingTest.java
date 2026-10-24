@@ -44,6 +44,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -69,7 +72,9 @@ class SubmachineBindingTest {
     /** A second parent of payments, which also holds bookings as its own children. */
     static final class Ledger {
 
+        @Getter(AccessLevel.PACKAGE)
         private final String id;
+        @Getter(AccessLevel.PACKAGE)
         private LedgerStatus status;
         private Optional<Payment> settlement = Optional.empty();
         private Optional<Booking> held = Optional.empty();
@@ -78,10 +83,6 @@ class SubmachineBindingTest {
             this.id = id;
             this.status = status;
         }
-
-        String id() { return id; }
-
-        LedgerStatus status() { return status; }
 
         void setStatus(LedgerStatus status) { this.status = status; }
 
@@ -107,21 +108,14 @@ class SubmachineBindingTest {
             MachineKey.of(Claim.class, ReviewCheck.class, CheckStep.class);
 
     /** A claim governed by two machines: its stage, and the check of its current review. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Claim {
 
         private ClaimStage stage;
         private ReviewCheck check;
 
-        Claim(ClaimStage stage, ReviewCheck check) {
-            this.stage = stage;
-            this.check = check;
-        }
-
-        ClaimStage stage() { return stage; }
-
         void setStage(ClaimStage stage) { this.stage = stage; }
-
-        ReviewCheck check() { return check; }
 
         void setCheck(ReviewCheck check) { this.check = check; }
 

@@ -23,6 +23,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.List;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -407,13 +409,10 @@ class ValueAssertionsTest {
     }
 
     /** A value that renders as its supplier answers or throws. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Rendered {
 
         private final Supplier<String> text;
-
-        Rendered(Supplier<String> text) {
-            this.text = text;
-        }
 
         @Override
         public String toString() {

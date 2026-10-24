@@ -13,6 +13,8 @@ import io.github.graphmaquina.runtime.StateMachines;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 /**
  * Flow fixture for this module's own tests, built with the DSL and run by a real standalone machine: a parcel that
@@ -32,17 +34,12 @@ public final class Parcels {
     public enum Move { SHIP, DELIVER, HOLD }
 
     /** A parcel, equal to every parcel with the same id whatever its state. */
+    @AllArgsConstructor
     public static final class Parcel {
 
         private final String id;
+        @Getter
         private Spot spot;
-
-        public Parcel(String id, Spot spot) {
-            this.id = id;
-            this.spot = spot;
-        }
-
-        public Spot spot() { return spot; }
 
         public void setSpot(Spot spot) { this.spot = spot; }
 

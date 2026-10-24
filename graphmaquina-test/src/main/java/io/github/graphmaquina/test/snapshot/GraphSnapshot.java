@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import lombok.Getter;
 
 /**
  * The structure of a graph as a flat, versioned map of path to value: the machine identity, whether any edge
@@ -46,6 +47,7 @@ import java.util.TreeMap;
  * <p>The map is immutable and always in canonical order — ascending {@link String#compareTo} of the path —
  * which is also the order {@link #serialize()} writes and the order a parsed snapshot comes back in.
  */
+@Getter
 public final class GraphSnapshot {
 
     private final Map<String, String> fields;
@@ -70,10 +72,6 @@ public final class GraphSnapshot {
 
     public String serialize() {
         return SnapshotCodec.encode(fields);
-    }
-
-    public Map<String, String> fields() {
-        return fields;
     }
 
     private static <E, S extends Enum<S>, T extends Enum<T>> GraphSnapshot captureTyped(

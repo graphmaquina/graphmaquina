@@ -4,7 +4,9 @@ import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Optional;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over a single {@link TransitionRecord}, obtained from
@@ -17,15 +19,11 @@ import lombok.NonNull;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TransitionRecordAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final TransitionRecord<E, S, T> actual;
-
-    TransitionRecordAssert(String context, TransitionRecord<E, S, T> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     public TransitionRecordAssert<E, S, T> from(@NonNull S expected) {
         Checks.equal(context, "from", expected, actual.from());

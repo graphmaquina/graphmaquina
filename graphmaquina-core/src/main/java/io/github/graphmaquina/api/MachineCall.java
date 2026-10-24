@@ -1,6 +1,7 @@
 package io.github.graphmaquina.api;
 
 import java.util.Optional;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -9,11 +10,19 @@ import lombok.NonNull;
  * is identity, so two calls that ask the same thing of the same entity stay apart in a map or a set.
  * {@link #toString()} names the machine and the request, never the entity.
  */
+@Getter
 public final class MachineCall {
 
     private final MachineKey<?, ?, ?> key;
     private final Object entity;
+
+    /**
+     * The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge
+     * its watch selects.
+     */
     private final Optional<Enum<?>> transition;
+
+    /** Whether a watch reaction made this call rather than the application. */
     private final boolean reaction;
 
     /**
@@ -40,27 +49,6 @@ public final class MachineCall {
             throw new IllegalArgumentException("a watch reaction is a reevaluation and requests no identifier");
         }
         this.reaction = reaction;
-    }
-
-    public MachineKey<?, ?, ?> key() {
-        return key;
-    }
-
-    public Object entity() {
-        return entity;
-    }
-
-    /**
-     * The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge
-     * its watch selects.
-     */
-    public Optional<Enum<?>> transition() {
-        return transition;
-    }
-
-    /** Whether a watch reaction made this call rather than the application. */
-    public boolean reaction() {
-        return reaction;
     }
 
     /**

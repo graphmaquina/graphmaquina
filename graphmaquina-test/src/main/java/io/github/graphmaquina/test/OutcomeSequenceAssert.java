@@ -4,6 +4,8 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The outcomes of one machine and one entity, in the order the recorder observed them, obtained from
@@ -15,15 +17,11 @@ import java.util.List;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class OutcomeSequenceAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final List<Outcome<E, S, T>> actual;
-
-    OutcomeSequenceAssert(String context, List<Outcome<E, S, T>> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     public OutcomeSequenceAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());

@@ -25,6 +25,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -65,19 +69,12 @@ class SubmachineRecoveryTest {
             MachineKey.of(Batch.class, SealState.class, SealChange.class);
 
     /** A job: its id and its state. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Job {
 
         private final String id;
         private JobState state;
-
-        Job(String id, JobState state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        String id() { return id; }
-
-        JobState state() { return state; }
 
         void setState(JobState state) { this.state = state; }
 
@@ -88,8 +85,11 @@ class SubmachineRecoveryTest {
     /** A batch: its id, its state, the state of its seal and the job it works through, if any. */
     static final class Batch {
 
+        @Getter(AccessLevel.PACKAGE)
         private final String id;
+        @Getter(AccessLevel.PACKAGE)
         private BatchState state;
+        @Getter(AccessLevel.PACKAGE)
         private SealState seal = SealState.DONE;
         private Optional<Job> job = Optional.empty();
 
@@ -98,13 +98,7 @@ class SubmachineRecoveryTest {
             this.state = state;
         }
 
-        String id() { return id; }
-
-        BatchState state() { return state; }
-
         void setState(BatchState state) { this.state = state; }
-
-        SealState seal() { return seal; }
 
         void setSeal(SealState seal) { this.seal = seal; }
 
@@ -285,13 +279,10 @@ class SubmachineRecoveryTest {
      * The batch graph by hand, whose binding of WORKING maps no exit to FAILED and whose binding of SEALING maps none
      * to DONE, which the DSL refuses.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class WithoutExits implements GraphDefinition<Batch, BatchState, BatchChange> {
 
         private final GraphDefinition<Batch, BatchState, BatchChange> graph;
-
-        WithoutExits(GraphDefinition<Batch, BatchState, BatchChange> graph) {
-            this.graph = graph;
-        }
 
         private static <P, Q extends Enum<Q>, U extends Enum<U>>
                 SubmachineSpec<Batch, BatchState, BatchChange, P, Q, U> rewritten(

@@ -24,6 +24,8 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Binds explicitly written annotation values to their source expressions, including implicit repeatable containers.
@@ -32,6 +34,7 @@ import javax.lang.model.type.DeclaredType;
  * {@code Trees}, which the processor has only in plain javac and only when its class loader can load
  * {@code com.sun.source}, nothing has one.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class AnnotationSources {
 
     /** The exact source expression, its compilation unit and its start offset for declaration-order comparisons. */
@@ -40,10 +43,6 @@ final class AnnotationSources {
     /** Null when no {@code Trees} is available to the processor (see {@code Diagnostics.treesOf}). */
     private final Trees trees;
     private final Map<Element, Index> declarations = new IdentityHashMap<>();
-
-    AnnotationSources(Trees trees) {
-        this.trees = trees;
-    }
 
     /** Finds only a verified explicit value binding, never javac's enclosing-declaration fallback. */
     Optional<Location> find(Element element, AnnotationMirror annotation, AnnotationValue value) {

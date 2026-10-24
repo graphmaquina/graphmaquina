@@ -10,7 +10,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over a {@link GraphDefinition}. Every expectation reads the definition's
@@ -27,13 +29,10 @@ import lombok.NonNull;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final GraphDefinition<E, S, T> actual;
-
-    private GraphAssert(GraphDefinition<E, S, T> actual) {
-        this.actual = actual;
-    }
 
     public static <E, S extends Enum<S>, T extends Enum<T>> GraphAssert<E, S, T> assertThat(
             GraphDefinition<E, S, T> actual) {

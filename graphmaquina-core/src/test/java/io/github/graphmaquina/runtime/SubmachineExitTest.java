@@ -47,6 +47,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -79,23 +82,15 @@ class SubmachineExitTest {
             MachineKey.of(Ticket.class, ReceiptStatus.class, ReceiptTransition.class);
 
     /** A ticket and its receipt, two states of one entity. */
+    @Getter(AccessLevel.PACKAGE)
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Ticket {
 
         private final String id;
         private TicketStatus status = TicketStatus.OPEN;
         private ReceiptStatus receipt = ReceiptStatus.SENT;
 
-        Ticket(String id) {
-            this.id = id;
-        }
-
-        String id() { return id; }
-
-        TicketStatus status() { return status; }
-
         void setStatus(TicketStatus status) { this.status = status; }
-
-        ReceiptStatus receipt() { return receipt; }
 
         void setReceipt(ReceiptStatus receipt) { this.receipt = receipt; }
 
@@ -107,16 +102,11 @@ class SubmachineExitTest {
      * The booking graph by hand, as an application could write it, whose DEPOSIT binding maps VOIDED to
      * {@code voided}, or to no exit when it is empty. Only a hand-written graph can hold either: the DSL refuses both.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class HandWritten implements GraphDefinition<Booking, BookingStatus, BookingTransition> {
 
         private final GraphDefinition<Booking, BookingStatus, BookingTransition> graph;
         private final Optional<BookingTransition> voided;
-
-        HandWritten(GraphDefinition<Booking, BookingStatus, BookingTransition> graph,
-                    Optional<BookingTransition> voided) {
-            this.graph = graph;
-            this.voided = voided;
-        }
 
         private <P, Q extends Enum<Q>, U extends Enum<U>>
                 SubmachineSpec<Booking, BookingStatus, BookingTransition, P, Q, U> rewritten(

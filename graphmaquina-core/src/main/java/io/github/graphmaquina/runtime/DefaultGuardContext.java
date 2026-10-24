@@ -9,6 +9,7 @@ import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.StaleContextException;
 import java.util.Optional;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -27,14 +28,13 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
     @NonNull
     private Transaction tx;
     private final DefaultStateMachine<E, S, T> machine;
+    @Getter
     private final E entity;
     private final TransitionSpec<E, S, T> spec;
     private final int depth;
     private final Optional<Object> operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
-
-    @Override public E entity() { return entity; }
 
     @Override public S from() { return spec.from(); }
 

@@ -4,6 +4,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -22,6 +23,7 @@ public final class HookProbe<E> implements Consumer<E> {
 
     private final String name;
     private final CallTrace trace;
+    @Getter
     private final ProbeCalls<E> calls;
     private final ResponseScript<Boolean> script;
     private final Object entry = new Object();
@@ -71,10 +73,6 @@ public final class HookProbe<E> implements Consumer<E> {
     public HookProbe<E> onCall(@NonNull Consumer<E> onCall) {
         this.onCall = onCall;
         return this;
-    }
-
-    public ProbeCalls<E> calls() {
-        return calls;
     }
 
     @Override

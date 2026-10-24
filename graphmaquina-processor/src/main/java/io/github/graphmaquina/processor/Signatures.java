@@ -17,11 +17,14 @@ import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import lombok.AccessLevel;
+import lombok.Getter;
 
 /**
  * Builds the types the bindings must match and compares types. It keeps the {@link MemberIndex} the processor looks
  * members up through, which the processor forgets at the start of every round.
  */
+@Getter(AccessLevel.PACKAGE)
 final class Signatures {
 
     static final String COLLECTION = "java.util.Collection";
@@ -30,17 +33,14 @@ final class Signatures {
 
     private final Elements elements;
     private final Types types;
+
+    /** The index of the members of the types this round holds, listed once each. */
     private final MemberIndex members;
 
     Signatures(Elements elements, Types types) {
         this.elements = elements;
         this.types = types;
         this.members = new MemberIndex(elements);
-    }
-
-    /** The index of the members of the types this round holds, listed once each. */
-    MemberIndex members() {
-        return members;
     }
 
     /**
@@ -269,13 +269,5 @@ final class Signatures {
                     : types.getDeclaredType(element, substituted);
         }
         return type;
-    }
-
-    Types types() {
-        return types;
-    }
-
-    Elements elements() {
-        return elements;
     }
 }

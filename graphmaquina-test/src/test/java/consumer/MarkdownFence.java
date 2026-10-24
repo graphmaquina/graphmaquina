@@ -2,6 +2,8 @@ package consumer;
 
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * An opening fence of a CommonMark fenced code block, for lines without indentation, which is how the guides write
@@ -10,6 +12,7 @@ import java.util.Optional;
  * contain a backtick. A fence is closed by a line of the same character, at least as long as the opening run,
  * followed only by spaces or tabs. Anything between the two lines is content, whatever it looks like.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class MarkdownFence {
 
     private static final int MINIMUM_RUN = 3;
@@ -17,12 +20,6 @@ final class MarkdownFence {
     private final char marker;
     private final int length;
     private final String info;
-
-    private MarkdownFence(char marker, int length, String info) {
-        this.marker = marker;
-        this.length = length;
-        this.info = info;
-    }
 
     /** Returns the fence that the line opens, or empty when the line opens none. */
     static Optional<MarkdownFence> opening(String line) {

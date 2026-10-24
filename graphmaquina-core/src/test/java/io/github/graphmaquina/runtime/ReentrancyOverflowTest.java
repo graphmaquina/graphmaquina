@@ -16,6 +16,8 @@ import io.github.graphmaquina.fixtures.CellTransition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -37,25 +39,19 @@ class ReentrancyOverflowTest {
     enum Flip { FLIP }
 
     /** An entity of the ping machine, paired with a pong. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Ping {
         final String id;
         Side side = Side.FIRST;
         Pong pong;
-
-        Ping(String id) {
-            this.id = id;
-        }
     }
 
     /** An entity of the pong machine, paired with a ping. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Pong {
         final String id;
         Side side = Side.FIRST;
         Ping ping;
-
-        Pong(String id) {
-            this.id = id;
-        }
     }
 
     static final MachineKey<Ping, Side, Flip> PINGS = MachineKey.of(Ping.class, Side.class, Flip.class);

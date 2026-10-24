@@ -37,6 +37,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -755,24 +758,18 @@ class RecordAssertionsTest {
     enum Sticking { STICK }
 
     /** Parent entity of the engine cases, written by the machine and read back by the assertions. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Box {
 
         private final String id;
         private Crate state;
 
-        Box(String id, Crate state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        String id() { return id; }
-
-        Crate state() { return state; }
-
         void setState(Crate state) { this.state = state; }
     }
 
     /** Peer entity of the engine cases: the cascade target that holds its box, so it can cascade back into it. */
+    @Getter(AccessLevel.PACKAGE)
     static final class Tag {
 
         private final String id;
@@ -784,12 +781,6 @@ class RecordAssertionsTest {
             this.state = state;
             this.box = box;
         }
-
-        String id() { return id; }
-
-        Box box() { return box; }
-
-        TagState state() { return state; }
 
         void setState(TagState state) { this.state = state; }
     }

@@ -34,6 +34,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -663,13 +665,10 @@ class SubmachineExitReentryTest {
             MachineKey.of(Stamp.class, StampState.class, StampId.class);
 
     /** An office and its desk. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Office {
         private final Desk desk;
         private OfficeState state = OfficeState.IDLE;
-
-        Office(Desk desk) {
-            this.desk = desk;
-        }
 
         @Override
         public String toString() { return "Office"; }
@@ -689,16 +688,12 @@ class SubmachineExitReentryTest {
     }
 
     /** A token, its stamp, and how many times its exit SERVE has run. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Token {
         private final String name;
         private final Stamp stamp;
         private TokenState state = TokenState.CALLED;
         private int serves;
-
-        Token(String name, Stamp stamp) {
-            this.name = name;
-            this.stamp = stamp;
-        }
 
         @Override
         public String toString() { return "Token"; }
@@ -713,13 +708,10 @@ class SubmachineExitReentryTest {
     }
 
     /** A stamp. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Stamp {
         private final String name;
         private StampState state = StampState.STAMPED;
-
-        Stamp(String name) {
-            this.name = name;
-        }
 
         @Override
         public String toString() { return "Stamp"; }
@@ -765,15 +757,12 @@ class SubmachineExitReentryTest {
     }
 
     /** A member with its own state and its leaf's, and the holding it belongs to. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Member {
         private final String id;
         private MemberState state = MemberState.READY;
         private MemberLeafState leaf = MemberLeafState.DONE;
         private Optional<Holding> holding = Optional.empty();
-
-        Member(String id) {
-            this.id = id;
-        }
 
         @Override
         public String toString() { return "Member#" + id; }

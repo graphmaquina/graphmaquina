@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over the sub-machine bound to one state, obtained from
@@ -25,18 +27,13 @@ import lombok.NonNull;
  * @param <Q> state enum of the child machine
  * @param <U> transition identifier enum of the child machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class SubmachineAssert<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>,
         U extends Enum<U>> {
 
     private final String context;
     private final MachineKey<P, Q, U> child;
     private final Optional<SubmachineSpec<E, S, T, ?, ?, ?>> actual;
-
-    SubmachineAssert(String context, MachineKey<P, Q, U> child, Optional<SubmachineSpec<E, S, T, ?, ?, ?>> actual) {
-        this.context = context;
-        this.child = child;
-        this.actual = actual;
-    }
 
     /**
      * Every exit in declaration order, each a terminal state of the child and the identifier it selects. The order

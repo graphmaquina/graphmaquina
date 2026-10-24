@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The states a chosen set of entities was in at one moment, and what changed since. Tracking is
@@ -17,15 +19,12 @@ import lombok.NonNull;
  * alone, while {@link #changes()} reads every tracked getter again on each call and therefore answers
  * about the entities as they are now.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StateSnapshot {
 
     private static final String CONTEXT = "state snapshot";
 
     private final List<Captured> captured;
-
-    private StateSnapshot(List<Captured> captured) {
-        this.captured = captured;
-    }
 
     public static Builder builder() {
         return new Builder();

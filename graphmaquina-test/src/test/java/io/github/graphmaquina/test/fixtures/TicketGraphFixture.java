@@ -9,6 +9,7 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.AllArgsConstructor;
 
 /**
  * The fixture of {@code GraphContractTest}: a ticket machine with three states and a catalogue of six
@@ -29,11 +30,11 @@ public final class TicketGraphFixture {
      * The entity: a mutable state plus the log its actions append to; the base builder's action adds
      * {@code "manual"}.
      */
+    @AllArgsConstructor
     public static final class Ticket {
         public final int id;
         public State state;
         public final List<String> calls = new ArrayList<>();
-        public Ticket(int id, State state) { this.id = id; this.state = state; }
     }
 
     public static final MachineKey<Ticket,State,Id> KEY =

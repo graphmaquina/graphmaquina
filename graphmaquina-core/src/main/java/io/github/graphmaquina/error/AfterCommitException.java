@@ -8,6 +8,7 @@ import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import java.util.List;
 import java.util.Objects;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -22,12 +23,21 @@ import lombok.NonNull;
  * the call committed, wrapping the very records and starts this exception lists, then the entry of this failure when
  * the trail's clock could read its instant.
  */
+@Getter
 public final class AfterCommitException extends CallFailedException {
 
     private final List<ActionRecord> journal;
+
+    /** Every hop the call committed, in log order, the one whose hook threw included. */
     private final List<TransitionRecord<?, ?, ?>> records;
+
+    /** Every sub-machine the call started, in log order, as {@code Outcome.starts()} would have reported them. */
     private final List<SubmachineStart<?, ?, ?>> starts;
+
+    /** The committed hop whose hook threw: its machine, entity, endpoints, identifier, kind, action and depth. */
     private final TransitionRecord<?, ?, ?> hop;
+
+    /** The name of the hook that threw. */
     private final String hook;
 
     /**
@@ -61,31 +71,6 @@ public final class AfterCommitException extends CallFailedException {
     @Override
     public StatesWritten statesWritten() {
         return StatesWritten.ALL;
-    }
-
-    @Override
-    public List<ActionRecord> journal() {
-        return journal;
-    }
-
-    /** The name of the hook that threw. */
-    public String hook() {
-        return hook;
-    }
-
-    /** The committed hop whose hook threw: its machine, entity, endpoints, identifier, kind, action and depth. */
-    public TransitionRecord<?, ?, ?> hop() {
-        return hop;
-    }
-
-    /** Every hop the call committed, in log order, the one whose hook threw included. */
-    public List<TransitionRecord<?, ?, ?>> records() {
-        return records;
-    }
-
-    /** Every sub-machine the call started, in log order, as {@code Outcome.starts()} would have reported them. */
-    public List<SubmachineStart<?, ?, ?>> starts() {
-        return starts;
     }
 
     private static String describe(@NonNull MachineCall call, @NonNull String hook) {

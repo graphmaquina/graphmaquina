@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -33,10 +35,19 @@ import lombok.NonNull;
  */
 final class Transaction {
 
+    /** The registry the call runs in: its root machine's. */
+    @Getter(AccessLevel.PACKAGE)
     private final MachineRegistry registry;
+    @Getter(AccessLevel.PACKAGE)
     private final UnitOfWork uow;
     private final List<ContextHandle> contexts = new ArrayList<>();
+
+    /** The key of the root call's machine. */
+    @Getter(AccessLevel.PACKAGE)
     private final MachineKey<?, ?, ?> callKey;
+
+    /** The entity of the root call. */
+    @Getter(AccessLevel.PACKAGE)
     private final Object callEntity;
     /** The identifier the call requested; empty for a reevaluation, which requests none. */
     private final Optional<Enum<?>> requested;
@@ -115,19 +126,8 @@ final class Transaction {
         return new CallFailure(phase, statesWritten(), thrown);
     }
 
-    UnitOfWork uow() { return uow; }
-
-    /** The registry the call runs in: its root machine's. */
-    MachineRegistry registry() { return registry; }
-
     /** Where the call stands now. */
     CallPhase phase() { return phase; }
-
-    /** The key of the root call's machine. */
-    MachineKey<?, ?, ?> callKey() { return callKey; }
-
-    /** The entity of the root call. */
-    Object callEntity() { return callEntity; }
 
     /** Keeps {@code context}, a context the call handed out, for {@link #invalidate}. */
     void track(ContextHandle context) {

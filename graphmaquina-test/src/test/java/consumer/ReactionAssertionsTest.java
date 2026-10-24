@@ -42,6 +42,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -811,27 +814,19 @@ class ReactionAssertionsTest {
     enum Loading { LOAD }
 
     /** Owner entity of the engine cases; its parcels register themselves as they are built. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Shipment {
 
         private final String id;
         private final List<Parcel> parcels = new ArrayList<>();
         private ShipmentStatus status;
 
-        Shipment(String id, ShipmentStatus status) {
-            this.id = id;
-            this.status = status;
-        }
-
-        String id() { return id; }
-
-        List<Parcel> parcels() { return parcels; }
-
-        ShipmentStatus status() { return status; }
-
         void setStatus(ShipmentStatus status) { this.status = status; }
     }
 
     /** Peer entity of the engine cases: moving one re-evaluates its shipment. */
+    @Getter(AccessLevel.PACKAGE)
     static final class Parcel {
 
         private final String id;
@@ -844,12 +839,6 @@ class ReactionAssertionsTest {
             this.shipment = shipment;
             shipment.ifPresent((Shipment owner) -> owner.parcels().add(this));
         }
-
-        String id() { return id; }
-
-        Optional<Shipment> shipment() { return shipment; }
-
-        ParcelStatus status() { return status; }
 
         void setStatus(ParcelStatus status) { this.status = status; }
     }

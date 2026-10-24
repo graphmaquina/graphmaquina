@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -27,8 +28,10 @@ public final class FrozenFlow implements FlowView {
     /** The flow without an entity, without values and without a trail: {@link FlowView#empty()}. */
     public static final FrozenFlow EMPTY = new FrozenFlow(Optional.empty(), Map.of());
 
+    @Getter
     private final Optional<Object> entity;
     private final Map<FlowKey<?>, Object> values;
+    @Getter
     private final List<FlowEntry> trail;
 
     /**
@@ -75,21 +78,11 @@ public final class FrozenFlow implements FlowView {
     }
 
     @Override
-    public Optional<Object> entity() {
-        return entity;
-    }
-
-    @Override
     public <E> Optional<E> entity(@NonNull Class<E> type) {
         if (type.isPrimitive()) {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
         return entity.map(type::cast);
-    }
-
-    @Override
-    public List<FlowEntry> trail() {
-        return trail;
     }
 
     @Override

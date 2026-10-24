@@ -9,6 +9,7 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.AllArgsConstructor;
 
 /**
  * The shared fixture of the graph semantics tests: a ticket machine with three states and a catalogue of six
@@ -25,11 +26,11 @@ public final class TicketMachineFixture {
     public enum Id { SUBMIT, APPROVE, AUTO_APPROVE, RETOUCH, FAIL, BACK }
 
     /** The entity: a mutable state plus the log its actions and hooks append to. */
+    @AllArgsConstructor
     public static final class Ticket {
         public final int id;
         public State state;
         public final List<String> calls = new ArrayList<>();
-        public Ticket(int id, State state) { this.id = id; this.state = state; }
     }
 
     public static final MachineKey<Ticket,State,Id> KEY =

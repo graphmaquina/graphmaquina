@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -49,13 +51,10 @@ class CollectRollbackFailureTest {
     private static final FlowKey<String> NOTE = FlowKey.of("note", String.class);
 
     /** An identity whose hashCode runs {@link #onHash} once it is armed; it prints by name. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class ArmedId {
         private final String name;
         private Runnable onHash = () -> { };
-
-        ArmedId(String name) {
-            this.name = name;
-        }
 
         @Override
         public boolean equals(Object other) {

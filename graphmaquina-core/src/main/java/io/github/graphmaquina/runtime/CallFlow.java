@@ -14,6 +14,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The flow of one root call, owned by its {@link UnitOfWork}: the root entity of the call and the writes its steps
@@ -45,6 +48,7 @@ import java.util.Set;
  *       trail, keeps no mark and allocates nothing for marks.</li>
  * </ul>
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class CallFlow {
 
     /** What a write keeps as the position of the previous write of its key when it is the first write of that key. */
@@ -55,6 +59,8 @@ final class CallFlow {
      */
     static final int SCANNED = 8;
 
+    /** The entity of the root call: the instance its caller passed, never a copy. */
+    @Getter(AccessLevel.PACKAGE)
     private final Object rootEntity;
     private final List<Write> writes = new ArrayList<>();
     /**
@@ -64,13 +70,6 @@ final class CallFlow {
     private Optional<Map<FlowKey<?>, Integer>> index = Optional.empty();
     /** The mark of each entry of the log, by index; created by the first mark. */
     private Optional<List<Mark>> marks = Optional.empty();
-
-    CallFlow(Object rootEntity) {
-        this.rootEntity = rootEntity;
-    }
-
-    /** The entity of the root call: the instance its caller passed, never a copy. */
-    Object rootEntity() { return rootEntity; }
 
     /** The value of the last write of a key equal to {@code key}, if that write put one. */
     <V> Optional<V> get(FlowKey<V> key) {

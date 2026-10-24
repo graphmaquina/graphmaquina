@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -23,14 +24,13 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         implements WatchBuilder<E, S, T, P, Q, U>, WatchRuleBuilder<E, S, T, P, Q, U> {
 
     private final DefaultGraphBuilder<E, S, T> graph;
+    @Getter(AccessLevel.PACKAGE)
     private final S state;
     private final MachineKey<P, Q, U> peer;
     private final Function<? super E, ? extends Collection<? extends P>> peersOf;
     private final Function<? super P, Optional<E>> ownerOf;
     private final List<WatchRule<E, S, T, P, Q, U>> rules = new ArrayList<>();
     private Optional<NamedCondition<E, P, Q, U>> pending = Optional.empty();
-
-    S state() { return state; }
 
     @Override
     public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull NamedCondition<E, P, Q, U> condition) {

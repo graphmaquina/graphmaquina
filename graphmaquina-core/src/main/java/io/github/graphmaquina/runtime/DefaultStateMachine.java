@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
 
@@ -39,6 +40,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Optional<Duration> asyncTimeout;
     private final Executor executor;
     private final boolean ownsExecutor;
+
+    /** The registry this machine was assembled into, which every call of it runs in. */
+    @Getter(AccessLevel.PACKAGE)
     private final MachineRegistry registry;
     private final DefaultAsyncStateMachine<E, S, T> async;
     /**
@@ -98,9 +102,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
     boolean bindsSubmachines() { return bindsSubmachines; }
-
-    /** The registry this machine was assembled into, which every call of it runs in. */
-    MachineRegistry registry() { return registry; }
 
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     Optional<InstantSource> trail() { return trail; }

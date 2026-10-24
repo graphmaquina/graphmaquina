@@ -2,8 +2,10 @@ package io.github.graphmaquina.fixtures;
 
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Getter;
 
 /** Test entity of the order machine: an id, a status, its items and a count of payment attempts. */
+@Getter
 public final class Order {
 
     private final String id;
@@ -16,17 +18,9 @@ public final class Order {
         this.status = status;
     }
 
-    public String id() { return id; }
-
-    public OrderStatus status() { return status; }
-
     public void setStatus(OrderStatus status) { this.status = status; }
 
-    public List<Item> items() { return items; }
-
     public void add(Item item) { items.add(item); }
-
-    public int paymentAttempts() { return paymentAttempts; }
 
     public void countAttempt() { paymentAttempts++; }
 

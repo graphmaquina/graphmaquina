@@ -4,20 +4,19 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Optional;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over an {@link ActionOutcome}. The expectations about a failure, its reason and its
  * failure kind, first require the {@code Failed} variant: an {@code Ok} outcome, or no outcome at all, fails them on
  * the property {@code kind} before the failure itself is read.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ActionOutcomeAssert {
 
     private final ActionOutcome actual;
-
-    private ActionOutcomeAssert(ActionOutcome actual) {
-        this.actual = actual;
-    }
 
     public static ActionOutcomeAssert assertThat(ActionOutcome actual) {
         return new ActionOutcomeAssert(actual);

@@ -71,6 +71,8 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.AccessLevel;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -158,12 +160,9 @@ class RuntimeLogTraceTest {
     }
 
     /** An entity whose state and transition enums print otherwise than their names. */
+    @Getter(AccessLevel.PACKAGE)
     static final class Lamp {
         private Shade shade = Shade.DARK;
-
-        Shade shade() {
-            return shade;
-        }
 
         void setShade(Shade shade) {
             this.shade = shade;

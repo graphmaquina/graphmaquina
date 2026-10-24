@@ -7,17 +7,15 @@ import io.github.graphmaquina.test.probe.GuardCall;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Chainable expectations over the operation input recorded by a synchronous or asynchronous probe. */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class CallInputAssert {
     private final String context;
     private final Optional<?> input;
-
-    private CallInputAssert(String context, Optional<?> input) {
-        this.context = context;
-        this.input = input;
-    }
 
     public static CallInputAssert assertThat(GuardCall<?, ?, ?> actual) {
         return new CallInputAssert("guard call", actual == null ? null : actual.input());

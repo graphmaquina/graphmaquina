@@ -28,6 +28,8 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -41,13 +43,10 @@ class RollbackCascadeTest {
     private static final String REFUSAL = "cascades cannot run while the call rolls back a step";
 
     /** An identity whose hashCode runs {@link #onHash} once it is armed; it prints by name. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class ArmedId {
         private final String name;
         private Runnable onHash = () -> { };
-
-        ArmedId(String name) {
-            this.name = name;
-        }
 
         @Override
         public boolean equals(Object other) {

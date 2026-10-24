@@ -1,5 +1,6 @@
 package io.github.graphmaquina.test;
 
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -19,6 +20,7 @@ import lombok.NonNull;
  * <p>An actual value that is a {@link Throwable} is the unexpected outcome itself, so it is also the cause
  * of this error: a test report then prints where it was thrown and not only what it was called.
  */
+@Getter
 public final class GraphAssertionError extends AssertionError {
 
     private final String context;
@@ -43,14 +45,6 @@ public final class GraphAssertionError extends AssertionError {
             initCause(cause);
         }
     }
-
-    public String context() { return context; }
-
-    public String property() { return property; }
-
-    public Object expected() { return expected; }
-
-    public Object actual() { return actual; }
 
     private static String render(@NonNull String context, @NonNull String property, Object expected, Object actual,
             String advice) {

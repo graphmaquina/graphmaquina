@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Immutable directed graph whose edges carry a label, generic over nodes and labels. Unlike {@link Graph},
@@ -22,23 +25,22 @@ import java.util.Set;
  * @param <N> node type
  * @param <L> edge label type
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class DirectedGraph<N, L> {
 
+    @Getter
     private final List<N> nodes;
+    @Getter
     private final List<DirectedEdge<N, L>> edges;
     private final Map<N, List<DirectedEdge<N, L>>> outgoing;
     private final Map<N, List<DirectedEdge<N, L>>> incoming;
-    private final Graph<N> topology;
 
-    private DirectedGraph(List<N> nodes, List<DirectedEdge<N, L>> edges,
-            Map<N, List<DirectedEdge<N, L>>> outgoing, Map<N, List<DirectedEdge<N, L>>> incoming,
-            Graph<N> topology) {
-        this.nodes = nodes;
-        this.edges = edges;
-        this.outgoing = outgoing;
-        this.incoming = incoming;
-        this.topology = topology;
-    }
+    /**
+     * Projects this graph onto the existing {@link Graph}: same nodes, with parallel edges between the
+     * same pair of endpoints collapsed to one topological edge.
+     */
+    @Getter
+    private final Graph<N> topology;
 
     /**
      * Builds a graph from its declared nodes and labeled edges, in a few linear passes over each. Rejects
@@ -78,14 +80,6 @@ public final class DirectedGraph<N, L> {
         return Collections.unmodifiableMap(frozen);
     }
 
-    public List<N> nodes() {
-        return nodes;
-    }
-
-    public List<DirectedEdge<N, L>> edges() {
-        return edges;
-    }
-
     /** Edges leaving {@code node}, in declaration order. */
     public List<DirectedEdge<N, L>> outgoing(N node) {
         return requireIndexed(outgoing, node);
@@ -102,14 +96,6 @@ public final class DirectedGraph<N, L> {
             throw new IllegalArgumentException("unknown node: " + node);
         }
         return found;
-    }
-
-    /**
-     * Projects this graph onto the existing {@link Graph}: same nodes, with parallel edges between the
-     * same pair of endpoints collapsed to one topological edge.
-     */
-    public Graph<N> topology() {
-        return topology;
     }
 
     @Override

@@ -36,6 +36,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -236,14 +238,11 @@ class GraphExportTest {
      * the states passed to {@link #watch}. It changes no production code and exposes no counters there; the
      * sequence it records is the causal evidence for T11 (issue #9, F12).
      */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class WatchCountingDefinition<E, S extends Enum<S>, T extends Enum<T>>
             implements GraphDefinition<E,S,T> {
         private final GraphDefinition<E,S,T> delegate;
         private final List<S> watchCalls = new ArrayList<>();
-
-        private WatchCountingDefinition(GraphDefinition<E,S,T> delegate) {
-            this.delegate = delegate;
-        }
 
         @Override public MachineKey<E,S,T> key() { return delegate.key(); }
         @Override public S initial() { return delegate.initial(); }

@@ -28,6 +28,8 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Test-only helper that materializes a minimal Maven project against the published StateGraph artifacts and
@@ -43,6 +45,7 @@ import java.util.zip.ZipFile;
  * {@code fixture project ñ} or {@code consumer project ñ}, so every build also exercises the request encoding and
  * the process invocation over a path that is not plain ASCII.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MavenFixture {
 
     /** The published index a compilation leaves beside its classes. */
@@ -117,12 +120,6 @@ public final class MavenFixture {
     private final Path directory;
     private final Path settings;
     private final String artifactId;
-
-    private MavenFixture(Path directory, Path settings, String artifactId) {
-        this.directory = directory;
-        this.settings = settings;
-        this.artifactId = artifactId;
-    }
 
     /**
      * Writes the consumer project of {@code src/test/resources/it/basic/pom.xml} with the shared adapter domain
@@ -1532,6 +1529,7 @@ public final class MavenFixture {
      * printed. However the wait ends, it then makes sure the child is gone and removes the transcript, keeping the
      * first failure and attaching the failures of the cleanup to it as suppressed exceptions.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class ChildRun {
 
         private final String mainClass;
@@ -1541,13 +1539,6 @@ public final class MavenFixture {
         private Process process;
         private boolean terminated;
         private Throwable originalFailure;
-
-        ChildRun(String mainClass, List<String> command, Path directory, Path transcript) {
-            this.mainClass = mainClass;
-            this.command = command;
-            this.directory = directory;
-            this.transcript = transcript;
-        }
 
         String run(Consumer<Process> onStart) throws IOException {
             try {

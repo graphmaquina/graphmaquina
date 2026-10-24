@@ -1,7 +1,9 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.test.internal.Checks;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Expectations every failure view shares, returning the concrete view so that a chain keeps the narrowed
@@ -10,6 +12,7 @@ import lombok.NonNull;
  *
  * @param <SELF> the concrete view returned by every expectation
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public abstract class BaseFailureAssert<SELF extends BaseFailureAssert<SELF>> {
 
     /** Prefix of every failure message raised by this view. */
@@ -17,11 +20,6 @@ public abstract class BaseFailureAssert<SELF extends BaseFailureAssert<SELF>> {
 
     /** The throwable under test, null only for a view built straight from a null subject. */
     final Throwable actual;
-
-    BaseFailureAssert(String context, Throwable actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     /** The concrete view, so that an inherited expectation returns the narrowed type. */
     protected abstract SELF self();

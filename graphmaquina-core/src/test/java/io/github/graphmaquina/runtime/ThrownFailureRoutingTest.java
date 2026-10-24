@@ -53,6 +53,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -561,14 +563,11 @@ class ThrownFailureRoutingTest {
      * The delegate's graph with RuntimeException in PUBLISH's own failsOn, beside its rules: the DSL refuses that type
      * (SG302), and only a definition built by hand can carry it.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class ListingRuntimeException
             implements GraphDefinition<Ticket, TicketState, TicketChange> {
 
         private final GraphDefinition<Ticket, TicketState, TicketChange> delegate;
-
-        private ListingRuntimeException(GraphDefinition<Ticket, TicketState, TicketChange> delegate) {
-            this.delegate = delegate;
-        }
 
         private TransitionSpec<Ticket, TicketState, TicketChange> rebuilt(
                 TransitionSpec<Ticket, TicketState, TicketChange> spec) {

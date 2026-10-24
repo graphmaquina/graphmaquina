@@ -8,6 +8,9 @@ import java.util.Map;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The members of types, listed once per type and kept by simple name, so that looking one member up by its name walks
@@ -17,20 +20,14 @@ import javax.lang.model.util.Elements;
  * <p>javac enters the members of a source type afresh in every round, so an index answers only within the round it
  * was filled in: {@link #forget} empties it, and the processor forgets at the start of every round.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class MemberIndex {
 
+    /** The element utilities the members are listed with. */
+    @Getter(AccessLevel.PACKAGE)
     private final Elements elements;
     private final Map<TypeElement, Map<String, List<Element>>> declared = new HashMap<>();
     private final Map<TypeElement, Map<String, List<Element>>> all = new HashMap<>();
-
-    MemberIndex(Elements elements) {
-        this.elements = elements;
-    }
-
-    /** The element utilities the members are listed with. */
-    Elements elements() {
-        return elements;
-    }
 
     /** The members {@code type} declares itself named {@code name}, in the order it declares them. */
     List<Element> declared(TypeElement type, CharSequence name) {

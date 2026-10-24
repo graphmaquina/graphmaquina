@@ -11,6 +11,8 @@ import io.github.graphmaquina.runtime.StateMachines;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 /**
  * Shared fixture for this module's own tests: a small NEW/READY/DONE/FAILED machine whose three declared
@@ -28,19 +30,12 @@ public final class TestDomain {
     public enum Id { PREPARE, RECOVER, FINISH, ABANDON }
 
     /** Mutable entity carrying its current {@link State}. */
+    @Getter
+    @AllArgsConstructor
     public static final class Entity {
 
         private final String id;
         private State state;
-
-        public Entity(String id, State state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        public String id() { return id; }
-
-        public State state() { return state; }
 
         public void setState(State state) { this.state = state; }
     }

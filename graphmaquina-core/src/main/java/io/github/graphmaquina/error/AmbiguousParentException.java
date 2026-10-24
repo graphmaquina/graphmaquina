@@ -3,6 +3,7 @@ package io.github.graphmaquina.error;
 import io.github.graphmaquina.api.MachineKey;
 import java.util.List;
 import java.util.Objects;
+import lombok.Getter;
 
 /**
  * A sub-machine's entity was found active under two bindings at once: two parents hold it, each in its bound node or
@@ -12,10 +13,16 @@ import java.util.Objects;
  * also poisons the transaction. The message names the child machine and both bindings by their parent machine and
  * the {@code name()} of their node; it never prints an entity.
  */
+@Getter
 public final class AmbiguousParentException extends StateMachineException {
 
+    /** The machine of the child entity. */
     private final MachineKey<?, ?, ?> child;
+
+    /** The parent machines of the two active bindings, in the order the child's machine lists its bindings. */
     private final List<MachineKey<?, ?, ?>> parents;
+
+    /** The bound nodes of the two active bindings, in the same order as {@link #parents()}. */
     private final List<Enum<?>> nodes;
 
     public AmbiguousParentException(MachineKey<?, ?, ?> child, MachineKey<?, ?, ?> firstParent, Enum<?> firstNode,
@@ -28,20 +35,5 @@ public final class AmbiguousParentException extends StateMachineException {
         this.child = child;
         this.parents = List.of(firstParent, secondParent);
         this.nodes = List.of(firstNode, secondNode);
-    }
-
-    /** The machine of the child entity. */
-    public MachineKey<?, ?, ?> child() {
-        return child;
-    }
-
-    /** The parent machines of the two active bindings, in the order the child's machine lists its bindings. */
-    public List<MachineKey<?, ?, ?>> parents() {
-        return parents;
-    }
-
-    /** The bound nodes of the two active bindings, in the same order as {@link #parents()}. */
-    public List<Enum<?>> nodes() {
-        return nodes;
     }
 }

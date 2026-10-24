@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -24,15 +25,13 @@ final class SubmachineDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extend
     private record Exit<Q, T>(Q terminal, T transition) { }
 
     private final DefaultGraphBuilder<E, S, T> graph;
+    @Getter(AccessLevel.PACKAGE)
     private final S state;
+    @Getter(AccessLevel.PACKAGE)
     private final GraphDefinition<P, Q, U> child;
     private final Function<? super E, Optional<P>> childOf;
     private final Function<? super P, Optional<E>> parentOf;
     private final List<Exit<Q, T>> exits = new ArrayList<>();
-
-    S state() { return state; }
-
-    GraphDefinition<P, Q, U> child() { return child; }
 
     @Override
     public SubmachineBuilder<E, S, T, P, Q, U> exit(@NonNull Q terminal, @NonNull T transition) {

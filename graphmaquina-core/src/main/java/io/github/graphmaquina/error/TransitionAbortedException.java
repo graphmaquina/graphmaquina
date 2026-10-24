@@ -42,6 +42,9 @@ public class TransitionAbortedException extends CallFailedException {
 
     @Getter
     private final AbortDetails details;
+
+    /** RESOLVE, GUARD or ACTION: an abort always happens before the commit. */
+    @Getter
     private final CallPhase phase;
 
     /**
@@ -68,10 +71,6 @@ public class TransitionAbortedException extends CallFailedException {
         this.phase = beforeTheCommit(phase);
         this.details = details;
     }
-
-    /** RESOLVE, GUARD or ACTION: an abort always happens before the commit. */
-    @Override
-    public CallPhase phase() { return phase; }
 
     /** NONE: an abort discards the unit of work before any setter runs. */
     @Override

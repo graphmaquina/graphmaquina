@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -31,6 +33,7 @@ import lombok.NonNull;
  */
 final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> implements GraphBuilder<E, S, T> {
 
+    @Getter(AccessLevel.PACKAGE)
     private final MachineKey<E, S, T> key;
     private final S[] states;
     private final T[] catalog;
@@ -44,6 +47,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<TransitionSpec<E, S, T>> declared = new ArrayList<>();
     private final Map<S, WatchDraft<E, S, T, ?, ?, ?>> watches;
     private final List<SubmachineDraft<E, S, T, ?, ?, ?>> submachines = new ArrayList<>();
+    @Getter(AccessLevel.PACKAGE)
     private final Problems problems = new Problems();
     private boolean built;
 
@@ -57,10 +61,6 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.rejections = new EnumMap<>(key.states());
         this.watches = new EnumMap<>(key.states());
     }
-
-    Problems problems() { return problems; }
-
-    MachineKey<E, S, T> key() { return key; }
 
     /** Refuses any declaration once build() has run: nothing reads it any more, so it could only be lost. */
     private void requireUnbuilt() {

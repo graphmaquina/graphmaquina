@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A {@link MachineObserver} that keeps the outcome of every call that completed, so a test can assert about them
@@ -33,15 +35,12 @@ import lombok.NonNull;
  *
  * <p>A registry accepts any number of observers, so the recorder sits beside the test's own.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class TransitionRecorder implements MachineObserver {
 
     private final Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector;
     private final List<RecordedTransition> events = new ArrayList<>();
     private long nextSequence;
-
-    private TransitionRecorder(Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector) {
-        this.projector = projector;
-    }
 
     /** A recorder that keeps the completed calls as published, with no projection. */
     public static TransitionRecorder create() {

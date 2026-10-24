@@ -35,6 +35,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -265,19 +268,12 @@ class EngineFailureAssertionsTest {
     enum Printing { PRINT, VOID }
 
     /** Parent entity of the engine cases, written by the machine and read back by the assertions. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Parcel {
 
         private final String id;
         private ParcelStatus status;
-
-        Parcel(String id, ParcelStatus status) {
-            this.id = id;
-            this.status = status;
-        }
-
-        String id() { return id; }
-
-        ParcelStatus status() { return status; }
 
         void setStatus(ParcelStatus status) { this.status = status; }
     }
@@ -285,7 +281,9 @@ class EngineFailureAssertionsTest {
     /** Peer entity of the engine cases; its setter can be instrumented to fail phase 2. */
     static final class Label {
 
+        @Getter(AccessLevel.PACKAGE)
         private final String id;
+        @Getter(AccessLevel.PACKAGE)
         private LabelStatus status;
         private RuntimeException onWrite;
 
@@ -293,10 +291,6 @@ class EngineFailureAssertionsTest {
             this.id = id;
             this.status = status;
         }
-
-        String id() { return id; }
-
-        LabelStatus status() { return status; }
 
         void failOnWrite(RuntimeException failure) { this.onWrite = failure; }
 
@@ -346,19 +340,12 @@ class EngineFailureAssertionsTest {
     enum Step { SUBMIT, SEND_BACK, PUBLISH, ARCHIVE }
 
     /** Entity of the ping-pong machine. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Doc {
 
         private final String id;
         private Phase phase;
-
-        Doc(String id, Phase phase) {
-            this.id = id;
-            this.phase = phase;
-        }
-
-        String id() { return id; }
-
-        Phase phase() { return phase; }
 
         void setPhase(Phase phase) { this.phase = phase; }
     }

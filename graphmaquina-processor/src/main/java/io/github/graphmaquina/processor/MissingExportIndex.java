@@ -19,6 +19,8 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Finds the dependency a type was read from when that dependency's export index is missing or does not list it.
@@ -38,6 +40,7 @@ import javax.tools.StandardLocation;
  * has none, and neither has one read from this compilation's own class output, whose index the generator never reads
  * as a dependency's, or from a file javac does not keep at a path of the default file system.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class MissingExportIndex {
 
     /** Where a producer publishes its export index, beside its classes. */
@@ -49,11 +52,6 @@ final class MissingExportIndex {
 
     private final Elements elements;
     private final Filer filer;
-
-    MissingExportIndex(Elements elements, Filer filer) {
-        this.elements = elements;
-        this.filer = filer;
-    }
 
     /**
      * What a diagnostic says after naming {@code type} when the jar or the directory of classes javac read it from,

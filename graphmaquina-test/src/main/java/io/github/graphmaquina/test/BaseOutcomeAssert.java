@@ -6,7 +6,9 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Optional;
 import java.util.function.Function;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Expectations every {@link Outcome} variant shares, returning the concrete view so that a chain keeps
@@ -24,6 +26,7 @@ import lombok.NonNull;
  * @param <T> transition identifier enum of the machine
  * @param <SELF> the concrete view returned by every expectation
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         SELF extends BaseOutcomeAssert<E, S, T, SELF>> {
 
@@ -32,11 +35,6 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
 
     /** The outcome under test, null only for a view built straight from a null subject. */
     final Outcome<E, S, T> actual;
-
-    BaseOutcomeAssert(String context, Outcome<E, S, T> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     /** The concrete view, so that an inherited expectation returns the narrowed type. */
     protected abstract SELF self();

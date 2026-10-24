@@ -43,6 +43,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -61,15 +63,12 @@ class CascadeRecoveryTest {
     enum ListingChange { GO_LIVE, SUSPEND, WITHDRAW }
 
     /** A listing: its state, how many times the engine wrote it, and the log its actions and hooks append to. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Listing {
         final String id;
         ListingState state = ListingState.DRAFT;
         int stateWrites;
         final List<String> calls = new ArrayList<>();
-
-        Listing(String id) {
-            this.id = id;
-        }
     }
 
     static final MachineKey<Listing, ListingState, ListingChange> LISTINGS =

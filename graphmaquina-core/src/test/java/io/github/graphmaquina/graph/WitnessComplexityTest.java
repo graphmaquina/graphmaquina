@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -66,6 +68,7 @@ class WitnessComplexityTest {
      * A node whose hashes and equality comparisons are both counted, so that a scan relocated into a map or a
      * set is still visible and so is one relocated into a list, which costs equals and no hash at all.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class CountedNode {
 
         private static long hashes;
@@ -73,10 +76,6 @@ class WitnessComplexityTest {
         private static long equalities;
 
         private final int value;
-
-        private CountedNode(int value) {
-            this.value = value;
-        }
 
         @Override
         public int hashCode() {
@@ -97,15 +96,12 @@ class WitnessComplexityTest {
     }
 
     /** Delegates to a real set and counts how often the production code asks it for membership. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class CountingSet<N> extends AbstractSet<N> {
 
         private final Set<N> delegate;
 
         private long containsCalls;
-
-        private CountingSet(Set<N> delegate) {
-            this.delegate = delegate;
-        }
 
         @Override
         public Iterator<N> iterator() {

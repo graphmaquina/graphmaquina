@@ -3,7 +3,9 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.test.internal.Checks;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over a single {@link SubmachineStart}, obtained from {@link TypedStartsAssert#single()}
@@ -15,15 +17,11 @@ import lombok.NonNull;
  * @param <Q> state enum of the child machine
  * @param <U> transition identifier enum of the child machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class StartAssert<P, Q extends Enum<Q>, U extends Enum<U>> {
 
     private final String context;
     private final SubmachineStart<?, ?, ?> actual;
-
-    StartAssert(String context, SubmachineStart<?, ?, ?> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     /** The state the start put the child in, which is the initial state of the child's graph. */
     public StartAssert<P, Q, U> startedAt(@NonNull Q expected) {

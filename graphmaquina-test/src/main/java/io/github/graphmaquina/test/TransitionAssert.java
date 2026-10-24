@@ -10,7 +10,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over one declared edge of a graph, obtained from
@@ -24,15 +26,11 @@ import lombok.NonNull;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final TransitionSpec<E, S, T> actual;
-
-    TransitionAssert(String context, TransitionSpec<E, S, T> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     /** The destination this identifier reaches from this origin; the only reading of a target there is. */
     public TransitionAssert<E, S, T> hasTarget(@NonNull S expected) {

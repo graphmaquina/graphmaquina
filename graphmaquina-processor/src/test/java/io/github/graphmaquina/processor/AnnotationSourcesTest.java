@@ -33,6 +33,8 @@ import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -302,13 +304,10 @@ class AnnotationSourcesTest {
     }
 
     /** Runs assertions once inside a real processing environment; no process-wide mutable test state. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class Probe extends AbstractProcessor {
         private final Consumer<ProcessingEnvironment> verify;
         private boolean visited;
-
-        private Probe(Consumer<ProcessingEnvironment> verify) {
-            this.verify = verify;
-        }
 
         @Override
         public Set<String> getSupportedAnnotationTypes() {

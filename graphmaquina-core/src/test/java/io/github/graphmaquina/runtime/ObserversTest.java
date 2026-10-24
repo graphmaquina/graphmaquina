@@ -25,7 +25,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -39,14 +41,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ObserversTest {
 
     /** A warning backend that fails either its level check or its write. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class BrokenLogger implements System.Logger {
         private final boolean checking;
+        @NonNull
         private final Throwable failure;
-
-        BrokenLogger(boolean checking, @NonNull Throwable failure) {
-            this.checking = checking;
-            this.failure = failure;
-        }
 
         private void fail() {
             if (failure instanceof Error fatal) {
@@ -95,13 +94,10 @@ class ObserversTest {
     }
 
     /** Throws the same exception from every callback. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Failing implements MachineObserver {
 
         private final RuntimeException failure;
-
-        Failing(RuntimeException failure) {
-            this.failure = failure;
-        }
 
         @Override
         public void onStarted(MachineCall call) {

@@ -7,6 +7,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -33,6 +34,7 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
 
     private final String name;
     private final CallTrace trace;
+    @Getter
     private final ProbeCalls<ActionCall<E, S, T>> calls;
     private final ResponseScript<ActionOutcome> script;
     private final Object entry = new Object();
@@ -84,10 +86,6 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     public ActionProbe<E, S, T> onCall(@NonNull Consumer<TransitionContext<E, S, T>> onCall) {
         this.onCall = onCall;
         return this;
-    }
-
-    public ProbeCalls<ActionCall<E, S, T>> calls() {
-        return calls;
     }
 
     @Override

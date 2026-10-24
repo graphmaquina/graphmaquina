@@ -23,7 +23,9 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -37,31 +39,26 @@ class CascadeLogPoisonTest {
     enum Step { GO }
 
     /** A node with children to cascade to and an optional refusal expressed by {@code blocked}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Node {
+        @NonNull
         private final String name;
         private final boolean blocked;
+        @NonNull
         private final List<Node> children;
         private State state = State.A;
-
-        Node(@NonNull String name, boolean blocked, @NonNull List<Node> children) {
-            this.name = name;
-            this.blocked = blocked;
-            this.children = children;
-        }
     }
 
     /** An entity whose machine is absent from the registry. */
     static final class Missing { }
 
     /** A handler that throws the supplied Error at one selected line. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class BreakingHandler extends Handler {
+        @NonNull
         private final String target;
+        @NonNull
         private final AssertionError fatal;
-
-        BreakingHandler(@NonNull String target, @NonNull AssertionError fatal) {
-            this.target = target;
-            this.fatal = fatal;
-        }
 
         @Override public void publish(LogRecord record) {
             if (record.getMessage().contains(target)) {

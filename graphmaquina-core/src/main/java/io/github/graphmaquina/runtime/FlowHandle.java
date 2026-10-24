@@ -10,6 +10,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A handle on the flow of a call, handed to an action, checked by its owner before every operation. A post-commit
@@ -36,19 +39,13 @@ import java.util.function.Supplier;
  * </ul>
  * A handle is equal only to itself.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class FlowHandle implements FlowContext {
 
     private final Supplier<UnitOfWork> unit;
     private final Object rootEntity;
     private final CallLog log;
     private final int depth;
-
-    private FlowHandle(Supplier<UnitOfWork> unit, Object rootEntity, CallLog log, int depth) {
-        this.unit = unit;
-        this.rootEntity = rootEntity;
-        this.log = log;
-        this.depth = depth;
-    }
 
     /**
      * A writable handle on the flow of the call whose unit of work {@code unit} answers once it checked the context
@@ -161,6 +158,7 @@ final class FlowHandle implements FlowContext {
      * </ul>
      * Equal only to itself.
      */
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
     static final class Hook implements FlowContext {
 
         /** What {@link #uow} holds once the hook returned or threw: the unit of work of no call, which nothing uses. */
@@ -173,14 +171,6 @@ final class FlowHandle implements FlowContext {
         private final String hook;
         private final EntityRef hop;
         private final Thread owner = Thread.currentThread();
-
-        private Hook(UnitOfWork uow, Object rootEntity, CallLog log, String hook, EntityRef hop) {
-            this.uow = uow;
-            this.rootEntity = rootEntity;
-            this.log = log;
-            this.hook = hook;
-            this.hop = hop;
-        }
 
         /** Ends the lifetime of this handle, which lets go of the call's unit of work: its hook returned or threw. */
         void invalidate() {
@@ -261,13 +251,10 @@ final class FlowHandle implements FlowContext {
     }
 
     /** The view a guard gets: the reads of a handle, delegated, and nothing else. Equal only to itself. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class ReadOnly implements FlowView {
 
         private final FlowHandle handle;
-
-        private ReadOnly(FlowHandle handle) {
-            this.handle = handle;
-        }
 
         @Override
         public <V> Optional<V> get(FlowKey<V> key) {

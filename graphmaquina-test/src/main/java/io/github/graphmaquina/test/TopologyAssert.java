@@ -5,7 +5,9 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over the reachability graph of a definition, obtained from
@@ -17,15 +19,11 @@ import lombok.NonNull;
  *
  * @param <S> state enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TopologyAssert<S extends Enum<S>> {
 
     private final String context;
     private final Graph<S> actual;
-
-    TopologyAssert(String context, Graph<S> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     /** The nodes are every declared state, whether or not any edge reaches them. */
     public TopologyAssert<S> hasNodesExactly(@NonNull Set<S> expected) {

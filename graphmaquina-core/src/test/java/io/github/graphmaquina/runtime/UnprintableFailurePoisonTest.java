@@ -36,6 +36,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -58,12 +60,9 @@ class UnprintableFailurePoisonTest {
     }
 
     /** A failure whose message read throws an Error. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class FatalMessage extends RuntimeException {
         private final AssertionError fatal;
-
-        FatalMessage(AssertionError fatal) {
-            this.fatal = fatal;
-        }
 
         @Override
         public String getMessage() {
@@ -72,12 +71,9 @@ class UnprintableFailurePoisonTest {
     }
 
     /** An Error whose message read throws {@link #printing}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class UnprintableError extends Error {
         private final AssertionError printing;
-
-        UnprintableError(AssertionError printing) {
-            this.printing = printing;
-        }
 
         @Override
         public String getMessage() {
@@ -86,13 +82,10 @@ class UnprintableFailurePoisonTest {
     }
 
     /** An identity that compares by name and whose printing is decided by {@link #print}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class PrintedId {
         private final String name;
         private Runnable print = () -> { };
-
-        PrintedId(String name) {
-            this.name = name;
-        }
 
         @Override
         public boolean equals(Object other) {

@@ -7,6 +7,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.Getter;
 import lombok.NonNull;
 
 /**
@@ -28,6 +29,7 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
 
     private final String name;
     private final CallTrace trace;
+    @Getter
     private final ProbeCalls<GuardCall<E, S, T>> calls;
     private final ResponseScript<GuardResult> script;
     private final Object entry = new Object();
@@ -79,10 +81,6 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     public GuardProbe<E, S, T> onCall(@NonNull Consumer<GuardContext<E, S, T>> onCall) {
         this.onCall = onCall;
         return this;
-    }
-
-    public ProbeCalls<GuardCall<E, S, T>> calls() {
-        return calls;
     }
 
     @Override

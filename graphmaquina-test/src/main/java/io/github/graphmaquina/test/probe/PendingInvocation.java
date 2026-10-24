@@ -3,7 +3,10 @@ package io.github.graphmaquina.test.probe;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * One invocation of a controlled asynchronous fixture, held open until the test answers it. The fixture
@@ -19,19 +22,14 @@ import lombok.NonNull;
  * @param <C> what the fixture recorded about the call: an {@link ActionCall} or a {@link GuardCall}
  * @param <R> what the engine is waiting for: an {@code ActionOutcome} or a {@code GuardResult}
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class PendingInvocation<C, R> {
 
+    /** What the fixture read from the live context on entry; the context itself is deliberately not kept. */
+    @Getter
+    @NonNull
     private final C call;
     private final CompletableFuture<R> stage = new CompletableFuture<>();
-
-    PendingInvocation(@NonNull C call) {
-        this.call = call;
-    }
-
-    /** What the fixture read from the live context on entry; the context itself is deliberately not kept. */
-    public C call() {
-        return call;
-    }
 
     public boolean complete(@NonNull R response) {
         return stage.complete(response);

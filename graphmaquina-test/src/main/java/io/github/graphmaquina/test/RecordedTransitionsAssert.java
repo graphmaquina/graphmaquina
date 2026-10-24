@@ -6,7 +6,9 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable assertion over the completed calls a {@link TransitionRecorder} recorded, obtained from
@@ -16,15 +18,12 @@ import lombok.NonNull;
  * contract, and the list was copied out of the recorder when the view was built, so calls that
  * complete afterwards are not seen by this view.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class RecordedTransitionsAssert {
 
     private static final String CONTEXT = "recorded transitions";
 
     private final List<RecordedTransition> actual;
-
-    RecordedTransitionsAssert(List<RecordedTransition> actual) {
-        this.actual = actual;
-    }
 
     public RecordedTransitionsAssert hasSize(int expected) {
         Checks.equal(CONTEXT, "size", expected, actual.size());

@@ -2,7 +2,9 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.test.internal.Checks;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over a {@link Reaction.Aborted}, obtained from
@@ -16,15 +18,11 @@ import lombok.NonNull;
  * @param <S> state enum of the machine the reaction was selected for
  * @param <T> transition identifier enum of that machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class AbortedReactionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final Reaction.Aborted aborted;
-
-    AbortedReactionAssert(String context, Reaction.Aborted aborted) {
-        this.context = context;
-        this.aborted = aborted;
-    }
 
     /** Satisfied by any cause the type accepts, subclasses included. */
     public AbortedReactionAssert<E, S, T> hasCause(@NonNull Class<? extends Throwable> expected) {
