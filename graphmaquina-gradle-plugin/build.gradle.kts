@@ -130,4 +130,29 @@ tasks.test {
     )
     // The fixture publishes and resolves every StateGraph artifact at the version this build resolved.
     systemProperty("graphmaquina.version", project.version.toString())
+    // The fixtures also resolve core, the generator and the processor, which only the root build publishes. From the
+    // root, the tests depend on those publications; the provider defers the lookup until the root's projects are
+    // configured, after this build. Alone, with -p, there is no root build and they must already be staged.
+    val siblings = listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor")
+    val release = project.version.toString()
+    val staged = layout.projectDirectory.dir("../build/adapter-test-repository/io/github/graphmaquina")
+    gradle.parent?.let { root ->
+        dependsOn(provider {
+            siblings.map {
+                root.rootProject.project(":$it").tasks.named("publishMavenPublicationToAdapterTestsRepository").get()
+            }
+        })
+    }
+    // Their files at this version, so a change to any of them within one commit runs the tests again. Not the module
+    // directories: their maven-metadata.xml changes on every publication.
+    inputs.files(siblings.map { staged.dir("$it/$release") }).withPropertyName("siblingArtifacts")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    val jars = siblings.associateWith { staged.file("$it/$release/$it-$release.jar").asFile }
+    doFirst {
+        val missing = jars.filterValues { !it.isFile }.keys
+        check(missing.isEmpty()) {
+            "${missing.joinToString()} $release not staged in build/adapter-test-repository; run ./gradlew " +
+                siblings.joinToString(" ") { ":$it:publishMavenPublicationToAdapterTestsRepository" } + " first"
+        }
+    }
 }
