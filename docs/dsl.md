@@ -189,7 +189,9 @@ Both builders are single-use and not thread-safe: once a `build()` succeeds, eve
 `IllegalStateException`, while a `build()` that fails consumes nothing, so the build can be fixed and run again.
 Their methods refuse a null argument with `NullPointerException`.
 `build()` also throws `IllegalStateException` for a machine without `state(getter, setter)`, for a machine without
-`identity(...)` within a registry, and for a watch whose peer the registry does not hold; a second `as(...)` and an
+`identity(...)` within a registry, for a watch whose peer the registry does not hold, and for one facade type given
+to two machines of a registry, which only raw types can pass since `as(...)` takes a facade of the machine's own
+key; a second `as(...)` and an
 `add` of a key already in the registry throw it at once. A standalone machine reaches only its own key and facade as
 peers and refuses a watch on another machine.
 
