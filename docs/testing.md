@@ -61,6 +61,9 @@ Its POM pins `graphmaquina-core` at its own version, which is why the
     -PgraphmaquinaVersion=<the version you want to resolve>
 ```
 
+Until the pages are reorganized to its limits, this command stops at the
+[documentation check](guide.md#build-verify-and-release-this-repository).
+
 A Gradle build then needs `mavenLocal()` among the repositories it uses for test dependencies, as the
 quickstart's [settings.gradle.kts](guide.md#settingsgradlekts) declares; Maven reads that repository
 itself and needs no declaration. Inside this repository no publication is needed at all:

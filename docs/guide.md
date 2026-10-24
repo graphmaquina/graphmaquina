@@ -255,7 +255,7 @@ module the same way.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). These commands and the local install in [Configure Gradle](#configure-gradle) first run the [size and complexity checks](#build-verify-and-release-this-repository), which the code passes. |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). These commands and the local install in [Configure Gradle](#configure-gradle) first run the [size and complexity checks](#build-verify-and-release-this-repository), which the code passes, and the [documentation check](#build-verify-and-release-this-repository), which currently stops them: the pages are not yet reorganized to its limits. |
 | README quickstart | [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Compiled and run through Gradle against locally staged artifacts: `AsyncApp` printed the output documented below it. It is not covered by an automated consumer check and was not re-run through Maven. |
 | Remaining acceptance work | Manual IntelliJ acceptance, a rerun of the async guide through both build tools, and full strict-lint acceptance of the external payments demo remain pending. |
@@ -294,6 +294,9 @@ from a single property:
     :graphmaquina-test:publishToMavenLocal \
     :graphmaquina-gradle-plugin:publishToMavenLocal
 ```
+
+Until the pages are reorganized to its limits, this command stops at the
+[documentation check](#build-verify-and-release-this-repository).
 
 That writes the runtime, the generator, the processor, the testing module, the Gradle plugin and the plugin
 marker under `~/.m2/repository`. Gradle does not read that directory unless a build asks it to, which is why
@@ -4286,6 +4289,20 @@ code to 5, 40 and 500. Both profiles also limit a record to 150 statements. A vi
 `javac` runs and prints its file and line. The fix is to split the code into smaller methods or classes, or to
 wrap a long line: the rules honor no `@SuppressWarnings`, no `// CHECKSTYLE:OFF` comment and no exemption
 list.
+
+Every Java compilation of the root build's modules also first runs `checkDocs`, the documentation check, over
+`README.md` and the Markdown files under `docs/`. A page has at most 500 lines and 40 960 bytes; a page over 100 lines
+opens with a list that links its `##` headings in order; a section, from one heading to the next, has at most 150
+lines; a page has exactly one `#` heading, as its first, and no heading more than one level below the one before it;
+`docs/README.md` links every page under `docs/`; and every relative link and anchor resolves. The links are checked by
+[lychee](https://github.com/lycheeverse/lychee) 0.24, which must be on the `PATH` (`brew install lychee`,
+`cargo install lychee` or a release binary); without it, or with another version, the check stops the build and says
+so. A violation stops the build with its file and line. The fix is to split the page or section, add the contents list
+or the index link, or fix the heading or link, never to raise a limit. The check's own tests run whenever `buildSrc` is
+built; those that need lychee are skipped without it. The pages do not meet these rules yet: `docs/guide.md`,
+`docs/testing.md` and `docs/typed-annotations-build.md` are over the limits and `docs/README.md` does not exist, so
+every command that compiles the root build, the release commands included, stops at this check until the pages are
+reorganized.
 
 The Gradle plugin is a separate included build that the root build compiles first, so a violation in its main
 sources stops the root build before any module is checked. While such a violation stands, every Gradle command of

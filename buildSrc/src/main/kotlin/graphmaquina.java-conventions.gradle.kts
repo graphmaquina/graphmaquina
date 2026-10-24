@@ -18,6 +18,8 @@ java {
 
 // Size and complexity checks run before every Java compilation; the script is shared with the included plugin build.
 apply(from = rootDir.resolve("config/checkstyle/checkstyle.gradle.kts"))
+// The documentation checks run before every Java compilation too; the root project registers the task.
+tasks.withType<JavaCompile>().configureEach { dependsOn(":checkDocs") }
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"

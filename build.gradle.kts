@@ -1,3 +1,4 @@
+import io.github.graphmaquina.buildlogic.docs.DocsCheck
 import java.security.MessageDigest
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -76,4 +77,14 @@ tasks.register<Zip>("centralBundle") {
     includeEmptyDirs = false
     archiveFileName = "graphmaquina-central-bundle.zip"
     destinationDirectory = layout.buildDirectory
+}
+
+// Size and navigation limits for the public Markdown docs, checked before every Java compilation of this build
+// (see the Java conventions); the rules and their limits live in buildSrc's io.github.graphmaquina.buildlogic.docs.
+tasks.register("checkDocs") {
+    group = "verification"
+    description = "Checks README.md and docs/ against the documentation size, structure and link rules"
+    doNotTrackState("Links point at files outside the checked pages, so the check runs every time")
+    val root: File = rootDir
+    doLast { DocsCheck.verify(root) }
 }

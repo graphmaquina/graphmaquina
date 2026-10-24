@@ -52,6 +52,9 @@ Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD
 ./gradlew centralBundle
 ```
 
+Until the pages are reorganized to its limits, this command stops at the
+[documentation check](guide.md#build-verify-and-release-this-repository).
+
 This stages the five library and Maven publications plus the Gradle plugin and its marker, then validates the
 expected artifacts, POM metadata, signature files and MD5/SHA-1 checksums. Central staging refuses to run
 without `SIGNING_KEY`; local and adapter-test repositories still support unsigned development builds.
@@ -78,6 +81,10 @@ choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina
           :graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal
 ./gradlew -PgraphmaquinaVersion=x.y.z -p graphmaquina-gradle-plugin publishToMavenLocal  # the plugin jar and its marker
 ```
+
+Until the pages are reorganized to its limits, the first command stops at the
+[documentation check](guide.md#build-verify-and-release-this-repository); the second builds only the plugin and does
+not run it.
 
 The second command is a separate invocation because the Gradle adapter is an included build. It installs both
 `io.github.graphmaquina:graphmaquina-gradle-plugin` and the marker `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is
