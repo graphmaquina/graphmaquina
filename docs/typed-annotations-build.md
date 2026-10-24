@@ -53,43 +53,23 @@ type-checks the application; no previously compiled machine is required.
 
 ## Where the artifacts come from
 
-GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which is all a consumer of a release
-needs.
-The rest of this section covers two other cases: testing a build that is not released yet, and serving
-every component, including the Gradle implementation and its marker, from an internal repository. The source
-repository is private and requires authorized access; the published artifacts are public.
-See the [guide](installation.md#configure-gradle) for a complete consumer configuration.
+GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which is all a consumer needs: set the
+latest version once, as `graphmaquinaVersion` or `graphmaquina.version`. See the
+[guide](installation.md#configure-gradle) for a complete consumer configuration. The source repository is private
+and requires authorized access; the published artifacts are public.
 
-To test local changes, publish from an authorized checkout of this repository, under a version string of your
-choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina.version`:
+A build that resolves its dependencies through an internal repository, such as a mirror of Maven Central, needs
+every component there, including the Gradle implementation and its marker
+`io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is what
+`plugins { id("io.github.graphmaquina") version … }` resolves.
 
-```bash
-./gradlew -PgraphmaquinaVersion=x.y.z \
-          :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal \
-          :graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal \
-          :graphmaquina-gradle-plugin:publishToMavenLocal
-```
-
-The command compiles the root build's modules, so it first runs the
-[documentation check](repository-build.md#build-verify-and-release-this-repository), which needs lychee 0.24 on the
-`PATH`. The Gradle adapter is an included build, which the root build reaches as `:graphmaquina-gradle-plugin`, and
-`-PgraphmaquinaVersion` applies to it too. Its task installs both
-`io.github.graphmaquina:graphmaquina-gradle-plugin` and the marker `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is
-what `plugins { id("io.github.graphmaquina") version … }` resolves; `./gradlew -PgraphmaquinaVersion=x.y.z -p
-graphmaquina-gradle-plugin publishToMavenLocal` installs the same two alone, without the documentation check. Add
-`:graphmaquina-test:publishToMavenLocal` to the command when the consumer's tests use the testing module. To publish to a file or internal repository
-instead, declare that repository in the publishing configuration of each module, `graphmaquina-gradle-plugin` included,
-then run `publishAllPublicationsTo<Name>Repository` and `:graphmaquina-gradle-plugin:publishAllPublicationsTo<Name>Repository`:
-the Gradle adapter is an included build, which a bare task name does not reach, and the build itself declares only its
-`adapterTests` and `centralStaging` repositories.
-
-**Gradle** does not read the local Maven repository unless it is declared, and the plugin marker is resolved
-through `pluginManagement`, so a consumer's `settings.gradle.kts` needs both halves:
+**Gradle** resolves the plugin marker through `pluginManagement`, so a consumer's `settings.gradle.kts` declares
+the internal repository in both halves:
 
 ```kotlin
 pluginManagement {
     repositories {
-        mavenLocal()          // development builds only; omit for public release verification
+        maven { url = uri("https://repo.example.com/maven") }  // the internal repository
         mavenCentral()
         gradlePluginPortal()
     }
@@ -100,7 +80,7 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        mavenLocal()
+        maven { url = uri("https://repo.example.com/maven") }
         mavenCentral()
     }
 }
@@ -109,30 +89,27 @@ dependencyResolutionManagement {
 A `plugins` block in a build script cannot interpolate a version, so the plugin request declares it here,
 from the `graphmaquinaVersion` property the consumer sets in `gradle.properties`.
 
-**Maven** consults the local repository first, so artifacts installed with `publishToMavenLocal` need no
-declaration at all. A file or internal repository does need one — either in the POM:
+**Maven** needs the internal repository declared too, either in the POM:
 
 ```xml
 <repositories>
   <repository>
-    <id>graphmaquina-local</id>
-    <url>file:///…/adapter-test-repository</url>
-    <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+    <id>internal</id>
+    <url>https://repo.example.com/maven</url>
   </repository>
 </repositories>
 <pluginRepositories>
   <pluginRepository>
-    <id>graphmaquina-local</id>
-    <url>file:///…/adapter-test-repository</url>
-    <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+    <id>internal</id>
+    <url>https://repo.example.com/maven</url>
   </pluginRepository>
 </pluginRepositories>
 ```
 
 or, without touching the POM, in an active profile of a `settings.xml` passed with `mvn -s`. Both halves are
 needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `graphmaquina-maven-plugin`.
-A republished release number must be deleted from the local `~/.m2` repository first — `updatePolicy` governs
-snapshot lookups, and Maven keeps serving whatever release artifact it already resolved there regardless of it.
+Maven keeps serving a release artifact it already resolved into the local `~/.m2` repository, so a release number
+republished to that repository must be deleted from `~/.m2` first.
 
 ## Gradle
 

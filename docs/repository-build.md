@@ -1,14 +1,15 @@
 # Build, verify and release this repository
 
 This page is for maintainers of GraphMaquina itself: the commands that verify the repository, the checks that run
-before every compilation, and the release to Maven Central. Applications that resolve a release from Maven Central
-need none of it.
+before every compilation, how to publish a build that is not released, and the release to Maven Central.
+Applications that resolve a release from Maven Central need none of it.
 
 ## Contents
 
 - [Verification commands](#verification-commands)
 - [Size and complexity checks](#size-and-complexity-checks)
 - [Documentation check](#documentation-check)
+- [Publish an unreleased build](#publish-an-unreleased-build)
 - [Release to Maven Central](#release-to-maven-central)
 
 ## Verification commands
@@ -90,6 +91,60 @@ release binary); without it, or with another version, the check stops the build 
 build with its file and line. The fix is to split the page or section, add the contents list or the index link, or
 fix the heading or link, never to raise a limit. The check's own tests run whenever `buildSrc` is built; those that
 need lychee are skipped unless lychee 0.24 is installed. The check runs alone with `./gradlew checkDocs`.
+
+## Publish an unreleased build
+
+To try changes that are not released in an application, publish them from a checkout of this repository into the
+local Maven repository, under a version string of your choice, and set that version as the application's
+`graphmaquinaVersion` or `graphmaquina.version`:
+
+```bash
+./gradlew -PgraphmaquinaVersion=x.y.z \
+    :graphmaquina-core:publishToMavenLocal \
+    :graphmaquina-codegen:publishToMavenLocal \
+    :graphmaquina-processor:publishToMavenLocal \
+    :graphmaquina-test:publishToMavenLocal \
+    :graphmaquina-maven-plugin:publishToMavenLocal \
+    :graphmaquina-gradle-plugin:publishToMavenLocal
+```
+
+That writes the runtime, the generator, the processor, the testing module, the Maven plugin, the Gradle plugin and
+the plugin marker under `~/.m2/repository`. The command compiles the root build's modules, so it first runs the
+[size, complexity](#size-and-complexity-checks) and [documentation](#documentation-check) checks; the documentation
+check needs lychee 0.24 on the `PATH`. The Gradle adapter is an included build, which the root build reaches as
+`:graphmaquina-gradle-plugin`, and `-PgraphmaquinaVersion` applies to it too; `./gradlew -PgraphmaquinaVersion=x.y.z
+-p graphmaquina-gradle-plugin publishToMavenLocal` publishes the plugin and its marker alone, without the
+documentation check.
+
+Gradle does not read the local Maven repository unless a build declares it, so the application's
+`settings.gradle.kts` adds `mavenLocal()` to both halves:
+
+```kotlin
+pluginManagement {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+}
+```
+
+Maven reads `~/.m2/repository` as its local repository, so a POM needs no declaration. Remove `mavenLocal()` when
+the application goes back to a release.
+
+To serve a build from a file or internal repository instead, declare that repository in the publishing
+configuration of each module, `graphmaquina-gradle-plugin` included, then run
+`publishAllPublicationsTo<Name>Repository` and `:graphmaquina-gradle-plugin:publishAllPublicationsTo<Name>Repository`:
+the Gradle adapter is an included build, which a bare task name does not reach, and the build itself declares only
+its `adapterTests` and `centralStaging` repositories. The adapter's publication carries both
+`io.github.graphmaquina:graphmaquina-gradle-plugin` and the marker `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`.
 
 ## Release to Maven Central
 

@@ -112,7 +112,7 @@ time; each page links the next one in that order.
 
 | Page | What it covers |
 | --- | --- |
-| [Build, verify and release this repository](repository-build.md) | Verification commands, the size, complexity and documentation checks, the Central release |
+| [Build, verify and release this repository](repository-build.md) | Verification commands, the size, complexity and documentation checks, publishing an unreleased build, the Central release |
 | [Release signing](release-signing.md) | The signing key, verifying a release, signing with 1Password CLI |
 
 ## Illustrations
