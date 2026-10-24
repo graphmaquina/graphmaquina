@@ -40,8 +40,9 @@ class LycheeTest {
         val failure: GradleException =
             assertThrows(GradleException::class.java) { Lychee.requireVersion(temp.resolve("absent").path) }
         assertEquals(
-            "The documentation check needs lychee 0.24 on the PATH. Install it with 'brew install lychee' or " +
-                "'cargo install lychee', or download a release from https://github.com/lycheeverse/lychee/releases.",
+            "The documentation check needs lychee 0.24 on the PATH. Install it with " +
+                "'cargo install lychee --locked --version 0.24.2', with 'brew install lychee' while Homebrew ships " +
+                "0.24, or from https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2.",
             failure.message,
         )
     }
@@ -53,7 +54,7 @@ class LycheeTest {
         }
         val message: String = failure.message ?: ""
         assertTrue(message.startsWith("The documentation check needs lychee 0.24, found 0.23.1."), message)
-        assertTrue(message.contains("'brew install lychee'"), message)
+        assertTrue(message.contains("'cargo install lychee --locked --version 0.24.2'"), message)
     }
 
     @Test
@@ -91,6 +92,32 @@ class LycheeTest {
             "- [9](#local-heading)", "- [10](a.md)", "",
         ).joinToString("\n"))
         assertEquals(listOf<Violation>(), Lychee.brokenLinks(temp, listOf("docs/a.md", "docs/b.md"), "lychee"))
+    }
+
+    @Test
+    fun reportsRootRelativeLinksInsteadOfFailing() {
+        assumeLychee()
+        write(temp, "docs/a.md", "# A\n")
+        write(temp, "docs/b.md", "# B\n\n[x](/docs/a.md)\n")
+        assertEquals(
+            listOf(
+                "docs/b.md:3: links Error building URL for \"/docs/a.md\" (Attribute: Some(\"href\")): " +
+                    "Cannot resolve root-relative link '/docs/a.md'",
+            ),
+            Lychee.brokenLinks(temp, listOf("docs/a.md", "docs/b.md"), "lychee").map { it.toString() },
+        )
+    }
+
+    @Test
+    fun ignoresLycheeConfigurationInTheRoot() {
+        assumeLychee()
+        write(temp, ".lycheeignore", ".*\n")
+        write(temp, "lychee.toml", "exclude = [\".*\"]\n")
+        write(temp, "docs/a.md", "# A\n\n[x](missing.md)\n")
+        assertEquals(
+            listOf("docs/a.md:3: links File not found. Check if file exists and path is correct: docs/missing.md"),
+            Lychee.brokenLinks(temp, listOf("docs/a.md"), "lychee").map { it.toString() },
+        )
     }
 
     @Test

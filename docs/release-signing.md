@@ -58,7 +58,8 @@ op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
 ```
 
 Until the pages are reorganized to its limits, the publication, `test` and `centralBundle` commands above stop at the
-[documentation check](guide.md#build-verify-and-release-this-repository).
+[documentation check](guide.md#build-verify-and-release-this-repository); `:graphmaquina-gradle-plugin:test` does not
+run it.
 
 The resulting `build/graphmaquina-central-bundle.zip` contains six modules and the Gradle plugin marker.
 The build checks metadata, required files and checksums. Before uploading, independently verify every
