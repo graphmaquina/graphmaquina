@@ -1,8 +1,8 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.MachineKey;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * One tracked entity whose observed state differs from the one {@link StateSnapshot.Builder#capture()} froze.
@@ -15,13 +15,9 @@ import java.util.Optional;
  * @param before the state observed when the snapshot was captured, empty when the getter observed none
  * @param after the state observed when the change was read, empty when the getter observed none
  */
-public record StateChange(MachineKey<?, ?, ?> key, Object entity, Optional<Enum<?>> before,
-                          Optional<Enum<?>> after) {
+public record StateChange(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Optional<Enum<?>> before,
+                          @NonNull Optional<Enum<?>> after) {
 
     public StateChange {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(before, "before");
-        Objects.requireNonNull(after, "after");
     }
 }

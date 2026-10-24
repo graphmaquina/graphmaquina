@@ -40,6 +40,8 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -62,12 +64,9 @@ class CheckedBackendFailureTest {
     }
 
     /** A java.util.logging handler that throws an undeclared IOException on the records that contain its target. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class FailingHandler extends Handler {
         private final String target;
-
-        FailingHandler(String target) {
-            this.target = target;
-        }
 
         @Override
         public void publish(LogRecord record) {
@@ -84,12 +83,9 @@ class CheckedBackendFailureTest {
     }
 
     /** A System.Logger whose level check or whose write throws an undeclared IOException. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class FailingLogger implements System.Logger {
         private final boolean checking;
-
-        FailingLogger(boolean checking) {
-            this.checking = checking;
-        }
 
         @Override
         public String getName() {

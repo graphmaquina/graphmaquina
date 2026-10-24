@@ -6,7 +6,9 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable assertion over the completed calls a {@link TransitionRecorder} recorded, obtained from
@@ -16,15 +18,12 @@ import java.util.Objects;
  * contract, and the list was copied out of the recorder when the view was built, so calls that
  * complete afterwards are not seen by this view.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class RecordedTransitionsAssert {
 
     private static final String CONTEXT = "recorded transitions";
 
     private final List<RecordedTransition> actual;
-
-    RecordedTransitionsAssert(List<RecordedTransition> actual) {
-        this.actual = actual;
-    }
 
     public RecordedTransitionsAssert hasSize(int expected) {
         Checks.equal(CONTEXT, "size", expected, actual.size());
@@ -57,9 +56,7 @@ public final class RecordedTransitionsAssert {
 
     /** Selects by key and by entity identity; an entity with no calls yields an empty view, not a failure. */
     public <E, S extends Enum<S>, T extends Enum<T>> OutcomeSequenceAssert<E, S, T> forEntity(
-            MachineKey<E, S, T> key, E entity) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
+            @NonNull MachineKey<E, S, T> key, @NonNull E entity) {
         List<Outcome<E, S, T>> selected = actual.stream()
                 .filter(recorded -> recorded.key().equals(key) && recorded.outcome().entity() == entity)
                 .map(recorded -> CheckedTypes.outcome(key, recorded.outcome()))

@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -93,6 +95,7 @@ class UnprintableConstantTest {
     static final MachineKey<Paper, Seal, SealMove> SEALS = MachineKey.of(Paper.class, Seal.class, SealMove.class);
 
     /** A paper, with its stage and its seal; it prints by id. */
+    @Getter(AccessLevel.PACKAGE)
     static final class Paper {
         private final String id;
         private Stage stage;
@@ -103,13 +106,7 @@ class UnprintableConstantTest {
             this.stage = stage;
         }
 
-        String id() { return id; }
-
-        Stage stage() { return stage; }
-
         void setStage(Stage stage) { this.stage = stage; }
-
-        Seal seal() { return seal; }
 
         void setSeal(Seal seal) { this.seal = seal; }
 

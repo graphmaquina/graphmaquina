@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -87,15 +89,12 @@ class CycleComplexityTest {
     }
 
     /** A node whose hashes are counted, so that a scan relocated into a map or a set is still visible. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class CountedNode {
 
         private static long hashes;
 
         private final int value;
-
-        private CountedNode(int value) {
-            this.value = value;
-        }
 
         @Override
         public int hashCode() {

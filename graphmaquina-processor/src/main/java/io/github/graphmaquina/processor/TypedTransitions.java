@@ -17,6 +17,8 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeMirror;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Normalizes one {@code Transition} of the generated vocabulary into the {@link TransitionModel} the generators
@@ -40,6 +42,7 @@ import javax.lang.model.type.TypeMirror;
  * before annotation processing when an enum constant cannot be resolved. Unreadable class values are omitted from
  * both an edge's own failsOn and each rule's failsOn; retained types and annotation values stay aligned.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class TypedTransitions {
 
     private static final String DUPLICATE_GUARD = "SG105";
@@ -49,15 +52,6 @@ final class TypedTransitions {
     private final TypedTimeouts timeouts;
     private final Annotations annotations;
     private final Diagnostics diagnostics;
-
-    TypedTransitions(StructuralChecks structure, SymbolResolver symbols, TypedTimeouts timeouts,
-            Annotations annotations, Diagnostics diagnostics) {
-        this.structure = structure;
-        this.symbols = symbols;
-        this.timeouts = timeouts;
-        this.annotations = annotations;
-        this.diagnostics = diagnostics;
-    }
 
     /**
      * The identifier {@code mirror} declares, or empty when javac could not read it as a constant of

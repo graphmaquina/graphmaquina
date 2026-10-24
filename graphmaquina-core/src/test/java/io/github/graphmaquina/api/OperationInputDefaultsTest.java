@@ -122,9 +122,9 @@ class OperationInputDefaultsTest {
     @Test void theSpiRefusesANullInputAndNeverDropsPayload() {
         Object e = new Object();
         PlainMachine machine = new PlainMachine();
-        assertEquals("input",
+        assertEquals("input is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> machine.execute(e, T.GO, null)).getMessage());
-        assertEquals("input",
+        assertEquals("input is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> machine.async().execute(e, T.GO, null)).getMessage());
         assertThrows(UnsupportedOperationException.class, () -> machine.execute(e, T.GO, "value"));
         CompletableFuture<Outcome<Object, S, T>> future = machine.async().execute(e, T.GO, "value");

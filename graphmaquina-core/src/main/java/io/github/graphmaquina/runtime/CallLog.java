@@ -11,6 +11,9 @@ import java.lang.System.Logger.Level;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The log of one call, written through {@code System.getLogger("io.github.graphmaquina.runtime")}, at DEBUG and
@@ -33,6 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *       thread again. An Error propagates.</li>
  * </ul>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class CallLog {
 
     static final String LOGGER_NAME = "io.github.graphmaquina.runtime";
@@ -42,23 +46,22 @@ final class CallLog {
     static final CallLog OFF = new CallLog(LOGGER, false, false, 0, 0, Optional.empty());
 
     private final Logger logger;
+    @Getter(AccessLevel.PACKAGE)
     private final boolean debug;
+    @Getter(AccessLevel.PACKAGE)
     private final boolean trace;
+
+    /** Greater than 0 when this call logs, at DEBUG or TRACE; 0 for {@link #OFF}. */
+    @Getter(AccessLevel.PACKAGE)
     private final long id;
+
+    /** The {@code System.nanoTime()} read when the log opened, which {@code elapsed} counts from; 0 for OFF. */
+    @Getter(AccessLevel.PACKAGE)
     private final long startNanos;
     /** The id of the call whose commit triggered this watch reaction, when that call logged. */
     private final Optional<Long> trigger;
     /** The root entity's reference, once the engine registered it; kept only by a call that logs at DEBUG. */
     private Optional<EntityRef> entity = Optional.empty();
-
-    private CallLog(Logger logger, boolean debug, boolean trace, long id, long startNanos, Optional<Long> trigger) {
-        this.logger = logger;
-        this.debug = debug;
-        this.trace = trace;
-        this.id = id;
-        this.startNanos = startNanos;
-        this.trigger = trigger;
-    }
 
     /** Opens the log of a call on the runtime logger; {@code trigger} as in {@link #open(Logger, Optional)}. */
     static CallLog open(Optional<Long> trigger) {
@@ -90,16 +93,6 @@ final class CallLog {
             return false;
         }
     }
-
-    boolean debug() { return debug; }
-
-    boolean trace() { return trace; }
-
-    /** Greater than 0 when this call logs, at DEBUG or TRACE; 0 for {@link #OFF}. */
-    long id() { return id; }
-
-    /** The {@code System.nanoTime()} read when the log opened, which {@code elapsed} counts from; 0 for OFF. */
-    long startNanos() { return startNanos; }
 
     /** Logs {@code call=<id> } followed by {@code text} at DEBUG, if this call logs at DEBUG. */
     void debug(String text) {

@@ -3,6 +3,8 @@ package io.github.graphmaquina.processor;
 import java.time.Duration;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Reads the timeout of a transition as the two fields a {@link Duration} is built from: whole seconds and a
@@ -18,6 +20,7 @@ import javax.lang.model.element.AnnotationMirror;
  * when the nanosecond adjustment moves the seconds out of the range of a {@code long}, which an adjustment from 0
  * to 999,999,999 never does, so the range check of the adjustment refuses every pair it would overflow on.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class TypedTimeouts {
 
     private static final String INVALID = "SG511";
@@ -25,11 +28,6 @@ final class TypedTimeouts {
 
     private final Annotations annotations;
     private final Diagnostics diagnostics;
-
-    TypedTimeouts(Annotations annotations, Diagnostics diagnostics) {
-        this.annotations = annotations;
-        this.diagnostics = diagnostics;
-    }
 
     /**
      * The duration {@code timeout} spells, or empty after reporting {@code SG511} when it is not a positive one;

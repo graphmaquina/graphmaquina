@@ -49,6 +49,9 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.stream.LongStream;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -580,17 +583,12 @@ class TransitionRecorderTest {
     enum Loading { LOAD }
 
     /** Entity that compares equal to any other twin carrying the same id, so identity and equality differ. */
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Twin {
 
         private final String id;
+        @Getter(AccessLevel.PACKAGE)
         private State state;
-
-        Twin(String id, State state) {
-            this.id = id;
-            this.state = state;
-        }
-
-        State state() { return state; }
 
         void setState(State state) { this.state = state; }
 
@@ -606,27 +604,19 @@ class TransitionRecorderTest {
     }
 
     /** Owner entity of the engine cases; its parcels register themselves as they are built. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Shipment {
 
         private final String id;
         private final List<Parcel> parcels = new ArrayList<>();
         private ShipmentStatus status;
 
-        Shipment(String id, ShipmentStatus status) {
-            this.id = id;
-            this.status = status;
-        }
-
-        String id() { return id; }
-
-        List<Parcel> parcels() { return parcels; }
-
-        ShipmentStatus status() { return status; }
-
         void setStatus(ShipmentStatus status) { this.status = status; }
     }
 
     /** Peer entity of the engine cases: moving one re-evaluates its shipment. */
+    @Getter(AccessLevel.PACKAGE)
     static final class Parcel {
 
         private final String id;
@@ -639,12 +629,6 @@ class TransitionRecorderTest {
             this.shipment = shipment;
             shipment.ifPresent((Shipment owner) -> owner.parcels().add(this));
         }
-
-        String id() { return id; }
-
-        Optional<Shipment> shipment() { return shipment; }
-
-        ParcelStatus status() { return status; }
 
         void setStatus(ParcelStatus status) { this.status = status; }
     }

@@ -5,9 +5,10 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * A {@link TransitionGuard} whose verdicts are written by the test instead of by a domain. It behaves exactly
@@ -28,6 +29,7 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
 
     private final String name;
     private final CallTrace trace;
+    @Getter
     private final ProbeCalls<GuardCall<E, S, T>> calls;
     private final ResponseScript<GuardResult> script;
     private final Object entry = new Object();
@@ -45,10 +47,8 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
      * the graph gives this guard if the trace is to read like the graph. A null argument raises
      * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
      */
-    public static <E, S extends Enum<S>, T extends Enum<T>> GuardProbe<E, S, T> create(String name,
-            CallTrace trace) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(trace, "trace");
+    public static <E, S extends Enum<S>, T extends Enum<T>> GuardProbe<E, S, T> create(@NonNull String name,
+            @NonNull CallTrace trace) {
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
@@ -56,22 +56,19 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     }
 
     /** Queues one verdict, answered after every response queued before it. */
-    public GuardProbe<E, S, T> thenReturn(GuardResult result) {
-        Objects.requireNonNull(result, "result");
+    public GuardProbe<E, S, T> thenReturn(@NonNull GuardResult result) {
         script.then(() -> result);
         return this;
     }
 
     /** Queues one exception, thrown by identity: the call throws this very instance. */
-    public GuardProbe<E, S, T> thenThrow(RuntimeException error) {
-        Objects.requireNonNull(error, "error");
+    public GuardProbe<E, S, T> thenThrow(@NonNull RuntimeException error) {
         script.then(() -> { throw error; });
         return this;
     }
 
     /** Sets the verdict answered by every call the queue no longer covers; a later call replaces it. */
-    public GuardProbe<E, S, T> otherwiseReturn(GuardResult result) {
-        Objects.requireNonNull(result, "result");
+    public GuardProbe<E, S, T> otherwiseReturn(@NonNull GuardResult result) {
         script.otherwise(() -> result);
         return this;
     }
@@ -81,13 +78,9 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
      * call the script no longer covers. It receives the live context, which the engine invalidates when the
      * transaction ends, so read it now rather than storing it.
      */
-    public GuardProbe<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
-        this.onCall = Objects.requireNonNull(onCall, "onCall");
+    public GuardProbe<E, S, T> onCall(@NonNull Consumer<GuardContext<E, S, T>> onCall) {
+        this.onCall = onCall;
         return this;
-    }
-
-    public ProbeCalls<GuardCall<E, S, T>> calls() {
-        return calls;
     }
 
     @Override

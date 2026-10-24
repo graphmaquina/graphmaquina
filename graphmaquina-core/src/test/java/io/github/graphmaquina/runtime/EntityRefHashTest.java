@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import io.github.graphmaquina.api.MachineKey;
 import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -65,11 +67,10 @@ class EntityRefHashTest {
     }
 
     /** Identity value whose hash the test changes mid-run to prove {@link EntityRef} caches nothing. */
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class MutableHashId {
 
         int value;
-
-        MutableHashId(int value) { this.value = value; }
 
         @Override
         public int hashCode() { return value; }

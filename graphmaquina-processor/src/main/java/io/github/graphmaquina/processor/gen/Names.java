@@ -11,6 +11,8 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
+import lombok.AccessLevel;
+import lombok.Getter;
 
 /**
  * How one generated file writes the types it needs.
@@ -39,6 +41,8 @@ import javax.lang.model.util.Elements;
  */
 final class Names {
 
+    /** The single-type imports of the file, in claim order. */
+    @Getter(AccessLevel.PACKAGE)
     private final Set<String> imports = new LinkedHashSet<>();
     private final Map<String, String> rendered = new LinkedHashMap<>();
     private final Map<String, String> roots = new LinkedHashMap<>();
@@ -171,11 +175,6 @@ final class Names {
     static void claim(Map<String, String> types, String qualifiedName) {
         int dot = qualifiedName.lastIndexOf('.');
         types.putIfAbsent(qualifiedName, dot < 0 ? "" : qualifiedName.substring(0, dot));
-    }
-
-    /** The single-type imports of the file, in claim order. */
-    Set<String> imports() {
-        return imports;
     }
 
     /**

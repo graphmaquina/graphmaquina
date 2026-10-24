@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * The entry point of the generator: reads one request's original sources, emits the typed graph API they declare
@@ -43,8 +43,7 @@ public final class StateGraphCodegen {
      * @throws IOException if a classpath entry, a manifest or a generated source cannot be read or written, or an
      *     original source or the class output the collision checks look up cannot be examined
      */
-    public static GenerationResult generate(GenerationRequest request) throws IOException {
-        Objects.requireNonNull(request, "request");
+    public static GenerationResult generate(@NonNull GenerationRequest request) throws IOException {
         Bootstrap.Inspection inspection = Bootstrap.read(request);
         GenerationModel model = inspection.model();
         List<GeneratedSource> sources = ApiEmitter.emit(model, request.compilationId());

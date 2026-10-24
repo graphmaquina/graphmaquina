@@ -16,12 +16,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.Getter;
 import lombok.NonNull;
 
 /** Immutable directed graph, generic over nodes, none of them null. Works equally well with enums and names. */
 public final class Graph<N> {
 
+    @Getter
     private final Set<N> nodes;
+    @Getter
     private final Set<GraphEdge<N>> edges;
     private final Map<N, Set<N>> successors;
     private final Map<N, Declaration<N>> declarationIndex;
@@ -71,14 +74,6 @@ public final class Graph<N> {
             frozen.put(entry.getKey(), Collections.unmodifiableSet(entry.getValue()));
         }
         return new Graph<>(nodeSet, Collections.unmodifiableSet(edgeSet), Collections.unmodifiableMap(frozen));
-    }
-
-    public Set<N> nodes() {
-        return nodes;
-    }
-
-    public Set<GraphEdge<N>> edges() {
-        return edges;
     }
 
     public Set<N> successors(@NonNull N node) {

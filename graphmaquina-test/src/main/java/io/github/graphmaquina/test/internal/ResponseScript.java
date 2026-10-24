@@ -3,8 +3,9 @@ package io.github.graphmaquina.test.internal;
 import io.github.graphmaquina.test.GraphAssertionError;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Objects;
 import java.util.function.Supplier;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The queue of responses a probe hands out, one per call, with an optional default once the queue runs dry.
@@ -16,28 +17,24 @@ import java.util.function.Supplier;
  *
  * @param <R> the value a scripted response returns
  */
+@RequiredArgsConstructor
 public final class ResponseScript<R> {
 
+    @NonNull
     private final String probeName;
     private final Deque<Supplier<R>> queue = new ArrayDeque<>();
     private Supplier<R> fallback;
     private int served;
 
-    public ResponseScript(String probeName) {
-        this.probeName = Objects.requireNonNull(probeName, "probeName");
-    }
-
     /** Appends one response, served after every response queued before it. */
-    public void then(Supplier<R> response) {
-        Objects.requireNonNull(response, "response");
+    public void then(@NonNull Supplier<R> response) {
         synchronized (this) {
             queue.addLast(response);
         }
     }
 
     /** Sets the response served by every call the queue no longer covers; a later call replaces it. */
-    public void otherwise(Supplier<R> response) {
-        Objects.requireNonNull(response, "response");
+    public void otherwise(@NonNull Supplier<R> response) {
         synchronized (this) {
             fallback = response;
         }

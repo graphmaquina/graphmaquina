@@ -4,6 +4,8 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The records of one machine and one entity, in the order the transaction produced them, obtained from
@@ -15,15 +17,11 @@ import java.util.List;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TypedRecordsAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final List<TransitionRecord<E, S, T>> actual;
-
-    TypedRecordsAssert(String context, List<TransitionRecord<E, S, T>> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
 
     public TypedRecordsAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());

@@ -3,10 +3,10 @@ package io.github.graphmaquina.internal;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.error.StateMachineException;
 import java.lang.reflect.Modifier;
-import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import lombok.NonNull;
 
 /**
  * Rules on failure kinds and on throwable types: which classes are valid failure kinds, which throwable types are
@@ -63,8 +63,7 @@ public final class FailureTypes {
      * @throws IllegalArgumentException with {@link #invalidKindMessage(Class)} if {@code kind} is not a valid failure
      *     kind, which includes a raw {@code Class} of a class that does not implement {@link FailureKind}
      */
-    public static Class<? extends FailureKind> requireValidKind(Class<? extends FailureKind> kind) {
-        Objects.requireNonNull(kind, "kind");
+    public static Class<? extends FailureKind> requireValidKind(@NonNull Class<? extends FailureKind> kind) {
         if (!isValidKind(kind)) {
             throw new IllegalArgumentException(invalidKindMessage(kind));
         }

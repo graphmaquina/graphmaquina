@@ -1,9 +1,9 @@
 package io.github.graphmaquina.codegen.source;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
+import lombok.NonNull;
 
 /**
  * One use of a type inside a declaration header: a supertype, a type argument, a parameter type, a return type or
@@ -20,11 +20,10 @@ public sealed interface TypeUse {
      * declaration index has resolved it, and the name as spelled until then; {@code owner} carries the
      * parameterization of an enclosing type when the use names an inner member type.
      */
-    record Declared(String name, List<TypeUse> arguments, Optional<TypeUse> owner) implements TypeUse {
+    record Declared(@NonNull String name, List<TypeUse> arguments,
+            @NonNull Optional<TypeUse> owner) implements TypeUse {
 
         public Declared {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(owner, "owner");
             arguments = List.copyOf(arguments);
         }
 
@@ -54,11 +53,9 @@ public sealed interface TypeUse {
     }
 
     /** A use of a declared type parameter, identified by the declaration that owns it. */
-    record Variable(String name, TypeParameterKey key) implements TypeUse {
+    record Variable(@NonNull String name, @NonNull TypeParameterKey key) implements TypeUse {
 
         public Variable {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(key, "key");
         }
 
         @Override
@@ -68,10 +65,9 @@ public sealed interface TypeUse {
     }
 
     /** An array of another use. */
-    record Array(TypeUse component) implements TypeUse {
+    record Array(@NonNull TypeUse component) implements TypeUse {
 
         public Array {
-            Objects.requireNonNull(component, "component");
         }
 
         @Override
@@ -81,11 +77,9 @@ public sealed interface TypeUse {
     }
 
     /** A wildcard argument, with at most one of its two bounds present. */
-    record Wildcard(Optional<TypeUse> upperBound, Optional<TypeUse> lowerBound) implements TypeUse {
+    record Wildcard(@NonNull Optional<TypeUse> upperBound, @NonNull Optional<TypeUse> lowerBound) implements TypeUse {
 
         public Wildcard {
-            Objects.requireNonNull(upperBound, "upperBound");
-            Objects.requireNonNull(lowerBound, "lowerBound");
             if (upperBound.isPresent() && lowerBound.isPresent()) {
                 throw new IllegalArgumentException("a wildcard declares at most one bound");
             }
@@ -109,10 +103,9 @@ public sealed interface TypeUse {
     }
 
     /** A primitive use, including {@code void}. */
-    record Primitive(String name) implements TypeUse {
+    record Primitive(@NonNull String name) implements TypeUse {
 
         public Primitive {
-            Objects.requireNonNull(name, "name");
         }
 
         @Override

@@ -3,7 +3,7 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Ignored}, obtained from {@link
@@ -30,8 +30,7 @@ public final class IgnoredOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return this;
     }
 
-    public IgnoredOutcomeAssert<E, S, T> hasReason(IgnoreReason expected) {
-        Objects.requireNonNull(expected, "expected");
+    public IgnoredOutcomeAssert<E, S, T> hasReason(@NonNull IgnoreReason expected) {
         Checks.equal(context, "reason", expected, ignored.reason());
         return this;
     }

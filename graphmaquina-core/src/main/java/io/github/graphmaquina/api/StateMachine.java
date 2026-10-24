@@ -1,9 +1,9 @@
 package io.github.graphmaquina.api;
 
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+import lombok.NonNull;
 
 /**
  * Governs the state S of entity E through the transitions T it declares. Does not protect an entity against
@@ -85,10 +85,7 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
      * @throws UnsupportedOperationException if this machine does not support operation input
      */
-    default Outcome<E, S, T> execute(E entity, T transition, Object input) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(input, "input");
+    default Outcome<E, S, T> execute(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         throw new UnsupportedOperationException("this StateMachine does not support operation input");
     }
 }

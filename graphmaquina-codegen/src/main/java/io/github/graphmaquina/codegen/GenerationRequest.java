@@ -4,7 +4,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * One invocation of the generator: the sources it reads, the classpath it resolves headers against, where it
@@ -44,16 +44,16 @@ import java.util.Objects;
  * @param encoding the charset javac reads the sources in
  */
 public record GenerationRequest(
-        Path projectDirectory,
-        List<Path> sources,
-        List<Path> classpath,
-        Path sourcesOutput,
-        Path processorSourcesOutput,
-        Path classesOutput,
-        Path workDirectory,
-        String compilationId,
+        @NonNull Path projectDirectory,
+        @NonNull List<Path> sources,
+        @NonNull List<Path> classpath,
+        @NonNull Path sourcesOutput,
+        @NonNull Path processorSourcesOutput,
+        @NonNull Path classesOutput,
+        @NonNull Path workDirectory,
+        @NonNull String compilationId,
         int release,
-        Charset encoding) {
+        @NonNull Charset encoding) {
 
     /** The release of a request that names none: Java 21, the lowest release StateGraph runs on. */
     public static final int DEFAULT_RELEASE = 21;
@@ -62,15 +62,6 @@ public record GenerationRequest(
     public static final Charset DEFAULT_ENCODING = StandardCharsets.UTF_8;
 
     public GenerationRequest {
-        Objects.requireNonNull(projectDirectory, "projectDirectory");
-        Objects.requireNonNull(sources, "sources");
-        Objects.requireNonNull(classpath, "classpath");
-        Objects.requireNonNull(sourcesOutput, "sourcesOutput");
-        Objects.requireNonNull(processorSourcesOutput, "processorSourcesOutput");
-        Objects.requireNonNull(classesOutput, "classesOutput");
-        Objects.requireNonNull(workDirectory, "workDirectory");
-        Objects.requireNonNull(compilationId, "compilationId");
-        Objects.requireNonNull(encoding, "encoding");
         if (compilationId.isBlank()) {
             throw new IllegalArgumentException("compilationId must not be blank");
         }

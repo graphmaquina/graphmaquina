@@ -2,6 +2,7 @@ package io.github.graphmaquina.fixtures;
 
 import java.time.Instant;
 import java.time.InstantSource;
+import lombok.Getter;
 
 /**
  * A clock for the trail of a call: its n-th read answers {@link #at(int) at(n)}, n seconds after the epoch, so each
@@ -12,16 +13,14 @@ public final class TickingClock implements InstantSource {
 
     /** Runs before a read answers, the read not yet counted; a test replaces it to watch the reads or to throw. */
     public Runnable onRead = () -> { };
+
+    /** How many reads answered so far. */
+    @Getter
     private int reads;
 
     /** What the {@code read}-th read answers: {@code read} seconds after the epoch. */
     public static Instant at(int read) {
         return Instant.ofEpochSecond(read);
-    }
-
-    /** How many reads answered so far. */
-    public int reads() {
-        return reads;
     }
 
     @Override

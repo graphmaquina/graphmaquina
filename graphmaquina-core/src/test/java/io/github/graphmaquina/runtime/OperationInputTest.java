@@ -100,8 +100,9 @@ class OperationInputTest {
                 (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); },
                 (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
         Entity e = new Entity();
-        assertEquals("input", assertThrows(NullPointerException.class, () -> m.execute(e, T.WORK, null)).getMessage());
-        assertEquals("input",
+        assertEquals("input is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> m.execute(e, T.WORK, null)).getMessage());
+        assertEquals("input is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> m.async().execute(e, T.WORK, null)).getMessage());
         assertEquals(List.of(), seen);
         assertEquals(S.OPEN, e.state);

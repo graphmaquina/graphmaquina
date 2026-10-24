@@ -1,7 +1,7 @@
 package io.github.graphmaquina.codegen.model;
 
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * One resolved {@code @GenerateGraphApi} machine: its facade, the package that facade is declared in, its
@@ -18,20 +18,11 @@ import java.util.Objects;
  * annotation processor refuses a manifest whose lists no longer equal, in that order, the constants those enums
  * declare.</p>
  */
-public record GraphDescriptor(String facade, String packageName, String entityType, String stateType,
-        List<String> states, String transitionType, List<String> transitions, List<String> peers,
-        SourceLocation origin) {
+public record GraphDescriptor(@NonNull String facade, @NonNull String packageName, @NonNull String entityType,
+        @NonNull String stateType, @NonNull List<String> states, @NonNull String transitionType,
+        @NonNull List<String> transitions, @NonNull List<String> peers, @NonNull SourceLocation origin) {
 
     public GraphDescriptor {
-        Objects.requireNonNull(facade, "facade");
-        Objects.requireNonNull(packageName, "packageName");
-        Objects.requireNonNull(entityType, "entityType");
-        Objects.requireNonNull(stateType, "stateType");
-        Objects.requireNonNull(states, "states");
-        Objects.requireNonNull(transitionType, "transitionType");
-        Objects.requireNonNull(transitions, "transitions");
-        Objects.requireNonNull(peers, "peers");
-        Objects.requireNonNull(origin, "origin");
         states = List.copyOf(states);
         transitions = List.copyOf(transitions);
         peers = List.copyOf(peers);

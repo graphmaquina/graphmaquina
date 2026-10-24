@@ -1,9 +1,12 @@
 package io.github.graphmaquina.test.probe;
 
-import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * One invocation of a controlled asynchronous fixture, held open until the test answers it. The fixture
@@ -19,28 +22,21 @@ import java.util.concurrent.CompletionStage;
  * @param <C> what the fixture recorded about the call: an {@link ActionCall} or a {@link GuardCall}
  * @param <R> what the engine is waiting for: an {@code ActionOutcome} or a {@code GuardResult}
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class PendingInvocation<C, R> {
 
+    /** What the fixture read from the live context on entry; the context itself is deliberately not kept. */
+    @Getter
+    @NonNull
     private final C call;
     private final CompletableFuture<R> stage = new CompletableFuture<>();
 
-    PendingInvocation(C call) {
-        this.call = Objects.requireNonNull(call, "call");
-    }
-
-    /** What the fixture read from the live context on entry; the context itself is deliberately not kept. */
-    public C call() {
-        return call;
-    }
-
-    public boolean complete(R response) {
-        Objects.requireNonNull(response, "response");
+    public boolean complete(@NonNull R response) {
         return stage.complete(response);
     }
 
     /** Completes the stage exceptionally with this very throwable, as the engine would see a failed call. */
-    public boolean fail(Throwable failure) {
-        Objects.requireNonNull(failure, "failure");
+    public boolean fail(@NonNull Throwable failure) {
         return stage.completeExceptionally(failure);
     }
 

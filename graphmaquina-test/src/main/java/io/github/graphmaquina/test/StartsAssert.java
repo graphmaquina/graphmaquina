@@ -4,8 +4,8 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the sub-machine starts a call reports, obtained from {@link BaseOutcomeAssert#starts()} on
@@ -47,9 +47,7 @@ public final class StartsAssert {
 
     /** Selects by key and by child identity; a child with no starts yields an empty view, not a failure. */
     public <P, Q extends Enum<Q>, U extends Enum<U>> TypedStartsAssert<P, Q, U> forChild(
-            MachineKey<P, Q, U> key, P child) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(child, "child");
+            @NonNull MachineKey<P, Q, U> key, @NonNull P child) {
         List<SubmachineStart<?, ?, ?>> starts = Checks.present(context, "child starts", child, actual);
         List<SubmachineStart<?, ?, ?>> selected = starts.stream()
                 .filter((SubmachineStart<?, ?, ?> start) -> start.key().equals(key) && start.child() == child)

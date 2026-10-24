@@ -2,9 +2,10 @@ package io.github.graphmaquina.test.probe;
 
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * A {@link Consumer} for the after-commit hook of an edge, scripted like {@link ActionProbe} but with nothing to
@@ -22,6 +23,7 @@ public final class HookProbe<E> implements Consumer<E> {
 
     private final String name;
     private final CallTrace trace;
+    @Getter
     private final ProbeCalls<E> calls;
     private final ResponseScript<Boolean> script;
     private final Object entry = new Object();
@@ -39,9 +41,7 @@ public final class HookProbe<E> implements Consumer<E> {
      * the graph gives this hook if the trace is to read like the graph. A null argument raises
      * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
      */
-    public static <E> HookProbe<E> create(String name, CallTrace trace) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(trace, "trace");
+    public static <E> HookProbe<E> create(@NonNull String name, @NonNull CallTrace trace) {
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
@@ -55,8 +55,7 @@ public final class HookProbe<E> implements Consumer<E> {
     }
 
     /** Queues one exception, thrown by identity: the call throws this very instance. */
-    public HookProbe<E> thenThrow(RuntimeException error) {
-        Objects.requireNonNull(error, "error");
+    public HookProbe<E> thenThrow(@NonNull RuntimeException error) {
         script.then(() -> { throw error; });
         return this;
     }
@@ -71,13 +70,9 @@ public final class HookProbe<E> implements Consumer<E> {
      * Replaces the side effect run on every call the script answers, a throwing response included but not a
      * call the script no longer covers, with the entity the hook was handed.
      */
-    public HookProbe<E> onCall(Consumer<E> onCall) {
-        this.onCall = Objects.requireNonNull(onCall, "onCall");
+    public HookProbe<E> onCall(@NonNull Consumer<E> onCall) {
+        this.onCall = onCall;
         return this;
-    }
-
-    public ProbeCalls<E> calls() {
-        return calls;
     }
 
     @Override

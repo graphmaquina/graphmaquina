@@ -17,9 +17,11 @@ import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * Engine of a root transaction: the state of its call, which lives here and in the UnitOfWork, the phase of the call
@@ -33,10 +35,19 @@ import java.util.function.Supplier;
  */
 final class Transaction {
 
+    /** The registry the call runs in: its root machine's. */
+    @Getter(AccessLevel.PACKAGE)
     private final MachineRegistry registry;
+    @Getter(AccessLevel.PACKAGE)
     private final UnitOfWork uow;
     private final List<ContextHandle> contexts = new ArrayList<>();
+
+    /** The key of the root call's machine. */
+    @Getter(AccessLevel.PACKAGE)
     private final MachineKey<?, ?, ?> callKey;
+
+    /** The entity of the root call. */
+    @Getter(AccessLevel.PACKAGE)
     private final Object callEntity;
     /** The identifier the call requested; empty for a reevaluation, which requests none. */
     private final Optional<Enum<?>> requested;
@@ -64,16 +75,17 @@ final class Transaction {
      */
     boolean condemned;
 
-    Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
-                Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
-        this.registry = Objects.requireNonNull(registry, "registry");
-        this.uow = Objects.requireNonNull(uow, "uow");
-        this.callKey = Objects.requireNonNull(callKey, "callKey");
-        this.callEntity = Objects.requireNonNull(callEntity, "callEntity");
-        this.requested = Objects.requireNonNull(requested, "requested");
+    Transaction(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
+                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
+                @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
+        this.registry = registry;
+        this.uow = uow;
+        this.callKey = callKey;
+        this.callEntity = callEntity;
+        this.requested = requested;
         this.reaction = reaction;
-        this.call = Objects.requireNonNull(call, "call");
-        this.log = Objects.requireNonNull(log, "log");
+        this.call = call;
+        this.log = log;
     }
 
     /**
@@ -114,19 +126,8 @@ final class Transaction {
         return new CallFailure(phase, statesWritten(), thrown);
     }
 
-    UnitOfWork uow() { return uow; }
-
-    /** The registry the call runs in: its root machine's. */
-    MachineRegistry registry() { return registry; }
-
     /** Where the call stands now. */
     CallPhase phase() { return phase; }
-
-    /** The key of the root call's machine. */
-    MachineKey<?, ?, ?> callKey() { return callKey; }
-
-    /** The entity of the root call. */
-    Object callEntity() { return callEntity; }
 
     /** Keeps {@code context}, a context the call handed out, for {@link #invalidate}. */
     void track(ContextHandle context) {

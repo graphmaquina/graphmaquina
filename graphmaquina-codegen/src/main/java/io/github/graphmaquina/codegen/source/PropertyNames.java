@@ -1,6 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Derives the logical name of a property from the accessor that declares it.
@@ -17,8 +17,7 @@ public final class PropertyNames {
     }
 
     /** The logical property name {@code getter} declares. */
-    public static String fromGetter(String getter) {
-        Objects.requireNonNull(getter, "getter");
+    public static String fromGetter(@NonNull String getter) {
         String name = getter;
         if (getter.startsWith("get") && getter.length() > 3
                 && Character.isUpperCase(getter.charAt(3))) {

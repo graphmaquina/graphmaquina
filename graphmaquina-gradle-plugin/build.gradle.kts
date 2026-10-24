@@ -3,8 +3,9 @@ plugins {
     `maven-publish`
     signing
 }
-// This build cannot see buildSrc, so it applies the shared Checkstyle script directly.
+// This build cannot see buildSrc, so it applies the shared Checkstyle and delombok scripts directly.
 apply(from = "../config/checkstyle/checkstyle.gradle.kts")
+apply(from = "../config/lombok/delombok.gradle.kts")
 group = "io.github.graphmaquina"
 // Same resolution as the root build's convention plugin; this build is separate and cannot see buildSrc,
 // so the six lines are repeated here for the same reason the POM metadata below is.
@@ -22,7 +23,8 @@ java {
 }
 tasks.withType<JavaCompile>().configureEach {
     options.release = 21
-    options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
+    // Same lint as the convention plugin: Lombok claims only its own annotations, so processing is off.
+    options.compilerArgs.addAll(listOf("-Xlint:all,-serial,-processing", "-Werror"))
 }
 gradlePlugin {
     plugins {
@@ -41,6 +43,11 @@ tasks.processResources {
     }
 }
 dependencies {
+    // Lombok is tooling for this build's own sources: compile-only, so the published plugin never depends on it.
+    compileOnly(libs.lombok)
+    annotationProcessor(libs.lombok)
+    testCompileOnly(libs.lombok)
+    testAnnotationProcessor(libs.lombok)
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation(gradleTestKit())

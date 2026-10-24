@@ -2,16 +2,15 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Chainable, typed assertion over a {@link GuardResult}. */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class GuardResultAssert {
 
     private final GuardResult actual;
-
-    private GuardResultAssert(GuardResult actual) {
-        this.actual = actual;
-    }
 
     public static GuardResultAssert assertThat(GuardResult actual) {
         return new GuardResultAssert(actual);
@@ -29,8 +28,7 @@ public final class GuardResultAssert {
         return this;
     }
 
-    public GuardResultAssert hasReason(String reason) {
-        Objects.requireNonNull(reason, "reason");
+    public GuardResultAssert hasReason(@NonNull String reason) {
         GuardResult result = Checks.subject("guard result", "kind", "Reject", actual);
         Checks.equal("guard result", "kind", "Reject", result.getClass().getSimpleName());
         GuardResult.Reject reject = (GuardResult.Reject) result;

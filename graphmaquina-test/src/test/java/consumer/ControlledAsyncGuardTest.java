@@ -35,6 +35,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -390,23 +393,12 @@ class ControlledAsyncGuardTest {
     private enum Move { SEND }
 
     /** Entity of the parcel machine: an id and a mutable {@link Status}. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Parcel {
 
         private final String id;
         private Status status;
-
-        Parcel(String id, Status status) {
-            this.id = id;
-            this.status = status;
-        }
-
-        String id() {
-            return id;
-        }
-
-        Status status() {
-            return status;
-        }
 
         void setStatus(Status status) {
             this.status = status;

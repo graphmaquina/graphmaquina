@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A {@link MachineObserver} that keeps the outcome of every call that completed, so a test can assert about them
@@ -32,15 +35,12 @@ import java.util.function.BiFunction;
  *
  * <p>A registry accepts any number of observers, so the recorder sits beside the test's own.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class TransitionRecorder implements MachineObserver {
 
     private final Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector;
     private final List<RecordedTransition> events = new ArrayList<>();
     private long nextSequence;
-
-    private TransitionRecorder(Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector) {
-        this.projector = projector;
-    }
 
     /** A recorder that keeps the completed calls as published, with no projection. */
     public static TransitionRecorder create() {
@@ -52,16 +52,13 @@ public final class TransitionRecorder implements MachineObserver {
      * refused here; a projection that returns null makes the recorder throw, which the registry logs and does not
      * pass on, and that call is not recorded.
      */
-    public static TransitionRecorder projecting(BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> projector) {
-        Objects.requireNonNull(projector, "projector");
+    public static TransitionRecorder projecting(
+            @NonNull BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> projector) {
         return new TransitionRecorder(Optional.of(projector));
     }
 
     @Override
-    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
-        Objects.requireNonNull(call, "call");
-        Objects.requireNonNull(outcome, "outcome");
-        Objects.requireNonNull(elapsed, "elapsed");
+    public void onCompleted(@NonNull MachineCall call, @NonNull Outcome<?, ?, ?> outcome, @NonNull Duration elapsed) {
         MachineKey<?, ?, ?> key = call.key();
         Optional<Object> captured = projector.map(
                 (BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> project) ->

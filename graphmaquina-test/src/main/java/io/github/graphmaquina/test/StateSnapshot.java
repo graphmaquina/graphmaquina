@@ -4,10 +4,12 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The states a chosen set of entities was in at one moment, and what changed since. Tracking is
@@ -17,15 +19,12 @@ import java.util.function.Supplier;
  * alone, while {@link #changes()} reads every tracked getter again on each call and therefore answers
  * about the entities as they are now.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StateSnapshot {
 
     private static final String CONTEXT = "state snapshot";
 
     private final List<Captured> captured;
-
-    private StateSnapshot(List<Captured> captured) {
-        this.captured = captured;
-    }
 
     public static Builder builder() {
         return new Builder();
@@ -65,10 +64,7 @@ public final class StateSnapshot {
         private Builder() { }
 
         public <E, S extends Enum<S>, T extends Enum<T>> Builder track(
-                MachineKey<E, S, T> key, E entity, Function<? super E, ? extends S> getter) {
-            Objects.requireNonNull(key, "key");
-            Objects.requireNonNull(entity, "entity");
-            Objects.requireNonNull(getter, "getter");
+                @NonNull MachineKey<E, S, T> key, @NonNull E entity, @NonNull Function<? super E, ? extends S> getter) {
             for (Tracked existing : tracked) {
                 if (existing.key().equals(key) && existing.entity() == entity) {
                     throw new IllegalArgumentException("the entity is already tracked under " + key);

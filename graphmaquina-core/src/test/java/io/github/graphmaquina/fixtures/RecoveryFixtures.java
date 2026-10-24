@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The shared fixture of the typed-recovery tests: the publication machine every example graph is built on. PUBLISH
@@ -67,15 +68,12 @@ public final class RecoveryFixtures {
     }
 
     /** The entity: its state, how many times the engine wrote that state, and the log its actions append to. */
+    @RequiredArgsConstructor
     public static final class Ticket {
         public final String id;
         public TicketState state = TicketState.READY;
         public int stateWrites;
         public final List<String> calls = new ArrayList<>();
-
-        public Ticket(String id) {
-            this.id = id;
-        }
     }
 
     public static final MachineKey<Ticket, TicketState, TicketChange> KEY =

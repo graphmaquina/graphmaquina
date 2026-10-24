@@ -7,16 +7,15 @@ import io.github.graphmaquina.test.probe.GuardCall;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Chainable expectations over the operation input recorded by a synchronous or asynchronous probe. */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class CallInputAssert {
     private final String context;
     private final Optional<?> input;
-
-    private CallInputAssert(String context, Optional<?> input) {
-        this.context = context;
-        this.input = input;
-    }
 
     public static CallInputAssert assertThat(GuardCall<?, ?, ?> actual) {
         return new CallInputAssert("guard call", actual == null ? null : actual.input());
@@ -36,15 +35,13 @@ public final class CallInputAssert {
     }
 
     /** Expects a present input equal to {@code expected}, using {@link Objects#equals}. */
-    public CallInputAssert hasInput(Object expected) {
-        Objects.requireNonNull(expected, "expected");
+    public CallInputAssert hasInput(@NonNull Object expected) {
         Checks.equal(context, "input", expected, Checks.subject(context, "input", expected, input).orElse(null));
         return this;
     }
 
     /** Expects the exact argument instance, even when another object would compare equal. */
-    public CallInputAssert hasInputSameAs(Object expected) {
-        Objects.requireNonNull(expected, "expected");
+    public CallInputAssert hasInputSameAs(@NonNull Object expected) {
         Checks.same(context, "input identity", expected,
                 Checks.subject(context, "input identity", expected, input).orElse(null));
         return this;

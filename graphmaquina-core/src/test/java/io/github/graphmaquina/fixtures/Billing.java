@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import lombok.Getter;
 
 /**
  * Sub-machine fixture. A booking takes a deposit and then a balance, and the booking graph binds the same payment
@@ -63,9 +64,13 @@ public final class Billing {
     /** A booking: its status, its deposit and balance payments, and the payment it awaits, if any. */
     public static final class Booking {
 
+        @Getter
         private final String id;
+        @Getter
         private BookingStatus status;
+        @Getter
         private Optional<Payment> deposit = Optional.empty();
+        @Getter
         private Optional<Payment> balance = Optional.empty();
         private Optional<Payment> awaited = Optional.empty();
 
@@ -74,15 +79,7 @@ public final class Billing {
             this.status = status;
         }
 
-        public String id() { return id; }
-
-        public BookingStatus status() { return status; }
-
         public void setStatus(BookingStatus status) { this.status = status; }
-
-        public Optional<Payment> deposit() { return deposit; }
-
-        public Optional<Payment> balance() { return balance; }
 
         /** The payment this booking awaits, as the collection its watch reads. */
         public List<Payment> awaited() { return awaited.map(List::of).orElse(List.of()); }
@@ -116,6 +113,7 @@ public final class Billing {
      * A payment: its status, the state of its risk check, the booking it belongs to and the booking that awaits it.
      * The risk check starts in {@code SCORING}.
      */
+    @Getter
     public static final class Payment {
 
         private final String id;
@@ -129,19 +127,9 @@ public final class Billing {
             this.status = status;
         }
 
-        public String id() { return id; }
-
-        public PaymentStatus status() { return status; }
-
         public void setStatus(PaymentStatus status) { this.status = status; }
 
-        public RiskStatus risk() { return risk; }
-
         public void setRisk(RiskStatus risk) { this.risk = risk; }
-
-        public Optional<Booking> booking() { return booking; }
-
-        public Optional<Booking> awaitedBy() { return awaitedBy; }
 
         @Override
         public String toString() { return "Payment#" + id; }

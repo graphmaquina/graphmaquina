@@ -1,6 +1,6 @@
 package io.github.graphmaquina.graph;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * A labeled directed edge between two nodes, used by {@link DirectedGraph}. Two edges are equal exactly
@@ -14,11 +14,8 @@ import java.util.Objects;
  * @param transition edge label
  * @param to destination node
  */
-public record DirectedEdge<N, L>(N from, L transition, N to) {
+public record DirectedEdge<N, L>(@NonNull N from, @NonNull L transition, @NonNull N to) {
 
     public DirectedEdge {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(to, "to");
     }
 }

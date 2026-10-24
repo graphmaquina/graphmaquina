@@ -30,6 +30,8 @@ import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.tools.Diagnostic;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Reads the header of every type a parsed unit declares from its syntax tree, for {@link SourceDeclarations}, which
@@ -275,6 +277,7 @@ final class SourceHeaders {
      * reads, innermost first: every annotation written on such a class or on one of its methods and fields, with the
      * class bodies that enclose it, and the name of every local class, whatever block declares it.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class LocalClasses extends TreeScanner<Void, List<TypeHeader.LocalScope>> {
 
         private final SourceUnit unit;
@@ -283,11 +286,6 @@ final class SourceHeaders {
         /** The class bodies that enclose each of {@link #markers}, at the same position. */
         private final List<List<TypeHeader.LocalScope>> scopes = new ArrayList<>();
         private final Set<String> names = new LinkedHashSet<>();
-
-        private LocalClasses(SourceUnit unit, SourcePositions positions) {
-            this.unit = unit;
-            this.positions = positions;
-        }
 
         @Override
         public Void visitClass(ClassTree local, List<TypeHeader.LocalScope> enclosing) {

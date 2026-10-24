@@ -14,6 +14,8 @@ import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /** Builds machines from a {@link GraphDefinition}. */
@@ -21,8 +23,8 @@ public final class StateMachines {
 
     private StateMachines() { }
 
-    public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(GraphDefinition<E, S, T> definition) {
-        Objects.requireNonNull(definition, "definition");
+    public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(
+            @NonNull GraphDefinition<E, S, T> definition) {
         return new Builder<>(definition);
     }
 
@@ -34,12 +36,14 @@ public final class StateMachines {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     public static final class Builder<E, S extends Enum<S>, T extends Enum<T>> {
 
+        @Getter(AccessLevel.PACKAGE)
         private final GraphDefinition<E, S, T> definition;
         private Optional<Function<? super E, ? extends S>> getter = Optional.empty();
         private Optional<BiConsumer<? super E, ? super S>> setter = Optional.empty();
         private Optional<Function<? super E, ?>> identity = Optional.empty();
         private Optional<Duration> asyncTimeout = Optional.empty();
         private Optional<Executor> executor = Optional.empty();
+        @Getter(AccessLevel.PACKAGE)
         private Optional<Class<? extends Machine<E, S, T>>> facade = Optional.empty();
         private Optional<InstantSource> trail = Optional.empty();
         private boolean used;
@@ -157,8 +161,6 @@ public final class StateMachines {
             return this;
         }
 
-        Optional<Class<? extends Machine<E, S, T>>> facade() { return facade; }
-
         /**
          * Standalone machine: a registry of one, built by the same code as {@link MachineRegistry.Builder#build()},
          * but with no observer, since only {@link MachineRegistry.Builder#observer} adds one. Its own facade from
@@ -173,8 +175,6 @@ public final class StateMachines {
         }
 
         MachineKey<E, S, T> key() { return definition.key(); }
-
-        GraphDefinition<E, S, T> definition() { return definition; }
 
         boolean hasIdentity() { return identity.isPresent(); }
 

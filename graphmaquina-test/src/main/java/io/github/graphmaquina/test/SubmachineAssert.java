@@ -6,8 +6,10 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over the sub-machine bound to one state, obtained from
@@ -25,6 +27,7 @@ import java.util.Optional;
  * @param <Q> state enum of the child machine
  * @param <U> transition identifier enum of the child machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class SubmachineAssert<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>,
         U extends Enum<U>> {
 
@@ -32,19 +35,12 @@ public final class SubmachineAssert<E, S extends Enum<S>, T extends Enum<T>, P, 
     private final MachineKey<P, Q, U> child;
     private final Optional<SubmachineSpec<E, S, T, ?, ?, ?>> actual;
 
-    SubmachineAssert(String context, MachineKey<P, Q, U> child, Optional<SubmachineSpec<E, S, T, ?, ?, ?>> actual) {
-        this.context = context;
-        this.child = child;
-        this.actual = actual;
-    }
-
     /**
      * Every exit in declaration order, each a terminal state of the child and the identifier it selects. The order
      * selects nothing, but the declaration keeps it, so another order fails.
      */
     @SafeVarargs
-    public final SubmachineAssert<E, S, T, P, Q, U> hasExitsExactly(ExitExpectation<Q, T>... expected) {
-        Objects.requireNonNull(expected, "expected");
+    public final SubmachineAssert<E, S, T, P, Q, U> hasExitsExactly(@NonNull ExitExpectation<Q, T>... expected) {
         List<ExitExpectation<Q, T>> declared = new ArrayList<>();
         for (ExitExpectation<Q, T> exit : expected) {
             declared.add(exit);
@@ -56,9 +52,7 @@ public final class SubmachineAssert<E, S extends Enum<S>, T extends Enum<T>, P, 
     }
 
     /** The identifier that {@code terminal} selects; a state of the child with no exit never satisfies it. */
-    public SubmachineAssert<E, S, T, P, Q, U> hasExit(Q terminal, T transition) {
-        Objects.requireNonNull(terminal, "terminal");
-        Objects.requireNonNull(transition, "transition");
+    public SubmachineAssert<E, S, T, P, Q, U> hasExit(@NonNull Q terminal, @NonNull T transition) {
         String property = "exit " + terminal.name();
         Optional<T> wanted = Optional.of(transition);
         SubmachineSpec<E, S, T, ?, ?, ?> spec = binding(property, wanted);

@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * The flow a call hands out once it ended, in its outcome or in its failure: the root call's entity, the values
@@ -21,13 +24,16 @@ import java.util.Set;
  * and their trails are, by {@link List#equals}, entry by entry; the hash code follows all three. {@link #toString()}
  * names the keys as {@code name:Type} and never prints a value, the entity or the trail. Not part of the API.
  */
+@EqualsAndHashCode
 public final class FrozenFlow implements FlowView {
 
     /** The flow without an entity, without values and without a trail: {@link FlowView#empty()}. */
     public static final FrozenFlow EMPTY = new FrozenFlow(Optional.empty(), Map.of());
 
+    @Getter
     private final Optional<Object> entity;
     private final Map<FlowKey<?>, Object> values;
+    @Getter
     private final List<FlowEntry> trail;
 
     /**
@@ -48,10 +54,9 @@ public final class FrozenFlow implements FlowView {
      *     a null key or value, or {@code trail} a null entry
      * @throws ClassCastException if a value is not an instance of its key's type
      */
-    public FrozenFlow(Optional<Object> entity, Map<FlowKey<?>, Object> values, List<FlowEntry> trail) {
-        this.entity = Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(values, "values");
-        Objects.requireNonNull(trail, "trail");
+    public FrozenFlow(@NonNull Optional<Object> entity, @NonNull Map<FlowKey<?>, Object> values,
+            @NonNull List<FlowEntry> trail) {
+        this.entity = entity;
         Map<FlowKey<?>, Object> copy = new LinkedHashMap<>();
         for (Map.Entry<FlowKey<?>, Object> value : values.entrySet()) {
             FlowKey<?> key = Objects.requireNonNull(value.getKey(), "key");
@@ -65,8 +70,7 @@ public final class FrozenFlow implements FlowView {
     }
 
     @Override
-    public <V> Optional<V> get(FlowKey<V> key) {
-        Objects.requireNonNull(key, "key");
+    public <V> Optional<V> get(@NonNull FlowKey<V> key) {
         return Optional.ofNullable(values.get(key)).map(key.type()::cast);
     }
 
@@ -76,33 +80,11 @@ public final class FrozenFlow implements FlowView {
     }
 
     @Override
-    public Optional<Object> entity() {
-        return entity;
-    }
-
-    @Override
-    public <E> Optional<E> entity(Class<E> type) {
-        Objects.requireNonNull(type, "type");
+    public <E> Optional<E> entity(@NonNull Class<E> type) {
         if (type.isPrimitive()) {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
         return entity.map(type::cast);
-    }
-
-    @Override
-    public List<FlowEntry> trail() {
-        return trail;
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        return other instanceof FrozenFlow that && entity.equals(that.entity) && values.equals(that.values)
-                && trail.equals(that.trail);
-    }
-
-    @Override
-    public int hashCode() {
-        return 31 * (31 * entity.hashCode() + values.hashCode()) + trail.hashCode();
     }
 
     @Override

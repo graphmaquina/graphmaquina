@@ -1,7 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.TransitionSpec;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * An entry in the log: a hop along a selected edge, or the start of a sub-machine. Both name the entity they move,
@@ -38,12 +38,11 @@ sealed interface LogEntry permits LogEntry.Hop, LogEntry.Start {
      * It runs no hook. The constructor refuses a null state: only a hand-written {@code GraphDefinition} whose
      * {@code initial()} returns null could pass one.
      */
-    record Start(EntityRef ref, Enum<?> previous, Enum<?> initial, EntityRef parent, Enum<?> node, int depth)
+    record Start(EntityRef ref, @NonNull Enum<?> previous, @NonNull Enum<?> initial, EntityRef parent, Enum<?> node,
+            int depth)
             implements LogEntry {
 
         public Start {
-            Objects.requireNonNull(previous, "previous");
-            Objects.requireNonNull(initial, "initial");
         }
 
         @Override

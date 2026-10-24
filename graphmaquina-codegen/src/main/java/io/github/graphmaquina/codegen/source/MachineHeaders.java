@@ -9,10 +9,10 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
+import lombok.NonNull;
 
 /**
  * Specializes one machine, the facade marked {@code @GenerateGraphApi}, to the {@code Machine<E, S, T>} it
@@ -43,9 +43,7 @@ public final class MachineHeaders {
      * types generated in that package are checked by the emitters. {@code facade} names the declaration
      * {@link DeclarationIndex#find(String)} finds by it.
      */
-    public static GraphDescriptor resolve(DeclarationIndex index, String facade) {
-        Objects.requireNonNull(index, "index");
-        Objects.requireNonNull(facade, "facade");
+    public static GraphDescriptor resolve(@NonNull DeclarationIndex index, @NonNull String facade) {
         return resolveDeclaration(index, index.find(facade).orElseThrow(() -> new CodegenException(UNRESOLVED,
                 "the machine interface " + facade + " is not declared"))).graph();
     }
@@ -119,9 +117,7 @@ public final class MachineHeaders {
      *     peer that no machine of this compilation is though one shares its name; {@code SG603} naming a type of the
      *     owner's package or of {@code java.lang} that obscures a package the vocabulary names
      */
-    static void requireWatchablePeers(DeclarationIndex index, List<Resolved> machines) {
-        Objects.requireNonNull(index, "index");
-        Objects.requireNonNull(machines, "machines");
+    static void requireWatchablePeers(@NonNull DeclarationIndex index, @NonNull List<Resolved> machines) {
         for (Resolved owner : machines) {
             GraphDescriptor graph = owner.graph();
             for (TypeHeader peerType : owner.peers()) {
@@ -323,15 +319,11 @@ public final class MachineHeaders {
      * @param transition the transition enum
      * @param peers the types the class literals of its {@code @GraphPeers} name, in declaration order
      */
-    record Resolved(GraphDescriptor graph, TypeHeader facade, TypeHeader state, TypeHeader transition,
-            List<TypeHeader> peers) {
+    record Resolved(@NonNull GraphDescriptor graph, @NonNull TypeHeader facade, @NonNull TypeHeader state,
+            @NonNull TypeHeader transition, List<TypeHeader> peers) {
 
         /** Copies the list, so a resolved machine never reflects a later change of the list it was built from. */
         Resolved {
-            Objects.requireNonNull(graph, "graph");
-            Objects.requireNonNull(facade, "facade");
-            Objects.requireNonNull(state, "state");
-            Objects.requireNonNull(transition, "transition");
             peers = List.copyOf(peers);
         }
     }

@@ -1,8 +1,8 @@
 package io.github.graphmaquina.api;
 
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import lombok.NonNull;
 
 /**
  * Cast-and-validate plumbing shared by {@link GuardContext#input(Class)} and
@@ -15,8 +15,7 @@ final class InputSupport {
     }
 
     /** Validates {@code type} before evaluating {@code input}, so a bad token fails even with no payload present. */
-    static <I> Optional<I> cast(Class<I> type, Supplier<Optional<?>> input) {
-        Objects.requireNonNull(type, "type");
+    static <I> Optional<I> cast(@NonNull Class<I> type, Supplier<Optional<?>> input) {
         if (type.isPrimitive()) {
             throw new IllegalArgumentException("input type must be a reference type; use its wrapper class");
         }

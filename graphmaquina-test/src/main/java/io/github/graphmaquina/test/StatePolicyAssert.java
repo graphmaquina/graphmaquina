@@ -2,9 +2,11 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over the rejection policy of one state, obtained from
@@ -16,6 +18,7 @@ import java.util.function.Function;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
@@ -26,17 +29,8 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
     private final StatePolicy<S, T> actual;
     private final Function<T, Optional<S>> transitionTarget;
 
-    StatePolicyAssert(String context, Class<T> transitions, StatePolicy<S, T> actual,
-                      Function<T, Optional<S>> transitionTarget) {
-        this.context = context;
-        this.transitions = transitions;
-        this.actual = actual;
-        this.transitionTarget = transitionTarget;
-    }
-
     /** The reason given for every identifier the policy does not name on its own. */
-    public StatePolicyAssert<S, T> hasDefaultReason(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public StatePolicyAssert<S, T> hasDefaultReason(@NonNull String expected) {
         StatePolicy<S, T> policy = Checks.subject(context, "default reason", expected, actual);
         Checks.equal(context, "default reason", expected, policy.otherwise());
         return this;
@@ -50,9 +44,7 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
      * at all is a different matter: it would fall back to the default without ever having been declarable,
      * so it is refused as a programming error rather than quietly accepted.
      */
-    public StatePolicyAssert<S, T> rejects(T transition, String expected) {
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(expected, "expected");
+    public StatePolicyAssert<S, T> rejects(@NonNull T transition, @NonNull String expected) {
         if (transitions != null) {
             GraphAssert.requireDeclaredTransition(transitions, transition);
         }

@@ -43,6 +43,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
@@ -638,15 +640,11 @@ class SubmachineDslTest {
     }
 
     /** A definition of its delegate's key whose bindings are those of {@code donor}; only a hand can write one. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Rebound<E> implements GraphDefinition<E, Rung, RungMove> {
 
         private final GraphDefinition<E, Rung, RungMove> delegate;
         private final GraphDefinition<?, Rung, RungMove> donor;
-
-        Rebound(GraphDefinition<E, Rung, RungMove> delegate, GraphDefinition<?, Rung, RungMove> donor) {
-            this.delegate = delegate;
-            this.donor = donor;
-        }
 
         @Override
         public MachineKey<E, Rung, RungMove> key() {
@@ -712,14 +710,11 @@ class SubmachineDslTest {
     }
 
     /** A definition that counts how many times its bindings are read, and otherwise answers as its delegate. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Counted<E> implements GraphDefinition<E, Rung, RungMove> {
 
         private final GraphDefinition<E, Rung, RungMove> delegate;
         private int reads;
-
-        Counted(GraphDefinition<E, Rung, RungMove> delegate) {
-            this.delegate = delegate;
-        }
 
         @Override
         public MachineKey<E, Rung, RungMove> key() {

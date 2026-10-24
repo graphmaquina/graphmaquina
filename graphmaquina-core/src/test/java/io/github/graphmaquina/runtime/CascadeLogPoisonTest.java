@@ -19,11 +19,13 @@ import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -37,31 +39,26 @@ class CascadeLogPoisonTest {
     enum Step { GO }
 
     /** A node with children to cascade to and an optional refusal expressed by {@code blocked}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Node {
+        @NonNull
         private final String name;
         private final boolean blocked;
+        @NonNull
         private final List<Node> children;
         private State state = State.A;
-
-        Node(String name, boolean blocked, List<Node> children) {
-            this.name = Objects.requireNonNull(name, "name");
-            this.blocked = blocked;
-            this.children = Objects.requireNonNull(children, "children");
-        }
     }
 
     /** An entity whose machine is absent from the registry. */
     static final class Missing { }
 
     /** A handler that throws the supplied Error at one selected line. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class BreakingHandler extends Handler {
+        @NonNull
         private final String target;
+        @NonNull
         private final AssertionError fatal;
-
-        BreakingHandler(String target, AssertionError fatal) {
-            this.target = Objects.requireNonNull(target, "target");
-            this.fatal = Objects.requireNonNull(fatal, "fatal");
-        }
 
         @Override public void publish(LogRecord record) {
             if (record.getMessage().contains(target)) {

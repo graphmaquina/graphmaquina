@@ -69,13 +69,18 @@ class UnboundFlowTest {
         UnboundFlow flow = new UnboundFlow();
         @SuppressWarnings("unchecked")
         FlowKey<Object> loose = (FlowKey<Object>) (FlowKey<?>) BATCH;
-        assertEquals("key", assertThrows(NullPointerException.class, () -> flow.get(null)).getMessage());
-        assertEquals("key", assertThrows(NullPointerException.class, () -> flow.put(null, "b-1")).getMessage());
-        assertEquals("value", assertThrows(NullPointerException.class, () -> flow.put(BATCH, null)).getMessage());
-        assertEquals("key", assertThrows(NullPointerException.class, () -> flow.remove(null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.get(null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.put(null, "b-1")).getMessage());
+        assertEquals("value is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.put(BATCH, null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.remove(null)).getMessage());
         assertEquals("Cannot cast java.lang.Integer to java.lang.String",
                 assertThrows(ClassCastException.class, () -> flow.put(loose, 5)).getMessage());
-        assertEquals("type", assertThrows(NullPointerException.class, () -> flow.entity(null)).getMessage());
+        assertEquals("type is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.entity(null)).getMessage());
         assertEquals("entity type must be a reference type; use its wrapper class",
                 assertThrows(IllegalArgumentException.class, () -> flow.entity(int.class)).getMessage());
         assertEquals(Set.of(), flow.keys());

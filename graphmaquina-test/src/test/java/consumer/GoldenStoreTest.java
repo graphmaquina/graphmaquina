@@ -606,7 +606,7 @@ class GoldenStoreTest {
     @Test
     void nullArgumentsAreProgrammingErrors() {
         GoldenOptions options = GoldenOptions.readOnly(GoldenStoreTest.class.getClassLoader());
-        assertEquals("resource", assertThrows(NullPointerException.class,
+        assertEquals("resource is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> GoldenStore.assertMatches(null, "a\n", options, DIFF)).getMessage());
         assertEquals("actual", assertThrows(NullPointerException.class,
                 () -> GoldenStore.assertMatches("x.dot", null, options, DIFF)).getMessage());

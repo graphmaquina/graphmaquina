@@ -2,10 +2,10 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
 import io.github.graphmaquina.api.Outcome;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import lombok.AccessLevel;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -19,23 +19,18 @@ final class DefaultAsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> im
     private final DefaultStateMachine<E, S, T> machine;
 
     @Override
-    public CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
+    public CompletableFuture<Outcome<E, S, T>> execute(@NonNull E entity, @NonNull T transition) {
         return submit(() -> machine.execute(entity, transition));
     }
 
     @Override
-    public CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition, Object input) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(input, "input");
+    public CompletableFuture<Outcome<E, S, T>> execute(@NonNull E entity, @NonNull T transition,
+            @NonNull Object input) {
         return submit(() -> machine.execute(entity, transition, input));
     }
 
     @Override
-    public CompletableFuture<Outcome<E, S, T>> reevaluate(E entity) {
-        Objects.requireNonNull(entity, "entity");
+    public CompletableFuture<Outcome<E, S, T>> reevaluate(@NonNull E entity) {
         return submit(() -> machine.reevaluate(entity));
     }
 

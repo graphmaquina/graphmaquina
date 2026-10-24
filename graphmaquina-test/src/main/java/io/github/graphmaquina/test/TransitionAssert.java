@@ -9,8 +9,10 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over one declared edge of a graph, obtained from
@@ -24,19 +26,14 @@ import java.util.Optional;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final TransitionSpec<E, S, T> actual;
 
-    TransitionAssert(String context, TransitionSpec<E, S, T> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
-
     /** The destination this identifier reaches from this origin; the only reading of a target there is. */
-    public TransitionAssert<E, S, T> hasTarget(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> hasTarget(@NonNull S expected) {
         TransitionSpec<E, S, T> spec = Checks.subject(context, "target", expected, actual);
         Checks.equal(context, "target", expected, spec.to());
         return this;
@@ -50,8 +47,7 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return hasKind(TransitionKind.MOVE);
     }
 
-    public TransitionAssert<E, S, T> hasActionNamed(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> hasActionNamed(@NonNull String expected) {
         Optional<String> wanted = Optional.of(expected);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "action", wanted, actual);
         Checks.equal(context, "action", wanted, spec.action().map(ActionRef::name));
@@ -104,8 +100,7 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * The recovery edges that the edge's recovery rules name are not compared here, but by
      * {@link #recoversExactly(List)}.
      */
-    public TransitionAssert<E, S, T> hasFailureTransition(T expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> hasFailureTransition(@NonNull T expected) {
         Optional<T> wanted = Optional.of(expected);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "failure transition", wanted, actual);
         Checks.equal(context, "failure transition", wanted, spec.onFailure());
@@ -144,16 +139,14 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * @param expected the rules the edge must declare, in declaration order
      * @return this view
      */
-    public TransitionAssert<E, S, T> recoversExactly(List<RecoveryRule<T>> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> recoversExactly(@NonNull List<RecoveryRule<T>> expected) {
         List<RecoveryRule<T>> wanted = List.copyOf(expected);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "recovery rules", wanted, actual);
         Checks.equal(context, "recovery rules", wanted, spec.recoveryRules());
         return this;
     }
 
-    public TransitionAssert<E, S, T> hasTimeout(Duration expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> hasTimeout(@NonNull Duration expected) {
         Optional<Duration> wanted = Optional.of(expected);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "timeout", wanted, actual);
         Checks.equal(context, "timeout", wanted, spec.timeout());
@@ -167,8 +160,7 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    public TransitionAssert<E, S, T> hasHookNamed(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionAssert<E, S, T> hasHookNamed(@NonNull String expected) {
         Optional<String> wanted = Optional.of(expected);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "hook", wanted, actual);
         Checks.equal(context, "hook", wanted, spec.afterCommit().map(HookRef::name));

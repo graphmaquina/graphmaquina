@@ -4,8 +4,8 @@ import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the flow of a call, obtained from {@link BaseOutcomeAssert#flow()} on any outcome view, from
@@ -41,8 +41,7 @@ public final class FlowAssert {
      * flow that belongs to no call hold no entity, so they satisfy it for none, and the failure reports {@code none} as
      * the actual value.
      */
-    public FlowAssert hasEntitySameAs(Object expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FlowAssert hasEntitySameAs(@NonNull Object expected) {
         FlowView flow = Checks.present(context, "entity", expected, actual);
         Optional<Object> entity = flow.entity();
         if (entity.isEmpty()) {
@@ -53,9 +52,7 @@ public final class FlowAssert {
     }
 
     /** The value the flow holds for {@code key} is equal to {@code expected}, by {@link Object#equals(Object)}. */
-    public <V> FlowAssert hasValue(FlowKey<V> key, V expected) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(expected, "expected");
+    public <V> FlowAssert hasValue(@NonNull FlowKey<V> key, @NonNull V expected) {
         Optional<V> wanted = Optional.of(expected);
         String property = "value of " + key;
         FlowView flow = Checks.present(context, property, wanted, actual);
@@ -64,8 +61,7 @@ public final class FlowAssert {
     }
 
     /** The flow holds no value for {@code key}, nor for any key equal to it. */
-    public FlowAssert hasNoValue(FlowKey<?> key) {
-        Objects.requireNonNull(key, "key");
+    public FlowAssert hasNoValue(@NonNull FlowKey<?> key) {
         Optional<Object> none = Optional.empty();
         String property = "value of " + key;
         FlowView flow = Checks.present(context, property, none, actual);
@@ -77,8 +73,7 @@ public final class FlowAssert {
      * The keys that hold a value, in the order {@link FlowView#keys()} lists them, which is the order of the writes
      * that gave each its value. No argument expects a flow that holds no value.
      */
-    public FlowAssert hasKeysExactly(FlowKey<?>... keys) {
-        Objects.requireNonNull(keys, "keys");
+    public FlowAssert hasKeysExactly(@NonNull FlowKey<?>... keys) {
         List<FlowKey<?>> wanted = List.of(keys);
         FlowView flow = Checks.present(context, "keys", wanted, actual);
         Checks.equal(context, "keys", wanted, List.copyOf(flow.keys()));

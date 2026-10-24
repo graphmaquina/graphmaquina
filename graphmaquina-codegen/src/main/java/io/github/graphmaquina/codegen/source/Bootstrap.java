@@ -19,9 +19,9 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * Reads one generation request into the model the emitters work from, without compiling the application.
@@ -73,8 +73,7 @@ public final class Bootstrap {
      * @param request the request to read
      * @return the model and the original sources it was read from
      */
-    public static Inspection read(GenerationRequest request) {
-        Objects.requireNonNull(request, "request");
+    public static Inspection read(@NonNull GenerationRequest request) {
         Parsed parsed = parse(request);
         GenerationModel model;
         try (DeclarationIndex index = DeclarationIndex.open(parsed.distinctUnits(), request.classpath(),
@@ -104,8 +103,7 @@ public final class Bootstrap {
      * @throws UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the file
      *     manager javac read the sources with cannot be closed
      */
-    public static List<OriginalSource> originals(GenerationRequest request) {
-        Objects.requireNonNull(request, "request");
+    public static List<OriginalSource> originals(@NonNull GenerationRequest request) {
         return parse(request).originals();
     }
 
@@ -313,11 +311,10 @@ public final class Bootstrap {
      * @param model the graphs and symbols the request declares
      * @param sources the original sources the model was read from
      */
-    public record Inspection(GenerationModel model, List<OriginalSource> sources) {
+    public record Inspection(@NonNull GenerationModel model, List<OriginalSource> sources) {
 
         /** Copies the list, so an inspection never reflects a later change of the list it was built from. */
         public Inspection {
-            Objects.requireNonNull(model, "model");
             sources = List.copyOf(sources);
         }
     }
@@ -333,13 +330,10 @@ public final class Bootstrap {
      *     the package it declares, which is where javac and every build place it
      * @param types the qualified names of the top-level types the file declares, in declaration order
      */
-    public record OriginalSource(Path file, String origin, String path, List<String> types) {
+    public record OriginalSource(@NonNull Path file, @NonNull String origin, @NonNull String path, List<String> types) {
 
         /** Copies the list, so a source never reflects a later change of the list it was built from. */
         public OriginalSource {
-            Objects.requireNonNull(file, "file");
-            Objects.requireNonNull(origin, "origin");
-            Objects.requireNonNull(path, "path");
             types = List.copyOf(types);
         }
     }

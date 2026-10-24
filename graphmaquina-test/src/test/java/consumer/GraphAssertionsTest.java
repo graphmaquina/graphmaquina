@@ -327,21 +327,21 @@ class GraphAssertionsTest {
     @Test
     void aNullRequiredArgumentIsAnArgumentErrorNotAnAssertionFailure() {
         GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(TestDomain.graph(TIMEOUT));
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasInitial(null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasTransitionsExactly(null, Id.PREPARE)).getMessage());
-        assertEquals("state", assertThrows(NullPointerException.class,
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasNoWatch(null)).getMessage());
-        assertEquals("state", assertThrows(NullPointerException.class,
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.policy(null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.transition(null, Id.PREPARE)).getMessage());
-        assertEquals("transition", assertThrows(NullPointerException.class,
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.transition(State.NEW, null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasNoTransition(null, Id.PREPARE)).getMessage());
-        assertEquals("transition", assertThrows(NullPointerException.class,
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasNoTransition(State.NEW, null)).getMessage());
         assertThrows(NullPointerException.class,
                 () -> graph.hasTerminalsExactly(State.DONE, null));

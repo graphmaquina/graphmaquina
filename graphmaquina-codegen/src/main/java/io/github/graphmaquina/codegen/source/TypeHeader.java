@@ -2,11 +2,11 @@ package io.github.graphmaquina.codegen.source;
 
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import lombok.NonNull;
 
 /**
  * The header of one type declaration, read from an original source or materialized from a classpath binary.
@@ -35,16 +35,12 @@ import javax.lang.model.element.Modifier;
  * @param scope the lexical context this header's spelled names resolve in
  * @param origin the declaration's position in its original source, absent for a classpath header
  */
-public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> modifiers,
+public record TypeHeader(@NonNull String canonicalName, @NonNull ElementKind kind, Set<Modifier> modifiers,
         List<String> typeParameters, List<TypeUse> supertypes, List<Member> members,
-        List<Marker> markers, List<LocalMarker> localMarkers, List<String> constants, Scope scope,
-        Optional<SourceLocation> origin) {
+        List<Marker> markers, List<LocalMarker> localMarkers, List<String> constants, @NonNull Scope scope,
+        @NonNull Optional<SourceLocation> origin) {
 
     public TypeHeader {
-        Objects.requireNonNull(canonicalName, "canonicalName");
-        Objects.requireNonNull(kind, "kind");
-        Objects.requireNonNull(scope, "scope");
-        Objects.requireNonNull(origin, "origin");
         modifiers = Set.copyOf(modifiers);
         typeParameters = List.copyOf(typeParameters);
         supertypes = List.copyOf(supertypes);
@@ -76,15 +72,11 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
      * @param markers the annotations written on the member
      * @param origin the member's position in its original source, absent for a classpath header
      */
-    public record Member(String name, ElementKind kind, Set<Modifier> modifiers, List<String> typeParameters,
-            List<TypeUse> parameterTypes, TypeUse type, List<Marker> markers,
-            Optional<SourceLocation> origin) {
+    public record Member(@NonNull String name, @NonNull ElementKind kind, Set<Modifier> modifiers,
+            List<String> typeParameters, List<TypeUse> parameterTypes, @NonNull TypeUse type, List<Marker> markers,
+            @NonNull Optional<SourceLocation> origin) {
 
         public Member {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(kind, "kind");
-            Objects.requireNonNull(type, "type");
-            Objects.requireNonNull(origin, "origin");
             modifiers = Set.copyOf(modifiers);
             typeParameters = List.copyOf(typeParameters);
             parameterTypes = List.copyOf(parameterTypes);
@@ -101,11 +93,9 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
      * @param classLiterals the {@code X.class} arguments of the annotation, spelled and in order
      * @param origin the annotation's position in its original source, absent for a classpath header
      */
-    public record Marker(String name, List<String> classLiterals, Optional<SourceLocation> origin) {
+    public record Marker(@NonNull String name, List<String> classLiterals, @NonNull Optional<SourceLocation> origin) {
 
         public Marker {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(origin, "origin");
             classLiterals = List.copyOf(classLiterals);
         }
     }
@@ -122,10 +112,9 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
      * @param localTypes the simple names of every local class the member declares, in any block: one of them may be
      *     what a name means where the annotation is written
      */
-    public record LocalMarker(Marker marker, List<LocalScope> scopes, Set<String> localTypes) {
+    public record LocalMarker(@NonNull Marker marker, List<LocalScope> scopes, Set<String> localTypes) {
 
         public LocalMarker {
-            Objects.requireNonNull(marker, "marker");
             scopes = List.copyOf(scopes);
             localTypes = Set.copyOf(localTypes);
         }
@@ -158,13 +147,12 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
      * @param singleImports the fully spelled targets of every single import, for example {@code a.b.C}
      * @param onDemandImports the prefixes of every on-demand import, for example {@code a.b}
      */
-    public record Scope(String packageName, List<String> singleImports, List<String> onDemandImports) {
+    public record Scope(@NonNull String packageName, List<String> singleImports, List<String> onDemandImports) {
 
         /** The scope of a classpath header, which spells every name canonically already. */
         public static final Scope BINARY = new Scope("", List.of(), List.of());
 
         public Scope {
-            Objects.requireNonNull(packageName, "packageName");
             singleImports = List.copyOf(singleImports);
             onDemandImports = List.copyOf(onDemandImports);
         }

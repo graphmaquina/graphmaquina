@@ -1,7 +1,7 @@
 package io.github.graphmaquina.test.probe;
 
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * One call to a wrapped state setter, as the {@link StateWriteProbe} recorded it. The values are the ones the
@@ -17,13 +17,9 @@ import java.util.Optional;
  * @param <E> the entity type of the machine the setter belongs to
  * @param <S> the state enum of that machine
  */
-public record StateWrite<E, S extends Enum<S>>(E entity, S requested, WriteStatus status,
-        Optional<RuntimeException> cause) {
+public record StateWrite<E, S extends Enum<S>>(@NonNull E entity, @NonNull S requested, @NonNull WriteStatus status,
+        @NonNull Optional<RuntimeException> cause) {
 
     public StateWrite {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(requested, "requested");
-        Objects.requireNonNull(status, "status");
-        Objects.requireNonNull(cause, "cause");
     }
 }

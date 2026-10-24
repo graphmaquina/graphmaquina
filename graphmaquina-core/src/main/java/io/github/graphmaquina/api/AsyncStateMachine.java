@@ -1,7 +1,7 @@
 package io.github.graphmaquina.api;
 
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import lombok.NonNull;
 
 /**
  * Asynchronous counterpart of {@link StateMachine}, returning outcomes as futures; {@link StateMachine#async()}
@@ -22,10 +22,8 @@ public interface AsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      *
      * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
      */
-    default CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition, Object input) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(input, "input");
+    default CompletableFuture<Outcome<E, S, T>> execute(@NonNull E entity, @NonNull T transition,
+            @NonNull Object input) {
         return CompletableFuture.failedFuture(
                 new UnsupportedOperationException("this AsyncStateMachine does not support operation input"));
     }

@@ -253,15 +253,15 @@ class FlowAssertionsTest {
     void aNullArgumentIsAnArgumentErrorEvenWhenTheSubjectIsNull() {
         FlowAssert shipped = OutcomeAssert.assertThat(Parcels.machine().execute(parcel, Move.SHIP)).flow();
         for (FlowAssert view : List.of(shipped, FlowAssert.assertThat(null))) {
-            assertEquals("expected", assertThrows(NullPointerException.class,
+            assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasEntitySameAs(null)).getMessage());
-            assertEquals("key", assertThrows(NullPointerException.class,
+            assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasValue(null, "T-1")).getMessage());
-            assertEquals("expected", assertThrows(NullPointerException.class,
+            assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasValue(Parcels.TRACKING, null)).getMessage());
-            assertEquals("key", assertThrows(NullPointerException.class,
+            assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasNoValue(null)).getMessage());
-            assertEquals("keys", assertThrows(NullPointerException.class,
+            assertEquals("keys is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasKeysExactly((FlowKey<?>[]) null)).getMessage());
             assertThrows(NullPointerException.class, () -> view.hasKeysExactly(Parcels.TRACKING, null));
         }

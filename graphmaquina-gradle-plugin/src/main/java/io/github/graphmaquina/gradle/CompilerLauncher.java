@@ -1,5 +1,7 @@
 package io.github.graphmaquina.gradle;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.gradle.api.file.RegularFile;
 import org.gradle.jvm.toolchain.JavaCompiler;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
@@ -17,6 +19,7 @@ import org.gradle.jvm.toolchain.JavaLauncher;
  * {@code bin} directory. It holds the compiler's metadata and that file as plain values, so the configuration
  * cache stores it as it stores a launcher Gradle selects.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class CompilerLauncher implements JavaLauncher {
 
     /** The installation the compiler belongs to, as Gradle describes it. */
@@ -24,11 +27,6 @@ final class CompilerLauncher implements JavaLauncher {
 
     /** The {@code java} of that installation. */
     private final RegularFile executable;
-
-    private CompilerLauncher(JavaInstallationMetadata metadata, RegularFile executable) {
-        this.metadata = metadata;
-        this.executable = executable;
-    }
 
     /**
      * The launcher of the installation {@code compiler} belongs to.

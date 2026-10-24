@@ -1,8 +1,8 @@
 package io.github.graphmaquina.test.probe;
 
 import io.github.graphmaquina.test.internal.InputTypes;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * What a {@link GuardProbe} or a {@link ControlledAsyncGuard} recorded about one invocation. A guard decides and
@@ -19,15 +19,10 @@ import java.util.Optional;
  * @param <S> the state enum of the machine
  * @param <T> the transition identifier enum of the machine
  */
-public record GuardCall<E, S extends Enum<S>, T extends Enum<T>>(E entity, S from, T transition, S to,
-        Optional<?> input) {
+public record GuardCall<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
+        @NonNull T transition, @NonNull S to, @NonNull Optional<?> input) {
 
     public GuardCall {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(to, "to");
-        Objects.requireNonNull(input, "input");
     }
 
     /** Creates a call with no operation input. */

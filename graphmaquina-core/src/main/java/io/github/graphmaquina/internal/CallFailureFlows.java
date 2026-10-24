@@ -2,8 +2,8 @@ package io.github.graphmaquina.internal;
 
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.error.CallFailedException;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * The bridge through which the runtime attaches the frozen flow of a call to the failure the call throws: the
@@ -31,8 +31,7 @@ public final class CallFailureFlows {
      * @throws NullPointerException if {@code access} is null
      * @throws IllegalStateException with "already registered" when a bridge is registered already
      */
-    public static synchronized void register(Access access) {
-        Objects.requireNonNull(access, "access");
+    public static synchronized void register(@NonNull Access access) {
         if (CallFailureFlows.access.isPresent()) {
             throw new IllegalStateException("already registered");
         }
@@ -44,9 +43,7 @@ public final class CallFailureFlows {
      *
      * @throws NullPointerException if {@code failure} or {@code flow} is null
      */
-    public static void attach(CallFailedException failure, FlowView flow) {
-        Objects.requireNonNull(failure, "failure");
-        Objects.requireNonNull(flow, "flow");
+    public static void attach(@NonNull CallFailedException failure, @NonNull FlowView flow) {
         access.orElseThrow().attach(failure, flow);
     }
 }

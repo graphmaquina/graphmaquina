@@ -16,7 +16,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
@@ -40,6 +39,10 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Materializes classpath headers into the same declaration model as source headers, keeping generic owner
@@ -60,12 +63,19 @@ import javax.tools.ToolProvider;
  * at all, for a type of the package. So {@link #named} and {@link #unnamed} each answer a name with a type of one of
  * the two packages only, and every header keeps the package that declares it.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class ClasspathDeclarations implements AutoCloseable {
 
     private static final String PROBE_NAME = "SgClasspathProbe";
 
     private final StandardJavaFileManager fileManager;
     private final Elements elements;
+
+    /**
+     * The position service used to anchor original declarations. A start position is data the parsed tree
+     * carries, so the task that serves it does not have to be the task that parsed the tree.
+     */
+    @Getter(AccessLevel.PACKAGE)
     private final SourcePositions sourcePositions;
     private final Map<String, Optional<TypeHeader>> namedHeaders = new HashMap<>();
     private final Map<String, Optional<TypeHeader>> unnamedHeaders = new HashMap<>();
@@ -78,13 +88,6 @@ final class ClasspathDeclarations implements AutoCloseable {
      */
     private final Map<TypeHeader, Set<String>> namedReferences = new IdentityHashMap<>();
     private final Map<TypeHeader, Set<String>> unnamedReferences = new IdentityHashMap<>();
-
-    private ClasspathDeclarations(StandardJavaFileManager fileManager, Elements elements,
-            SourcePositions sourcePositions) {
-        this.fileManager = fileManager;
-        this.elements = elements;
-        this.sourcePositions = sourcePositions;
-    }
 
     /**
      * Opens a task over {@code classpath} at release {@value GenerationRequest#DEFAULT_RELEASE}, whose element
@@ -100,9 +103,7 @@ final class ClasspathDeclarations implements AutoCloseable {
      * an older release is a JDK type here exactly when it is one for javac; {@code encoding} is the one the
      * original sources are read in, although this task reads none.
      */
-    static ClasspathDeclarations open(List<Path> classpath, int release, Charset encoding) {
-        Objects.requireNonNull(classpath, "classpath");
-        Objects.requireNonNull(encoding, "encoding");
+    static ClasspathDeclarations open(@NonNull List<Path> classpath, int release, @NonNull Charset encoding) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding);
@@ -215,14 +216,6 @@ final class ClasspathDeclarations implements AutoCloseable {
     boolean namesBothTypes(TypeHeader header, String canonicalName) {
         Set<String> unnamed = unnamedReferences.get(header);
         return namesNamedType(header, canonicalName) && unnamed != null && unnamed.contains(canonicalName);
-    }
-
-    /**
-     * The position service used to anchor original declarations. A start position is data the parsed tree
-     * carries, so the task that serves it does not have to be the task that parsed the tree.
-     */
-    SourcePositions sourcePositions() {
-        return sourcePositions;
     }
 
     @Override

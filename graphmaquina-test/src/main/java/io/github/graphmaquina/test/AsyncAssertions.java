@@ -3,7 +3,6 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -11,6 +10,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.NonNull;
 
 /**
  * Bounded waits that turn an asynchronous transition into the same typed views a synchronous one produces.
@@ -108,8 +108,7 @@ public final class AsyncAssertions {
         throw new ExecutionException(null, cause);
     }
 
-    private static long budgetNanos(Duration budget) {
-        Objects.requireNonNull(budget, "budget");
+    private static long budgetNanos(@NonNull Duration budget) {
         if (budget.isZero() || budget.isNegative()) {
             throw new IllegalArgumentException("the budget must be positive, not " + budget);
         }

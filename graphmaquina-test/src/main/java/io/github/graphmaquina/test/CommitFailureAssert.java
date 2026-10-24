@@ -3,8 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over a {@link CommitFailedException}: phase 2 could not complete the commit. {@code applied}
@@ -36,8 +36,7 @@ public final class CommitFailureAssert extends BaseCallFailureAssert<CommitFailu
     }
 
     /** The entity whose setter threw, matched by reference. */
-    public CommitFailureAssert hasFailedEntity(Object expected) {
-        Objects.requireNonNull(expected, "expected");
+    public CommitFailureAssert hasFailedEntity(@NonNull Object expected) {
         Optional<Object> actual = failure.failedEntity();
         if (actual.isEmpty() || actual.get() != expected) {
             Checks.fail(context, "failed entity", Optional.of(expected), actual);

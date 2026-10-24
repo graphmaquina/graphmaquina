@@ -7,7 +7,8 @@ import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import java.util.List;
-import java.util.Objects;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * A call that failed, as the call itself classifies it. Every exception a call throws is an Error, which propagates
@@ -31,6 +32,8 @@ public abstract class CallFailedException extends StateMachineException {
         CallFailureFlows.register((CallFailedException failure, FlowView frozen) -> failure.flow = frozen);
     }
 
+    /** The call that failed: one instance per call, the one its observers, if any, were notified with. */
+    @Getter
     private final MachineCall call;
     /**
      * Set by the root of the call through {@link CallFailureFlows}, never null. Not transient: writing a call failure
@@ -39,19 +42,14 @@ public abstract class CallFailedException extends StateMachineException {
      */
     private FlowView flow = FlowView.empty();
 
-    CallFailedException(MachineCall call, String message) {
+    CallFailedException(@NonNull MachineCall call, String message) {
         super(message);
-        this.call = Objects.requireNonNull(call, "call");
+        this.call = call;
     }
 
-    CallFailedException(MachineCall call, String message, Throwable cause) {
+    CallFailedException(@NonNull MachineCall call, String message, Throwable cause) {
         super(message, cause);
-        this.call = Objects.requireNonNull(call, "call");
-    }
-
-    /** The call that failed: one instance per call, the one its observers, if any, were notified with. */
-    public MachineCall call() {
-        return call;
+        this.call = call;
     }
 
     /** The phase the call was in when it failed. */

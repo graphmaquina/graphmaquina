@@ -34,7 +34,8 @@ class TextsTest {
 
     @Test
     void aNullValueIsRefused() {
-        assertEquals("value", assertThrows(NullPointerException.class, () -> Texts.shown(null)).getMessage());
+        assertEquals("value is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> Texts.shown(null)).getMessage());
     }
 
     @Test
@@ -68,7 +69,8 @@ class TextsTest {
 
     @Test
     void aNullIdentityIsRefused() {
-        assertEquals("id", assertThrows(NullPointerException.class, () -> Texts.identity(null)).getMessage());
+        assertEquals("id is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> Texts.identity(null)).getMessage());
     }
 
     @Test

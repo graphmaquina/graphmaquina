@@ -10,6 +10,9 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.function.BiConsumer;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The setter a machine writes its state with, wrapped so that a test can watch phase 2 and make one write
@@ -37,6 +40,7 @@ import java.util.function.BiConsumer;
  * @param <E> the entity type of the machine whose setter is wrapped
  * @param <S> the state enum of that machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E, S> {
 
     private final BiConsumer<? super E, ? super S> delegate;
@@ -44,10 +48,6 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
     private final NavigableMap<Integer, StateWrite<E, S>> recorded = new ConcurrentSkipListMap<>();
     private final Object entry = new Object();
     private int entered;
-
-    private StateWriteProbe(BiConsumer<? super E, ? super S> delegate) {
-        this.delegate = delegate;
-    }
 
     public static <E, S extends Enum<S>> StateWriteProbe<E, S> wrapping(
             BiConsumer<? super E, ? super S> delegate) {
@@ -59,8 +59,7 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
      * the wrapped setter. Arming the same call twice is a fixture error rather than a replacement, since a
      * silent replacement would hide one of the two exceptions the test meant to observe.
      */
-    public StateWriteProbe<E, S> failOnCall(int oneBased, RuntimeException failure) {
-        Objects.requireNonNull(failure, "failure");
+    public StateWriteProbe<E, S> failOnCall(int oneBased, @NonNull RuntimeException failure) {
         if (oneBased < 1) {
             throw new IllegalArgumentException("the call ordinal counts from 1, not " + oneBased);
         }
@@ -89,9 +88,7 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
     }
 
     @Override
-    public void accept(E entity, S requested) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(requested, "requested");
+    public void accept(@NonNull E entity, @NonNull S requested) {
         int ordinal;
         synchronized (entry) {
             ordinal = ++entered;

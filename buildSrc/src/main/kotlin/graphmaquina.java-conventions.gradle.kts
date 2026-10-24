@@ -16,6 +16,16 @@ java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
 }
 
+// Lombok is tooling for this repository's own sources, main and test alike: compile-only and run as an annotation
+// processor, so it never reaches a published POM, Gradle module or runtime classpath, and a consumer never needs it.
+val lombok = the<VersionCatalogsExtension>().named("libs").findLibrary("lombok").get()
+dependencies {
+    compileOnly(lombok)
+    annotationProcessor(lombok)
+    testCompileOnly(lombok)
+    testAnnotationProcessor(lombok)
+}
+
 // Size and complexity checks run before every Java compilation; the script is shared with the included plugin build.
 apply(from = rootDir.resolve("config/checkstyle/checkstyle.gradle.kts"))
 // The documentation checks run before every Java compilation too; the root project registers the task.
@@ -24,7 +34,9 @@ tasks.withType<JavaCompile>().configureEach { dependsOn(":checkDocs") }
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release = 21
-    options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
+    // Lombok claims only its own annotations, so the processing lint would report every other one, JUnit's and
+    // Gradle's alike, as unclaimed; that one category is off.
+    options.compilerArgs.addAll(listOf("-Xlint:all,-serial,-processing", "-Werror"))
 }
 
 tasks.withType<Test>().configureEach {
@@ -75,6 +87,8 @@ pluginManager.withPlugin("maven-publish") {
         withSourcesJar()
         withJavadocJar()
     }
+    // The javadoc jar documents what Lombok generates too; the script is shared with the included plugin build.
+    apply(from = rootDir.resolve("config/lombok/delombok.gradle.kts"))
     extensions.configure<PublishingExtension> {
         publications.withType<MavenPublication>().configureEach {
             pom {

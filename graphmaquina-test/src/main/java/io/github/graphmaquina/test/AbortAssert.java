@@ -4,8 +4,8 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over a {@link TransitionAbortedException}: the transaction was discarded, so nothing
@@ -36,13 +36,8 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
     }
 
     /** The five fields that say which edge was being run; the entity is matched by reference. */
-    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert at(MachineKey<E, S, T> key, E entity, S from,
-            T transition, S to) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(to, "to");
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert at(@NonNull MachineKey<E, S, T> key, @NonNull E entity,
+            @NonNull S from, @NonNull T transition, @NonNull S to) {
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
@@ -55,12 +50,8 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
      * The request that was refused before any edge was resolved: the identifier was read, so it is compared,
      * and no destination is reported because none was selected.
      */
-    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnresolved(MachineKey<E, S, T> key,
-            E entity, S from, T transition) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnresolved(@NonNull MachineKey<E, S, T> key,
+            @NonNull E entity, @NonNull S from, @NonNull T transition) {
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
@@ -74,11 +65,8 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
      * destination: the machine, the entity by reference and the state it was in are all there is to locate it.
      * An abort that did read an identifier does not satisfy it.
      */
-    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnread(MachineKey<E, S, T> key, E entity,
-            S from) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(from, "from");
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnread(@NonNull MachineKey<E, S, T> key,
+            @NonNull E entity, @NonNull S from) {
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
@@ -92,11 +80,8 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
      * the edge {@code transition} a reevaluation selected: the entity's identity or its state could not be read, so it
      * reports neither a state nor a destination.
      */
-    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(MachineKey<E, S, T> key, E entity,
-            T transition) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(@NonNull MachineKey<E, S, T> key,
+            @NonNull E entity, @NonNull T transition) {
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", Optional.empty(), abort.from());
@@ -106,9 +91,8 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
     }
 
     /** The same for a reevaluation, which asks for no identifier: it reports none either. */
-    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(MachineKey<E, S, T> key, E entity) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(@NonNull MachineKey<E, S, T> key,
+            @NonNull E entity) {
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", Optional.empty(), abort.from());
@@ -118,8 +102,7 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
     }
 
     /** The action that was running when the transition aborted, which an edge without one never names. */
-    public AbortAssert hasActionNamed(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public AbortAssert hasActionNamed(@NonNull String expected) {
         Checks.equal(context, "action", Optional.of(expected), abort.action());
         return this;
     }
@@ -130,8 +113,7 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
     }
 
     /** Order and multiplicity included, compared against the engine's own strings. */
-    public AbortAssert hasCascadePathExactly(List<String> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public AbortAssert hasCascadePathExactly(@NonNull List<String> expected) {
         List<String> wanted = List.copyOf(expected);
         Checks.equal(context, "cascade path", wanted, abort.cascadePath());
         return this;

@@ -260,7 +260,7 @@ class GraphGoldensTest {
     @Test
     void nullArgumentsAreProgrammingErrors() {
         GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
-        assertEquals("resource", assertThrows(NullPointerException.class,
+        assertEquals("resource is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> GraphGoldens.assertMatches(graph, null, READ_ONLY)).getMessage());
         assertEquals("options", assertThrows(NullPointerException.class,
                 () -> GraphGoldens.assertMatches(graph, RESOURCE, null)).getMessage());

@@ -194,18 +194,18 @@ class WatchAssertionsTest {
     void aNullRequiredArgumentIsAnArgumentErrorNotAnAssertionFailure() {
         GraphAssert<String, WatchState, WatchId> graph =
                 GraphAssert.assertThat(watchGraph(List.of(rule("ready", WatchId.FINISH))));
-        assertEquals("state", assertThrows(NullPointerException.class,
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.watch(null)).getMessage());
         WatchAssert<String, WatchState, WatchId> watch = graph.watch(WatchState.WAITING);
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> watch.hasPeer(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> watch.hasRulesExactly(null)).getMessage());
         assertThrows(NullPointerException.class,
                 () -> watch.hasRulesExactly(Arrays.asList(rule("ready", WatchId.FINISH), null)));
-        assertEquals("condition", assertThrows(NullPointerException.class,
+        assertEquals("condition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new WatchRuleExpectation<>(null, WatchId.FINISH)).getMessage());
-        assertEquals("transition", assertThrows(NullPointerException.class,
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new WatchRuleExpectation<WatchId>("ready", null)).getMessage());
     }
 

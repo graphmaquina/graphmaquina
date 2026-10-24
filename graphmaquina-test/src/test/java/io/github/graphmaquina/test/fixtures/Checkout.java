@@ -8,6 +8,7 @@ import io.github.graphmaquina.runtime.StateMachines;
 import java.time.InstantSource;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.Getter;
 
 /**
  * Sub-machine fixture for this module's own tests, built with the DSL and run by a real registry: an order whose
@@ -32,6 +33,7 @@ public final class Checkout {
     public enum PaymentChange { CAPTURE, DECLINE }
 
     /** A payment, in the state it is created with, which knows its order once the order is created. */
+    @Getter
     public static final class Payment {
 
         private final String id;
@@ -43,19 +45,14 @@ public final class Checkout {
             this.state = state;
         }
 
-        public String id() { return id; }
-
-        public PaymentState state() { return state; }
-
         public void setState(PaymentState state) { this.state = state; }
-
-        public Optional<Order> order() { return order; }
 
         @Override
         public String toString() { return "Payment#" + id; }
     }
 
     /** An order in {@code CART}, paid by its payment while the order is {@code PAYING}. */
+    @Getter
     public static final class Order {
 
         private final String id;
@@ -67,12 +64,6 @@ public final class Checkout {
             this.payment = payment;
             payment.order = Optional.of(this);
         }
-
-        public String id() { return id; }
-
-        public Payment payment() { return payment; }
-
-        public OrderState state() { return state; }
 
         public void setState(OrderState state) { this.state = state; }
 

@@ -36,6 +36,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -97,8 +99,11 @@ public final class MachineRegistry implements AutoCloseable {
     private final List<DefaultStateMachine<?, ?, ?>> assembled = new ArrayList<>();
     private final Map<MachineKey<?, ?, ?>, List<Watcher<?, ?, ?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
     private final Map<Class<?>, MachineKey<?, ?, ?>> facades = new LinkedHashMap<>();
+    @Getter(AccessLevel.PACKAGE)
     private final int maxCascadeDepth;
+    @Getter(AccessLevel.PACKAGE)
     private final int maxWatchChain;
+    @Getter(AccessLevel.PACKAGE)
     private final Observers observers;
 
     public static Builder builder() {
@@ -250,8 +255,7 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     /** Throws if not present: an Optional would end up in an orElse that swallows a wiring error. */
-    public <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> of(MachineKey<E, S, T> key) {
-        Objects.requireNonNull(key, "key");
+    public <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> of(@NonNull MachineKey<E, S, T> key) {
         return machineFor(key);
     }
 
@@ -281,12 +285,6 @@ public final class MachineRegistry implements AutoCloseable {
             machine.closeIfOwned();
         }
     }
-
-    int maxCascadeDepth() { return maxCascadeDepth; }
-
-    int maxWatchChain() { return maxWatchChain; }
-
-    Observers observers() { return observers; }
 
     <E, S extends Enum<S>, T extends Enum<T>> DefaultStateMachine<E, S, T> machineFor(MachineKey<E, S, T> key) {
         DefaultStateMachine<?, ?, ?> machine = anyMachineFor(key);

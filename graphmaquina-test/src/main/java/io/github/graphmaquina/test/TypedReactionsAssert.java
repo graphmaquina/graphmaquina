@@ -4,6 +4,8 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The reactions of one machine and one entity, in the order the engine dispatched them, obtained from
@@ -16,17 +18,12 @@ import java.util.List;
  * @param <S> state enum of the machine
  * @param <T> transition identifier enum of the machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class TypedReactionsAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final MachineKey<E, S, T> key;
     private final List<Reaction> actual;
-
-    TypedReactionsAssert(String context, MachineKey<E, S, T> key, List<Reaction> actual) {
-        this.context = context;
-        this.key = key;
-        this.actual = actual;
-    }
 
     public TypedReactionsAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());

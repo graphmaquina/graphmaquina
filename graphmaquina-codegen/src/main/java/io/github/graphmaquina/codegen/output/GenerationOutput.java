@@ -24,13 +24,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 import java.util.stream.Stream;
+import lombok.NonNull;
 
 /**
  * Publishes one generation as a coherent set: every source is staged first, the whole set replaces the sources
@@ -90,9 +90,8 @@ public final class GenerationOutput {
      *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
      *     the collision check looks up cannot be examined
      */
-    public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
+    public static GenerationResult publish(@NonNull GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest) throws IOException {
-        Objects.requireNonNull(request, "request");
         return publish(request, sources, manifest, Bootstrap.originals(request));
     }
 
@@ -115,12 +114,8 @@ public final class GenerationOutput {
      *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
      *     the collision check looks up cannot be examined
      */
-    public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
-            CompileManifest manifest, List<Bootstrap.OriginalSource> originals) throws IOException {
-        Objects.requireNonNull(request, "request");
-        Objects.requireNonNull(sources, "sources");
-        Objects.requireNonNull(manifest, "manifest");
-        Objects.requireNonNull(originals, "originals");
+    public static GenerationResult publish(@NonNull GenerationRequest request, @NonNull List<GeneratedSource> sources,
+            @NonNull CompileManifest manifest, @NonNull List<Bootstrap.OriginalSource> originals) throws IOException {
         Path work = Files.createDirectories(request.workDirectory().toAbsolutePath());
         Path manifestPath = manifestPath(request);
         Path pending = work.resolve(PENDING);

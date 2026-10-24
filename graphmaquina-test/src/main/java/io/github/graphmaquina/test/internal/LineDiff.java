@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A unified, line-oriented difference between two texts, meant to be read inside an assertion message:
@@ -212,18 +215,12 @@ public final class LineDiff {
      * How a line of the edit script stands against the two texts: in both, only in the expected one or only in
      * the actual one, each rendered with its own marker character.
      */
+    @Getter(AccessLevel.PACKAGE)
+    @RequiredArgsConstructor
     private enum Kind {
         CONTEXT(' '), DELETE('-'), ADD('+');
 
         private final char marker;
-
-        Kind(char marker) {
-            this.marker = marker;
-        }
-
-        char marker() {
-            return marker;
-        }
     }
 
     /**

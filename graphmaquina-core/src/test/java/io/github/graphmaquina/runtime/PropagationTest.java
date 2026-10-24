@@ -62,6 +62,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -509,14 +511,11 @@ class PropagationTest {
     }
 
     /** A definition whose edges are the delegate's, except that every action's failsOn is RuntimeException. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private static final class ListingRuntimeException<E, S extends Enum<S>, T extends Enum<T>>
             implements GraphDefinition<E, S, T> {
 
         private final GraphDefinition<E, S, T> delegate;
-
-        private ListingRuntimeException(GraphDefinition<E, S, T> delegate) {
-            this.delegate = delegate;
-        }
 
         private TransitionSpec<E, S, T> rebuilt(TransitionSpec<E, S, T> spec) {
             if (spec.action().isEmpty()) {

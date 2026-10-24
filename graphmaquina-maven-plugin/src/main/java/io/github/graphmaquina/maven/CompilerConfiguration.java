@@ -1,5 +1,7 @@
 package io.github.graphmaquina.maven;
 
+import lombok.AccessLevel;
+import lombok.Getter;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.lifecycle.DefaultLifecycles;
 import org.apache.maven.model.PluginExecution;
@@ -102,6 +104,8 @@ final class CompilerConfiguration {
     /** The type of toolchain a compilation of Java sources selects. */
     private static final String JDK = "jdk";
 
+    /** The compilation this configuration is read for, which names the goal and the parameters it reads. */
+    @Getter(AccessLevel.PACKAGE)
     private final CompilerExecution execution;
 
     /** The id of the execution of the compiler this configuration is read from, as the project model names it. */
@@ -191,11 +195,6 @@ final class CompilerConfiguration {
      */
     String id() {
         return id;
-    }
-
-    /** The compilation this configuration is read for, which names the goal and the parameters it reads. */
-    CompilerExecution execution() {
-        return execution;
     }
 
     /**

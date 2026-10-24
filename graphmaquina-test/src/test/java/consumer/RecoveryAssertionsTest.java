@@ -129,10 +129,10 @@ class RecoveryAssertionsTest {
 
     @Test
     void aNullExpectedKindStaysAnArgumentErrorEvenOverANullSubject() {
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(ActionOutcome.failed("declined")).hasFailureKind(null))
                 .getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(null).hasFailureKind(null)).getMessage());
     }
 
@@ -168,7 +168,8 @@ class RecoveryAssertionsTest {
     void aNullExpectedKindStaysAnArgumentErrorOnAFailedOutcome() {
         FailedOutcomeAssert<Ticket, TicketState, TicketChange> view =
                 OutcomeAssert.assertThat(rejected(Optional.empty())).isFailed();
-        assertEquals("expected", assertThrows(NullPointerException.class, () -> view.hasFailureKind(null))
+        assertEquals("expected is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> view.hasFailureKind(null))
                 .getMessage());
     }
 
@@ -271,7 +272,8 @@ class RecoveryAssertionsTest {
     void aNullListOrANullRuleIsAnArgumentError() {
         TransitionAssert<Ticket, TicketState, TicketChange> edge =
                 GraphAssert.assertThat(publicationGraph()).transition(TicketState.READY, TicketChange.PUBLISH);
-        assertEquals("expected", assertThrows(NullPointerException.class, () -> edge.recoversExactly(null))
+        assertEquals("expected is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> edge.recoversExactly(null))
                 .getMessage());
         List<RecoveryRule<TicketChange>> withNull = new ArrayList<>();
         withNull.add(UNAVAILABLE);

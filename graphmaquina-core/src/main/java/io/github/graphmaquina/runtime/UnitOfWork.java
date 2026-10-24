@@ -21,6 +21,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
@@ -37,6 +40,7 @@ import java.util.Optional;
  * the log on its clock, right after the entry is in the log, and every rollback truncates the marks with the log; a
  * call that does not reads no clock and keeps no mark.
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class UnitOfWork {
 
     private static final ActionRecord[] NO_ACTIONS = new ActionRecord[0];
@@ -58,8 +62,11 @@ final class UnitOfWork {
     // Sized for a root and two nested cascades: a default-sized deque costs every call 56 more bytes.
     private final Deque<InFlight> inFlight = new ArrayDeque<>(3);
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
+    @Getter(AccessLevel.PACKAGE)
     private final int maxDepth;
+    @Getter(AccessLevel.PACKAGE)
     private final long deadlineNanos;
+    @Getter(AccessLevel.PACKAGE)
     private Optional<StateMachineException> poison = Optional.empty();
 
     /**
@@ -67,6 +74,7 @@ final class UnitOfWork {
      * unknown machine or an Error, or that stands for an Error the call did not record when it struck, such as a
      * StackOverflowError. COLLECT never collects such an abort: it stops at once.
      */
+    @Getter(AccessLevel.PACKAGE)
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
@@ -81,15 +89,6 @@ final class UnitOfWork {
     private Optional<CallFlow> flow = Optional.empty();
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
-
-    UnitOfWork(int maxDepth, long deadlineNanos) {
-        this.maxDepth = maxDepth;
-        this.deadlineNanos = deadlineNanos;
-    }
-
-    int maxDepth() { return maxDepth; }
-
-    long deadlineNanos() { return deadlineNanos; }
 
     /**
      * Registers the identity and returns the canonical reference. A second object with the same identity is an
@@ -391,8 +390,6 @@ final class UnitOfWork {
 
     boolean isPoisoned() { return poison.isPresent(); }
 
-    Optional<StateMachineException> poison() { return poison; }
-
     void poison(StateMachineException error) {
         if (poison.isEmpty()) {
             poison = Optional.of(error);
@@ -406,8 +403,6 @@ final class UnitOfWork {
             poisonWrapsAForeignFailure = true;
         }
     }
-
-    boolean poisonWrapsAForeignFailure() { return poisonWrapsAForeignFailure; }
 
     /**
      * Only cascadeAll with COLLECT clears it: after reverting the failed element, or once an identity stopped that

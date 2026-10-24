@@ -8,6 +8,8 @@ import io.github.graphmaquina.internal.Texts;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * Phase 2 of a call failed, so its phase is COMMIT. Before its first write, phase 2 checks that every entity is still
@@ -22,11 +24,18 @@ import java.util.Optional;
  * again. The journal still lists the actions that ran: their external effects happened although the states did not
  * move, or moved only in part.
  */
+@Getter
 public final class CommitFailedException extends CallFailedException {
 
     private final List<ActionRecord> journal;
+
+    /** The entities whose setter returned, in commit order. */
     private final List<Object> applied;
+
+    /** The entity whose setter threw, if one did; it may or may not have been written. */
     private final Optional<Object> failedEntity;
+
+    /** The entities whose setter was never called, in commit order. */
     private final List<Object> pending;
 
     /** Phase 2 stopped before calling any setter, for the reason {@code message} gives. */
@@ -62,21 +71,6 @@ public final class CommitFailedException extends CallFailedException {
         }
     }
 
-    /** The entities whose setter returned, in commit order. */
-    public List<Object> applied() {
-        return applied;
-    }
-
-    /** The entity whose setter threw, if one did; it may or may not have been written. */
-    public Optional<Object> failedEntity() {
-        return failedEntity;
-    }
-
-    /** The entities whose setter was never called, in commit order. */
-    public List<Object> pending() {
-        return pending;
-    }
-
     /** COMMIT. */
     @Override
     public CallPhase phase() {
@@ -89,15 +83,8 @@ public final class CommitFailedException extends CallFailedException {
         return failedEntity.isPresent() ? StatesWritten.PARTIAL : StatesWritten.NONE;
     }
 
-    @Override
-    public List<ActionRecord> journal() {
-        return journal;
-    }
-
-    private static String describe(List<?> applied, Optional<Object> failedEntity, List<?> pending, String message) {
-        Objects.requireNonNull(applied, "applied");
-        Objects.requireNonNull(pending, "pending");
-        Objects.requireNonNull(message, "message");
+    private static String describe(@NonNull List<?> applied, Optional<Object> failedEntity, @NonNull List<?> pending,
+            @NonNull String message) {
         return "phase 2 failed: " + message + "; applied " + applied.size()
                 + (failedEntity.isPresent() ? ", failed 1" : "") + ", pending " + pending.size();
     }

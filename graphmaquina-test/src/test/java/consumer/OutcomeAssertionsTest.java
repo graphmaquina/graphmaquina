@@ -36,6 +36,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -699,17 +702,11 @@ class OutcomeAssertionsTest {
     enum Step { REVIEW, RETURN, ARCHIVE }
 
     /** Entity of the engine case: its state is written by the machine and read back by the assertions. */
+    @Getter(AccessLevel.PACKAGE)
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Paper {
 
         private Docs status;
-
-        Paper(Docs status) {
-            this.status = status;
-        }
-
-        Docs status() {
-            return status;
-        }
 
         void setStatus(Docs status) {
             this.status = status;

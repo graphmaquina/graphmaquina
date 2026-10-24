@@ -4,6 +4,9 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Where a golden is read from, whether a mismatch rewrites it, and who is told about a rewrite. Read mode
@@ -16,6 +19,7 @@ import java.util.function.Consumer;
  * around one call; the root is made a path only when update mode is on, and read mode ignores it.
  * {@link #readOnly(ClassLoader)} and {@link #updating(ClassLoader, Path, Consumer)} read no property at all.
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class GoldenOptions {
 
     /**
@@ -27,17 +31,13 @@ public final class GoldenOptions {
     /** System property holding the source root to write into; required when update mode is on. */
     public static final String ROOT_PROPERTY = "graphmaquina.goldens.root";
 
+    @Getter
     private final ClassLoader loader;
     private final Path sourceRoot;
+    @Getter
     private final boolean update;
+    @Getter
     private final Consumer<Path> reporter;
-
-    private GoldenOptions(ClassLoader loader, Path sourceRoot, boolean update, Consumer<Path> reporter) {
-        this.loader = loader;
-        this.sourceRoot = sourceRoot;
-        this.update = update;
-        this.reporter = reporter;
-    }
 
     /**
      * The context class loader when the thread has one, the loader of this module otherwise, with the
@@ -79,24 +79,12 @@ public final class GoldenOptions {
                 Objects.requireNonNull(reporter, "reporter"));
     }
 
-    public ClassLoader loader() {
-        return loader;
-    }
-
     /**
      * The root update mode writes into, made absolute against the working directory and normalized. Empty in
      * read mode, which never writes, whatever {@code graphmaquina.goldens.root} holds.
      */
     public Optional<Path> sourceRoot() {
         return Optional.ofNullable(sourceRoot);
-    }
-
-    public boolean update() {
-        return update;
-    }
-
-    public Consumer<Path> reporter() {
-        return reporter;
     }
 
     private static boolean readUpdate() {

@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
-import java.util.Objects;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * Thrown by a typed assertion when its expectation is not met. Carries the context and property being
@@ -19,6 +20,7 @@ import java.util.Objects;
  * <p>An actual value that is a {@link Throwable} is the unexpected outcome itself, so it is also the cause
  * of this error: a test report then prints where it was thrown and not only what it was called.
  */
+@Getter
 public final class GraphAssertionError extends AssertionError {
 
     private final String context;
@@ -44,18 +46,8 @@ public final class GraphAssertionError extends AssertionError {
         }
     }
 
-    public String context() { return context; }
-
-    public String property() { return property; }
-
-    public Object expected() { return expected; }
-
-    public Object actual() { return actual; }
-
-    private static String render(String context, String property, Object expected, Object actual,
+    private static String render(@NonNull String context, @NonNull String property, Object expected, Object actual,
             String advice) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(property, "property");
         String shownExpected = describe(expected);
         String shownActual = describe(actual);
         String message = context + ": " + property

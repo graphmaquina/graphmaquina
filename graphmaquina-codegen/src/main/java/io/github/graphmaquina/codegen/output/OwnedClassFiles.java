@@ -15,11 +15,11 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
+import lombok.NonNull;
 
 /**
  * Links the class files a compilation really produced to the compilation units that own them, by reading what
@@ -62,9 +62,8 @@ final class OwnedClassFiles {
      * @throws IOException if a package directory of an owned unit cannot be listed or a class file named after
      *     an owned unit cannot be read
      */
-    static List<Path> enumerate(Path classesOutput, Set<String> ownedTopLevelNames) throws IOException {
-        Objects.requireNonNull(classesOutput, "classesOutput");
-        Objects.requireNonNull(ownedTopLevelNames, "ownedTopLevelNames");
+    static List<Path> enumerate(@NonNull Path classesOutput,
+            @NonNull Set<String> ownedTopLevelNames) throws IOException {
         if (ownedTopLevelNames.isEmpty() || !Files.isDirectory(classesOutput)) {
             return List.of();
         }

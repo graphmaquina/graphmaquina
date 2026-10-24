@@ -1,6 +1,6 @@
 package io.github.graphmaquina.internal;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * How the library keeps a thread's interrupt when it contains what an application callback or backend threw instead
@@ -19,8 +19,7 @@ public final class Interrupts {
      * @param contained what the library contains instead of letting it through
      * @throws NullPointerException if {@code contained} is null
      */
-    public static void keep(Throwable contained) {
-        Objects.requireNonNull(contained, "contained");
+    public static void keep(@NonNull Throwable contained) {
         if (contained instanceof InterruptedException) {
             Thread.currentThread().interrupt();
         }

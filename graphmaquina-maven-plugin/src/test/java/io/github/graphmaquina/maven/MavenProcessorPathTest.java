@@ -1,6 +1,8 @@
 package io.github.graphmaquina.maven;
 
 import com.google.gson.Gson;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -651,16 +653,12 @@ class MavenProcessorPathTest {
      * The compiler arguments that follow the manifest argument in the fixture POM, replaced one build after another,
      * and what each build is asserted to do with them.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class PathArguments {
 
         private final MavenFixture fixture;
         private final List<String> published;
         private List<String> current = List.of();
-
-        PathArguments(MavenFixture fixture, List<String> published) {
-            this.fixture = fixture;
-            this.published = published;
-        }
 
         /** Gives javac {@code next} instead of the previous arguments and asserts that the build publishes. */
         void assertBuilds(List<String> next) throws IOException {

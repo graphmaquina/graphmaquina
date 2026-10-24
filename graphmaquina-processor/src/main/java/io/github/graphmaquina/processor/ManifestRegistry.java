@@ -33,6 +33,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 import javax.annotation.processing.ProcessingEnvironment;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The exact set of annotation types the processor claims for one compilation: the fixed ones it always owns
@@ -60,6 +63,7 @@ import javax.annotation.processing.ProcessingEnvironment;
  * <p>The registry also answers which machines the export indexes of a trusted manifest list, this compilation's own
  * and its dependencies'.</p>
  */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class ManifestRegistry {
 
     /** The javac option carrying the path of the manifest the generator wrote for this compilation. */
@@ -68,14 +72,14 @@ final class ManifestRegistry {
     private static final Set<String> FIXED = fixed();
 
     private final Set<String> supported;
-    private final Optional<CompileManifest> manifest;
-    private final Optional<String> failure;
 
-    private ManifestRegistry(Set<String> supported, Optional<CompileManifest> manifest, Optional<String> failure) {
-        this.supported = supported;
-        this.manifest = manifest;
-        this.failure = failure;
-    }
+    /** The manifest of this compilation, empty when none could be trusted. */
+    @Getter(AccessLevel.PACKAGE)
+    private final Optional<CompileManifest> manifest;
+
+    /** Why no manifest could be trusted, to be reported once as {@code SG602}. */
+    @Getter(AccessLevel.PACKAGE)
+    private final Optional<String> failure;
 
     /** The registry a processor holds before {@code init}: the fixed set and nothing else. */
     static ManifestRegistry unloaded() {
@@ -117,16 +121,6 @@ final class ManifestRegistry {
     /** Every annotation type javac must match this processor against, fixed and generated alike. */
     Set<String> supportedAnnotationTypes() {
         return supported;
-    }
-
-    /** The manifest of this compilation, empty when none could be trusted. */
-    Optional<CompileManifest> manifest() {
-        return manifest;
-    }
-
-    /** Why no manifest could be trusted, to be reported once as {@code SG602}. */
-    Optional<String> failure() {
-        return failure;
     }
 
     /** Whether the index of this compilation names the machine {@code name}, which one of its sources declares. */

@@ -15,6 +15,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiFunction;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The engine's only waiting primitive. Reads an already successful plain future directly; otherwise, joins a
@@ -156,12 +158,9 @@ final class Await {
         }
 
         /** A stage looked up without a reference object of its own, equal to any key of that stage. */
+        @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
         private static final class Probe {
             private final Object stage;
-
-            private Probe(Object stage) {
-                this.stage = stage;
-            }
 
             @Override
             public int hashCode() {

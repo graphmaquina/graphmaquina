@@ -1,7 +1,8 @@
 package io.github.graphmaquina.api;
 
-import java.util.Objects;
 import java.util.Optional;
+import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * One call on a machine: an {@code execute} or a {@code reevaluate}, made by the application or by a watch reaction.
@@ -9,11 +10,19 @@ import java.util.Optional;
  * is identity, so two calls that ask the same thing of the same entity stay apart in a map or a set.
  * {@link #toString()} names the machine and the request, never the entity.
  */
+@Getter
 public final class MachineCall {
 
     private final MachineKey<?, ?, ?> key;
     private final Object entity;
+
+    /**
+     * The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge
+     * its watch selects.
+     */
     private final Optional<Enum<?>> transition;
+
+    /** Whether a watch reaction made this call rather than the application. */
     private final boolean reaction;
 
     /**
@@ -27,10 +36,11 @@ public final class MachineCall {
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue than {@code key}'s, or if a
      *     reaction requests an identifier
      */
-    public MachineCall(MachineKey<?, ?, ?> key, Object entity, Optional<Enum<?>> transition, boolean reaction) {
-        this.key = Objects.requireNonNull(key, "key");
-        this.entity = Objects.requireNonNull(entity, "entity");
-        this.transition = Objects.requireNonNull(transition, "transition");
+    public MachineCall(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Optional<Enum<?>> transition,
+            boolean reaction) {
+        this.key = key;
+        this.entity = entity;
+        this.transition = transition;
         if (transition.isPresent() && !key.transitions().isInstance(transition.get())) {
             throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": "
                     + transition.get().name());
@@ -39,27 +49,6 @@ public final class MachineCall {
             throw new IllegalArgumentException("a watch reaction is a reevaluation and requests no identifier");
         }
         this.reaction = reaction;
-    }
-
-    public MachineKey<?, ?, ?> key() {
-        return key;
-    }
-
-    public Object entity() {
-        return entity;
-    }
-
-    /**
-     * The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge
-     * its watch selects.
-     */
-    public Optional<Enum<?>> transition() {
-        return transition;
-    }
-
-    /** Whether a watch reaction made this call rather than the application. */
-    public boolean reaction() {
-        return reaction;
     }
 
     /**

@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * What the log of a root transaction amounts to per entity, read once between the last rollback and the first
@@ -12,15 +15,13 @@ import java.util.Objects;
  * phase 2 and the watch dispatch need: the entry that says where the entity started and the one that says where
  * it ends. The whole log stays the source of records and hooks; this is a reading of it, not a second copy.
  */
+@Getter(AccessLevel.PACKAGE)
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class CommitSummary {
 
     static final CommitSummary EMPTY = new CommitSummary(List.of());
 
     private final List<Change> changes;
-
-    private CommitSummary(List<Change> changes) {
-        this.changes = changes;
-    }
 
     /**
      * The summary of a log of one entry, without the map {@link #from} groups by. It still hashes the entry's reference
@@ -43,8 +44,6 @@ final class CommitSummary {
         }
         return new CommitSummary(List.copyOf(grouped.values()));
     }
-
-    List<Change> changes() { return changes; }
 
     /**
      * Entities whose final state differs from the initial one, in order of first appearance: a child that a start

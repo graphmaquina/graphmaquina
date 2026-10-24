@@ -1,10 +1,10 @@
 package io.github.graphmaquina.processor;
 
-import java.util.Objects;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
+import lombok.NonNull;
 
 /**
  * Where a diagnostic belongs: the declaration that carries it and, when they are known, the annotation and the
@@ -14,12 +14,10 @@ import javax.lang.model.element.Element;
  * containers. When source is unavailable or a value is defaulted, Messager retains the available anchor. The
  * semantic values stay reachable alongside the model until validation reports a problem.</p>
  */
-record DiagnosticAnchor(Element element, Optional<AnnotationMirror> annotation, Optional<AnnotationValue> value) {
+record DiagnosticAnchor(@NonNull Element element, @NonNull Optional<AnnotationMirror> annotation,
+        @NonNull Optional<AnnotationValue> value) {
 
     DiagnosticAnchor {
-        Objects.requireNonNull(element, "element");
-        Objects.requireNonNull(annotation, "annotation");
-        Objects.requireNonNull(value, "value");
     }
 
     /** An anchor on a declaration alone. */

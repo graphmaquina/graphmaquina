@@ -52,6 +52,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -63,13 +65,10 @@ import org.junit.jupiter.api.Test;
 class PoisonTest {
 
     /** A collection whose elements cannot be read: copying it throws {@code failure}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Unreadable<T> extends AbstractCollection<T> {
 
         private final Throwable failure;
-
-        Unreadable(Throwable failure) {
-            this.failure = failure;
-        }
 
         @Override
         public Iterator<T> iterator() {

@@ -4,7 +4,9 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Chainable, typed assertion over the watch declared on one state, obtained from
@@ -17,27 +19,21 @@ import java.util.Objects;
  * @param <S> state enum of the watching machine
  * @param <T> transition identifier enum of the watching machine
  */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class WatchAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final WatchSpec<E, S, T, ?, ?, ?> actual;
 
-    WatchAssert(String context, WatchSpec<E, S, T, ?, ?, ?> actual) {
-        this.context = context;
-        this.actual = actual;
-    }
-
     /** The machine the watch observes, compared as a whole key: entity class, state enum and identifiers. */
-    public WatchAssert<E, S, T> hasPeer(MachineKey<?, ?, ?> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public WatchAssert<E, S, T> hasPeer(@NonNull MachineKey<?, ?, ?> expected) {
         WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "peer", expected, actual);
         Checks.equal(context, "peer", expected, spec.peer());
         return this;
     }
 
     /** Compares condition names and executed identifiers in declaration order, keeping repeated rules. */
-    public WatchAssert<E, S, T> hasRulesExactly(List<WatchRuleExpectation<T>> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public WatchAssert<E, S, T> hasRulesExactly(@NonNull List<WatchRuleExpectation<T>> expected) {
         List<WatchRuleExpectation<T>> wanted = List.copyOf(expected);
         WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "rules", wanted, actual);
         Checks.equal(context, "rules", wanted, rulesOf(spec));

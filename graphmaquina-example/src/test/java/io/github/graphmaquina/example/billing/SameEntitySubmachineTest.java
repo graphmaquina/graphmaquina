@@ -12,6 +12,8 @@ import io.github.graphmaquina.test.StateChange;
 import io.github.graphmaquina.test.StateSnapshot;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,14 +30,11 @@ class SameEntitySubmachineTest {
     enum StayTransition { BOOK, CONFIRM, CANCEL }
 
     /** A stay, which is its own payment. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Stay {
         final String id;
         StayStatus status = StayStatus.REQUESTED;
         PaymentStatus paymentStatus = PaymentStatus.AUTHORIZING;
-
-        Stay(String id) {
-            this.id = id;
-        }
     }
 
     static final MachineKey<Stay, StayStatus, StayTransition> STAYS =

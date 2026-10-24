@@ -69,6 +69,8 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
@@ -120,12 +122,9 @@ class InterruptedContainmentTest {
     private record Interrupted<T>(T result, boolean interrupted) { }
 
     /** A System.Logger whose level check, or whose write, blocks. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class BlockingLogger implements System.Logger {
         private final boolean checking;
-
-        BlockingLogger(boolean checking) {
-            this.checking = checking;
-        }
 
         @Override
         public String getName() {
@@ -152,12 +151,9 @@ class InterruptedContainmentTest {
     }
 
     /** A java.util.logging handler that blocks on the records that contain its target. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class BlockingHandler extends Handler {
         private final String target;
-
-        BlockingHandler(String target) {
-            this.target = target;
-        }
 
         @Override
         public void publish(LogRecord record) {

@@ -1,5 +1,7 @@
 package io.github.graphmaquina.gradle;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.NamedDomainObjectProvider;
@@ -480,6 +482,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
      * them. It holds the sources and the name of the compilation as a file collection and a provider, so it captures
      * no project.
      */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class RequireCompiledSources implements Action<Task> {
 
         /** The source of the compilation task, which javac compiles. */
@@ -487,11 +490,6 @@ public final class StateGraphPlugin implements Plugin<Project> {
 
         /** The compilation task, as a refusal names it. */
         private final Provider<String> compilation;
-
-        RequireCompiledSources(FileCollection compiled, Provider<String> compilation) {
-            this.compiled = compiled;
-            this.compilation = compilation;
-        }
 
         @Override
         public void execute(Task task) {

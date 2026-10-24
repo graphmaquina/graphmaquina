@@ -11,6 +11,8 @@ import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.time.Duration;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The fixture of this module's typed-recovery tests: a publication machine whose PUBLISH action each test injects,
@@ -68,18 +70,12 @@ public final class PublicationFixture {
     }
 
     /** Mutable entity carrying its current {@link TicketState}, which starts at READY. */
+    @Getter
+    @RequiredArgsConstructor
     public static final class Ticket {
 
         private final String id;
         private TicketState state = TicketState.READY;
-
-        public Ticket(String id) {
-            this.id = id;
-        }
-
-        public String id() { return id; }
-
-        public TicketState state() { return state; }
 
         public void setState(TicketState state) { this.state = state; }
     }

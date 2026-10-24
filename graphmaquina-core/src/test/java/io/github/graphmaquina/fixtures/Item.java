@@ -1,8 +1,10 @@
 package io.github.graphmaquina.fixtures;
 
 import java.util.Optional;
+import lombok.Getter;
 
 /** Test entity of the item machine: an id, a status and an optional order, which the item joins when built. */
+@Getter
 public final class Item {
 
     private final String id;
@@ -16,13 +18,7 @@ public final class Item {
         order.ifPresent((Order owner) -> owner.add(this));
     }
 
-    public String id() { return id; }
-
-    public ItemStatus status() { return status; }
-
     public void setStatus(ItemStatus status) { this.status = status; }
-
-    public Optional<Order> order() { return order; }
 
     @Override
     public String toString() { return "Item#" + id; }

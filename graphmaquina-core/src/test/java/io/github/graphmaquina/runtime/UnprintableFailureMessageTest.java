@@ -49,6 +49,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -70,12 +72,9 @@ class UnprintableFailureMessageTest {
     }
 
     /** A failure whose message read throws {@link #fatal}. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class FatalMessage extends RuntimeException {
         private final AssertionError fatal;
-
-        FatalMessage(AssertionError fatal) {
-            this.fatal = fatal;
-        }
 
         @Override
         public String getMessage() {
@@ -84,13 +83,10 @@ class UnprintableFailureMessageTest {
     }
 
     /** An identity that compares by name and whose hashCode runs {@link #onHash} once it is armed. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class ArmedId {
         private final String name;
         private Runnable onHash = () -> { };
-
-        ArmedId(String name) {
-            this.name = name;
-        }
 
         @Override
         public boolean equals(Object other) {

@@ -4,7 +4,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * The shared order in which several probes were entered. Probes built with the same trace append to it, so a
@@ -47,8 +47,7 @@ public final class CallTrace {
      * {@link GraphAssertionError} otherwise. A name repeats once per invocation, so a probe entered twice is
      * named twice.
      */
-    public CallTrace assertNamesExactly(String... names) {
-        Objects.requireNonNull(names, "names");
+    public CallTrace assertNamesExactly(@NonNull String... names) {
         List<String> expected = List.of(names);
         List<String> actual = new ArrayList<>();
         for (TraceEvent event : events()) {
@@ -60,9 +59,7 @@ public final class CallTrace {
         return this;
     }
 
-    void record(String name, Object call) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(call, "call");
+    void record(@NonNull String name, @NonNull Object call) {
         synchronized (events) {
             events.add(new TraceEvent(nextSequence++, name, call));
         }

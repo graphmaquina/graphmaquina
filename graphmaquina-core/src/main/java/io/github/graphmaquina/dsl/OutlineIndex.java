@@ -8,6 +8,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.AccessLevel;
+import lombok.Getter;
 
 /**
  * What one validation needs to read again and again about a {@link MachineOutline}: the declaration index of
@@ -30,6 +32,9 @@ final class OutlineIndex {
     private final Map<String, Integer> states;
     private final Map<String, Integer> transitions;
     private final Map<String, List<TransitionOutline>> leaving;
+
+    /** Node topology of the outline: parallel edges collapse, which is exactly what reachability needs. */
+    @Getter(AccessLevel.PACKAGE)
     private final Graph<String> topology;
 
     OutlineIndex(MachineOutline outline) {
@@ -73,10 +78,5 @@ final class OutlineIndex {
     /** The edges leaving {@code state}, in declaration order; empty for a state that declares none. */
     List<TransitionOutline> outgoing(String state) {
         return leaving.getOrDefault(state, List.of());
-    }
-
-    /** Node topology of the outline: parallel edges collapse, which is exactly what reachability needs. */
-    Graph<String> topology() {
-        return topology;
     }
 }

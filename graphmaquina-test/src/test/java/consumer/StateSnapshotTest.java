@@ -14,6 +14,9 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.util.List;
 import java.util.Optional;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -271,21 +274,14 @@ class StateSnapshotTest {
     enum Move { PUT_AWAY }
 
     /** Entity of two machines at once, comparing equal to any other box carrying the same id. */
+    @AllArgsConstructor(access = AccessLevel.PACKAGE)
     static final class Box {
 
         private final String id;
+        @Getter(AccessLevel.PACKAGE)
         private Flag flag;
+        @Getter(AccessLevel.PACKAGE)
         private Shelf shelf;
-
-        Box(String id, Flag flag, Shelf shelf) {
-            this.id = id;
-            this.flag = flag;
-            this.shelf = shelf;
-        }
-
-        Flag flag() { return flag; }
-
-        Shelf shelf() { return shelf; }
 
         void setFlag(Flag flag) { this.flag = flag; }
 

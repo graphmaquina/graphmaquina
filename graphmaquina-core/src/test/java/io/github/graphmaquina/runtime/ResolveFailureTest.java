@@ -41,6 +41,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -218,17 +220,12 @@ class ResolveFailureTest {
     }
 
     /** An identity whose hashCode throws once {@code armed}: the grouping of the log is where it is first called. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Key {
 
         private final String name;
         private final AtomicBoolean armed;
         private final RuntimeException boom;
-
-        Key(String name, AtomicBoolean armed, RuntimeException boom) {
-            this.name = name;
-            this.armed = armed;
-            this.boom = boom;
-        }
 
         @Override
         public boolean equals(Object other) {
@@ -339,15 +336,12 @@ class ResolveFailureTest {
     enum ReviewStep { APPROVE }
 
     /** An entity two machines govern, one its stage and one its review, whose equals and hashCode throw. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Ticket {
 
         private final String id;
         private Stage stage = Stage.OPEN;
         private Review review = Review.PENDING;
-
-        Ticket(String id) {
-            this.id = id;
-        }
 
         @Override
         public boolean equals(Object other) {
@@ -482,14 +476,11 @@ class ResolveFailureTest {
     }
 
     /** A stable identity whose armed one-shot hash callback can throw, mutate state or use a saved context. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class HashCallbackKey {
 
         private final String name;
         private Runnable onHash = () -> { };
-
-        HashCallbackKey(String name) {
-            this.name = name;
-        }
 
         @Override
         public boolean equals(Object other) {

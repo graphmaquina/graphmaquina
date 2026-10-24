@@ -17,6 +17,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -581,13 +583,12 @@ class PendingStateIndexTest {
     }
 
     /** Identity value with one hash per value that counts every equality comparison made against it. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     static final class CountedId {
 
         static int comparisons;
 
         private final int value;
-
-        CountedId(int value) { this.value = value; }
 
         @Override
         public int hashCode() { return value; }

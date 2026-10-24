@@ -23,6 +23,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.List;
 import java.util.function.Supplier;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -196,30 +198,30 @@ class ValueAssertionsTest {
     void nullExpectedReasonStaysAnArgumentError() {
         NullPointerException action = assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(ActionOutcome.failed("declined")).hasReason(null));
-        assertEquals("reason", action.getMessage());
+        assertEquals("reason is marked non-null but is null", action.getMessage());
         NullPointerException guard = assertThrows(NullPointerException.class,
                 () -> GuardResultAssert.assertThat(GuardResult.reject("not ready")).hasReason(null));
-        assertEquals("reason", guard.getMessage());
+        assertEquals("reason is marked non-null but is null", guard.getMessage());
     }
 
     @Test
     void nullExpectedReasonBeatsANullSubject() {
         NullPointerException action = assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(null).hasReason(null));
-        assertEquals("reason", action.getMessage());
+        assertEquals("reason is marked non-null but is null", action.getMessage());
         NullPointerException guard = assertThrows(NullPointerException.class,
                 () -> GuardResultAssert.assertThat(null).hasReason(null));
-        assertEquals("reason", guard.getMessage());
+        assertEquals("reason is marked non-null but is null", guard.getMessage());
     }
 
     @Test
     void nullExpectedIsAnArgumentErrorInBothComparisons() {
         NullPointerException equalError = assertThrows(NullPointerException.class,
                 () -> Checks.equal("entity", "identity", null, "declined"));
-        assertEquals("expected", equalError.getMessage());
+        assertEquals("expected is marked non-null but is null", equalError.getMessage());
         NullPointerException sameError = assertThrows(NullPointerException.class,
                 () -> Checks.same("entity", "identity", null, "declined"));
-        assertEquals("expected", sameError.getMessage());
+        assertEquals("expected is marked non-null but is null", sameError.getMessage());
     }
 
     @Test
@@ -407,13 +409,10 @@ class ValueAssertionsTest {
     }
 
     /** A value that renders as its supplier answers or throws. */
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Rendered {
 
         private final Supplier<String> text;
-
-        Rendered(Supplier<String> text) {
-            this.text = text;
-        }
 
         @Override
         public String toString() {

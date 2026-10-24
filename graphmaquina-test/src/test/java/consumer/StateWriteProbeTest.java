@@ -33,6 +33,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -223,13 +226,17 @@ class StateWriteProbeTest {
     @Test
     void aRecordedWriteRejectsEveryNullComponent() {
         Entity entity = new Entity("e", State.NEW);
-        assertEquals("entity", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("entity is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 null, State.READY, WriteStatus.RETURNED, Optional.empty())).getMessage());
-        assertEquals("requested", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("requested is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, null, WriteStatus.RETURNED, Optional.empty())).getMessage());
-        assertEquals("status", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("status is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, State.READY, null, Optional.empty())).getMessage());
-        assertEquals("cause", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("cause is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, State.READY, WriteStatus.RETURNED, null)).getMessage());
     }
 
@@ -308,24 +315,12 @@ class StateWriteProbeTest {
     }
 
     /** Root of the cascade: its action moves both of its items before anything is committed. */
+    @Getter
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Order implements Tracked {
 
         private final String id;
         private State state = State.NEW;
-
-        Order(String id) {
-            this.id = id;
-        }
-
-        @Override
-        public String id() {
-            return id;
-        }
-
-        @Override
-        public State state() {
-            return state;
-        }
 
         @Override
         public void setState(State state) {
@@ -334,24 +329,12 @@ class StateWriteProbeTest {
     }
 
     /** Peer of the cascade, moved from the order's action and written after it in phase 2. */
+    @Getter
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
     private static final class Item implements Tracked {
 
         private final String id;
         private State state = State.NEW;
-
-        Item(String id) {
-            this.id = id;
-        }
-
-        @Override
-        public String id() {
-            return id;
-        }
-
-        @Override
-        public State state() {
-            return state;
-        }
 
         @Override
         public void setState(State state) {
