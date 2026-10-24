@@ -390,8 +390,8 @@ Requested by an ordinary call, the same identifier runs its guards and applies i
 because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that failure
 always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions that ran, but
 not the kind or the cause of the first failure. A recovery action that returns a failed outcome ends the call in a
-`TransitionAbortedException` whose message reads `the failure route action <name> returned failed (<its reason>) after
-the original failure (<reason>)`, whose `transition()` and `action()` are the recovery's, and whose cause is the
+`TransitionAbortedException` whose message includes `the failure route action <name> returned failed (<its reason>)
+after the original failure (<reason>)`, whose `transition()` and `action()` are the recovery's, and whose cause is the
 throwable that selected the route, when one did. When the recovery action throws, or completes its stage with, a
 throwable that is neither an `Error` thrown as itself nor a failure of the call, the abort that carries it also holds
 the exception that selected the route, if one did, as suppressed, unless it is that very exception. So do these aborts

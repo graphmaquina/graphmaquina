@@ -93,7 +93,8 @@ flowchart LR
 ```
 
 Each edge is keyed by its origin and its identifier: `transition(id, from, to)` opens one edge and `endTransition()`
-closes it.
+closes it. Every builder method refuses a state, an identifier or a child terminal of another enum, which only raw
+types can pass, with `IllegalArgumentException`.
 `action` takes a `TransitionAction`, whose `process(ctx)` returns an `ActionOutcome`, and `guard` a
 `TransitionGuard`, whose `test(ctx)` returns a `GuardResult`; `asyncAction` and `asyncGuard` take an
 `AsyncTransitionAction` and an `AsyncTransitionGuard`, which return a `CompletionStage` of the same results. All four
@@ -133,9 +134,13 @@ name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a
 positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
 without `starts`, `failureKind` or `flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec`
 whose `failsOn` holds an interface type can make the order of its entries change the route, which the DSL and the
-annotations never allow. The `dsl` package also holds
+annotations never allow. The `TransitionSpec` constructor without `recoveryRules` declares none, and a `SubmachineSpec`
+copies its exits, in order, into an unmodifiable map and refuses a null terminal or identifier with
+`NullPointerException`. The `dsl` package also holds
 the outline records and `MachineOutlineValidator` that the DSL and the annotation processor share to check a graph by
-names; building a graph does not need them.
+names; building a graph does not need them. `MachineOutlineValidator.validate(outline)` returns the problems sorted by
+code, origin state and identifier, and the outline records refuse empty or repeated states, repeated identifiers and
+unknown names with `IllegalArgumentException`.
 
 ## Watches and sub-machines
 

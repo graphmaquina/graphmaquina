@@ -112,8 +112,13 @@ questions:
 | `cycles()` | Every elementary cycle, each starting at its earliest declared state and without repeating it at the end |
 | `inducedSubgraph(states)` | The graph restricted to those states |
 
-A query on a state the graph does not hold throws `IllegalArgumentException`. `Graph.of(nodes, edges)` and
-`DirectedGraph.of(nodes, edges)` build graphs of your own, from `GraphEdge` and `DirectedEdge` records, and `StrongComponents.find(graph)` returns their strongly
+A query on a state the graph does not hold throws `IllegalArgumentException`. `outgoing` and `incoming` return edges in
+declaration order, and two `DirectedEdge`s are equal only when their origin, label and destination all are.
+`Graph.nodes()` returns the nodes in declared order and `edges()` the set of `GraphEdge(from, to)`. `Graph.of(nodes, edges)` and
+`DirectedGraph.of(nodes, edges)` build graphs of your own, from `GraphEdge` and `DirectedEdge` records: `Graph.of`
+keeps the nodes in declared order with repeats collapsed, both throw `NullPointerException` for a null node and
+`IllegalArgumentException` for an endpoint outside the nodes, and `DirectedGraph.of` also refuses a repeated node or a
+repeated identical edge. `StrongComponents.find(graph)` returns their strongly
 connected components, in the order of their first declared node, with `cycleWitness(graph, component)` naming one
 cycle of a component; these are what the build uses to report an unauthorised cycle. The
 [testing guide](testing.md#what-each-entry-point-checks) asserts on the same queries through
@@ -196,7 +201,11 @@ edge's endpoints, identifier, kind, action, guards, whether it is asynchronous, 
 and its recovery rules; a `RecoveryView` the failure kind and the `failsOn` types as binary names and the recovery
 identifier; a `PolicyView` the state, its `otherwise` reason and its rejections rendered as `ID: reason`; and a
 `WatchView` the state, the simple name of the peer's entity class and the rendered rules. The DOT text starts with
-`digraph "<name>"` and `rankdir=LR`.
+`digraph "<name>"` and `rankdir=LR`. Inside a cluster, node ids carry the prefix `s<j>_`, one per nesting level, where
+`j` counts the view's bound states in node order. An edge that a watch rule executes gets
+`[watches <peer entity>: <condition names>]` in its label, and the note reads `watches <peer entity>`. A
+`SubmachineView` holds the bound state, the child's `GraphView` and its `exits`, each child terminal mapped to the
+parent identifier it selects, in the given order.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.

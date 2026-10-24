@@ -313,6 +313,9 @@ The trail records what the call took and how it ended; the [`TRACE` lines](logs.
 guards and its action included. To assert the flow and its trail in a test, see
 [the call's flow and its trail](testing-advanced.md#the-calls-flow-and-its-trail) in the testing guide.
 
+A `FlowEntry.Failed` prints its failure's exception as that exception's `toString()` does, never that exception's
+flow.
+
 ---
 
 Next: [Inspect graphs and export diagrams](graph-inspection.md). Back to the [documentation index](README.md).

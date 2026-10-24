@@ -159,16 +159,25 @@ each exception exposes what identifies its cause:
 | `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
 | `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
 
-An abort describes one step. A cycle, the depth limit, a failed cascade, `COLLECT`'s `CascadeException` and a
-`PoisonedUnitOfWorkException` describe the cascading caller's own step, so their `key()`, `entity()`, `from()`,
-`transition()` and `to()` are the action's, not the peer's; an abort raised because a sub-machine's exit cannot run
-describes the child's step that ended. In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
+An abort describes one step. The aborts raised for the caller of a cascade or a peer read describe the cascading
+caller's own step, so their `key()`, `entity()`, `from()`, `transition()` and `to()` are the action's, not the peer's:
+a cycle, the depth limit, the abort that names a failed cascade (`the cascade to <key> failed: …`, raised when the
+failure is not one of the call's own), `COLLECT`'s `CascadeException` and a `PoisonedUnitOfWorkException`. An abort of
+the peer's own step, such as a rejection inside the cascade, reaches the action as it is and describes the peer's step.
+An abort raised because a terminal state maps to no exit, or because the exit would run deeper than `maxCascadeDepth`,
+describes the step that ended: the child's step whose terminal state selected the exit or, when the child already
+stood in a terminal state as its parent entered the bound state, the step that entered it. An abort of the exit's own
+step, such as a rejection inside the exit, describes the parent's exit step. In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
 identifier, a recovery, an exit or the identifier a watch selected rather than the call's own; `action()` is empty for
 a guard, a rejection, the watch-chain limit and an abort raised for the caller of a cascade or a peer read; and
 `cascadePath()` lists the entities in flight, outermost first, as `key#identity`. A call failure's message names states
 and identifiers by `name()` and entities as `key#identity`, never through an entity's `toString()`. `InvalidGraphException`
 lists `problems()`, and `codes()`, by code, then origin state, then identifier, and its message reads
 `the graph <key> has <n> problem(s):` followed by one `[code] message` line per problem.
+
+A throwable from application code that the engine does not classify where it happens, such as an identity's
+`hashCode` that throws while the log is rolled back, ends the call in a `TransitionAbortedException` of the current
+phase, `the engine could not go on: …`, with that throwable as cause.
 
 A peer read stages nothing, so `ctx.peer(...)` with a key or a facade the registry does not hold throws
 `UnknownPeerMachineException` or `UnknownFacadeException` into the guard or action without poisoning the call: an action

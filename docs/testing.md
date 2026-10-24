@@ -236,7 +236,10 @@ logic.
 
 Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header. After that
 version line comes one `path TAB value` line per field, each ending in a line feed, with backslash, tab, line feed and
-carriage return escaped; `GraphSnapshot.fields()` returns the path-to-value map in that canonical order.
+carriage return escaped; `GraphSnapshot.fields()` returns the path-to-value map in that canonical order. Fields live
+under `/machine/…`, `/states/<i>`, `/catalog/<i>`, `/transitions/<from>/<id>/…`, with recovery rules under
+`recoveries/<i>/kind`, `transition` and `failsOn`, `/policies/…`, `/watches/…` and
+`/submachines/<state>/{child/…, exits/<terminal>}`; a missing edge has no path at all.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 
@@ -306,7 +309,9 @@ the root, so pointing the root at `src/test/resources` puts the file back where 
 Both `assertMatches` methods have an overload that takes `GoldenOptions`: `GoldenOptions.defaults()` reads the two
 properties each time it is called and uses the thread's context class loader, `readOnly(loader)` reads through a loader
 of your choice, and `updating(loader, sourceRoot, reporter)` hands the reporter the absolute path of each golden it
-writes; `loader()`, `update()` and `reporter()` expose them. A golden is read as strict UTF-8, a leading byte-order mark
+writes; `loader()`, `update()` and `reporter()` expose them. An update writes a temporary file beside the golden and
+moves it over the target, atomically where the file system supports it; a source that is not valid UTF-8 is replaced,
+and a source root that is not a directory throws `IllegalStateException`. A golden is read as strict UTF-8, a leading byte-order mark
 dropped, and a resource that names a directory fails with `GraphAssertionError`.
 
 Update mode writes through a symbolic link inside the root, at the golden itself or at a directory above it, and
@@ -426,14 +431,20 @@ A test that needs no properties at all can pass options explicitly —
   `GraphAssertionError`.
 - **The waits fail as assertions.** `AsyncAssertions.await` fails with `GraphAssertionError` when the budget expires,
   the thread is interrupted, or the stage completes exceptionally or is cancelled; `awaitFailure` takes a cancellation
-  as the failure and fails when the stage completes normally; `captureFailure` fails when its body completes normally.
+  as the failure and fails when the stage completes normally; `captureFailure` fails when its body completes normally,
+  and returns an `InterruptedException` like any other exception, with the interrupt flag set again.
 - **A wrong argument is no failed expectation.** A state or an identifier of another enum, reachable only through raw
-  types, a negative index such as `CascadeAbortAssert.error(-1)`, and an entity tracked twice under the same machine in
-  a `StateSnapshot` throw `IllegalArgumentException` instead of `GraphAssertionError`.
-- **Messages carry the evidence.** A `GraphAssertionError` names its context, property, expected and actual values;
+  types, a negative index such as `CascadeAbortAssert.error(-1)`, an entity tracked twice under the same machine in a
+  `StateSnapshot`, an unknown topology node, an empty `hasPath` walk, and a wait budget that is not positive or does
+  not fit in nanoseconds throw `IllegalArgumentException` instead of `GraphAssertionError`.
+- **Messages carry the evidence.** A failure names the view it came from: `<Entity>/<States>` for a graph, with
+  ` FROM -ID->` added for an edge, `applied outcome` for a narrowed subject, or `recorded transitions for K[1] (applied)`
+  for one reached through a list. A `GraphAssertionError` names its context, property, expected and actual values;
   when two distinct instances print alike, the message names both instances, and a value whose `toString()` throws is
   shown by its class and identity. A golden mismatch shows only the changed lines, each with three lines of context,
-  and a snapshot mismatch one `path: expected ... but was ...` line per field.
+  and a snapshot mismatch one `path: expected ... but was ...` line per field, falling back to the line diff when the
+  stored file holds the same fields in another line order. The line diff stops after 200 lines with
+  `... N more diff lines omitted`, and marks a missing final line feed with `\ No newline at end of file`.
 - **Helpers can raise the same error.** `new GraphAssertionError(context, property, expected, actual)`, with an optional
   advice line that goes into the message only, gives a test helper of your own the same inspectable failure.
 - **`hasTerminalsExactly`, `hasTransitionsExactly` and the topology's `hasNodesExactly`, `hasSuccessorsExactly` and

@@ -388,7 +388,9 @@ deadlines side by side, so two unanswered invocations started together cost abou
 the default executors of the machines are awaited: closing the registry does not wait for an executor the
 application supplied.
 
-`complete`, `fail` and `cancelStage` on a `PendingInvocation` return true only to the call that settled the stage,
+`awaitInvocation` hands out handles in the order they were published, which can differ from the order of
+`invocations()`. `complete`, `fail` and `cancelStage` on a `PendingInvocation` return true only to the call that
+settled the stage,
 and are safe to call from any thread. `awaitInvocation` fails with `GraphAssertionError` when its budget expires or
 when the waiting thread is interrupted, which leaves the interrupt flag set.
 
