@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import lombok.EqualsAndHashCode;
 import lombok.NonNull;
 
 /**
@@ -22,6 +23,7 @@ import lombok.NonNull;
  * whatever their order, so contexts built by hand compare by their components; like a collection's, its hash code
  * follows its values. Not part of the API.
  */
+@EqualsAndHashCode
 public final class UnboundFlow implements FlowContext {
 
     private final Map<FlowKey<?>, Object> values = new LinkedHashMap<>();
@@ -68,15 +70,5 @@ public final class UnboundFlow implements FlowContext {
     @Override
     public void remove(@NonNull FlowKey<?> key) {
         values.remove(key);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        return other instanceof UnboundFlow that && values.equals(that.values);
-    }
-
-    @Override
-    public int hashCode() {
-        return values.hashCode();
     }
 }

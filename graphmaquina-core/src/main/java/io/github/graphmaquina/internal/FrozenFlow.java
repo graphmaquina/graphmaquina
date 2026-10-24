@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
 
@@ -23,6 +24,7 @@ import lombok.NonNull;
  * and their trails are, by {@link List#equals}, entry by entry; the hash code follows all three. {@link #toString()}
  * names the keys as {@code name:Type} and never prints a value, the entity or the trail. Not part of the API.
  */
+@EqualsAndHashCode
 public final class FrozenFlow implements FlowView {
 
     /** The flow without an entity, without values and without a trail: {@link FlowView#empty()}. */
@@ -83,17 +85,6 @@ public final class FrozenFlow implements FlowView {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
         return entity.map(type::cast);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        return other instanceof FrozenFlow that && entity.equals(that.entity) && values.equals(that.values)
-                && trail.equals(that.trail);
-    }
-
-    @Override
-    public int hashCode() {
-        return 31 * (31 * entity.hashCode() + values.hashCode()) + trail.hashCode();
     }
 
     @Override
