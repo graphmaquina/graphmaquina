@@ -30,24 +30,24 @@ import org.junit.jupiter.api.io.TempDir;
  * Compiles the Java samples of the testing guide's "Failure kinds and recovery rules", "Sub-machines" and "The call's
  * flow and its trail" sections against the published core and test jars, then runs them in a separate JVM whose class
  * path holds those two jars and the compiled samples, nothing else. The page promises that its samples run, and these
- * are cut out of {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names
+ * are cut out of {@code docs/testing-advanced.md} verbatim. They are wrapped only by the types and helpers each section names
  * and by one method per sample, or per run of samples that share their variables, so an expectation the page shows has
  * to hold for this test to pass: the publication types and the {@code graph}, {@code asyncGraph} and {@code machine}
  * helpers for the first section; for the second the order, payment and invoice types, their keys {@code ORDERS},
  * {@code PAYMENTS}, {@code INVOICES} and {@code CHARGES}, and the {@code orders}, {@code asyncOrders},
  * {@code chargedOrders}, {@code invoices}, {@code registry}, {@code registryWithInvoices} and {@code chargeRegistry}
  * helpers; and for the third the publication types and the {@code graph} helper again. A heading or block that cannot
- * be found fails the test instead of compiling nothing. The page, the repository and the release come from the
- * {@code testingGuidePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
+ * be found fails the test instead of compiling nothing. The page's directory, the repository and the release come
+ * from the {@code docsPath}, {@code artifactRepository} and {@code artifactVersion} system properties that
  * {@code publishedArtifactTest} sets.
  */
 class TestingGuideFragmentsTest {
 
-    private static final String RECOVERY = "### Failure kinds and recovery rules";
+    private static final String RECOVERY = "## Failure kinds and recovery rules";
 
-    private static final String SUBMACHINES = "### Sub-machines";
+    private static final String SUBMACHINES = "## Sub-machines";
 
-    private static final String FLOW = "### The call's flow and its trail";
+    private static final String FLOW = "## The call's flow and its trail";
 
     private static final String HEADER = """
             import static io.github.graphmaquina.test.ExitExpectation.exit;
@@ -99,7 +99,7 @@ class TestingGuideFragmentsTest {
             import java.util.concurrent.CompletableFuture;
             import java.util.function.UnaryOperator;
 
-            /** Samples of docs/testing.md, extracted verbatim, run against the published jars. */
+            /** Samples of docs/testing-advanced.md, extracted verbatim, run against the published jars. */
             public final class TestingFragments {
                 private TestingFragments() { }
 
@@ -473,7 +473,7 @@ class TestingGuideFragmentsTest {
     void theSamplesOfTheTestingGuideRunAgainstThePublishedJars(
             @TempDir(cleanup = CleanupMode.ON_SUCCESS) Path workDir)
             throws IOException, InterruptedException {
-        List<String> page = Files.readAllLines(Path.of(property("testingGuidePath")), UTF_8);
+        List<String> page = MarkdownPage.read(Path.of(property("docsPath")), "testing-advanced.md");
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
         assertBlockCount(page, RECOVERY, 4);
@@ -579,8 +579,8 @@ class TestingGuideFragmentsTest {
     }
 
     /**
-     * Returns the {@code n}th java block after {@code heading} and before the next heading of any level. Headings
-     * are matched outside code fences only. Fails when the block is missing or blank.
+     * Returns the {@code n}th java block after {@code heading} and before the next heading of its level or higher.
+     * Headings are matched outside code fences only. Fails when the block is missing or blank.
      */
     private static String blockAfter(List<String> page, String heading, int n) {
         List<MarkdownPage.Block> blocks = javaBlocksAfter(page, heading);
@@ -591,11 +591,11 @@ class TestingGuideFragmentsTest {
     }
 
     /**
-     * Returns the java blocks after {@code heading} and before the next heading of any level. Headings are matched
-     * outside code fences only.
+     * Returns the java blocks after {@code heading} and before the next heading of its level or higher. Headings are
+     * matched outside code fences only.
      */
     private static List<MarkdownPage.Block> javaBlocksAfter(List<String> page, String heading) {
-        return MarkdownPage.blocksAfter(page, heading, (String line) -> line.startsWith("#"), "java");
+        return MarkdownPage.sectionBlocks(page, heading, "java");
     }
 
     /** Compiles the samples with the published jars as their entire class path; returns what javac reported. */

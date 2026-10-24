@@ -1,5 +1,6 @@
 # Testing GraphMaquina machines
 
+
 `graphmaquina-test` is a test-scoped module of typed assertions, probes and graph snapshots for machines
 built with GraphMaquina. It asserts over the runtime's own values — definitions, edges,
 node policies, outcomes, transition records, reactions, sub-machine starts, engine exceptions, the flow of a call and
@@ -11,27 +12,27 @@ It brings no test framework of its own. Nothing in its public API mentions JUnit
 under whatever runner your project already uses; the examples here are JUnit 5 because the repository's own
 example module is.
 
+Every Java sample of the testing pages runs in this repository. Most are copied verbatim out of a test; the samples of
+[failure kinds and recovery rules](testing-advanced.md#failure-kinds-and-recovery-rules), of [sub-machines](testing-advanced.md#sub-machines) and of
+[the call's flow and its trail](testing-advanced.md#the-calls-flow-and-its-trail) go the other way: they are cut out of
+[testing-advanced.md](testing-advanced.md) and run by a test. Each section names the test file.
+
+## Contents
+
 - [Install](#install)
 - [Your first test](#your-first-test)
 - [What each entry point checks](#what-each-entry-point-checks)
 - [Asserting on identity](#asserting-on-identity)
-- [Verified samples](#verified-samples)
+- [More expectations](#more-expectations)
 - [Goldens and structural snapshots](#goldens-and-structural-snapshots)
 - [What a check does not prove](#what-a-check-does-not-prove)
 - [Sharp edges](#sharp-edges)
 - [Maintaining test support](#maintaining-test-support)
 
-Every Java sample below runs in this repository. Most are copied verbatim out of a test; the samples of
-[failure kinds and recovery rules](#failure-kinds-and-recovery-rules), of [sub-machines](#sub-machines) and of
-[the call's flow and its trail](#the-calls-flow-and-its-trail) go the other way, cut out of this page and run by a
-test. Each section names the test file.
-
 ## Install
 
-Build `graphmaquina-test` from a checkout of this repository and consume it locally, alongside the other
-modules of the version you installed.
-
-The coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
+The [install command](installation.md#install-graphmaquina-201) installs `graphmaquina-test` with the other
+modules, at the same version, and Maven Central publishes it with every release. Its coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
 property or a `graphmaquina.version` Maven property, set once per build, never a literal repeated per
 dependency.
 
@@ -51,23 +52,9 @@ dependencies {
 ```
 
 The module is test-scoped: it depends on `graphmaquina-core` and adds nothing to your application's runtime
-classpath. Keep its version equal to the runtime, generator and processor versions you already align.
-
-Its POM pins `graphmaquina-core` at its own version, which is why the
-[install command](guide.md#configure-gradle) writes both in one invocation:
-
-```bash
-./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal \
-    -PgraphmaquinaVersion=<the version you want to resolve>
-```
-
-Until the pages are reorganized to its limits, this command stops at the
-[documentation check](guide.md#build-verify-and-release-this-repository).
-
-A Gradle build then needs `mavenLocal()` among the repositories it uses for test dependencies, as the
-quickstart's [settings.gradle.kts](guide.md#settingsgradlekts) declares; Maven reads that repository
-itself and needs no declaration. Inside this repository no publication is needed at all:
-`graphmaquina-example` depends on the project directly with
+classpath. Its POM pins `graphmaquina-core` at its own version, so keep it equal to the runtime, generator and
+processor versions you already align. Inside this repository no
+publication is needed at all: `graphmaquina-example` depends on the project directly with
 `testImplementation(project(":graphmaquina-test"))`.
 
 ## Your first test
@@ -75,7 +62,7 @@ itself and needs no declaration. Inside this repository no publication is needed
 The machines under test are built exactly as the application builds them: a real registry, real entities,
 and test doubles only where the domain reaches outside the process. A `TransitionRecorder` is a
 `MachineObserver`, so it is installed the way any observer is, and `recordTrail()` makes every call of the set
-record its [trail](#the-calls-flow-and-its-trail). From
+record its [trail](testing-advanced.md#the-calls-flow-and-its-trail). From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
@@ -92,7 +79,8 @@ final Items items = shop.items();
 ```
 
 One static import, `io.github.graphmaquina.test.GraphAssertions.assertThat`, reaches the views for every
-subject a test holds directly: a definition, an outcome, an action or guard result, a throwable, an entity, the flow
+subject a test holds directly: a definition, an outcome, an action or guard result, a recorded guard or action call,
+a throwable or an `InvalidGraphException`, an entity, the flow
 of a call.
 A bare list of transition records, of reactions, of sub-machine starts, of journal entries or of trail entries would
 need overloads with the same erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`,
@@ -123,7 +111,7 @@ constant of another machine's catalogue does not compile inside it.
 | --- | --- | --- |
 | Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine |
 | One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook |
-| One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
+| One node's policy | `assertThat(definition).policy(state)` | `hasDefaultReason`, and `rejects(id, reason)`: the reason that identifier gets, its own or the default, which also requires that no edge is keyed by it |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
@@ -170,782 +158,55 @@ An `Ignored` outcome says which of the two reevaluation cases it is, through
 requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
 every other variant.
 
-## Verified samples
-
-### The graph, its watch and its edges
-
-Names are the runtime's public names — the name the DSL or the generated companion declared — not the name
-of the Java method that implements them. From
-[TestingApiTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/TestingApiTest.java):
-
-```java
-assertThat(orders.definition())
-        .hasInitial(OrderStatus.NEW)
-        .hasTerminalsExactly(OrderStatus.SHIPPED, OrderStatus.CANCELLED)
-        .hasAsync()
-        .hasTransitionsExactly(OrderStatus.NEW,
-                OrderTransition.PAYMENT_DECLINED, OrderTransition.PAY, OrderTransition.CANCEL)
-        .hasTransitionsExactly(OrderStatus.PAYMENT_DECLINED,
-                OrderTransition.RETRY, OrderTransition.CANCEL)
-        .watch(OrderStatus.PAID)
-        .hasPeer(ItemsRuntime.KEY)
-        .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderTransition.SHIP)));
-```
-
-One edge carries everything its declaration gave it, including the parts no diagram shows:
-
-```java
-assertThat(orders.definition())
-        .transition(OrderStatus.NEW, OrderTransition.PAY)
-        .hasTarget(OrderStatus.PAID)
-        .isAction()
-        .hasActionNamed("pay")
-        .hasAsyncAction()
-        .hasGuardsExactly(new GuardExpectation("retryBudgetLeft", false))
-        .hasTimeout(Duration.ofSeconds(5))
-        .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
-        .failsOnExactly(IOException.class)
-        .hasNoHook();
-```
-
-An absent edge has no view of its own, because there is nothing to describe. What a test asserts instead is
-that nothing is keyed there, and what the node will say when it is asked:
-
-```java
-assertThat(items.definition())
-        .hasNoTransition(ItemStatus.PENDING, ItemTransition.PACK)
-        .policy(ItemStatus.PENDING)
-        .hasDefaultReason("an item is packed by going through PACKING");
-```
-
-One identifier can leave several states. Each `(from, id)` pair is its own edge, asserted on its own:
-
-```java
-assertThat(items.definition())
-        .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
-        .hasTarget(ItemStatus.CANCELLED)
-        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
-assertThat(items.definition())
-        .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
-        .hasTarget(ItemStatus.CANCELLED)
-        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
-```
-
-A terminal is asserted by the absence of everything, not by a kind:
-
-```java
-assertThat(orders.definition())
-        .hasTransitionsExactly(OrderStatus.SHIPPED)
-        .hasNoTransition(OrderStatus.SHIPPED, OrderTransition.CANCEL)
-        .policy(OrderStatus.SHIPPED)
-        .hasDefaultReason("a shipment cannot be undone");
-```
-
-`hasGuardsExactly` keeps order and multiplicity, because the engine evaluates guards in declaration order
-and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge's own `failsOn`
-maps no exception to its fallback `onFailure` route; the exceptions a recovery rule maps are not part of it.
-`recoversExactly(rules)` compares every rule of the edge, its exception classes included, in declaration order.
-
-### Outcomes, reactions and observed state
-
-`movedTo` reads the state the outcome recorded; `hasEntityState` reads the entity through a getter at the
-moment the expectation runs. A reaction is reached from the outcome that carries it, selected by machine and
-by entity identity. From
-[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
-
-```java
-assertThat(orders.pay(order)).isApplied().movedTo(OrderStatus.PAID)
-        .hasEntityState(Order::status, OrderStatus.PAID);
-```
-
-```java
-assertThat(items.pack(i2)).isApplied().reactions()
-        .forEntity(OrdersRuntime.KEY, order).single().isDone().outcome()
-        .isApplied().movedTo(OrderStatus.SHIPPED)
-        .hasEntityState(Order::status, OrderStatus.SHIPPED);
-```
-
-A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. The DSL refuses two
-guards of one name on an edge with `SG105`, and so does the annotation processor, so in a graph the DSL built the name
-identifies the guard that rejected. A definition assembled without the DSL is not checked for it. A domain failure
-keeps the very exception instance the action reported, and names the identifier that recovered:
-
-```java
-assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
-```
-
-```java
-assertThat(orders.pay(order)).isFailed().hasCauseSameAs(down)
-        .hasEntityState(Order::status, OrderStatus.PAYMENT_DECLINED);
-```
-
-```java
-assertThat(orders.pay(order)).isFailed().movedTo(OrderStatus.PAYMENT_DECLINED)
-        .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
-        .hasEntityState(Order::status, OrderStatus.PAYMENT_DECLINED);
-```
-
-`movedTo` is where the recovering edge landed and `hasFailureTransition` is which edge that was. They are
-not the same question: a route may legitimately reach the state another edge also reaches.
-
-### Failures and the journal
-
-An aborted transition throws rather than returning an outcome, so the subject is the throwable.
-`captureFailure` runs the operation and hands back what it threw; it catches no `Error`, so an
-`AssertionError` raised inside the body still fails the test the way it should. The order below has a `PACKED`
-item, which has no `CANCEL` edge, and a `PENDING` one. From
-[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
-
-```java
-Throwable failure = captureFailure(() -> orders.cancel(order, "B-7"));
-
-assertThat(failure).isCascadeAbort()
-        .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
-        .journal().hasActionsExactly("cancel", "restock")
-        .hasStatusesExactly(ActionStatus.THREW, ActionStatus.OK);
-assertThat(failure).isCascadeAbort().flow()
-        .hasValue(ShopFlow.CANCELLATION, "B-7")
-        .hasNoValue(ShopFlow.restockOf(packed))
-        .hasValue(ShopFlow.restockOf(pending), new Restock("B-7", order))
-        .trail()
-        .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Hop.class, FlowEntry.Failed.class)
-        .hasHopsExactly(OrderTransition.CANCEL, ItemTransition.CANCEL)
-        .endsWithFailure(CallPhase.ACTION)
-        .hops().forEntity(ItemsRuntime.KEY, pending).single()
-        .from(ItemStatus.PENDING).hasTransition(ItemTransition.CANCEL).to(ItemStatus.CANCELLED);
-assertThat(order, Order::status).isIn(OrderStatus.NEW);
-assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
-assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
-assertEquals(Optional.empty(), packed.restockedIn());
-assertEquals(Optional.empty(), pending.restockedIn());
-assertEquals(List.of(), order.restocked());
-```
-
-The journal lists the actions that ran: `cancel`, which threw the aggregate of its `COLLECT` cascade, and the
-`restock` of the pending item, which completed. The flow keeps what the steps wrote, the batch and the pending item's
-restock, while its trail holds the order's hop and that item's, then the failure. No hook ran, so no entity holds the
-restock: the shop applies it in a hook, as
-[set a field only when the call commits](guide.md#set-a-field-only-when-the-call-commits) explains.
-
-`isCallFailure()` reads any failure of a call through what every kind shares, and the four call-failure views offer
-the same expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference
-with the `MachineCall` an observer received, `journal()`, and `flow()`, which
-[the call's flow and its trail](#the-calls-flow-and-its-trail) describes.
-
-### The call recorder
-
-The recorder keeps the outcome of every call that completed, in the order the calls completed, and nothing else. It
-never walks `reactions()`, so a reaction is counted once — as its own call — even though the root
-outcome carries it too. From
-[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
-
-```java
-recorder.assertRecorded()
-        .hasSize(9)
-        .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                ItemsRuntime.KEY)
-        .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
-```
-
-A registry accepts any number of observers, so a test adds its own beside the recorder. An entity keeps
-moving after its call completes, so if the assertion must see the entity as it was, record a projection with
-`TransitionRecorder.projecting(...)` instead of the live outcome.
-
-Each outcome carries the call's flow, `outcome.flow()`, so the recorder also retains every flow it records: the
-root entity and the values the call's steps and hooks left there, and, for a call whose root machine records its
-trail, the entries of the trail, which hold the call's entities and the throwable a failure route took, all by
-reference, for as long as the recorder is kept. It stores the outcome beside a projection too, so projecting releases
-neither.
-
-### Tracked entity state
-
-A `StateSnapshot` reports only the entities it was given, so an entity the test does not name may move
-without ever failing `assertUnchanged()`. From
-[TestingApiTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/TestingApiTest.java):
-
-```java
-private StateSnapshot track(Order order, Item first, Item second) {
-    return StateSnapshot.builder()
-            .track(OrdersRuntime.KEY, order, Order::status)
-            .track(ItemsRuntime.KEY, first, Item::status)
-            .track(ItemsRuntime.KEY, second, Item::status)
-            .capture();
-}
-```
-
-```java
-StateSnapshot before = track(order, packed, pending);
-
-assertThat(captureFailure(() -> orders.cancel(order, "B-7"))).isCascadeAbort().hasErrorCount(1);
-
-before.assertUnchanged();
-```
-
-`assertUnchanged()` fails with every entity that moved, not only the first, so one run names the whole
-difference. `changes()` reads every tracked getter again on each call and answers about the entities as they
-are now. Each `StateChange` holds the key, the entity and its states `before()` and `after()`, both `Optional`: a
-getter that answers null observes no state, which is empty, so a state that appears or disappears is a change like
-any other.
-
-### Probes
-
-A probe stands where a guard, an action or a hook stands and answers from an explicit script. A shared
-`CallTrace` records the order the callbacks were entered in, which is how the engine's short-circuit becomes
-observable. From [ProbeTest](../graphmaquina-test/src/test/java/consumer/ProbeTest.java):
-
-```java
-CallTrace trace = CallTrace.create();
-GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
-        .thenReturn(GuardResult.reject("no title"));
-GuardProbe<Entity, State, Id> second = GuardProbe.<Entity, State, Id>create("second", trace)
-        .otherwiseReturn(GuardResult.pass());
-ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
-        .otherwiseReturn(ActionOutcome.ok());
-```
-
-```java
-trace.assertNamesExactly("first");
-second.calls().assertCount(0);
-action.calls().assertCount(0);
-```
-
-`thenReturn` and `thenThrow` queue one answer per call, in order; `otherwiseReturn` and `otherwiseSucceed`
-set the standing answer used once the queue is empty. A probe that runs out of answers says which probe and
-which call ran out, rather than letting the machine misbehave.
-
-`StateWriteProbe` wraps the machine's state setter, which is how a test watches phase 2 and makes one write
-fail. Calls are numbered from 1, and an armed call throws before the wrapped setter is reached. From
-[StateWriteProbeTest](../graphmaquina-test/src/test/java/consumer/StateWriteProbeTest.java):
-
-```java
-Entity entity = new Entity("e", State.NEW);
-IllegalStateException boom = new IllegalStateException("setter down");
-StateWriteProbe<Entity, State> writes =
-        StateWriteProbe.<Entity, State>wrapping(Entity::setState).failOnCall(2, boom);
-writes.accept(entity, State.READY);
-assertSame(boom,
-        assertThrows(IllegalStateException.class, () -> writes.accept(entity, State.DONE)));
-assertEquals(State.READY, entity.state());
-assertEquals(List.of(WriteStatus.RETURNED, WriteStatus.THREW),
-        writes.writes().stream().map(StateWrite::status).toList());
-```
-
-### Operation input in recorded calls
-
-`GuardCall` and `ActionCall` capture `Optional<?> input` when the callback is entered. This works with
-`GuardProbe`, `ActionProbe`, `ControlledAsyncGuard` and `ControlledAsyncAction`, including calls in a
-`CallTrace` or a `PendingInvocation`. It stores the argument reference without retaining the live context;
-reading the history after the transaction ends is safe. The payload is not copied: later mutations of a
-mutable argument remain visible, so use an immutable value when the test needs a stable value snapshot.
-
-The [published consumer test](../graphmaquina-test/src/test/java/consumer/PublishedArtifactSmokeTest.java)
-invokes an operation with a string argument named `input`, then checks both recorded calls:
-
-```java
-assertThat(guard.calls().single()).hasInput("approved").hasInputSameAs(input);
-assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> {
-    if (value != input) { throw new AssertionError("input identity was lost"); }
-});
-```
-
-`hasInput` compares by equality, `hasInputSameAs` checks identity, and `hasNoInput` requires absence.
-`inputSatisfies` checks presence and assignability before invoking the typed assertion; an absent or wrong
-input produces an inspectable `GraphAssertionError`. Null expected values are programming errors; use
-`hasNoInput()` to check a call that carried no operation argument, since the engine refuses a null one before the
-call starts. `CallInputAssert.assertThat(call)` is also available without the `GraphAssertions` facade.
-
-The recorded `input(Class)` follows the context contract: empty remains empty, supertypes are supported,
-and incompatible present values throw `ClassCastException`. A null type token throws `NullPointerException`;
-primitive tokens (including `void.class`) throw `IllegalArgumentException`, even for an empty input. Use
-wrapper classes for primitive operation arguments.
-
-Root guards, actions and failure actions record the root input, and the recovering action records the input
-of the invocation that failed. Cascades, the exits of sub-machines, watch reactions and reevaluation have their
-own calls with empty input; a later invocation never reuses a previous input. For a controlled
-async callback, inspect `assertThat(pending.call()).hasInputSameAs(verdict)` before answering it or after
-completion. The same reference remains in `fixture.invocations()` after close.
-
-Both records carry the identifier that selected the edge:
-`GuardCall<E, S, T>(entity, from, transition, to, input)` and
-`ActionCall<E, S, T>(entity, from, transition, to, depth, input)`. The shorter constructors — four arguments
-for a guard call, five for an action call — remain available and create calls with empty input. Record
-patterns must list every component, and generated equality, hash codes and string representations include
-them all.
-
-Executable examples: [ProbeInputTest](../graphmaquina-test/src/test/java/consumer/ProbeInputTest.java) and
-[CallInputAssertionsTest](../graphmaquina-test/src/test/java/consumer/CallInputAssertionsTest.java). The
-published-artifact consumer also compiles and runs the new API directly from the staged JARs.
-
-### Controlled asynchronous invocations
-
-A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the edge in place of the real async
-callback. The test resumes when the engine has entered it, and the engine resumes when the test answers that
-very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
-`AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
-is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards: the
-action with a `GraphAssertionError`, an `Error` that neither a recovery rule nor a `failsOn` route can take for
-a failure of the action, and the guard with an `IllegalStateException`, which aborts the transition.
-`awaitInvocation` on a closed fixture fails at once, and a wait already blocked when the fixture closes is
-woken and fails the same way.
-Concurrent invocations are independent: each arrives with its own handle and is answered on its own. From
-[ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java), where
-`GENEROUS` is that test's own two-second budget:
-
-```java
-ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
-MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(5), action));
-try (registry; action) {
-    Entity first = new Entity("first", State.NEW);
-    Entity second = new Entity("second", State.NEW);
-    CompletableFuture<Outcome<Entity, State, Id>> firstResult =
-            registry.of(KEY).async().execute(first, Id.PREPARE);
-    CompletableFuture<Outcome<Entity, State, Id>> secondResult =
-            registry.of(KEY).async().execute(second, Id.PREPARE);
-    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> one =
-            action.awaitInvocation(GENEROUS);
-    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> other =
-            action.awaitInvocation(GENEROUS);
-    assertNotSame(one, other);
-    assertNotSame(one.call().entity(), other.call().entity());
-    assertEquals(2, action.invocations().size());
-
-    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> firstCall =
-            one.call().entity() == first ? one : other;
-    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> secondCall =
-            firstCall == one ? other : one;
-    assertTrue(firstCall.complete(ActionOutcome.ok()));
-    AsyncAssertions.await(firstResult, GENEROUS).isApplied().hasEntitySameAs(first);
-    assertFalse(secondCall.isDone());
-    assertFalse(secondResult.isDone());
-    assertEquals(State.NEW, second.state());
-
-    assertTrue(secondCall.complete(ActionOutcome.ok()));
-    AsyncAssertions.await(secondResult, GENEROUS).isApplied().hasEntitySameAs(second);
-}
-```
-
-List the registry first and the fixture second inside the try-with-resources header, as that sample does.
-The fixture is still constructed first — the graph is built from it, so it exists before the registry does —
-and only the order inside the header decides how the two are closed. Try-with-resources closes in reverse
-order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing cancels the
-invocations it is still holding, and a worker parked inside the action is released before the registry waits
-for it. Listed the other way round, a test that fails before answering an invocation makes the registry wait
-until each unanswered call gives up at its own deadline, the edge's `timeout` or the call's `asyncTimeout`,
-whichever ends first, before the fixture ever gets to cancel it. Calls that run side by side wait out their
-deadlines side by side, so two unanswered invocations started together cost about one such wait, not two. Only
-the default executors of the machines are awaited: closing the registry does not wait for an executor the
-application supplied.
-
-The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. When a call
-on a sub-machine can run that edge implicitly, as the exit of its binding or an edge that exit leads to, the
-sub-machine's machine must declare one too: the call runs the edge under its own deadline. The same applies to
-a caller whose own edge starts a binding with a terminal initial descendant that selects an async exit.
-That deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
-[what a check does not prove](#what-a-check-does-not-prove).
-
-### Failure kinds and recovery rules
-
-An edge can declare recovery rules besides its `onFailure` fallback: a rule pairs a failure kind with the
-identifier of its recovery edge, and may list the throwable types that select it. The
-[guide](guide.md#recover-by-failure-kind-and-exception-type) describes how the engine chooses. A test asserts the
-route a call took on the call's outcome, and the rules an edge declares on the definition.
-
-These samples use the publication machine of that guide section. `graph(action)` declares it with `action` on
-`PUBLISH`, `asyncGraph(action)` declares it with an asynchronous one, and `machine(graph)` builds a standalone
-machine with a five-second `asyncTimeout`.
-[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
-those helpers and the publication types, cuts the samples out of this page, compiles them against the published
-jars and runs them.
-
-A probe answers three calls in turn: a returned failure with a kind, a declared exception, and a returned failure
-without a kind, which the fallback takes:
-
-```java
-ServiceUnavailableException down = new ServiceUnavailableException("provider down");
-ActionProbe<Publication, PublicationState, PublicationChange> publish =
-        ActionProbe.<Publication, PublicationState, PublicationChange>create("publish", CallTrace.create())
-                .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
-                .thenThrow(down)
-                .thenReturn(ActionOutcome.failed("invalid response"));
-StateMachine<Publication, PublicationState, PublicationChange> machine = machine(graph(publish));
-
-assertThat(machine.execute(new Publication("p1"), PublicationChange.PUBLISH)).isFailed()
-        .hasFailureKind(PublicationFailures.Rejected.class)
-        .hasFailureTransition(PublicationChange.RECORD_REJECTION)
-        .movedTo(PublicationState.REJECTED_BY_PROVIDER)
-        .hasNoCause();
-assertThat(machine.execute(new Publication("p2"), PublicationChange.PUBLISH)).isFailed()
-        .hasFailureKind(PublicationFailures.Unavailable.class)
-        .hasFailureTransition(PublicationChange.SCHEDULE_RETRY)
-        .movedTo(PublicationState.RETRY_PENDING)
-        .hasCauseSameAs(down);
-assertThat(machine.execute(new Publication("p3"), PublicationChange.PUBLISH)).isFailed()
-        .hasNoFailureKind()
-        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED)
-        .movedTo(PublicationState.INTEGRATION_FAILED)
-        .hasReason("invalid response");
-```
-
-`hasFailureKind` asserts the kind the failure carried, not the route that took it: a kind that no rule declares
-reaches the fallback and keeps its kind. Assert `hasFailureTransition` beside it to pin the route.
-
-The rules belong to the edge's declaration. `recoversExactly` compares them in declaration order, as
-`failsOnExactly` compares the edge's own types; the order selects nothing, but the declaration keeps it.
-`failsOnExactly` reads only the edge's own `failsOn`, never the types of its rules:
-
-```java
-assertThat(machine.definition())
-        .transition(PublicationState.READY, PublicationChange.PUBLISH)
-        .recoversExactly(List.of(
-                new RecoveryRule<>(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
-                        List.of(ServiceUnavailableException.class)),
-                new RecoveryRule<>(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
-                        List.of(ProviderRejectedException.class))))
-        .failsOnExactly(InvalidResponseException.class)
-        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
-```
-
-An action's result can be asserted on its own, before any machine runs it. On an action result both expectations
-require the `Failed` variant, so `ActionOutcome.ok()` fails them:
-
-```java
-assertThat(ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider down"))
-        .isFailed()
-        .hasFailureKind(PublicationFailures.Unavailable.class)
-        .hasReason("provider down");
-assertThat(ActionOutcome.failed("invalid response")).isFailed().hasNoFailureKind();
-```
-
-The same rules route an asynchronous action. A `ControlledAsyncAction` lets the test answer the stage with a
-failure or complete it with an exception, and `AsyncAssertions` reads the outcome:
-
-```java
-Duration testBudget = Duration.ofSeconds(10);
-ControlledAsyncAction<Publication, PublicationState, PublicationChange> publish = ControlledAsyncAction.create();
-try (publish) {
-    StateMachine<Publication, PublicationState, PublicationChange> machine = machine(asyncGraph(publish));
-    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> rejected =
-            machine.async().execute(new Publication("p4"), PublicationChange.PUBLISH);
-    publish.awaitInvocation(testBudget)
-            .complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
-    AsyncAssertions.await(rejected, testBudget).isFailed()
-            .hasFailureKind(PublicationFailures.Rejected.class)
-            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
-            .movedTo(PublicationState.REJECTED_BY_PROVIDER);
-
-    ProviderRejectedException refused = new ProviderRejectedException("content refused");
-    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> thrown =
-            machine.async().execute(new Publication("p5"), PublicationChange.PUBLISH);
-    publish.awaitInvocation(testBudget).fail(refused);
-    AsyncAssertions.await(thrown, testBudget).isFailed()
-            .hasFailureKind(PublicationFailures.Rejected.class)
-            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
-            .hasCauseSameAs(refused);
-}
-```
-
-`testBudget` is how long the test waits, not the engine's deadline. The fixture is the only resource of the
-try-with-resources header because a standalone machine has no registry to close.
-
-### Sub-machines
-
-A state can hold a sub-machine, which the [programmatic DSL](guide.md#programmatic-dsl) declares with
-`submachine(...)`. These samples use an order whose `PAYING` state holds its payment. `orders()` declares the order
-graph: its binding reaches the payment of an order and the order of a payment, and the payment's terminal states
-`CAPTURED` and `DECLINED` exit through `PAY` and `REFUSE`. `ORDERS` and `PAYMENTS` are the keys of the two machines.
-[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
-those helpers and types, and the ones named below, cuts the samples out of this page, compiles them against the
-published jars and runs them.
-
-`submachine(state, childKey)` narrows to the binding of one state. The view is typed by the child's key, so the
-compiler accepts only a state of the child as a terminal state and only an identifier of the parent as its exit:
-
-```java
-assertThat(orders())
-        .hasNoSubmachine(OrderState.CART)
-        .submachine(OrderState.PAYING, PAYMENTS)
-        .hasExitsExactly(exit(PaymentState.CAPTURED, OrderChange.PAY),
-                exit(PaymentState.DECLINED, OrderChange.REFUSE))
-        .hasExit(PaymentState.DECLINED, OrderChange.REFUSE);
-```
-
-`exit` is the static factory of `ExitExpectation`. `hasExitsExactly` compares the exits in declaration order. Each
-expectation of the view first checks that the state holds the child of that key, so a binding of another child fails
-on the property `child`, and a state that holds no sub-machine fails as a view without a subject. None of them runs
-the binding's lookups.
-
-`registry(orders)` registers the order machine built from `orders` and the payment machine, each with a five-second
-`asyncTimeout`. An outcome's `starts()` holds the sub-machines its call started. `forChild` selects them by the child's
-key and identity, as `records().forEntity` does, and a child can start more than once in one call, so the selection
-is read with `single()` or `atIndex(i)`. A start is no hop: when a later call ends the child, the exit is one more
-record of that call:
-
-```java
-Payment payment = new Payment("p1");
-Order order = new Order("o1", payment);
-try (MachineRegistry registry = registry(orders())) {
-    assertThat(registry.of(ORDERS).execute(order, OrderChange.CHECKOUT)).isApplied()
-            .movedTo(OrderState.PAYING)
-            .starts().forChild(PAYMENTS, payment).single()
-            .startedAt(PaymentState.AUTHORIZING)
-            .hadPrevious(PaymentState.AUTHORIZING)
-            .byParent(ORDERS, order, OrderState.PAYING)
-            .atDepth(0);
-
-    assertThat(registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE)).isApplied()
-            .records().forEntity(ORDERS, order).single()
-            .hasTransition(OrderChange.PAY).to(OrderState.PAID).hasDepth(1);
-}
-```
-
-`hadPrevious` is the child's state before the start, here the payment's own initial state. A call whose hook threw
-after its states were written keeps its starts too: `isAfterCommit().starts()` reads them.
-
-A sub-machine refuses two kinds of request, and the rejected view names each kind. A child whose parent is no longer in
-the bound state is detached, and an exit requested on the parent is reserved, since only the end of the child runs it:
-
-```java
-Payment payment = new Payment("p2");
-Order order = new Order("o2", payment);
-try (MachineRegistry registry = registry(orders())) {
-    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
-    assertThat(registry.of(ORDERS).execute(order, OrderChange.PAY)).isRejected()
-            .isReservedExit()
-            .hasReason("PAY leaves PAYING only when its sub-machine ends");
-
-    registry.of(ORDERS).execute(order, OrderChange.ABANDON);
-    assertThat(registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE)).isRejected()
-            .isDetached()
-            .hasReason("no parent holds it in PAYING");
-}
-```
-
-A payment has one active parent at a time. `invoices()` declares an invoice whose `SETTLING` state holds its payment
-too, and `registryWithInvoices(orders)` registers the invoice machine beside the other two. Once an order and an
-invoice both hold the same payment in their bound states, a call to the payment cannot tell whose exit to run: it
-throws before any edge is looked up, and `captureFailure` hands back what it threw:
-
-```java
-Payment payment = new Payment("p4");
-Order order = new Order("o4", payment);
-Invoice invoice = new Invoice("i4", payment);
-try (MachineRegistry registry = registryWithInvoices(orders())) {
-    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
-    registry.of(INVOICES).execute(invoice, InvoiceChange.SETTLE);
-    assertThat(captureFailure(() -> registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE))).isAbort()
-            .hasPhase(CallPhase.RESOLVE)
-            .hasStatesWritten(StatesWritten.NONE)
-            .hasCause(AmbiguousParentException.class);
-}
-assertThat(payment, (Payment value) -> value.state).isIn(PaymentState.AUTHORIZING);
-```
-
-The abort's phase is `RESOLVE` because the payment's call is the root; inside a cascade or an exit it would be
-`ACTION`.
-
-An exit is an edge of the parent, so the probes stand on it as on any edge. `orders(pay)` declares the order graph with
-`pay` applied to the declaration of the exit `PAY`, and `registry(orders, observer)` adds an observer to the registry.
-The exit's guard, action and hook run in the payment's call, the action one level deeper and without input. A
-`TransitionRecorder` counts that call once, so the checkout and the capture are its two calls, and the exit is a record
-of the second:
-
-```java
-CallTrace trace = CallTrace.create();
-GuardProbe<Order, OrderState, OrderChange> inStock =
-        GuardProbe.<Order, OrderState, OrderChange>create("inStock", trace).otherwiseReturn(GuardResult.pass());
-ActionProbe<Order, OrderState, OrderChange> confirm =
-        ActionProbe.<Order, OrderState, OrderChange>create("confirm", trace).otherwiseReturn(ActionOutcome.ok());
-HookProbe<Order> receipt = HookProbe.<Order>create("receipt", trace).otherwiseSucceed();
-TransitionRecorder recorder = TransitionRecorder.create();
-Payment payment = new Payment("p5");
-Order order = new Order("o5", payment);
-try (MachineRegistry registry = registry(orders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
-        pay.guard("inStock", inStock).action("confirm", confirm).afterCommit("receipt", receipt)), recorder)) {
-    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
-    registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE);
-}
-trace.assertNamesExactly("inStock", "confirm", "receipt");
-assertThat(confirm.calls().single()).hasNoInput();
-recorder.assertRecorded()
-        .hasSize(2)
-        .hasKeysExactly(ORDERS, PAYMENTS)
-        .forEntity(PAYMENTS, payment).single()
-        .isApplied().records().forEntity(ORDERS, order).single()
-        .hasTransition(OrderChange.PAY).hasActionNamed("confirm").hasDepth(1);
-```
-
-An exit can run an asynchronous action. `asyncOrders(pay)` declares the same order graph with `pay` as the
-asynchronous action of `PAY`, so a capture waits for that action before it writes anything. A `ControlledAsyncAction`
-holds the wait open without a sleep: while the exit is pending neither entity has moved, and once the test answers,
-the call commits the payment and the order together:
-
-```java
-Duration testBudget = Duration.ofSeconds(10);
-ControlledAsyncAction<Order, OrderState, OrderChange> pay = ControlledAsyncAction.create();
-Payment payment = new Payment("p3");
-Order order = new Order("o3", payment);
-try (MachineRegistry registry = registry(asyncOrders(pay)); pay) {
-    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
-    StateSnapshot before = StateSnapshot.builder()
-            .track(ORDERS, order, (Order value) -> value.state)
-            .track(PAYMENTS, payment, (Payment value) -> value.state)
-            .capture();
-    CompletableFuture<Outcome<Payment, PaymentState, PaymentChange>> captured =
-            registry.of(PAYMENTS).async().execute(payment, PaymentChange.CAPTURE);
-    PendingInvocation<ActionCall<Order, OrderState, OrderChange>, ActionOutcome> pending =
-            pay.awaitInvocation(testBudget);
-    before.assertUnchanged();
-
-    pending.complete(ActionOutcome.ok());
-    AsyncAssertions.await(captured, testBudget).isApplied().movedTo(PaymentState.CAPTURED)
-            .records().forEntity(ORDERS, order).single().hasTransition(OrderChange.PAY);
-    assertThat(order, (Order value) -> value.state).isIn(OrderState.PAID);
-}
-```
-
-The payment's machine declares an `asyncTimeout`, as
-[controlled asynchronous invocations](#controlled-asynchronous-invocations) explains, because its call runs the
-order's asynchronous exit. That deadline is the engine's; `testBudget` is how long the test waits.
-
-A sub-machine can also govern a second state of its parent's own entity, as the
-[guide](guide.md#sub-machines-over-the-same-entity) explains. Here the order charges itself: `charge` is a second
-state of `Order`, which the payment graph governs under the key `CHARGES`. `chargedOrders()` declares the order graph
-with `PAYING` bound to that graph through `submachine(state, child)`, and `chargeRegistry()` registers both machines,
-each with the accessors of its own field. A `StateSnapshot` tracks the one order under both keys, so a refused request
-leaves both of its states unchanged:
-
-```java
-Order order = new Order("o7", new Payment("p7"));
-try (MachineRegistry registry = chargeRegistry()) {
-    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
-    StateSnapshot before = StateSnapshot.builder()
-            .track(ORDERS, order, (Order value) -> value.state)
-            .track(CHARGES, order, (Order value) -> value.charge)
-            .capture();
-    assertThat(registry.of(ORDERS).execute(order, OrderChange.PAY)).isRejected().isReservedExit();
-    before.assertUnchanged();
-
-    assertThat(registry.of(CHARGES).execute(order, PaymentChange.CAPTURE)).isApplied()
-            .records().forEntity(ORDERS, order).single().hasTransition(OrderChange.PAY).hasDepth(1);
-}
-assertThat(order, (Order value) -> value.state).isIn(OrderState.PAID);
-assertThat(order, (Order value) -> value.charge).isIn(PaymentState.CAPTURED);
-```
-
-Each key reads its own field, so `changes()` reports a moved state under its own key, even for one entity.
-
-### The call's flow and its trail
-
-`flow()` opens [the call's flow](guide.md#the-calls-flow) on every outcome view and on the view of the failure a call
-throws; a failure of the call nested in it, such as `error(i)` of a cascade abort, holds the empty flow.
-`hasEntitySameAs` compares the entity of the root call by reference, `hasValue` compares the value of a key with
-`equals`, `hasNoValue` expects no value under a key, and `hasKeysExactly` compares the keys that hold a value, in the
-order of the writes that set them. A key that holds no value fails `hasValue` with `Optional.empty` as its actual
-value, and a key that holds another value with `Optional[...]` of that value.
-
-`trail()` opens the trail, which a call records when its root machine was built with
-[`recordTrail`](guide.md#record-the-calls-trail). `hasEntryTypesExactly` compares the class of every entry, in order.
-`hasHopsExactly` compares the identifier of every hop, in order, and skips the sub-machine starts and the final
-rejection or failure, so with no argument it expects a trail without a hop. `hops()` opens the records of those hops,
-in the view that `records()` opens on an outcome: `forEntity(key, entity)` and `containsExactly(records)` read which
-machine and entity took each hop and from which state to which, on the trail of a call that failed before its hooks
-too, whose exception lists no `records()`.
-`isInTimeOrder` checks that no entry's `at()` is earlier than
-the one of the entry before it, so equal instants pass. `endsWithRejection(kind)` and `endsWithFailure(phase)` read
-the final entry. Build the machine on a clock the test controls.
-
-These samples use the `graph(action)` helper, the publication types and their machine key `KEY` of
-[failure kinds and recovery rules](#failure-kinds-and-recovery-rules), and build their machine here.
-[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
-that helper and those types, cuts the samples out of this page, compiles them against the published jars and runs
-them, the four in one method.
-
-The action of `PUBLISH` puts a receipt into the call's flow, and throws for a publication whose id starts with `x`.
-Each call has a flow of its own: the second call, rejected because the article is already published, finds no
-receipt, and its trail holds the rejection alone:
-
-```java
-FlowKey<String> receipt = FlowKey.of("receipt", String.class);
-StateMachine<Publication, PublicationState, PublicationChange> traced = StateMachines.from(graph(
-                (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
-                    ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
-                    if (ctx.entity().id.startsWith("x")) {
-                        throw new IllegalStateException("the outbox is closed");
-                    }
-                    return ActionOutcome.ok();
-                }))
-        .state((Publication publication) -> publication.state,
-                (Publication publication, PublicationState state) -> publication.state = state)
-        .recordTrail(InstantSource.fixed(Instant.parse("2026-10-10T09:00:00Z")))
-        .build();
-Publication article = new Publication("p6");
-
-assertThat(traced.execute(article, PublicationChange.PUBLISH)).isApplied().flow()
-        .hasEntitySameAs(article)
-        .hasValue(receipt, "receipt of p6")
-        .hasKeysExactly(receipt)
-        .trail()
-        .hasEntryTypesExactly(FlowEntry.Hop.class)
-        .hasHopsExactly(PublicationChange.PUBLISH)
-        .isInTimeOrder();
-assertThat(traced.execute(article, PublicationChange.PUBLISH)).isRejected().flow()
-        .hasNoValue(receipt)
-        .trail()
-        .hasHopsExactly()
-        .endsWithRejection(RejectionKind.NO_TRANSITION);
-```
-
-A call that throws hands its flow out on its failure. The action throws a type its edge does not declare, so its
-step aborts and nothing rolls it back: the flow keeps the receipt the action put before it threw, and the trail ends
-with the failure. Its hop, read through `hops()`, says where the
-aborted step was going:
-
-```java
-Publication refused = new Publication("x1");
-assertThat(captureFailure(() -> traced.execute(refused, PublicationChange.PUBLISH))).isAbort()
-        .hasPhase(CallPhase.ACTION)
-        .flow()
-        .hasEntitySameAs(refused)
-        .hasValue(receipt, "receipt of x1")
-        .trail()
-        .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Failed.class)
-        .hasHopsExactly(PublicationChange.PUBLISH)
-        .endsWithFailure(CallPhase.ACTION)
-        .hops().forEntity(KEY, refused).single()
-        .from(PublicationState.READY).hasTransition(PublicationChange.PUBLISH).to(PublicationState.PUBLISHED);
-```
-
-`assertThat` also takes a flow on its own, such as the flow of a `CommitContext` built with its five-argument
-constructor to call a hook by hand. That flow belongs to no call: it holds what the hook wrote, no entity and no
-trail:
-
-```java
-HookRef<Publication, PublicationState, PublicationChange> announce = new HookRef<>("announce",
-        (Publication publication, CommitContext<PublicationState, PublicationChange> commit) ->
-                commit.flow().put(receipt, "announced " + publication.id));
-CommitContext<PublicationState, PublicationChange> commit = new CommitContext<>(PublicationState.READY,
-        PublicationChange.PUBLISH, PublicationState.PUBLISHED, TransitionKind.ACTION, true);
-announce.run(new Publication("p7"), commit);
-
-assertThat(commit.flow()).hasValue(receipt, "announced p7").hasKeysExactly(receipt).trail().isEmpty();
-```
-
-A watch reaction is a call of its own: `isDone().outcome().flow()` reads the reaction's flow. A reaction whose
-reevaluation threw has that reevaluation's `CallFailedException` as its cause, which hands out the reaction's own
-flow and which `assertThat(cause).isCallFailure().flow()` reads; a reaction whose owner lookup threw ran no call.
-
-A trail held as a list, such as the one `trail()` of a flow returns, has its own factory:
-
-```java
-List<FlowEntry> entries = traced.execute(new Publication("p8"), PublicationChange.PUBLISH).flow().trail();
-TrailAssert.assertThat(entries).hasSize(1).hasHopsExactly(PublicationChange.PUBLISH).isInTimeOrder();
-```
-
-The shop's [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
-asserts the flow and the trail of a cancellation that commits, and those of one that aborts, which
-[failures and the journal](#failures-and-the-journal) shows. Its set is built with `recordTrail()`, on the system
-clock, so it asserts the entries of a trail and their order, never their instants.
+Useful behavior to cover in your own domain:
+
+- Every action's success and handled-failure result, including the actual entity state.
+- Each guard rejection, and each identifier a state refuses, with the reason its policy gives.
+- Two operations that reach the same state, so neither can quietly stand in for the other.
+- Every self-loop you declare: it applies, and its hook runs.
+- Every recovery rule, through a returned failure of its kind and through each throwable type it declares, and the
+  most specific type winning where declared types overlap.
+- Throwables that a recovery rule or `failsOn` maps, and those that must abort.
+- Cascade rollback behavior and collected error details.
+- First-match watch order, empty peer collections and aborted reactions.
+- Async timeout behavior and late completions.
+- Hooks that fail after state has committed.
+- Declared graph contracts through typed assertions or structural snapshots.
+
+Visual export tests may separately pin `.dot` goldens when changes to diagram output require review.
+
+A passing runtime test does not replace compile-time graph validation. Conversely, a valid graph does not prove
+that your action performs the correct domain operation.
+
+## More expectations
+
+The entry-point table names each view's main expectations. These complete them:
+
+| View | Expectations |
+| --- | --- |
+| Graph definition | `hasNoAsync()`, `hasNoWatch(state)` |
+| One edge | `isMove()`, `hasNoAction()`, `hasNoGuards()`, `hasNoFailureTransition()`, `hasNoTimeout()` |
+| Topology | `hasNodesExactly(states)`, `hasSuccessorsExactly(from, states)`, `hasReachableExactly`, `hasNoCycles()`, `hasCyclesExactly(cycles)`, each cycle starting at its earliest declared state |
+| One transition record | `hasKind(kind)`, `hasNoAction()` |
+| Reactions | `hasNoAborted()`, which looks at this list alone, not at the reactions' own reactions |
+| Journal | `hasEntry(key, entity, from, id, to, action, depth, status)`, with the entity compared by reference |
+| Abort | `at(key, entity, from, id, to)` for the edge that was running; `atUnresolved(...)`, `atUnread(...)` and `atUnreadState(...)` for an abort before the edge, the identifier or the state was read; `hasActionNamed(name)`, `hasNoAction()`, `hasCascadePathExactly(route)` |
+| Commit failure | `hasAppliedExactly(entities…)`, `hasPendingExactly(entities…)`, `hasFailedEntity(entity)`, `hasNoFailedEntity()` |
+| After-commit failure | `hasHookNamed(name)`, `at(key, entity, from, id, to)` for the hop the hook ran for |
+| Any failure | `isCommitFailure()` and `isInvalidGraph()` narrow it, as `isAbort()`, `isCascadeAbort()`, `isAfterCommit()` and `isCallFailure()` do |
+| Invalid graph | `hasCodesExactly(codes…)`, in order and with repeats, `hasProblemCount(n)` |
+| Action and guard results | `isOk()`, `isPass()` |
+
+`captureFailure` takes a `ThrowingRunnable`, whose `run()` may throw any exception, so the body can call code that
+declares checked exceptions. `TransitionRecorder.snapshot()` returns the calls recorded so far as
+`RecordedTransition`s. A `StateWriteProbe` records each write as a `StateWrite`: the entity, the `requested` state, its
+`status` and, when the write threw a `RuntimeException`, its `cause`. `ControlledAsyncAction` and `ControlledAsyncGuard`
+take an `onCall(consumer)` side effect too, which runs when the engine enters the callback; if it throws, the stage
+fails and the handle is never delivered. A `PendingInvocation` of a
+controlled asynchronous fixture can also `cancelStage()`, and `isCancelled()` says whether it did. `GraphSnapshot`
+exposes `capture(definition)`, `serialize()` and `parse(text)`, and `GraphDiff.compare(expected, actual)` returns
+the path-by-path differences of two snapshots, each a `GraphDiff.Change` of a path with its expected and actual
+values, `render()`ed as the lines a failing `GraphSnapshots.assertMatches` prints.
 
 ## Goldens and structural snapshots
 
@@ -967,8 +228,8 @@ logic.
   executes domain logic; test guards, actions, cascades and watches through real operations and assert their
   outcomes, records, reactions and observed entity states.
 - `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
-  `.dot` file. There is no detail mode: the export draws the declared edges, draws each sub-machine as a
-  cluster inside the state it is bound to, and renders each node's policy as that node's tooltip, or as the
+  `.dot` file. There is no detail mode: the export draws the declared edges, draws a state that holds a
+  sub-machine as a cluster containing the child's own graph, so the parent's golden changes with the child's graph, and renders each node's policy as that node's tooltip, or as the
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
@@ -1011,9 +272,28 @@ class-path output:
 | Mode | Resource resolved through | Written to |
 | --- | --- | --- |
 | Read (the default) | the class loader, so the copy on the test class path | nothing |
-| Update | not read as a golden at all | the source root named by `graphmaquina.goldens.root` |
+| Update | the source file under the root, read only to skip an identical rewrite | the source root named by `graphmaquina.goldens.root`; each rewritten file is reported as `UPDATED <path>` |
 
-Two system properties select the mode. `graphmaquina.goldens.update` accepts only the exact values `true`
+```mermaid
+flowchart TD
+    call["GraphGoldens.assertMatches or GraphSnapshots.assertMatches"] --> mode{"graphmaquina.goldens.update?"}
+    mode -- "false, the default" --> read["read the resource through the class loader"]
+    read --> found{"is the resource there?"}
+    found -- no --> missing["GraphAssertionError: missing,<br/>with how to write it"]
+    found -- yes --> same{"same text, line endings aside?"}
+    same -- yes --> pass["the assertion passes"]
+    same -- no --> differ["GraphAssertionError with the difference,<br/>and how to regenerate it; for a snapshot<br/>that cannot be read, IllegalArgumentException"]
+    mode -- true --> root{"graphmaquina.goldens.root set?"}
+    root -- no --> noRoot["IllegalStateException: nowhere to write"]
+    root -- yes --> current{"does the source file already<br/>hold this text?"}
+    current -- yes --> untouched["nothing is written"]
+    current -- no --> write["write it under the root<br/>and print UPDATED &lt;path&gt;"]
+```
+
+Two system properties select the mode, named by `GoldenOptions.UPDATE_PROPERTY` and `GoldenOptions.ROOT_PROPERTY`.
+A resource name must be a relative, `/`-separated path: an empty name, a leading `/`, a `\`, a drive prefix such as
+`C:`, and an empty, `.` or `..` segment are refused with `IllegalArgumentException`.
+`graphmaquina.goldens.update` accepts only the exact values `true`
 and `false`; `graphmaquina.goldens.root` names the source root an update writes into and is required when
 update mode is on. Read mode ignores it: `GoldenOptions.defaults()` makes it a path only in update mode, so in
 read mode `sourceRoot()` is empty and a value that is not a path fails nothing. The resource string is a
@@ -1030,8 +310,8 @@ fails with `IllegalStateException`. A link that leads out of the root, a danglin
 
 The source root has to be resolved when the build is configured, because a test worker has no `project` to
 ask. An update run writes files instead of producing task outputs, so it must be neither skipped as
-up to date nor served from the build cache. This is the configuration `graphmaquina-example` applies, in
-full:
+up to date nor served from the build cache. This is the golden-update part of the test configuration
+`graphmaquina-example` applies:
 
 ```kotlin
 val updateGoldens = providers.systemProperty("graphmaquina.goldens.update")
@@ -1098,7 +378,7 @@ A test that needs no properties at all can pass options explicitly —
 | `trail().hasHopsExactly(ids…)`: the identifiers of the hops the call took, in order | which machine or entity took each hop, or the states it joined. `trail().hops()` compares those field by field, on the trail of a failed call too. |
 | the recorder: the outcome of every call that completed | anything about a call that threw, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. The recorder keeps completed calls only; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
-| that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
+| that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and the edge's timeout, which `hasTimeout(...)` asserts, and an expired engine deadline leaves the user's stage alive. |
 
 ## Sharp edges
 
@@ -1131,9 +411,10 @@ A test that needs no properties at all can pass options explicitly —
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
 - **Entities are selected by reference.** `forEntity(key, entity)` and `forChild(key, child)` match on identity, so
   two entities that carry the same id are two different subjects.
-- **`hasTerminalsExactly` compares as a set; records, guards, reactions, starts and the entries and hops of a trail
-  keep order and multiplicity, `hasKeysExactly` keeps the order of the writes, and `hasExitsExactly` keeps the
-  declaration order of the exits.**
+- **`hasTerminalsExactly`, `hasTransitionsExactly` and the topology's `hasNodesExactly`, `hasSuccessorsExactly` and
+  `hasReachableExactly` compare as sets; records, guards, reactions, starts and the entries and hops of a trail keep
+  order and multiplicity, the flow's `hasKeysExactly` keeps the order of the writes, the recorder's keeps the order
+  the calls completed, and `hasExitsExactly` keeps the declaration order of the exits.**
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real
   rejection from an incidental failure. When the actual value is a throwable, it is the error's cause as well,
@@ -1146,3 +427,7 @@ same delivery. Extend the relevant assertions, probes, recorded calls or snapsho
 can verify the new behavior. Include regression coverage and documented consumer usage. When existing
 support already expresses the behavior, demonstrate it with an executable consumer test. Public test APIs
 must also be exercised against the staged artifacts by `:graphmaquina-test:publishedArtifactTest`.
+
+---
+
+Next: [Testing samples: graphs, outcomes, probes and async](testing-samples.md). Back to the [documentation index](README.md).

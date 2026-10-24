@@ -57,9 +57,9 @@ SIGNING_PASSWORD='op://<vault>/<item>/password' \
 op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
 ```
 
-Until the pages are reorganized to its limits, the publication, `test` and `centralBundle` commands above stop at the
-[documentation check](guide.md#build-verify-and-release-this-repository); `:graphmaquina-gradle-plugin:test` does not
-run it.
+The publication, `test` and `centralBundle` commands above first run the
+[documentation check](repository-build.md#build-verify-and-release-this-repository), which needs lychee 0.24 on the
+`PATH`; `:graphmaquina-gradle-plugin:test` does not run it.
 
 The resulting `build/graphmaquina-central-bundle.zip` contains six modules and the Gradle plugin marker.
 The build checks metadata, required files and checksums. Before uploading, independently verify every
@@ -76,3 +76,7 @@ op read 'op://<vault>/<item>/Private PGP key' | gpg --import
 Keep the revocation certificate available in the vault for a lost or compromised key. Do not import or
 publish that certificate during normal setup: revocation is an exceptional recovery operation. Check key
 expiration before each release and distribute updated public key material after renewing it.
+
+---
+
+Next: [Documentation illustrations](images/README.md). Back to the [documentation index](README.md).

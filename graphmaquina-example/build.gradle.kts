@@ -36,7 +36,7 @@ tasks.test {
         layout.projectDirectory.dir("src/main/java/io/github/graphmaquina/example").asFile.absolutePath)
     systemProperty("graphmaquina.example.tests",
         layout.projectDirectory.dir("src/test/java/io/github/graphmaquina/example").asFile.absolutePath)
-    inputs.files(docs.file("guide.md"), docs.file("testing.md")).withPropertyName("guides")
+    inputs.files(docs.asFileTree.matching { include("*.md") }).withPropertyName("guides")
     inputs.dir(layout.projectDirectory.dir("src")).withPropertyName("exampleSources")
     outputs.doNotCacheIf("Golden update writes source resources") { updateGoldens.get() }
 }

@@ -2,7 +2,9 @@
 
 The guide embeds these self-contained SVG images. They have a fixed dark background so labels and
 connections retain their contrast in both GitHub themes. Each SVG contains a title and text description;
-the guide also supplies alternative text and keeps the detailed semantics in ordinary text and tables.
+the guide also supplies alternative text and keeps the detailed semantics in ordinary text and tables. Besides
+these images, the pages draw flow, sequence and class diagrams as Mermaid code blocks, which GitHub renders from
+their text in the page.
 
 | Image | Purpose |
 | --- | --- |
@@ -31,3 +33,7 @@ movement or build input, teal for success, purple for orchestration, red for fai
 allowed, and amber for refusals, post-commit work or cautions. Labels carry the meaning independently of
 color. These are documentation illustrations. The graph definition is the structural contract for an
 application's actual graph; exported Graphviz DOT is a visual projection of that definition.
+
+---
+
+Back to the [documentation index](../README.md).

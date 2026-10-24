@@ -53,16 +53,14 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     dependsOn(":graphmaquina-maven-plugin:publishMavenPublicationToAdapterTestsRepository")
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToAdapterTestsRepository"))
-    val readme = rootProject.layout.projectDirectory.file("docs/guide.md")
+    // The quickstart, guide fragment and testing guide tests read their pages from this directory.
+    val docs = rootProject.layout.projectDirectory.dir("docs")
     val gradleExecutable = requireNotNull(gradle.gradleHomeDir).resolve(
         if (System.getProperty("os.name").startsWith("Windows")) "bin/gradle.bat" else "bin/gradle"
     )
-    systemProperty("readmePath", readme.asFile.absolutePath)
+    systemProperty("docsPath", docs.asFile.absolutePath)
     systemProperty("gradleExecutable", gradleExecutable.absolutePath)
-    inputs.file(readme).withPropertyName("readmeQuickstart")
-    val testingGuide = rootProject.layout.projectDirectory.file("docs/testing.md")
-    systemProperty("testingGuidePath", testingGuide.asFile.absolutePath)
-    inputs.file(testingGuide).withPropertyName("testingGuide")
+    inputs.files(docs.asFileTree.matching { include("*.md") }).withPropertyName("guidePages")
     inputs.property("gradleVersion", gradle.gradleVersion)
     val repository = rootProject.layout.buildDirectory.dir("adapter-test-repository")
     val release = project.version.toString()
