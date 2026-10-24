@@ -336,7 +336,10 @@ and Gradle then runs the task as a full rebuild: before the preparation runs, Gr
 previous outputs, the classes, the published index and the sealed inventory among them. A refusal leaves no
 pending inventory behind.
 
-The generation task's `participates`, `projectDirectory`, `sourcesOutput`, `workDirectory`, `requestFile`,
+The generation task reads the original sources it parses from `sources`, and tracks where each lies in the project
+through `sourcePaths`, so moving a source between directories of the source set reruns it. Its `participates`,
+`projectDirectory`, `compilationOutputLocations`, which holds the class output and the processor's source output as one
+input, `sourcesOutput`, `workDirectory`, `requestFile`,
 `javaLauncher`, `generatorClasspath`, `release`, `encoding` and `compilationId`, which defaults to
 `group:name:sourceSet`, or `name:sourceSet` when the project's group is empty, are conventions: a value a build sets wins whenever it sets it, and
 the compilation follows what the task holds, from the source root, the manifest and the sealed inventory to the

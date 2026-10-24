@@ -233,7 +233,9 @@ logic.
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
-Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header.
+Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header. After that
+version line comes one `path TAB value` line per field, each ending in a line feed, with backslash, tab, line feed and
+carriage return escaped; `GraphSnapshot.fields()` returns the path-to-value map in that canonical order.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 
@@ -299,6 +301,12 @@ update mode is on. Read mode ignores it: `GoldenOptions.defaults()` makes it a p
 read mode `sourceRoot()` is empty and a value that is not a path fails nothing. The resource string is a
 class-path-relative path such as `golden/order.dot`, and update mode writes it at that same relative path under
 the root, so pointing the root at `src/test/resources` puts the file back where the class path picked it up.
+
+Both `assertMatches` methods have an overload that takes `GoldenOptions`: `GoldenOptions.defaults()` reads the two
+properties each time it is called and uses the thread's context class loader, `readOnly(loader)` reads through a loader
+of your choice, and `updating(loader, sourceRoot, reporter)` hands the reporter the absolute path of each golden it
+writes; `loader()`, `update()` and `reporter()` expose them. A golden is read as strict UTF-8, a leading byte-order mark
+dropped, and a resource that names a directory fails with `GraphAssertionError`.
 
 Update mode writes through a symbolic link inside the root, at the golden itself or at a directory above it, and
 keeps the link. It does so even when what the link names does not exist yet: it creates that file, with any
@@ -410,7 +418,16 @@ A test that needs no properties at all can pass options explicitly —
   `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
 - **Entities are selected by reference.** `forEntity(key, entity)` and `forChild(key, child)` match on identity, so
-  two entities that carry the same id are two different subjects.
+  two entities that carry the same id are two different subjects, and an entity with no match yields an empty view,
+  not a failure.
+- **A missing subject fails at its first expectation.** `transition(from, id)` on an undeclared key, and
+  `watch(state)` on a state with no watch, return a view without a subject, and its first expectation fails with
+  `GraphAssertionError`.
+- **The waits fail as assertions.** `AsyncAssertions.await` fails with `GraphAssertionError` when the budget expires,
+  the thread is interrupted, or the stage completes exceptionally or is cancelled; `awaitFailure` takes a cancellation
+  as the failure and fails when the stage completes normally; `captureFailure` fails when its body completes normally.
+- **Helpers can raise the same error.** `new GraphAssertionError(context, property, expected, actual)`, with an optional
+  advice line that goes into the message only, gives a test helper of your own the same inspectable failure.
 - **`hasTerminalsExactly`, `hasTransitionsExactly` and the topology's `hasNodesExactly`, `hasSuccessorsExactly` and
   `hasReachableExactly` compare as sets; records, guards, reactions, starts and the entries and hops of a trail keep
   order and multiplicity, the flow's `hasKeysExactly` keeps the order of the writes, the recorder's keeps the order

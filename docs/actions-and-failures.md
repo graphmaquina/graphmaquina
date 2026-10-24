@@ -20,7 +20,8 @@ The [quickstart](quickstart.md) shows synchronous actions and a guard. Actions r
 
 Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
 peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
-`GuardResult.reject("reason")`, whose reason may not be blank (`IllegalArgumentException`); do not return null. A rejecting guard stops the edge before its action runs
+`GuardResult.reject("reason")`, whose reason may not be blank (`IllegalArgumentException`). A guard that returns null,
+or an asynchronous one whose stage is null or completes with null, aborts the call with a `TransitionAbortedException`. A rejecting guard stops the edge before its action runs
 and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. In a graph the DSL built, the guards of one
 edge have distinct names, so the name tells which one rejected: a generated guard is named by its member's simple name,
 and two guards of one name on an edge are refused with `SG105`. A definition assembled without the DSL is not checked

@@ -54,6 +54,7 @@ sequenceDiagram
     Machine-->>Caller: CompletableFuture of the Outcome
     Executor->>Machine: tickets.approve(ticket)
     Machine->>Action: approve(ctx)
+    Action->>Service: request
     Action-->>Machine: a pending CompletionStage
     Service-->>Action: response, which completes the stage
     Machine-->>Executor: Outcome

@@ -191,7 +191,8 @@ A registry accepts any number of observers, so a test adds its own beside the re
 moving after its call completes, so if the assertion must see the entity as it was, build the recorder with
 `TransitionRecorder.projecting((key, outcome) -> ...)` and read what it projected when each call completed:
 `recorder.snapshot()` lists the `RecordedTransition`s so far, each with its `sequence`, `key`, `outcome` and
-`projection`.
+`projection`. The projection runs on the thread of the call that completed; one that returns null makes the recorder
+throw, which the registry logs as it logs any observer that throws, and that call is not recorded.
 
 Each outcome carries the call's flow, `outcome.flow()`, so the recorder also retains every flow it records: the
 root entity and the values the call's steps and hooks left there, and, for a call whose root machine records its
@@ -273,6 +274,12 @@ assertEquals(State.READY, entity.state());
 assertEquals(List.of(WriteStatus.RETURNED, WriteStatus.THREW),
         writes.writes().stream().map(StateWrite::status).toList());
 ```
+
+Finish configuring a probe before a machine uses it; after that, it is safe to call from several threads, each served
+a different queued answer, and its name is never checked against the graph. A `StateWriteProbe` lists a write as
+`RUNNING` while the setter runs, then as `RETURNED` or `THREW` in the same place. One probe given to several machines
+numbers every write of the commit, `failOnCall` below 1 throws `IllegalArgumentException`, and arming the same call
+twice throws `IllegalStateException`.
 
 ## Operation input in recorded calls
 
@@ -379,6 +386,10 @@ whichever ends first, before the fixture ever gets to cancel it. Calls that run 
 deadlines side by side, so two unanswered invocations started together cost about one such wait, not two. Only
 the default executors of the machines are awaited: closing the registry does not wait for an executor the
 application supplied.
+
+`complete`, `fail` and `cancelStage` on a `PendingInvocation` return true only to the call that settled the stage,
+and are safe to call from any thread. `awaitInvocation` fails with `GraphAssertionError` when its budget expires or
+when the waiting thread is interrupted, which leaves the interrupt flag set.
 
 The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. When a call
 on a sub-machine can run that edge implicitly, as the exit of its binding or an edge that exit leads to, the

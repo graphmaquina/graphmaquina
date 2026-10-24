@@ -120,7 +120,8 @@ Three objects can be involved:
 
 In particular, `pending.cancel(true)`, `pending.orTimeout(...)` or a timed `pending.get(...)` is not a transaction
 rollback API. The operation may already be running, may continue running and may commit after the caller stops waiting.
-Interrupting an operation thread while it is waiting causes a technical abort, but GraphMaquina still does not cancel
+Interrupting an operation thread while it is waiting causes a technical abort, which leaves the thread's interrupt
+flag set, but GraphMaquina still does not cancel
 the foreign stage. A `ForkJoinPool` that refuses to let its worker block for the wait, as one does when it cannot start
 a spare worker in its place, causes a technical abort as well, whose cause is that pool's `RejectedExecutionException`,
 unless a failed cascade has already poisoned the transaction, in which case the call ends in the failure that poisoned

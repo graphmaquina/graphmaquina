@@ -93,6 +93,10 @@ returns the state's `WatchSpec`, with the peer machine's key and its ordered `Wa
 the identifier it executes, and `submachine(state)` the `SubmachineSpec` that binds a child, with its `child()`
 definition, `childKey()` and `exits()`.
 
+An `ActionRef` and a `GuardRef` are either `Sync` or `Async` records, with their `name()` and `isAsync()`; a `HookRef`
+is a named hook that takes the entity and its `CommitContext`, which `run(entity, context)` calls, and
+`HookRef.of(name, consumer)` adapts a hook that takes the entity alone.
+
 ## Query the topology
 
 `graph()` returns the `DirectedGraph<S, T>`, which keeps every declared state as a node and every edge as a
@@ -108,7 +112,11 @@ questions:
 | `cycles()` | Every elementary cycle, each starting at its earliest declared state and without repeating it at the end |
 | `inducedSubgraph(states)` | The graph restricted to those states |
 
-The [testing guide](testing.md#what-each-entry-point-checks) asserts on the same queries through
+A query on a state the graph does not hold throws `IllegalArgumentException`. `Graph.of(nodes, edges)` and
+`DirectedGraph.of(nodes, edges)` build graphs of your own, and `StrongComponents.find(graph)` returns their strongly
+connected components, in the order of their first declared node, with `cycleWitness(graph, component)` naming one
+cycle of a component; these are what the build uses to report an unauthorised cycle. The
+[testing guide](testing.md#what-each-entry-point-checks) asserts on the same queries through
 `assertThat(definition).topology()`.
 
 ## Export Graphviz DOT
@@ -143,8 +151,8 @@ A state that holds a sub-machine is drawn as a cluster labelled with the state a
 An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
 one's initial state, and so on down. An exit is drawn once from each terminal state of the child that selects it,
 without clipping at its source, and any other edge leaving the state, like the state's watch note, starts at the
-cluster's border. A self-loop on the bound state is the exception: both its ends lie in the cluster, so it is drawn
-unclipped from the cluster's invisible anchor to the child's initial state. The
+cluster's border. A self-loop on the bound state that is not an exit is the exception: both its ends lie in the cluster, so
+it is drawn unclipped from the cluster's invisible anchor to the child's initial state. The
 DOT then sets `compound=true` and clips the arrows that cross a cluster's border with `lhead` and `ltail`. A graph
 that binds no sub-machine has no cluster.
 
@@ -182,7 +190,10 @@ dot -Tpng tickets.dot -o tickets.png
 The Java exporter needs no external library or native executable. Image rendering is a separate step.
 `GraphView.of(definition)` is a public record of what the exporter draws, as text: `name()`, `initial()`,
 `terminals()`, `states()`, `transitions()`, `policies()`, `watches()` and `submachines()`, so a renderer of your own
-can read the same data.
+can read the same data. States come in node order, edges in definition order, rules and exits in declaration order,
+with one policy per state, and each `SubmachineView` carries the child's whole `GraphView`. A `TransitionView` holds the
+edge's endpoints, identifier, kind, action, guards, whether it is asynchronous, its `onFailure`, its rendered watch rule
+and its recovery rules.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.

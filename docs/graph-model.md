@@ -57,8 +57,8 @@ flowchart TD
     kind -- MOVE --> commit["commit the destination,<br/>then run the hook"]
     kind -- ACTION --> action{"how does the action end?"}
     action -- ok --> commit
-    action -- "a returned failure, or an exception<br/>of a type the edge declares" --> route["discard the edge and commit<br/>its recovery or onFailure edge from S"]
-    action -- "anything else" --> abort["an exception: nothing is committed"]
+    action -- "a returned failure, or an exception of a declared type,<br/>that a recovery rule or onFailure takes" --> route["discard the edge and commit<br/>its recovery or onFailure edge from S"]
+    action -- "anything else" --> abort["an exception, such as UnhandledFailureException:<br/>nothing is committed"]
     commit --> applied["Applied"]
     route --> failed["Failed: FAILURE_ROUTED"]
 ```
@@ -261,7 +261,7 @@ symbol from the graph declaration.
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
-| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation |
+| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)`, and refuses a null machine with `NullPointerException` |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
 `KEY` is a `MachineKey<E, S, T>`: entity class, state enum and transition enum. `MachineKey.of(entity, states,

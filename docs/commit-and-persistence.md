@@ -164,7 +164,8 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 ```
 
 Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
-before the operation returns or throws; an observer whose `onStarted` threw still receives its end event, and
+before the operation returns or throws. A request refused before it starts, such as one with a null argument,
+notifies no observer. An observer whose `onStarted` threw still receives its end event, and
 `elapsed` runs from just before `onStarted` until just before that event. Observers belong to a registry: a machine
 built standalone has none. `MachineCall` names the machine, the entity, the requested identifier (empty for
 `reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and the same
@@ -177,7 +178,7 @@ the call's flow as the caller does: `outcome.flow()` in `onCompleted`, and the `
 the call attached before it told the observers.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
-`System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
+`System.getLogger("io.github.graphmaquina")`, naming the observer, the callback and the call, never the entity, and changes neither the call nor the other observers; an `Error`
 propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
 contained too, while an `Error` from it propagates unchanged. An `InterruptedException` that the observer or that
 backend throws, once contained, interrupts the thread again. Either `Error`, the observer's own or its warning
@@ -206,7 +207,9 @@ parent enters the bound state. A parent's, read to check the binding of a sub-ma
 `RESOLVE` when the sub-machine is the root, and in one of phase `ACTION` inside a cascade or an exit. The runtime does not
 silently replace a null state with the graph's initial state.
 
-During a transition, only the runtime should call the state setter. It checks state again before commit to
+During a transition, only the runtime should call the state setter. The commit calls each entity's setter once,
+with its last state, in the order the entity first appears in the call's log; that order decides what a
+`CommitFailedException` lists in `applied()`, `failedEntity()` and `pending()`. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
 A sub-machine shows where the check stops. A call that ends a child its parent held commits the parent's exit, or
@@ -230,6 +233,10 @@ stable, non-null and suitable for identifying one domain entity. Using two diffe
 the same machine identity in one unit of work ends the call in a `TransitionAbortedException` whose cause is an
 `AmbiguousIdentityException`; this prevents silently
 treating two representations of one row as separate entities.
+
+An identity function that returns null throws `NullPointerException("identity of <key> returned null")`. A machine
+built standalone without `identity(...)` tells entities apart by reference; a registry requires an identity for every
+machine.
 
 When working with an ORM, load and reuse a consistent object instance for each identity within the operation.
 Identity tracking does not provide database uniqueness enforcement or cross-process coordination.

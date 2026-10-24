@@ -204,7 +204,9 @@ the configured build tool or run that lifecycle explicitly. Do not fix missing g
 empty source files with those names.
 
 The Gradle plugin's tests check that the generated vocabulary is a source root of its source set, the form an IDE
-import reads. Navigation, completion and rename in an IDE such as IntelliJ are not verified; see
+import reads. IntelliJ IDEA 2026.2.3, importing the quickstart's Gradle project after a build, registered
+`build/generated/sources/graphmaquina/main` as a source root and `build/generated/sources/annotationProcessor/java/main`
+as a generated source root. Editor navigation, completion and rename have not been exercised; see
 [known limitations](guide.md#known-limitations).
 
 ---

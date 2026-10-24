@@ -92,7 +92,8 @@ flowchart LR
     graphStage -- "build()" --> definition["GraphDefinition"]
 ```
 
-Each edge is keyed by its identifier: `transition(id, from, to)` opens one edge and `endTransition()` closes it.
+Each edge is keyed by its origin and its identifier: `transition(id, from, to)` opens one edge and `endTransition()`
+closes it.
 `action` takes a `TransitionAction`, whose `process(ctx)` returns an `ActionOutcome`, and `guard` a
 `TransitionGuard`, whose `test(ctx)` returns a `GuardResult`; `asyncAction` and `asyncGuard` take an
 `AsyncTransitionAction` and an `AsyncTransitionGuard`, which return a `CompletionStage` of the same results. All four
@@ -115,9 +116,9 @@ refused at once with a `NullPointerException`. An edge's stage refuses every fur
 `IllegalStateException` once `endTransition()` closed it, and once `build()` has run, even a `build()` that failed,
 every stage refuses further declarations, and a second `build()`, the same way.
 
-`build()` first reports what a declaration gets wrong on its own, an edge, the initial state, a policy or a watch, and
-duplicate keys. The structural checks, reachability, cycles, failure routes and the bindings of sub-machines from
-`SG801` to `SG804`, run only once none of those remain; `SG805` is checked in any case. A definition that fails
+`build()` first reports what an edge, the initial state or a watch gets wrong on its own, and duplicate keys. The
+structural checks, policies, terminal states, reachability, cycles, failure routes, watch targets and the bindings of
+sub-machines from `SG801` to `SG804`, run only once none of those remain; `SG805` is checked in any case. A definition that fails
 throws `InvalidGraphException`, whose `problems()` hold each code and message. [Diagnostics](diagnostics.md) lists
 every code.
 
@@ -126,7 +127,12 @@ every code.
 `TransitionSpec` refuses `onFailure`, `failsOn` or recovery rules without an action, and a timeout without an
 asynchronous action, with `IllegalArgumentException`. A definition assembled from them by hand gets none of the graph
 checks `build()` runs, such as reachability, cycles or failure routes, so the DSL or the annotations are the way to a
-validated graph.
+validated graph. Their constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard
+name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its
+`statesWritten`, a `MachineCall` an identifier of its own catalogue and none for a reaction, a `TransitionSpec` a
+positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The `dsl` package also holds
+the outline records and `MachineOutlineValidator` that the DSL and the annotation processor share to check a graph by
+names; building a graph does not need them.
 
 ## Watches and sub-machines
 
@@ -134,7 +140,8 @@ validated graph.
 `ownerOf` the owner of a peer, as an `Optional`. `when(name, condition)` opens a rule on a `WatchCondition`, whose
 `test(owner, peers, view)` decides, and `when(namedCondition)` on a `NamedCondition`, a condition paired with its name.
 `WatchCondition.allIn(state)`, `anyIn(state)` and `noneIn(state)` build the three built-in ones, named `allIn PACKED` and
-so on. A rule's `execute(id)` names the owner's identifier it runs, and `endWatch()` returns to the graph. A `when` that no
+so on. A rule's `execute(id)` names the owner's identifier it runs, and `endWatch()` returns to the graph without
+closing the stage: a stage you kept a reference to still adds rules until `build()`. A `when` that no
 `execute` follows, or a watch without rules, is `SG404`, and two watches on one state are `SG403`.
 [Watch other machines](coordination.md#watch-other-machines) explains when a watch runs.
 
@@ -143,7 +150,7 @@ so on. A rule's `execute(id)` names the owner's identifier it runs, and `endWatc
 `Optional`. An edge that enters `state` while `childOf` answers empty aborts its step before the action runs, as
 [compose machines](composition.md) says. `submachine(state, child)` binds a machine over the same entity, whose
 lookups return the entity itself. `exit(terminal, id)` maps a terminal state of the child to an identifier of the
-parent, its exit, and `endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and
+parent, its exit, and `endSubmachine()` returns to the graph, again without closing the stage. `build()` checks the bindings (`SG801` to `SG805`), and
 the definition's `submachine(state)` returns the binding of a state. A registry that holds the parent must hold the
 child's machine too, built from that very definition: otherwise `MachineRegistry.Builder.build()` throws
 `IllegalStateException`, and so does a standalone `build()`, whose registry holds no other machine.
@@ -170,11 +177,20 @@ must also declare `asyncTimeout(...)` when that edge is asynchronous, including 
 initial descendant's exit started by the caller's own entry, as [deadline rules](async-deadlines.md#deadline-rules)
 explains.
 
+Both builders are single-use and not thread-safe: once a `build()` succeeds, every further call throws
+`IllegalStateException`, while a `build()` that fails consumes nothing, so the build can be fixed and run again.
+`build()` also throws `IllegalStateException` for a machine without `state(getter, setter)`, for a machine without
+`identity(...)` within a registry, and for a watch whose peer the registry does not hold; a second `as(...)` and an
+`add` of a key already in the registry throw it at once. A standalone machine reaches only its own key and facade as
+peers and refuses a watch on another machine.
+
 A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)`,
 `transitionsFrom(state)`, `definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose `execute(entity, id)`,
 `execute(entity, id, input)` and `reevaluate(entity)` return a `CompletableFuture`, and `supplyAsync(call)`, which runs
-any call on the machine's executor. A generated
-application facade intentionally presents the domain operations instead. Close the registry when its work is done:
+any call on the machine's executor. The interfaces' default `execute(entity, id, input)` refuses an input:
+`StateMachine`'s throws `UnsupportedOperationException`, and `AsyncStateMachine`'s returns a future failed with it; the
+machines the runtime builds accept one. A generated application facade intentionally presents the domain operations
+instead. Close the registry when its work is done:
 that closes the default executors it owns. A standalone machine's internal registry cannot be closed, so its default
 executor never is; give it an `asyncExecutor` you close yourself when it runs calls through `async(...)`.
 

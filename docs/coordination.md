@@ -298,7 +298,8 @@ A reaction failure does not roll back the peer commit that triggered it. A sub-m
 another state counts as a move here, although a start is no hop.
 
 The reactions run on the calling thread, after the triggering call's hooks and before `execute` or `reevaluate`
-returns, and the call's outcome lists them in `reactions()`: a `Reaction.Done` carries the reaction's own outcome, and
+returns. Every owner lookup runs before any reaction, and the call's outcome lists them in `reactions()`: first the
+`Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and
 a `Reaction.Aborted` what ended it, as [records, journals and reactions](outcomes.md#records-journals-and-reactions)
 details. An aborted reevaluation names the owner it reevaluated; an owner lookup that threw names the peer that moved.
 Observers see each reaction as a call of its own, whose `MachineCall.reaction()` is true. A reaction that would exceed

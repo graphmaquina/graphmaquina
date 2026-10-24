@@ -220,6 +220,13 @@ no call may start `ReentrantTransitionException`. Read what happened from its va
 | `CommitFailedException` | `COMMIT` | `NONE`, or `PARTIAL` when a setter threw |
 | `AfterCommitException` | `HOOK` | `ALL` |
 
+The phases follow the call: `RESOLVE` reads the identity and the state, checks the binding of a sub-machine and selects
+the edge; `GUARD` runs the root edge's guards, and is entered only when it has any; `ACTION` lasts from the passed
+guards until the step ends, its cascades, failure route, sub-machine starts and exits included, which never change
+the phase; `COMMIT` checks the original states and calls the setters; `HOOK` runs the after-commit hooks; and
+`REACTIONS` dispatches the watch reactions, which only an `Error` leaves as a failure. The names of `CallPhase` and
+`StatesWritten` are stable identifiers, safe to log or to use as a metric tag.
+
 `call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
 ran. Any other exception involved is the cause, a failure of another call included, which keeps the flow of its own
 call.

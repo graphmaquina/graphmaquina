@@ -79,7 +79,9 @@ companion.
 
 ## Runtime exceptions
 
-Every exception the runtime throws extends `StateMachineException`, an unchecked exception. The failures of a call
+Every exception the library defines extends `StateMachineException`, an unchecked exception; misuse also raises JDK
+exceptions such as `NullPointerException`, `IllegalArgumentException`, `IllegalStateException` and
+`WrongThreadException`. The failures of a call
 extend `CallFailedException`, which reports the call's `phase()`, `statesWritten()`, `journal()` and `flow()`: they
 are `TransitionAbortedException`, `CommitFailedException` and `AfterCommitException`. `UnhandledFailureException`,
 `CascadeException`, `CascadeCycleException`, `CascadeDepthExceededException`, `PoisonedUnitOfWorkException` and
@@ -156,6 +158,17 @@ each exception exposes what identifies its cause:
 | `UnknownFacadeException` / `UnknownPeerMachineException` | `requested()`, `registered()` |
 | `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
 | `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
+
+In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
+identifier, a recovery, an exit or the identifier a watch selected rather than the call's own; `action()` is empty for
+a guard, a rejection, the watch-chain limit and an abort raised for the caller of a cascade or a peer read; and
+`cascadePath()` lists the entities in flight, outermost first, as `key#identity`. A call failure's message names states
+and identifiers by `name()` and entities as `key#identity`, never through an entity's `toString()`. `InvalidGraphException`
+lists `problems()`, and `codes()`, by code, then origin state, then identifier.
+
+A peer read stages nothing, so `ctx.peer(...)` with a key or a facade the registry does not hold throws
+`UnknownPeerMachineException` or `UnknownFacadeException` into the guard or action without poisoning the call: an action
+that catches it can still commit. A cascade to an unknown machine does poison the call.
 
 ## Common build problems
 
