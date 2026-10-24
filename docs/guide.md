@@ -53,8 +53,6 @@ shop and billing domains the guide quotes.
 - [Diagnostics and troubleshooting](#diagnostics-and-troubleshooting)
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
-- [Component benchmarks](../benchmarks/README.md) — the harness, the V/E cost evidence and the measured cost of the
-  call's flow and logs
 - [Further reference](#further-reference)
 - [License](#license)
 

@@ -14,3 +14,6 @@ docs/audit-64-decisions.md
 
 # Release and docs tooling
 scripts/
+
+# Benchmark harness and its results
+benchmarks/
