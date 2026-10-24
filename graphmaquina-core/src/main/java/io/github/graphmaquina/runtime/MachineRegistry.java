@@ -36,6 +36,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.AccessLevel;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -250,8 +251,7 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     /** Throws if not present: an Optional would end up in an orElse that swallows a wiring error. */
-    public <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> of(MachineKey<E, S, T> key) {
-        Objects.requireNonNull(key, "key");
+    public <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> of(@NonNull MachineKey<E, S, T> key) {
         return machineFor(key);
     }
 

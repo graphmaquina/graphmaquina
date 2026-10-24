@@ -51,13 +51,13 @@ class FlowKeyTest {
 
     @Test
     void aNullNameOrTypeIsRefusedByName() {
-        assertEquals("name", assertThrows(NullPointerException.class,
+        assertEquals("name is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> FlowKey.of(null, String.class)).getMessage());
-        assertEquals("type", assertThrows(NullPointerException.class,
+        assertEquals("type is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> FlowKey.of("batch", null)).getMessage());
-        assertEquals("name", assertThrows(NullPointerException.class,
+        assertEquals("name is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> FlowKey.visible(null, String.class)).getMessage());
-        assertEquals("type", assertThrows(NullPointerException.class,
+        assertEquals("type is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> FlowKey.visible("batch", null)).getMessage());
     }
 

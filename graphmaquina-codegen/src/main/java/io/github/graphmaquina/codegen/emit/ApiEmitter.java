@@ -12,9 +12,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * Turns one resolved model into the compilation units of a generation: the vocabulary of every machine, the pair
@@ -44,9 +44,7 @@ public final class ApiEmitter {
      *     {@code SG603} if two declarations claim one generated type, a machine's name does not normalize to a
      *     valid type name or a generated unit cannot name a type it must name
      */
-    public static List<GeneratedSource> emit(GenerationModel model, String compilationId) {
-        Objects.requireNonNull(model, "model");
-        Objects.requireNonNull(compilationId, "compilationId");
+    public static List<GeneratedSource> emit(@NonNull GenerationModel model, @NonNull String compilationId) {
         Map<String, Set<String>> generated = generatedTypes(model);
         Map<String, Claim> claims = new LinkedHashMap<>();
         List<GeneratedSource> sources = new ArrayList<>();
@@ -72,8 +70,7 @@ public final class ApiEmitter {
      * alike, in the order the files declare them. Symbol types and the compilation carrier are not annotations
      * and are not listed.
      */
-    public static List<String> annotationTypes(GenerationModel model) {
-        Objects.requireNonNull(model, "model");
+    public static List<String> annotationTypes(@NonNull GenerationModel model) {
         List<String> types = new ArrayList<>();
         for (GraphDescriptor graph : model.graphs()) {
             types.addAll(MachineVocabularyEmitter.annotationTypes(graph));

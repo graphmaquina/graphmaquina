@@ -148,7 +148,7 @@ class FluentApiTest {
         Entity entity = new Entity("e", State.READY);
         NullPointerException error = assertThrows(NullPointerException.class,
                 () -> GraphAssertions.assertThat(entity, (Function<Entity, State>) null));
-        assertEquals("getter", error.getMessage());
+        assertEquals("getter is marked non-null but is null", error.getMessage());
     }
 
     // --- null subjects: the facade hands them on rather than raising an argument error ---------------

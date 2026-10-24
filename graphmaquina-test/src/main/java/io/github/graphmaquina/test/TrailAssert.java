@@ -8,8 +8,8 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the trail of a call, obtained from {@link FlowAssert#trail()} or from
@@ -62,8 +62,7 @@ public final class TrailAssert {
      * {@code Rejected} or a {@code Failed} of {@link FlowEntry}. No argument expects an empty trail.
      */
     @SafeVarargs
-    public final TrailAssert hasEntryTypesExactly(Class<? extends FlowEntry>... types) {
-        Objects.requireNonNull(types, "types");
+    public final TrailAssert hasEntryTypesExactly(@NonNull Class<? extends FlowEntry>... types) {
         List<Class<? extends FlowEntry>> declared = new ArrayList<>();
         for (Class<? extends FlowEntry> type : types) {
             declared.add(type);
@@ -83,8 +82,7 @@ public final class TrailAssert {
      * took it; the sub-machine starts and the final rejection or failure are skipped. No argument expects a trail
      * without a hop.
      */
-    public TrailAssert hasHopsExactly(Enum<?>... transitions) {
-        Objects.requireNonNull(transitions, "transitions");
+    public TrailAssert hasHopsExactly(@NonNull Enum<?>... transitions) {
         List<Enum<?>> wanted = List.of(transitions);
         List<FlowEntry> trail = Checks.present(context, "hops", wanted, actual);
         List<Enum<?>> hops = new ArrayList<>();
@@ -122,8 +120,7 @@ public final class TrailAssert {
     }
 
     /** The last entry is the {@link FlowEntry.Rejected} of a rejection of that kind. */
-    public TrailAssert endsWithRejection(RejectionKind kind) {
-        Objects.requireNonNull(kind, "kind");
+    public TrailAssert endsWithRejection(@NonNull RejectionKind kind) {
         List<FlowEntry> trail = Checks.present(context, LAST, FlowEntry.Rejected.class, actual);
         FlowEntry.Rejected rejected = last(trail, FlowEntry.Rejected.class);
         Checks.equal(context + "[" + (trail.size() - 1) + "]", "kind", kind, rejected.kind());
@@ -131,8 +128,7 @@ public final class TrailAssert {
     }
 
     /** The last entry is the {@link FlowEntry.Failed} of a failure in that phase. */
-    public TrailAssert endsWithFailure(CallPhase phase) {
-        Objects.requireNonNull(phase, "phase");
+    public TrailAssert endsWithFailure(@NonNull CallPhase phase) {
         List<FlowEntry> trail = Checks.present(context, LAST, FlowEntry.Failed.class, actual);
         FlowEntry.Failed failed = last(trail, FlowEntry.Failed.class);
         Checks.equal(context + "[" + (trail.size() - 1) + "]", "phase", phase, failed.failure().phase());

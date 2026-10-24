@@ -3,6 +3,7 @@ package io.github.graphmaquina.test.internal;
 import io.github.graphmaquina.test.GraphAssertionError;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Comparisons shared by every typed assertion, raising {@link GraphAssertionError} on mismatch.
@@ -29,15 +30,13 @@ public final class Checks {
         return actual.orElseThrow(() -> new GraphAssertionError(context, property, expected, null));
     }
 
-    public static void equal(String context, String property, Object expected, Object actual) {
-        Objects.requireNonNull(expected, "expected");
+    public static void equal(String context, String property, @NonNull Object expected, Object actual) {
         if (!Objects.equals(expected, actual)) {
             fail(context, property, expected, actual);
         }
     }
 
-    public static void same(String context, String property, Object expected, Object actual) {
-        Objects.requireNonNull(expected, "expected");
+    public static void same(String context, String property, @NonNull Object expected, Object actual) {
         if (expected != actual) {
             fail(context, property, expected, actual);
         }

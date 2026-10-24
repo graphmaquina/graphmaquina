@@ -196,30 +196,30 @@ class ValueAssertionsTest {
     void nullExpectedReasonStaysAnArgumentError() {
         NullPointerException action = assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(ActionOutcome.failed("declined")).hasReason(null));
-        assertEquals("reason", action.getMessage());
+        assertEquals("reason is marked non-null but is null", action.getMessage());
         NullPointerException guard = assertThrows(NullPointerException.class,
                 () -> GuardResultAssert.assertThat(GuardResult.reject("not ready")).hasReason(null));
-        assertEquals("reason", guard.getMessage());
+        assertEquals("reason is marked non-null but is null", guard.getMessage());
     }
 
     @Test
     void nullExpectedReasonBeatsANullSubject() {
         NullPointerException action = assertThrows(NullPointerException.class,
                 () -> ActionOutcomeAssert.assertThat(null).hasReason(null));
-        assertEquals("reason", action.getMessage());
+        assertEquals("reason is marked non-null but is null", action.getMessage());
         NullPointerException guard = assertThrows(NullPointerException.class,
                 () -> GuardResultAssert.assertThat(null).hasReason(null));
-        assertEquals("reason", guard.getMessage());
+        assertEquals("reason is marked non-null but is null", guard.getMessage());
     }
 
     @Test
     void nullExpectedIsAnArgumentErrorInBothComparisons() {
         NullPointerException equalError = assertThrows(NullPointerException.class,
                 () -> Checks.equal("entity", "identity", null, "declined"));
-        assertEquals("expected", equalError.getMessage());
+        assertEquals("expected is marked non-null but is null", equalError.getMessage());
         NullPointerException sameError = assertThrows(NullPointerException.class,
                 () -> Checks.same("entity", "identity", null, "declined"));
-        assertEquals("expected", sameError.getMessage());
+        assertEquals("expected is marked non-null but is null", sameError.getMessage());
     }
 
     @Test

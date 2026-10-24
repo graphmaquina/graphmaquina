@@ -1,6 +1,6 @@
 package io.github.graphmaquina.test;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Thrown by a typed assertion when its expectation is not met. Carries the context and property being
@@ -52,10 +52,8 @@ public final class GraphAssertionError extends AssertionError {
 
     public Object actual() { return actual; }
 
-    private static String render(String context, String property, Object expected, Object actual,
+    private static String render(@NonNull String context, @NonNull String property, Object expected, Object actual,
             String advice) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(property, "property");
         String shownExpected = describe(expected);
         String shownActual = describe(actual);
         String message = context + ": " + property

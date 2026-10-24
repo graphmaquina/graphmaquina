@@ -8,6 +8,7 @@ import io.github.graphmaquina.internal.Texts;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Phase 2 of a call failed, so its phase is COMMIT. Before its first write, phase 2 checks that every entity is still
@@ -94,10 +95,8 @@ public final class CommitFailedException extends CallFailedException {
         return journal;
     }
 
-    private static String describe(List<?> applied, Optional<Object> failedEntity, List<?> pending, String message) {
-        Objects.requireNonNull(applied, "applied");
-        Objects.requireNonNull(pending, "pending");
-        Objects.requireNonNull(message, "message");
+    private static String describe(@NonNull List<?> applied, Optional<Object> failedEntity, @NonNull List<?> pending,
+            @NonNull String message) {
         return "phase 2 failed: " + message + "; applied " + applied.size()
                 + (failedEntity.isPresent() ? ", failed 1" : "") + ", pending " + pending.size();
     }

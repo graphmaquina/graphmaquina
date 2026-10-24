@@ -3,8 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link ActionOutcome}. The expectations about a failure, its reason and its
@@ -35,8 +35,7 @@ public final class ActionOutcomeAssert {
         return this;
     }
 
-    public ActionOutcomeAssert hasReason(String reason) {
-        Objects.requireNonNull(reason, "reason");
+    public ActionOutcomeAssert hasReason(@NonNull String reason) {
         ActionOutcome outcome = Checks.subject("action outcome", "kind", "Failed", actual);
         Checks.equal("action outcome", "kind", "Failed", outcome.getClass().getSimpleName());
         ActionOutcome.Failed failed = (ActionOutcome.Failed) outcome;
@@ -51,8 +50,7 @@ public final class ActionOutcomeAssert {
      * @param expected the failure kind the outcome must carry
      * @return this view
      */
-    public ActionOutcomeAssert hasFailureKind(Class<? extends FailureKind> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public ActionOutcomeAssert hasFailureKind(@NonNull Class<? extends FailureKind> expected) {
         ActionOutcome outcome = Checks.subject("action outcome", "kind", "Failed", actual);
         Checks.equal("action outcome", "kind", "Failed", outcome.getClass().getSimpleName());
         ActionOutcome.Failed failed = (ActionOutcome.Failed) outcome;

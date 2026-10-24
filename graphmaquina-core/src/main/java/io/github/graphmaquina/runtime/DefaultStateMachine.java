@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -23,6 +22,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
@@ -130,8 +130,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     public MachineKey<E, S, T> key() { return definition.key(); }
 
     @Override
-    public Set<T> transitionsFrom(S state) {
-        Objects.requireNonNull(state, "state");
+    public Set<T> transitionsFrom(@NonNull S state) {
         EnumSet<T> declared = EnumSet.noneOf(key().transitions());
         for (TransitionSpec<E, S, T> spec : definition.outgoingFrom(state)) {
             declared.add(spec.transition());
@@ -140,17 +139,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     @Override
-    public Outcome<E, S, T> execute(E entity, T transition) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
+    public Outcome<E, S, T> execute(@NonNull E entity, @NonNull T transition) {
         return executeRoot(entity, transition, Optional.empty());
     }
 
     @Override
-    public Outcome<E, S, T> execute(E entity, T transition, Object input) {
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(input, "input");
+    public Outcome<E, S, T> execute(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         return executeRoot(entity, transition, Optional.of(input));
     }
 
@@ -169,8 +163,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     @Override
-    public Outcome<E, S, T> reevaluate(E entity) {
-        Objects.requireNonNull(entity, "entity");
+    public Outcome<E, S, T> reevaluate(@NonNull E entity) {
         return Reevaluation.reevaluate(this, entity, 0, Optional.empty());
     }
 
@@ -180,8 +173,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     @Override
-    public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {
-        Objects.requireNonNull(call, "call");
+    public <R> CompletableFuture<R> supplyAsync(@NonNull Supplier<R> call) {
         return submit(call);
     }
 

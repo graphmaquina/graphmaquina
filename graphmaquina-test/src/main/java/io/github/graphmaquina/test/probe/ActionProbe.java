@@ -5,9 +5,9 @@ import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.ResponseScript;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import lombok.NonNull;
 
 /**
  * A {@link TransitionAction} whose answers are written by the test instead of by a domain. Every invocation is
@@ -50,10 +50,8 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
      * the graph gives this action if the trace is to read like the graph. A null argument raises
      * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
      */
-    public static <E, S extends Enum<S>, T extends Enum<T>> ActionProbe<E, S, T> create(String name,
-            CallTrace trace) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(trace, "trace");
+    public static <E, S extends Enum<S>, T extends Enum<T>> ActionProbe<E, S, T> create(@NonNull String name,
+            @NonNull CallTrace trace) {
         if (name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
@@ -61,22 +59,19 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     }
 
     /** Queues one outcome, answered after every response queued before it. */
-    public ActionProbe<E, S, T> thenReturn(ActionOutcome outcome) {
-        Objects.requireNonNull(outcome, "outcome");
+    public ActionProbe<E, S, T> thenReturn(@NonNull ActionOutcome outcome) {
         script.then(() -> outcome);
         return this;
     }
 
     /** Queues one exception, thrown by identity: the call throws this very instance. */
-    public ActionProbe<E, S, T> thenThrow(RuntimeException error) {
-        Objects.requireNonNull(error, "error");
+    public ActionProbe<E, S, T> thenThrow(@NonNull RuntimeException error) {
         script.then(() -> { throw error; });
         return this;
     }
 
     /** Sets the outcome answered by every call the queue no longer covers; a later call replaces it. */
-    public ActionProbe<E, S, T> otherwiseReturn(ActionOutcome outcome) {
-        Objects.requireNonNull(outcome, "outcome");
+    public ActionProbe<E, S, T> otherwiseReturn(@NonNull ActionOutcome outcome) {
         script.otherwise(() -> outcome);
         return this;
     }
@@ -86,8 +81,8 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
      * call the script no longer covers. It receives the live context, which the engine invalidates when the
      * transaction ends, so read it now rather than storing it.
      */
-    public ActionProbe<E, S, T> onCall(Consumer<TransitionContext<E, S, T>> onCall) {
-        this.onCall = Objects.requireNonNull(onCall, "onCall");
+    public ActionProbe<E, S, T> onCall(@NonNull Consumer<TransitionContext<E, S, T>> onCall) {
+        this.onCall = onCall;
         return this;
     }
 

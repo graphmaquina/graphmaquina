@@ -11,8 +11,8 @@ import java.nio.file.ProviderNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Reads the published export index of every classpath entry that carries one.
@@ -41,8 +41,7 @@ public final class DependencyExports {
      *     tool version wrote, naming that entry
      * @throws IOException if an entry exists but cannot be read, naming that entry
      */
-    public static List<ExportIndex> read(List<Path> classpath) throws IOException {
-        Objects.requireNonNull(classpath, "classpath");
+    public static List<ExportIndex> read(@NonNull List<Path> classpath) throws IOException {
         String toolVersion = ToolVersion.current();
         List<ExportIndex> indexes = new ArrayList<>();
         for (Path entry : classpath) {

@@ -3,7 +3,6 @@ package io.github.graphmaquina.error;
 import io.github.graphmaquina.api.MachineKey;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import lombok.Getter;
 import lombok.NonNull;
 
@@ -38,9 +37,7 @@ public final class InvalidGraphException extends StateMachineException {
         return List.copyOf(codes);
     }
 
-    private static String describe(MachineKey<?, ?, ?> key, List<Problem> problems) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(problems, "problems");
+    private static String describe(@NonNull MachineKey<?, ?, ?> key, @NonNull List<Problem> problems) {
         StringBuilder text = new StringBuilder("the graph " + key + " has " + problems.size() + " problem(s):");
         for (Problem problem : problems) {
             text.append("\n  [").append(problem.code()).append("] ").append(problem.message());

@@ -1,6 +1,6 @@
 package io.github.graphmaquina.api;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * A typed key of the flow of a call: a name and the class of the values it holds. Two keys are equal when their names
@@ -48,9 +48,7 @@ public final class FlowKey<V> {
         return create(name, type, true);
     }
 
-    private static <V> FlowKey<V> create(String name, Class<V> type, boolean visible) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(type, "type");
+    private static <V> FlowKey<V> create(@NonNull String name, @NonNull Class<V> type, boolean visible) {
         if (name.isBlank()) {
             throw new IllegalArgumentException("flow key name must not be blank");
         }

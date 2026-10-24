@@ -1,7 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Expectations every failure view shares, returning the concrete view so that a chain keeps the narrowed
@@ -27,8 +27,7 @@ public abstract class BaseFailureAssert<SELF extends BaseFailureAssert<SELF>> {
     protected abstract SELF self();
 
     /** Satisfied by any cause the type accepts, subclasses included; a failure without a cause never does. */
-    public SELF hasCause(Class<? extends Throwable> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasCause(@NonNull Class<? extends Throwable> expected) {
         Throwable failure = Checks.subject(context, "cause", expected, actual);
         Throwable cause = failure.getCause();
         if (!expected.isInstance(cause)) {
@@ -38,8 +37,7 @@ public abstract class BaseFailureAssert<SELF extends BaseFailureAssert<SELF>> {
     }
 
     /** Compares by reference, so a distinct throwable that compares equal does not satisfy it. */
-    public SELF hasCauseSameAs(Throwable expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasCauseSameAs(@NonNull Throwable expected) {
         Throwable failure = Checks.subject(context, "cause", expected, actual);
         Checks.same(context, "cause", expected, failure.getCause());
         return self();

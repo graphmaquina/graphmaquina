@@ -2,8 +2,8 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * One completed call as the recorder saw it. The sequence numbers the calls in the order the
@@ -16,12 +16,9 @@ import java.util.Optional;
  * @param outcome the outcome the call returned, exactly as its observers received it
  * @param projection the projected value captured when the call completed, or empty
  */
-public record RecordedTransition(long sequence, MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome,
-        Optional<Object> projection) {
+public record RecordedTransition(long sequence, @NonNull MachineKey<?, ?, ?> key, @NonNull Outcome<?, ?, ?> outcome,
+        @NonNull Optional<Object> projection) {
 
     public RecordedTransition {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(outcome, "outcome");
-        Objects.requireNonNull(projection, "projection");
     }
 }

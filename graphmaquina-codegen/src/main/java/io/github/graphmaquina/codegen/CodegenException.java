@@ -1,8 +1,8 @@
 package io.github.graphmaquina.codegen;
 
 import io.github.graphmaquina.codegen.model.SourceLocation;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Reported by the generator and its manifest codec for a specific, diagnosable failure: an SG error code, a
@@ -13,15 +13,15 @@ public final class CodegenException extends RuntimeException {
     private final String code;
     private final Optional<SourceLocation> location;
 
-    public CodegenException(String code, String message) {
+    public CodegenException(@NonNull String code, String message) {
         super(message);
-        this.code = Objects.requireNonNull(code, "code");
+        this.code = code;
         this.location = Optional.empty();
     }
 
-    public CodegenException(String code, String message, SourceLocation location) {
+    public CodegenException(@NonNull String code, String message, SourceLocation location) {
         super(message);
-        this.code = Objects.requireNonNull(code, "code");
+        this.code = code;
         this.location = Optional.of(location);
     }
 

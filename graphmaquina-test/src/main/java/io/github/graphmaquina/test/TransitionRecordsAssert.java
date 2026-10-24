@@ -5,8 +5,8 @@ import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over a list of transition records: the hops a call committed, obtained from {@link
@@ -54,8 +54,7 @@ public final class TransitionRecordsAssert {
      * Every record in order, compared field by field: the key and the states by value, the entity by
      * reference. The first difference is reported by its own index and field name.
      */
-    public TransitionRecordsAssert containsExactly(List<? extends TransitionRecord<?, ?, ?>> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordsAssert containsExactly(@NonNull List<? extends TransitionRecord<?, ?, ?>> expected) {
         List<? extends TransitionRecord<?, ?, ?>> wanted = List.copyOf(expected);
         List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "size", wanted.size(), actual);
         Checks.equal(context, "size", wanted.size(), records.size());
@@ -68,9 +67,7 @@ public final class TransitionRecordsAssert {
 
     /** Selects by key and by entity identity; an entity with no records yields an empty view, not a failure. */
     public <E, S extends Enum<S>, T extends Enum<T>> TypedRecordsAssert<E, S, T> forEntity(
-            MachineKey<E, S, T> key, E entity) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
+            @NonNull MachineKey<E, S, T> key, @NonNull E entity) {
         List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "entity records", entity, actual);
         List<TransitionRecord<E, S, T>> selected = records.stream()
                 .filter((TransitionRecord<?, ?, ?> record) ->

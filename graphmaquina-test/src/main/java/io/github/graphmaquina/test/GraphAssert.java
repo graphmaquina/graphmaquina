@@ -8,9 +8,9 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over a {@link GraphDefinition}. Every expectation reads the definition's
@@ -40,8 +40,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return new GraphAssert<>(actual);
     }
 
-    public GraphAssert<E, S, T> hasInitial(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public GraphAssert<E, S, T> hasInitial(@NonNull S expected) {
         String context = context();
         GraphDefinition<E, S, T> definition = Checks.subject(context, "initial", expected, actual);
         Checks.equal(context, "initial", expected, definition.initial());
@@ -68,8 +67,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * entries here even when they reach the same destination.
      */
     @SafeVarargs
-    public final GraphAssert<E, S, T> hasTransitionsExactly(S from, T... transitions) {
-        Objects.requireNonNull(from, "from");
+    public final GraphAssert<E, S, T> hasTransitionsExactly(@NonNull S from, T... transitions) {
         List<T> declared = new ArrayList<>();
         for (T transition : transitions) {
             declared.add(transition);
@@ -87,9 +85,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * Both arguments must belong to the definition's own enums, because an identifier of a foreign enum
      * would simply miss the index and make this expectation pass without proving anything.
      */
-    public GraphAssert<E, S, T> hasNoTransition(S from, T transition) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
+    public GraphAssert<E, S, T> hasNoTransition(@NonNull S from, @NonNull T transition) {
         Optional<?> none = Optional.empty();
         String context = context() + " " + from.name() + " -" + transition.name() + "->";
         GraphDefinition<E, S, T> definition = Checks.subject(context, "transition", none, actual);
@@ -116,8 +112,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    public GraphAssert<E, S, T> hasNoWatch(S state) {
-        Objects.requireNonNull(state, "state");
+    public GraphAssert<E, S, T> hasNoWatch(@NonNull S state) {
         Optional<?> none = Optional.empty();
         String context = context() + " " + state.name();
         GraphDefinition<E, S, T> definition = Checks.subject(context, "watch", none, actual);
@@ -131,8 +126,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * state of a foreign enum would miss the binding and make this expectation pass without proving
      * anything. A failure reports the key of the child that is bound.
      */
-    public GraphAssert<E, S, T> hasNoSubmachine(S state) {
-        Objects.requireNonNull(state, "state");
+    public GraphAssert<E, S, T> hasNoSubmachine(@NonNull S state) {
         Optional<?> none = Optional.empty();
         String context = context() + " " + state.name();
         GraphDefinition<E, S, T> definition = Checks.present(context, "submachine", none, definition());
@@ -148,9 +142,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * definition under test that is itself null, yields a view without a subject, and the first
      * expectation on it reports that as an assertion failure.
      */
-    public TransitionAssert<E, S, T> transition(S from, T transition) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
+    public TransitionAssert<E, S, T> transition(@NonNull S from, @NonNull T transition) {
         String context = context() + " " + from.name() + " -" + transition.name() + "->";
         if (actual == null) {
             return new TransitionAssert<>(context, null);
@@ -165,8 +157,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * that is null yields a view without a subject, and the first expectation on it reports that as an
      * assertion failure.
      */
-    public StatePolicyAssert<S, T> policy(S state) {
-        Objects.requireNonNull(state, "state");
+    public StatePolicyAssert<S, T> policy(@NonNull S state) {
         String context = context() + " policy " + state.name();
         if (actual == null) {
             return new StatePolicyAssert<>(context, null, null, null);
@@ -181,8 +172,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * enum. A state that declares no watch — like a definition under test that is itself null — yields a
      * view without a subject, and the first expectation on it reports that as an assertion failure.
      */
-    public WatchAssert<E, S, T> watch(S state) {
-        Objects.requireNonNull(state, "state");
+    public WatchAssert<E, S, T> watch(@NonNull S state) {
         String context = context() + " watch " + state.name();
         if (actual == null) {
             return new WatchAssert<>(context, null);
@@ -199,9 +189,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
      * reports that as an assertion failure. No lookup of the binding runs.
      */
     public <P, Q extends Enum<Q>, U extends Enum<U>> SubmachineAssert<E, S, T, P, Q, U> submachine(
-            S state, MachineKey<P, Q, U> child) {
-        Objects.requireNonNull(state, "state");
-        Objects.requireNonNull(child, "child");
+            @NonNull S state, @NonNull MachineKey<P, Q, U> child) {
         String context = context() + " submachine " + state.name();
         Optional<GraphDefinition<E, S, T>> definition = definition();
         definition.ifPresent((GraphDefinition<E, S, T> declared) -> requireDeclaredState(declared, state, "state"));

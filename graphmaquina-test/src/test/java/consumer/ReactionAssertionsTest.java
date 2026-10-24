@@ -655,9 +655,9 @@ class ReactionAssertionsTest {
     void aNullRequiredArgumentIsAnArgumentErrorEvenWhenTheSubjectIsNull() {
         List<Reaction> none = null;
         Entity entity = new Entity("e", State.READY);
-        assertEquals("key", assertThrows(NullPointerException.class,
+        assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> ReactionsAssert.assertThat(none).forEntity(null, entity)).getMessage());
-        assertEquals("entity", assertThrows(NullPointerException.class,
+        assertEquals("entity is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> ReactionsAssert.assertThat(none).forEntity(TestDomain.KEY, null)).getMessage());
     }
 
@@ -667,18 +667,18 @@ class ReactionAssertionsTest {
         AbortedReactionAssert<Entity, State, Id> view = single(
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down")), entity)
                 .isAborted();
-        assertEquals("expected",
+        assertEquals("expected is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> view.hasCause(null)).getMessage());
-        assertEquals("expected",
+        assertEquals("expected is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> view.hasCauseSameAs(null)).getMessage());
     }
 
     @Test
     void aNullArgumentOfTheLocalizedCastIsAnArgumentError() {
         Entity entity = new Entity("e", State.READY);
-        assertEquals("key", assertThrows(NullPointerException.class,
+        assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> CheckedTypes.outcome(null, applied(entity))).getMessage());
-        assertEquals("outcome", assertThrows(NullPointerException.class,
+        assertEquals("outcome is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> CheckedTypes.outcome(TestDomain.KEY, null)).getMessage());
     }
 

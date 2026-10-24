@@ -358,15 +358,15 @@ class TransitionAssertionsTest {
     void aNullExpectedValueIsAnArgumentErrorNotAnAssertionFailure() {
         TransitionAssert<Entity, State, Id> edge =
                 GraphAssert.assertThat(TestDomain.graph(TIMEOUT)).transition(State.NEW, Id.PREPARE);
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> edge.hasTarget(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> edge.hasActionNamed(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> edge.hasFailureTransition(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> edge.hasTimeout(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> edge.hasHookNamed(null)).getMessage());
     }
 
@@ -381,7 +381,7 @@ class TransitionAssertionsTest {
 
     @Test
     void aGuardExpectationRejectsANullName() {
-        assertEquals("name", assertThrows(NullPointerException.class,
+        assertEquals("name is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new GuardExpectation(null, false)).getMessage());
     }
 

@@ -1,6 +1,6 @@
 package io.github.graphmaquina.test;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Expected shape of one rule of a watch: the public name of its condition and the identifier of the
@@ -12,10 +12,8 @@ import java.util.Objects;
  * @param condition public name of the rule's condition
  * @param transition identifier of the transition the rule executes
  */
-public record WatchRuleExpectation<T extends Enum<T>>(String condition, T transition) {
+public record WatchRuleExpectation<T extends Enum<T>>(@NonNull String condition, @NonNull T transition) {
 
     public WatchRuleExpectation {
-        Objects.requireNonNull(condition, "condition");
-        Objects.requireNonNull(transition, "transition");
     }
 }

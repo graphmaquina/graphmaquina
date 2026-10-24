@@ -1,7 +1,7 @@
 package io.github.graphmaquina.codegen.source;
 
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Identity of one declared type parameter: the declaration that owns it and its zero-based position in that
@@ -18,20 +18,17 @@ import java.util.Objects;
  * declared by {@code fx.Base} therefore owns the token {@code fx.Base#map(T)}, which is distinct from
  * {@code fx.Base}. Method parameters consequently never enter a class substitution environment.</p>
  */
-public record TypeParameterKey(String declaringType, int position) {
+public record TypeParameterKey(@NonNull String declaringType, int position) {
 
     public TypeParameterKey {
-        Objects.requireNonNull(declaringType, "declaringType");
         if (position < 0) {
             throw new IllegalArgumentException("position must not be negative: " + position);
         }
     }
 
     /** Builds the declaration-owner token that scopes the type parameters of one method. */
-    public static String methodOwner(String declaringType, String methodName, List<String> parameterTypes) {
-        Objects.requireNonNull(declaringType, "declaringType");
-        Objects.requireNonNull(methodName, "methodName");
-        Objects.requireNonNull(parameterTypes, "parameterTypes");
+    public static String methodOwner(@NonNull String declaringType, @NonNull String methodName,
+            @NonNull List<String> parameterTypes) {
         return declaringType + '#' + methodName + '(' + String.join(", ", parameterTypes) + ')';
     }
 }

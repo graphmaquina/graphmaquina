@@ -3,9 +3,9 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.graph.Graph;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over the reachability graph of a definition, obtained from
@@ -28,8 +28,7 @@ public final class TopologyAssert<S extends Enum<S>> {
     }
 
     /** The nodes are every declared state, whether or not any edge reaches them. */
-    public TopologyAssert<S> hasNodesExactly(Set<S> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TopologyAssert<S> hasNodesExactly(@NonNull Set<S> expected) {
         Set<S> wanted = Set.copyOf(expected);
         Graph<S> graph = Checks.subject(context, "nodes", wanted, actual);
         Checks.equal(context, "nodes", wanted, graph.nodes());
@@ -37,9 +36,7 @@ public final class TopologyAssert<S extends Enum<S>> {
     }
 
     /** The destinations reachable in one step, so a state with no outgoing edge has none. */
-    public TopologyAssert<S> hasSuccessorsExactly(S from, Set<S> expected) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(expected, "expected");
+    public TopologyAssert<S> hasSuccessorsExactly(@NonNull S from, @NonNull Set<S> expected) {
         Set<S> wanted = Set.copyOf(expected);
         String where = context + " " + from.name();
         Graph<S> graph = Checks.subject(where, "successors", wanted, actual);
@@ -49,9 +46,7 @@ public final class TopologyAssert<S extends Enum<S>> {
     }
 
     /** Everything reachable in one step or more. The origin belongs there only if a cycle leads back to it. */
-    public TopologyAssert<S> hasReachableExactly(S origin, Set<S> expected) {
-        Objects.requireNonNull(origin, "origin");
-        Objects.requireNonNull(expected, "expected");
+    public TopologyAssert<S> hasReachableExactly(@NonNull S origin, @NonNull Set<S> expected) {
         Set<S> wanted = Set.copyOf(expected);
         String where = context + " " + origin.name();
         Graph<S> graph = Checks.subject(where, "reachable", wanted, actual);
@@ -66,8 +61,7 @@ public final class TopologyAssert<S extends Enum<S>> {
      * the graph does not have, anywhere in the walk, and an empty path are argument errors, not assertion
      * failures.
      */
-    public TopologyAssert<S> hasPath(List<S> path) {
-        Objects.requireNonNull(path, "path");
+    public TopologyAssert<S> hasPath(@NonNull List<S> path) {
         List<S> walk = List.copyOf(path);
         if (walk.isEmpty()) {
             throw new IllegalArgumentException("path must not be empty");
@@ -90,9 +84,7 @@ public final class TopologyAssert<S extends Enum<S>> {
      * answered by {@link #hasReachableExactly}, whose reachable set excludes the origin unless a cycle
      * leads back to it.
      */
-    public TopologyAssert<S> hasNoPath(S from, S to) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
+    public TopologyAssert<S> hasNoPath(@NonNull S from, @NonNull S to) {
         Optional<List<S>> none = Optional.empty();
         String where = where(from, to);
         Graph<S> graph = Checks.subject(where, "path", none, actual);
@@ -103,10 +95,7 @@ public final class TopologyAssert<S extends Enum<S>> {
     }
 
     /** The shortest walk the graph finds, which is the single node {@code [from]} when {@code from == to}. */
-    public TopologyAssert<S> hasShortestPath(S from, S to, List<S> expected) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
-        Objects.requireNonNull(expected, "expected");
+    public TopologyAssert<S> hasShortestPath(@NonNull S from, @NonNull S to, @NonNull List<S> expected) {
         Optional<List<S>> wanted = Optional.of(List.copyOf(expected));
         String where = where(from, to);
         Graph<S> graph = Checks.subject(where, "shortest path", wanted, actual);
@@ -127,8 +116,7 @@ public final class TopologyAssert<S extends Enum<S>> {
      * Elementary cycles in the graph's own order and rotation: each one starts at its
      * lowest-declaration-index node and does not repeat the closing node.
      */
-    public TopologyAssert<S> hasCyclesExactly(List<List<S>> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TopologyAssert<S> hasCyclesExactly(@NonNull List<List<S>> expected) {
         List<List<S>> wanted = expected.stream().map(List::copyOf).toList();
         Graph<S> graph = Checks.subject(context, "cycles", wanted, actual);
         Checks.equal(context, "cycles", wanted, graph.cycles());

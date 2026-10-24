@@ -2,7 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /** Chainable, typed assertion over a {@link GuardResult}. */
 public final class GuardResultAssert {
@@ -29,8 +29,7 @@ public final class GuardResultAssert {
         return this;
     }
 
-    public GuardResultAssert hasReason(String reason) {
-        Objects.requireNonNull(reason, "reason");
+    public GuardResultAssert hasReason(@NonNull String reason) {
         GuardResult result = Checks.subject("guard result", "kind", "Reject", actual);
         Checks.equal("guard result", "kind", "Reject", result.getClass().getSimpleName());
         GuardResult.Reject reject = (GuardResult.Reject) result;

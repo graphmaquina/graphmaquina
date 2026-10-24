@@ -21,7 +21,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -29,6 +28,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import lombok.NonNull;
 
 /**
  * Reads the consumer's original sources with {@link JavacTask#parse()} only. The declarations, modifiers,
@@ -61,10 +61,8 @@ public final class SourceDeclarations {
      * a file once however many paths lead to it through symbolic links, and those paths map to the unit of the
      * first; the hard links of one file have different real paths, so each is read into a unit of its own.
      */
-    static Map<Path, SourceUnit> parseEach(Path project, List<Path> files, int release, Charset encoding) {
-        Objects.requireNonNull(project, "project");
-        Objects.requireNonNull(files, "files");
-        Objects.requireNonNull(encoding, "encoding");
+    static Map<Path, SourceUnit> parseEach(@NonNull Path project, @NonNull List<Path> files, int release,
+            @NonNull Charset encoding) {
         if (files.isEmpty()) {
             return Map.of();
         }

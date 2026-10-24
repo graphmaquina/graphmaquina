@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import lombok.AccessLevel;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /** Builds machines from a {@link GraphDefinition}. */
@@ -21,8 +22,8 @@ public final class StateMachines {
 
     private StateMachines() { }
 
-    public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(GraphDefinition<E, S, T> definition) {
-        Objects.requireNonNull(definition, "definition");
+    public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(
+            @NonNull GraphDefinition<E, S, T> definition) {
         return new Builder<>(definition);
     }
 

@@ -103,8 +103,10 @@ class FrozenFlowTest {
     @Test
     void aFrozenFlowRefusesWhatEveryFlowRefuses() {
         FrozenFlow flow = new FrozenFlow(Optional.of(new Doc("1", DRAFT)), values(BATCH, "b-1"));
-        assertEquals("key", assertThrows(NullPointerException.class, () -> flow.get(null)).getMessage());
-        assertEquals("type", assertThrows(NullPointerException.class, () -> flow.entity(null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.get(null)).getMessage());
+        assertEquals("type is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> flow.entity(null)).getMessage());
         assertEquals("entity type must be a reference type; use its wrapper class",
                 assertThrows(IllegalArgumentException.class, () -> flow.entity(int.class)).getMessage());
         assertEquals("Cannot cast " + Doc.class.getName() + " to " + Item.class.getName(),
@@ -119,9 +121,9 @@ class FrozenFlowTest {
     void aFrozenFlowRefusesNullsAndAValueOfAnotherClass() {
         Map<FlowKey<?>, Object> nullKey = new HashMap<>();
         nullKey.put(null, "b-1");
-        assertEquals("entity", assertThrows(NullPointerException.class,
+        assertEquals("entity is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new FrozenFlow(null, values(BATCH, "b-1"))).getMessage());
-        assertEquals("values", assertThrows(NullPointerException.class,
+        assertEquals("values is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new FrozenFlow(Optional.empty(), null)).getMessage());
         assertEquals("key", assertThrows(NullPointerException.class,
                 () -> new FrozenFlow(Optional.empty(), nullKey)).getMessage());
@@ -141,7 +143,8 @@ class FrozenFlowTest {
         assertEquals(Set.of(), empty.keys());
         assertEquals(Optional.empty(), empty.entity());
         assertEquals(Optional.empty(), empty.entity(Doc.class));
-        assertEquals("type", assertThrows(NullPointerException.class, () -> empty.entity(null)).getMessage());
+        assertEquals("type is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> empty.entity(null)).getMessage());
         assertEquals("entity type must be a reference type; use its wrapper class",
                 assertThrows(IllegalArgumentException.class, () -> empty.entity(int.class)).getMessage());
     }
@@ -221,7 +224,7 @@ class FrozenFlowTest {
     void aFrozenFlowRefusesANullTrailOrEntry() {
         List<FlowEntry> nullEntry = new ArrayList<>();
         nullEntry.add(null);
-        assertEquals("trail", assertThrows(NullPointerException.class,
+        assertEquals("trail is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new FrozenFlow(Optional.empty(), Map.of(), null)).getMessage());
         assertEquals("entry", assertThrows(NullPointerException.class,
                 () -> new FrozenFlow(Optional.empty(), Map.of(), nullEntry)).getMessage());

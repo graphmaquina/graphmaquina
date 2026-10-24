@@ -10,8 +10,8 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the watch reactions a committed outcome carries, obtained from {@link
@@ -104,9 +104,7 @@ public final class ReactionsAssert {
 
     /** Selects by key and by entity identity; an entity with no reactions yields an empty view, not a failure. */
     public <E, S extends Enum<S>, T extends Enum<T>> TypedReactionsAssert<E, S, T> forEntity(
-            MachineKey<E, S, T> key, E entity) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
+            @NonNull MachineKey<E, S, T> key, @NonNull E entity) {
         List<Reaction> reactions = Checks.subject(context, "entity reactions", entity, actual);
         List<Reaction> selected = reactions.stream()
                 .filter((Reaction reaction) ->

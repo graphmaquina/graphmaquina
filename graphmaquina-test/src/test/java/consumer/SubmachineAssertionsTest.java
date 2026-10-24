@@ -170,21 +170,21 @@ class SubmachineAssertionsTest {
     @Test
     void aNullRequiredArgumentIsAnArgumentErrorNotAnAssertionFailure() {
         GraphAssert<String, Stage, Verdict> graph = GraphAssert.assertThat(parent());
-        assertEquals("state", assertThrows(NullPointerException.class,
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.submachine(null, STEPS)).getMessage());
-        assertEquals("child", assertThrows(NullPointerException.class,
+        assertEquals("child is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.submachine(Stage.REVIEW, null)).getMessage());
-        assertEquals("state", assertThrows(NullPointerException.class,
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> graph.hasNoSubmachine(null)).getMessage());
         SubmachineAssert<String, Stage, Verdict, String, Step, Move> view = review();
-        assertEquals("terminal", assertThrows(NullPointerException.class,
+        assertEquals("terminal is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.hasExit(null, Verdict.ACCEPT)).getMessage());
-        assertEquals("transition", assertThrows(NullPointerException.class,
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.hasExit(Step.B, null)).getMessage());
         assertThrows(NullPointerException.class, () -> view.hasExitsExactly(exit(Step.B, Verdict.ACCEPT), null));
-        assertEquals("terminal", assertThrows(NullPointerException.class,
+        assertEquals("terminal is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> exit(null, Verdict.ACCEPT)).getMessage());
-        assertEquals("transition", assertThrows(NullPointerException.class,
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new ExitExpectation<Step, Verdict>(Step.B, null)).getMessage());
     }
 

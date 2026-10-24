@@ -4,7 +4,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over the watch declared on one state, obtained from
@@ -28,16 +28,14 @@ public final class WatchAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /** The machine the watch observes, compared as a whole key: entity class, state enum and identifiers. */
-    public WatchAssert<E, S, T> hasPeer(MachineKey<?, ?, ?> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public WatchAssert<E, S, T> hasPeer(@NonNull MachineKey<?, ?, ?> expected) {
         WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "peer", expected, actual);
         Checks.equal(context, "peer", expected, spec.peer());
         return this;
     }
 
     /** Compares condition names and executed identifiers in declaration order, keeping repeated rules. */
-    public WatchAssert<E, S, T> hasRulesExactly(List<WatchRuleExpectation<T>> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public WatchAssert<E, S, T> hasRulesExactly(@NonNull List<WatchRuleExpectation<T>> expected) {
         List<WatchRuleExpectation<T>> wanted = List.copyOf(expected);
         WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "rules", wanted, actual);
         Checks.equal(context, "rules", wanted, rulesOf(spec));

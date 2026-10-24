@@ -7,7 +7,7 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the journal of a failed call: the actions that actually ran, in the order they ran,
@@ -75,15 +75,9 @@ public final class JournalAssert {
      * but belongs to another instance does not satisfy it. The identifier is part of the match: two edges
      * that connect the same pair of states under different identifiers are different entries.
      */
-    public <E, S extends Enum<S>, T extends Enum<T>> JournalAssert hasEntry(MachineKey<E, S, T> key, E entity,
-            S from, T transition, S to, String action, int depth, ActionStatus status) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(transition, "transition");
-        Objects.requireNonNull(to, "to");
-        Objects.requireNonNull(action, "action");
-        Objects.requireNonNull(status, "status");
+    public <E, S extends Enum<S>, T extends Enum<T>> JournalAssert hasEntry(@NonNull MachineKey<E, S, T> key,
+            @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to, @NonNull String action, int depth,
+            @NonNull ActionStatus status) {
         ActionRecord wanted = new ActionRecord(key, entity, from, transition, to, action, depth, status);
         List<ActionRecord> journal = Checks.subject(context, "entry", wanted, actual);
         boolean found = journal.stream().anyMatch((ActionRecord entry) -> entry != null

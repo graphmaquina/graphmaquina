@@ -3,7 +3,7 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over a single {@link SubmachineStart}, obtained from {@link TypedStartsAssert#single()}
@@ -26,15 +26,13 @@ public final class StartAssert<P, Q extends Enum<Q>, U extends Enum<U>> {
     }
 
     /** The state the start put the child in, which is the initial state of the child's graph. */
-    public StartAssert<P, Q, U> startedAt(Q expected) {
-        Objects.requireNonNull(expected, "expected");
+    public StartAssert<P, Q, U> startedAt(@NonNull Q expected) {
         Checks.equal(context, "initial", expected, actual.initial());
         return this;
     }
 
     /** The state of the child before the start: its pending state in the call, or else what its getter returned. */
-    public StartAssert<P, Q, U> hadPrevious(Q expected) {
-        Objects.requireNonNull(expected, "expected");
+    public StartAssert<P, Q, U> hadPrevious(@NonNull Q expected) {
         Checks.equal(context, "previous", expected, actual.previous());
         return this;
     }
@@ -43,11 +41,8 @@ public final class StartAssert<P, Q extends Enum<Q>, U extends Enum<U>> {
      * The parent whose step entered the bound state: its machine by key, the entity by reference, and the state that
      * holds the binding.
      */
-    public <E, S extends Enum<S>, T extends Enum<T>> StartAssert<P, Q, U> byParent(MachineKey<E, S, T> key, E parent,
-            S node) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(parent, "parent");
-        Objects.requireNonNull(node, "node");
+    public <E, S extends Enum<S>, T extends Enum<T>> StartAssert<P, Q, U> byParent(@NonNull MachineKey<E, S, T> key,
+            @NonNull E parent, @NonNull S node) {
         Checks.equal(context, "parent key", key, actual.parentKey());
         Checks.same(context, "parent", parent, actual.parent());
         Checks.equal(context, "node", node, actual.node());

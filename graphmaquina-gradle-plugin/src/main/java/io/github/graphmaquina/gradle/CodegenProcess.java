@@ -1,5 +1,6 @@
 package io.github.graphmaquina.gradle;
 
+import lombok.NonNull;
 import org.gradle.api.GradleException;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
@@ -57,8 +58,8 @@ public final class CodegenProcess {
      * @param generatorClasspath the resolved runtime classpath of {@code graphmaquina-codegen}
      * @param execOperations the service that starts the process
      */
-    public CodegenProcess(File executable, Iterable<File> generatorClasspath, ExecOperations execOperations) {
-        this.executable = Objects.requireNonNull(executable, "executable");
+    public CodegenProcess(@NonNull File executable, Iterable<File> generatorClasspath, ExecOperations execOperations) {
+        this.executable = executable;
         this.generatorClasspath = List.copyOf(toList(Objects.requireNonNull(generatorClasspath,
             "generatorClasspath")));
         this.execOperations = Objects.requireNonNull(execOperations, "execOperations");
@@ -74,9 +75,8 @@ public final class CodegenProcess {
      * @throws GradleException if the launcher is below Java 21, or if its installation has no {@code javac} in
      *         {@code bin}, which marks a runtime without {@code jdk.compiler}
      */
-    public static CodegenProcess of(JavaLauncher launcher, Iterable<File> generatorClasspath,
+    public static CodegenProcess of(@NonNull JavaLauncher launcher, Iterable<File> generatorClasspath,
             ExecOperations execOperations) {
-        Objects.requireNonNull(launcher, "launcher");
         JavaInstallationMetadata metadata = launcher.getMetadata();
         int languageVersion = metadata.getLanguageVersion().asInt();
         if (languageVersion < MINIMUM_LANGUAGE_VERSION) {
@@ -105,9 +105,7 @@ public final class CodegenProcess {
      * @param requestFile the request the generator reads
      * @throws GradleException if the generator left a nonzero status, carrying what it reported
      */
-    public void run(String operation, Path requestFile) {
-        Objects.requireNonNull(operation, "operation");
-        Objects.requireNonNull(requestFile, "requestFile");
+    public void run(@NonNull String operation, @NonNull Path requestFile) {
         ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
         ExecResult result = execOperations.javaexec(spec -> {
             spec.setExecutable(executable);
@@ -138,8 +136,7 @@ public final class CodegenProcess {
      * @param request the values of the request
      * @throws UncheckedIOException if the file cannot be written
      */
-    public static void write(Path file, Request request) {
-        Objects.requireNonNull(file, "file");
+    public static void write(@NonNull Path file, Request request) {
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, encode(request), StandardCharsets.UTF_8);
@@ -156,8 +153,7 @@ public final class CodegenProcess {
      * @param request the values of the request
      * @return the JSON document, ending with a newline
      */
-    public static String encode(Request request) {
-        Objects.requireNonNull(request, "request");
+    public static String encode(@NonNull Request request) {
         StringBuilder json = new StringBuilder(512);
         json.append("{\n");
         member(json, "projectDirectory", request.projectDirectory()).append(",\n");
@@ -264,13 +260,12 @@ public final class CodegenProcess {
      * @param encoding the name of the charset javac reads the sources in, or {@code null} when the compilation
      *         names none, which the generator reads as UTF-8
      */
-    public record Request(String projectDirectory, List<String> sources, List<String> classpath,
+    public record Request(@NonNull String projectDirectory, List<String> sources, List<String> classpath,
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
             String compilationId, Integer release, String encoding) {
 
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
-            Objects.requireNonNull(projectDirectory, "projectDirectory");
             sources = List.copyOf(Objects.requireNonNull(sources, "sources"));
             classpath = List.copyOf(Objects.requireNonNull(classpath, "classpath"));
             Objects.requireNonNull(sourcesOutput, "sourcesOutput");

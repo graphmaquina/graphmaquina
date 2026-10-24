@@ -1,6 +1,6 @@
 package io.github.graphmaquina.test.probe;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * One entry into a probe's callback, as the shared {@link CallTrace} saw it. The trace records the moment the
@@ -12,10 +12,8 @@ import java.util.Objects;
  * @param call what the probe recorded for this invocation: an {@link ActionCall}, a {@link GuardCall} or,
  *        for a hook, the entity it was handed
  */
-public record TraceEvent(long sequence, String name, Object call) {
+public record TraceEvent(long sequence, @NonNull String name, @NonNull Object call) {
 
     public TraceEvent {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(call, "call");
     }
 }

@@ -49,9 +49,9 @@ class CallFailureFlowsTest {
         FlowView flow = new FrozenFlow(Optional.of(doc), Map.of(BATCH, "b-1"));
         CallFailureFlows.attach(failure, flow);
         assertSame(flow, failure.flow());
-        assertEquals("failure", assertThrows(NullPointerException.class,
+        assertEquals("failure is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> CallFailureFlows.attach(null, flow)).getMessage());
-        assertEquals("flow", assertThrows(NullPointerException.class,
+        assertEquals("flow is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> CallFailureFlows.attach(failure, null)).getMessage());
         assertSame(flow, failure.flow());
     }
@@ -65,7 +65,7 @@ class CallFailureFlowsTest {
         IllegalStateException refused = assertThrows(IllegalStateException.class, () -> CallFailureFlows.register(
                 (CallFailedException other, FlowView flow) -> replaced.add("attached")));
         assertEquals("already registered", refused.getMessage());
-        assertEquals("access", assertThrows(NullPointerException.class,
+        assertEquals("access is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> CallFailureFlows.register(null)).getMessage());
         FlowView flow = new FrozenFlow(Optional.of(doc), Map.of(BATCH, "b-1"));
         CallFailureFlows.attach(failure, flow);

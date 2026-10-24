@@ -3,8 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Failed}, obtained from {@link
@@ -38,15 +38,13 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
      * The destination of the edge that failed, which the entity did not reach through that edge:
      * {@link #movedTo(Enum)} reads where the recovery edge landed instead.
      */
-    public FailedOutcomeAssert<E, S, T> hasTarget(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasTarget(@NonNull S expected) {
         Checks.equal(context, "target", expected, failed.to());
         return this;
     }
 
     /** The identifier of the recovery edge the engine resolved from the failed edge's origin. */
-    public FailedOutcomeAssert<E, S, T> hasFailureTransition(T expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasFailureTransition(@NonNull T expected) {
         Checks.equal(context, "failure transition", expected, failed.failureTransition());
         return this;
     }
@@ -58,8 +56,7 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
      * @param expected the failure kind the failure must carry
      * @return this view
      */
-    public FailedOutcomeAssert<E, S, T> hasFailureKind(Class<? extends FailureKind> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasFailureKind(@NonNull Class<? extends FailureKind> expected) {
         Checks.same(context, "failure kind", expected, failed.failureKind().orElse(null));
         return this;
     }
@@ -74,21 +71,18 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
      * The state the recovery edge landed on: committed when a root call returned this outcome, and written only if
      * its root commits when a cascade did.
      */
-    public FailedOutcomeAssert<E, S, T> movedTo(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> movedTo(@NonNull S expected) {
         Checks.equal(context, "moved to", expected, failed.movedTo());
         return this;
     }
 
-    public FailedOutcomeAssert<E, S, T> hasReason(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasReason(@NonNull String expected) {
         Checks.equal(context, "reason", expected, failed.reason());
         return this;
     }
 
     /** Satisfied by any cause the type accepts, subclasses included; a failure without a cause never does. */
-    public FailedOutcomeAssert<E, S, T> hasCause(Class<? extends Throwable> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasCause(@NonNull Class<? extends Throwable> expected) {
         Optional<Throwable> cause = failed.cause();
         if (cause.isEmpty() || !expected.isInstance(cause.get())) {
             Checks.fail(context, "cause", expected, cause.orElse(null));
@@ -97,8 +91,7 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /** Compares by reference, so a distinct throwable of the same type does not satisfy it. */
-    public FailedOutcomeAssert<E, S, T> hasCauseSameAs(Throwable expected) {
-        Objects.requireNonNull(expected, "expected");
+    public FailedOutcomeAssert<E, S, T> hasCauseSameAs(@NonNull Throwable expected) {
         Checks.same(context, "cause", expected, failed.cause().orElse(null));
         return this;
     }

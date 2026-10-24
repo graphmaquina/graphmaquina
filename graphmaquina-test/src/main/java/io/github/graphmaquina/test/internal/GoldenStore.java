@@ -21,6 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
+import lombok.NonNull;
 
 /**
  * The two modes of a golden. Read mode compares the expected text of a class-path resource, found through the
@@ -246,8 +247,7 @@ public final class GoldenStore {
      * never be steered out of its source root. A caller that guards a null subject validates the name first,
      * because a malformed name is an error of the calling test either way.
      */
-    public static void validateResource(String resource) {
-        Objects.requireNonNull(resource, "resource");
+    public static void validateResource(@NonNull String resource) {
         if (resource.isEmpty()) {
             throw new IllegalArgumentException("the resource name is empty");
         }

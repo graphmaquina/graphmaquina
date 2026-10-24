@@ -16,7 +16,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
@@ -40,6 +39,7 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
+import lombok.NonNull;
 
 /**
  * Materializes classpath headers into the same declaration model as source headers, keeping generic owner
@@ -100,9 +100,7 @@ final class ClasspathDeclarations implements AutoCloseable {
      * an older release is a JDK type here exactly when it is one for javac; {@code encoding} is the one the
      * original sources are read in, although this task reads none.
      */
-    static ClasspathDeclarations open(List<Path> classpath, int release, Charset encoding) {
-        Objects.requireNonNull(classpath, "classpath");
-        Objects.requireNonNull(encoding, "encoding");
+    static ClasspathDeclarations open(@NonNull List<Path> classpath, int release, @NonNull Charset encoding) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding);

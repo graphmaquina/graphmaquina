@@ -14,11 +14,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import lombok.NonNull;
 
 /**
  * The headers the generator can see: every type declared by the original sources plus every type the
@@ -72,9 +72,8 @@ public final class DeclarationIndex implements AutoCloseable {
      * Reads every declaration of {@code units} and opens the classpath headers they resolve against, at the
      * {@code release} and in the {@code encoding} of the compilation the units belong to.
      */
-    static DeclarationIndex open(List<SourceUnit> units, List<Path> classpath, int release, Charset encoding) {
-        Objects.requireNonNull(units, "units");
-        Objects.requireNonNull(classpath, "classpath");
+    static DeclarationIndex open(@NonNull List<SourceUnit> units, @NonNull List<Path> classpath, int release,
+            Charset encoding) {
         ClasspathDeclarations declarations = ClasspathDeclarations.open(classpath, release, encoding);
         try {
             Map<String, TypeHeader> sources = new HashMap<>();
@@ -111,8 +110,7 @@ public final class DeclarationIndex implements AutoCloseable {
      * names a package, and otherwise a type of the unnamed package. Either is a source when one declares it, or else
      * the classpath's.
      */
-    public Optional<TypeHeader> find(String canonicalName) {
-        Objects.requireNonNull(canonicalName, "canonicalName");
+    public Optional<TypeHeader> find(@NonNull String canonicalName) {
         return declared(canonicalName, false).or(() -> declared(canonicalName, true));
     }
 
@@ -134,9 +132,7 @@ public final class DeclarationIndex implements AutoCloseable {
      * import only offers the types it can access, and a name that two imports offer at once is reported as
      * {@code SG601} instead of being chosen by order.
      */
-    public Optional<TypeHeader> resolve(TypeHeader context, String spelledName) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(spelledName, "spelledName");
+    public Optional<TypeHeader> resolve(@NonNull TypeHeader context, @NonNull String spelledName) {
         return lookup(context, spelledName, false, new HashSet<>());
     }
 
@@ -146,9 +142,7 @@ public final class DeclarationIndex implements AutoCloseable {
      * the member types the declaration declares or inherits are not visible (JLS 6.3), so only its enclosing
      * declarations contribute member types. Its own type parameters were already bound when it was read.
      */
-    Optional<TypeHeader> resolveInHeader(TypeHeader declaration, String spelledName) {
-        Objects.requireNonNull(declaration, "declaration");
-        Objects.requireNonNull(spelledName, "spelledName");
+    Optional<TypeHeader> resolveInHeader(@NonNull TypeHeader declaration, @NonNull String spelledName) {
         return lookup(declaration, spelledName, true, new HashSet<>());
     }
 
@@ -159,16 +153,12 @@ public final class DeclarationIndex implements AutoCloseable {
      * back to an owner an enclosing call is still computing; that owner is taken raw there, so the run ends and
      * javac gets to report the cycle.
      */
-    public TypeUse canonicalize(TypeHeader context, TypeUse use) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(use, "use");
+    public TypeUse canonicalize(@NonNull TypeHeader context, @NonNull TypeUse use) {
         return canonicalize(context, use, false, new HashSet<>());
     }
 
     /** {@link #canonicalize} for a use the header of {@code declaration} spells, read as {@link #resolveInHeader}. */
-    TypeUse canonicalizeInHeader(TypeHeader declaration, TypeUse use) {
-        Objects.requireNonNull(declaration, "declaration");
-        Objects.requireNonNull(use, "use");
+    TypeUse canonicalizeInHeader(@NonNull TypeHeader declaration, @NonNull TypeUse use) {
         return canonicalize(declaration, use, true, new HashSet<>());
     }
 
@@ -340,9 +330,7 @@ public final class DeclarationIndex implements AutoCloseable {
     }
 
     /** Applies {@code environment} to every type variable of {@code use}, owners and arguments included. */
-    public TypeUse substitute(TypeUse use, Map<TypeParameterKey, TypeUse> environment) {
-        Objects.requireNonNull(use, "use");
-        Objects.requireNonNull(environment, "environment");
+    public TypeUse substitute(@NonNull TypeUse use, @NonNull Map<TypeParameterKey, TypeUse> environment) {
         return switch (use) {
             case TypeUse.Variable variable -> environment.getOrDefault(variable.key(), variable);
             case TypeUse.Declared declared -> {
@@ -372,10 +360,8 @@ public final class DeclarationIndex implements AutoCloseable {
      *     and {@code annotationType} itself is not on the classpath either, which means the generator cannot
      *     recognize any marker: graphmaquina-core is missing from the classpath of the request
      */
-    public boolean marks(TypeHeader context, TypeHeader.Marker marker, String annotationType) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(marker, "marker");
-        Objects.requireNonNull(annotationType, "annotationType");
+    public boolean marks(@NonNull TypeHeader context, @NonNull TypeHeader.Marker marker,
+            @NonNull String annotationType) {
         return marks(context, marker, annotationType, false);
     }
 
@@ -383,10 +369,8 @@ public final class DeclarationIndex implements AutoCloseable {
      * {@link #marks} for a marker written on {@code declaration} itself, which javac resolves as
      * {@link #resolveInHeader} does: a member type of the declaration named like the marker never hides it.
      */
-    boolean marksInHeader(TypeHeader declaration, TypeHeader.Marker marker, String annotationType) {
-        Objects.requireNonNull(declaration, "declaration");
-        Objects.requireNonNull(marker, "marker");
-        Objects.requireNonNull(annotationType, "annotationType");
+    boolean marksInHeader(@NonNull TypeHeader declaration, @NonNull TypeHeader.Marker marker,
+            @NonNull String annotationType) {
         return marks(declaration, marker, annotationType, true);
     }
 
@@ -401,10 +385,8 @@ public final class DeclarationIndex implements AutoCloseable {
      * only spare the user a marker that would generate or export nothing, so a marker the generator cannot read is
      * let through rather than refused.
      */
-    boolean marksInLocalClass(TypeHeader declaration, TypeHeader.LocalMarker local, String annotationType) {
-        Objects.requireNonNull(declaration, "declaration");
-        Objects.requireNonNull(local, "local");
-        Objects.requireNonNull(annotationType, "annotationType");
+    boolean marksInLocalClass(@NonNull TypeHeader declaration, @NonNull TypeHeader.LocalMarker local,
+            @NonNull String annotationType) {
         if (!marks(declaration, local.marker(), annotationType, false)) {
             return false;
         }
@@ -589,9 +571,7 @@ public final class DeclarationIndex implements AutoCloseable {
      * declaration from {@code type} outwards may be private, and each one that is not public must belong to
      * {@code packageName} (JLS 6.6.1); the reason names the first declaration that fails.
      */
-    Optional<String> inaccessibility(TypeHeader type, String packageName) {
-        Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(packageName, "packageName");
+    Optional<String> inaccessibility(@NonNull TypeHeader type, @NonNull String packageName) {
         for (Optional<TypeHeader> current = Optional.of(type); current.isPresent();
                 current = enclosingDeclaration(current.get())) {
             TypeHeader declaration = current.get();
@@ -618,11 +598,8 @@ public final class DeclarationIndex implements AutoCloseable {
      * @param names qualified names that each start with a package
      * @throws CodegenException {@code SG603} naming the type and {@code unit}, anchored at {@code origin}
      */
-    void requireUnobscured(String packageName, String unit, List<String> names, SourceLocation origin) {
-        Objects.requireNonNull(packageName, "packageName");
-        Objects.requireNonNull(unit, "unit");
-        Objects.requireNonNull(names, "names");
-        Objects.requireNonNull(origin, "origin");
+    void requireUnobscured(@NonNull String packageName, @NonNull String unit, @NonNull List<String> names,
+            @NonNull SourceLocation origin) {
         for (String name : names) {
             String segment = name.substring(0, name.indexOf('.'));
             Optional<TypeHeader> obscurer = find(packageName.isEmpty() ? segment : packageName + '.' + segment)

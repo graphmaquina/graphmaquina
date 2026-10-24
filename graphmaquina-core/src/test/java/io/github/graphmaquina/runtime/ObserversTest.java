@@ -23,9 +23,9 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import lombok.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,9 +43,9 @@ class ObserversTest {
         private final boolean checking;
         private final Throwable failure;
 
-        BrokenLogger(boolean checking, Throwable failure) {
+        BrokenLogger(boolean checking, @NonNull Throwable failure) {
             this.checking = checking;
-            this.failure = Objects.requireNonNull(failure, "failure");
+            this.failure = failure;
         }
 
         private void fail() {

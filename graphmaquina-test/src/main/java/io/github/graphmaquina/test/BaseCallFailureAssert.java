@@ -5,8 +5,8 @@ import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Expectations every failure of a call shares, whatever its kind: where the call was, how far it got in writing
@@ -26,22 +26,19 @@ public abstract class BaseCallFailureAssert<SELF extends BaseCallFailureAssert<S
     }
 
     /** The phase the failure reports, which is where the call was when it failed. */
-    public SELF hasPhase(CallPhase expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasPhase(@NonNull CallPhase expected) {
         Checks.equal(context, "phase", expected, failure.phase());
         return self();
     }
 
     /** How far the failure reports the call got in writing states through the setters. */
-    public SELF hasStatesWritten(StatesWritten expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasStatesWritten(@NonNull StatesWritten expected) {
         Checks.equal(context, "states written", expected, failure.statesWritten());
         return self();
     }
 
     /** Compared by reference: the call is the instance that the call's observers, if any, were notified with. */
-    public SELF hasCallSameAs(MachineCall expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasCallSameAs(@NonNull MachineCall expected) {
         Checks.same(context, "call", expected, failure.call());
         return self();
     }

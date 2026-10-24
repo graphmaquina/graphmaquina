@@ -7,7 +7,7 @@ import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * A call that failed, as the call itself classifies it. Every exception a call throws is an Error, which propagates
@@ -39,14 +39,14 @@ public abstract class CallFailedException extends StateMachineException {
      */
     private FlowView flow = FlowView.empty();
 
-    CallFailedException(MachineCall call, String message) {
+    CallFailedException(@NonNull MachineCall call, String message) {
         super(message);
-        this.call = Objects.requireNonNull(call, "call");
+        this.call = call;
     }
 
-    CallFailedException(MachineCall call, String message, Throwable cause) {
+    CallFailedException(@NonNull MachineCall call, String message, Throwable cause) {
         super(message, cause);
-        this.call = Objects.requireNonNull(call, "call");
+        this.call = call;
     }
 
     /** The call that failed: one instance per call, the one its observers, if any, were notified with. */

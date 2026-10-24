@@ -8,6 +8,7 @@ import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import java.util.List;
 import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * An after-commit hook threw a throwable that is not an Error, a checked exception included; an Error propagates
@@ -87,9 +88,7 @@ public final class AfterCommitException extends CallFailedException {
         return starts;
     }
 
-    private static String describe(MachineCall call, String hook) {
-        Objects.requireNonNull(call, "call");
-        Objects.requireNonNull(hook, "hook");
+    private static String describe(@NonNull MachineCall call, @NonNull String hook) {
         return "the states of " + call + " are already written, but the hook '" + hook + "' failed";
     }
 }

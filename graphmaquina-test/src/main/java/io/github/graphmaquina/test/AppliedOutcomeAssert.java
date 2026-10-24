@@ -2,7 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Applied}, obtained from {@link
@@ -33,8 +33,7 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
      * The destination of the edge, committed when a root call returned this outcome and written only if its root
      * commits when a cascade did. It says nothing about where the entity is read to be now.
      */
-    public AppliedOutcomeAssert<E, S, T> movedTo(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public AppliedOutcomeAssert<E, S, T> movedTo(@NonNull S expected) {
         Checks.equal(context, "moved to", expected, applied.to());
         return this;
     }

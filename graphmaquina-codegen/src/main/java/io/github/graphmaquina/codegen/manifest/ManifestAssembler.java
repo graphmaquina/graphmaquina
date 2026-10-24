@@ -6,7 +6,7 @@ import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Assembles the manifest of one compilation: the index this run produces, the indexes its classpath publishes,
@@ -26,12 +26,8 @@ public final class ManifestAssembler {
     }
 
     /** The manifest of {@code request}, describing {@code model}, {@code sources} and {@code dependencies}. */
-    public static CompileManifest assemble(GenerationRequest request, GenerationModel model,
-            List<GeneratedSource> sources, List<ExportIndex> dependencies) {
-        Objects.requireNonNull(request, "request");
-        Objects.requireNonNull(model, "model");
-        Objects.requireNonNull(sources, "sources");
-        Objects.requireNonNull(dependencies, "dependencies");
+    public static CompileManifest assemble(@NonNull GenerationRequest request, @NonNull GenerationModel model,
+            @NonNull List<GeneratedSource> sources, @NonNull List<ExportIndex> dependencies) {
         String toolVersion = ToolVersion.current();
         ExportIndex local = new ExportIndex(SCHEMA_VERSION, toolVersion, request.compilationId(), model,
             ApiEmitter.annotationTypes(model));

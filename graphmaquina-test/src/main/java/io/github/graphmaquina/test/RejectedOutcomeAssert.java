@@ -3,8 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Rejected}, obtained from {@link
@@ -40,8 +40,7 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
     }
 
     /** The edge existed and a guard rejected it, which is what carries a guard name. */
-    public RejectedOutcomeAssert<E, S, T> isRejectedByGuardNamed(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public RejectedOutcomeAssert<E, S, T> isRejectedByGuardNamed(@NonNull String expected) {
         Checks.equal(context, "kind", RejectionKind.GUARD, rejected.kind());
         Checks.equal(context, "guard", Optional.of(expected), rejected.guard());
         return this;
@@ -62,8 +61,7 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
         return this;
     }
 
-    public RejectedOutcomeAssert<E, S, T> hasReason(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public RejectedOutcomeAssert<E, S, T> hasReason(@NonNull String expected) {
         Checks.equal(context, "reason", expected, rejected.reason());
         return this;
     }

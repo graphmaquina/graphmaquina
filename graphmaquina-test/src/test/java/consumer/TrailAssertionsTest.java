@@ -257,15 +257,15 @@ class TrailAssertionsTest {
     void aNullArgumentIsAnArgumentErrorEvenWhenTheSubjectIsNull() {
         Class<? extends FlowEntry>[] noTypes = null;
         for (TrailAssert view : List.of(TrailAssert.assertThat(shipping()), TrailAssert.assertThat(null))) {
-            assertEquals("types", assertThrows(NullPointerException.class,
+            assertEquals("types is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasEntryTypesExactly(noTypes)).getMessage());
             assertThrows(NullPointerException.class, () -> view.hasEntryTypesExactly(FlowEntry.Hop.class, null));
-            assertEquals("transitions", assertThrows(NullPointerException.class,
+            assertEquals("transitions is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.hasHopsExactly((Enum<?>[]) null)).getMessage());
             assertThrows(NullPointerException.class, () -> view.hasHopsExactly(Move.SHIP, null));
-            assertEquals("kind", assertThrows(NullPointerException.class,
+            assertEquals("kind is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.endsWithRejection(null)).getMessage());
-            assertEquals("phase", assertThrows(NullPointerException.class,
+            assertEquals("phase is marked non-null but is null", assertThrows(NullPointerException.class,
                     () -> view.endsWithFailure(null)).getMessage());
         }
     }

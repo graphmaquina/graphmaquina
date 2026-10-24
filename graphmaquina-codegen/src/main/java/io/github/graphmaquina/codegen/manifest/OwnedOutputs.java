@@ -1,7 +1,7 @@
 package io.github.graphmaquina.codegen.manifest;
 
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * The inventory of outputs one generation/compilation cycle owns: the sources the annotation processor
@@ -24,14 +24,10 @@ import java.util.Objects;
  * exception, and the class files it attributes, by reading them, to the types whose sources the inventories list and
  * the types the processor inventory names; any other file is never touched, whatever its name looks like.</p>
  */
-public record OwnedOutputs(int schemaVersion, List<String> sources,
-        List<String> binaries, List<String> resources, List<String> excludedBinaries) {
+public record OwnedOutputs(int schemaVersion, @NonNull List<String> sources,
+        @NonNull List<String> binaries, @NonNull List<String> resources, @NonNull List<String> excludedBinaries) {
 
     public OwnedOutputs {
-        Objects.requireNonNull(sources, "sources");
-        Objects.requireNonNull(binaries, "binaries");
-        Objects.requireNonNull(resources, "resources");
-        Objects.requireNonNull(excludedBinaries, "excludedBinaries");
         sources = List.copyOf(sources);
         binaries = List.copyOf(binaries);
         resources = List.copyOf(resources);

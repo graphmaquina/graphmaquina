@@ -4,7 +4,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * The invocations one probe recorded, in the order it received them. A probe owns exactly one of these and
@@ -24,8 +24,8 @@ public final class ProbeCalls<C> {
     private final String probeName;
     private final List<C> calls = new ArrayList<>();
 
-    ProbeCalls(String probeName) {
-        this.probeName = Objects.requireNonNull(probeName, "probeName");
+    ProbeCalls(@NonNull String probeName) {
+        this.probeName = probeName;
     }
 
     /** The calls recorded so far, copied, so a later call does not change a list already handed out. */
@@ -56,8 +56,7 @@ public final class ProbeCalls<C> {
         return recorded.get(0);
     }
 
-    void record(C call) {
-        Objects.requireNonNull(call, "call");
+    void record(@NonNull C call) {
         synchronized (calls) {
             calls.add(call);
         }

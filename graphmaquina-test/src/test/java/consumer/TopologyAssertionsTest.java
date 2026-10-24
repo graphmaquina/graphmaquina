@@ -221,29 +221,29 @@ class TopologyAssertionsTest {
     @Test
     void aNullRequiredArgumentIsAnArgumentErrorNotAnAssertionFailure() {
         TopologyAssert<State> topology = topology();
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasNodesExactly(null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasSuccessorsExactly(null, Set.of())).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasSuccessorsExactly(State.NEW, null)).getMessage());
-        assertEquals("origin", assertThrows(NullPointerException.class,
+        assertEquals("origin is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasReachableExactly(null, Set.of())).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasReachableExactly(State.NEW, null)).getMessage());
-        assertEquals("path", assertThrows(NullPointerException.class,
+        assertEquals("path is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasPath(null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasNoPath(null, State.NEW)).getMessage());
-        assertEquals("to", assertThrows(NullPointerException.class,
+        assertEquals("to is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasNoPath(State.NEW, null)).getMessage());
-        assertEquals("from", assertThrows(NullPointerException.class,
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasShortestPath(null, State.NEW, List.of(State.NEW))).getMessage());
-        assertEquals("to", assertThrows(NullPointerException.class,
+        assertEquals("to is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasShortestPath(State.NEW, null, List.of(State.NEW))).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasShortestPath(State.NEW, State.DONE, null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> topology.hasCyclesExactly(null)).getMessage());
     }
 

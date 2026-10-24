@@ -6,7 +6,7 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over the completed calls a {@link TransitionRecorder} recorded, obtained from
@@ -57,9 +57,7 @@ public final class RecordedTransitionsAssert {
 
     /** Selects by key and by entity identity; an entity with no calls yields an empty view, not a failure. */
     public <E, S extends Enum<S>, T extends Enum<T>> OutcomeSequenceAssert<E, S, T> forEntity(
-            MachineKey<E, S, T> key, E entity) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entity, "entity");
+            @NonNull MachineKey<E, S, T> key, @NonNull E entity) {
         List<Outcome<E, S, T>> selected = actual.stream()
                 .filter(recorded -> recorded.key().equals(key) && recorded.outcome().entity() == entity)
                 .map(recorded -> CheckedTypes.outcome(key, recorded.outcome()))

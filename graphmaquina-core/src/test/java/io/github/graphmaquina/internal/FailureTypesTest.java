@@ -96,7 +96,7 @@ class FailureTypesTest {
         assertSame(MemberKind.class, FailureTypes.requireValidKind(MemberKind.class));
         NullPointerException missing = assertThrows(NullPointerException.class,
                 () -> FailureTypes.requireValidKind(null));
-        assertEquals("kind", missing.getMessage());
+        assertEquals("kind is marked non-null but is null", missing.getMessage());
         IllegalArgumentException open = assertThrows(IllegalArgumentException.class,
                 () -> FailureTypes.requireValidKind(OpenKind.class));
         assertEquals("io.github.graphmaquina.internal.FailureTypesTest$OpenKind is not a failure kind; a failure kind"

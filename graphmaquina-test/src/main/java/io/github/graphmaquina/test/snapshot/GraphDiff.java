@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import lombok.NonNull;
 
 /**
  * The difference between two snapshots, path by path, in canonical path order. A path missing from one
@@ -75,12 +76,9 @@ public final class GraphDiff {
      * @param expected the value of the first snapshot, empty when it does not carry the path
      * @param actual the value of the second snapshot, empty when it does not carry the path
      */
-    public record Change(String path, Optional<String> expected, Optional<String> actual) {
+    public record Change(@NonNull String path, @NonNull Optional<String> expected, @NonNull Optional<String> actual) {
 
         public Change {
-            Objects.requireNonNull(path, "path");
-            Objects.requireNonNull(expected, "expected");
-            Objects.requireNonNull(actual, "actual");
         }
     }
 }

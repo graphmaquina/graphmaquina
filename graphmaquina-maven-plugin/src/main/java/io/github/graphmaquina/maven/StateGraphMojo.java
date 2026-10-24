@@ -1,5 +1,6 @@
 package io.github.graphmaquina.maven;
 
+import lombok.NonNull;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
@@ -724,8 +725,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * @param request the values of the request
      * @return the JSON document, ending with a newline
      */
-    static String encode(Request request) {
-        Objects.requireNonNull(request, "request");
+    static String encode(@NonNull Request request) {
         StringBuilder json = new StringBuilder(512);
         json.append("{\n");
         member(json, "projectDirectory", request.projectDirectory()).append(",\n");
@@ -812,7 +812,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * @param encoding the name of the charset javac reads the sources in, or {@code null} when the build names
      *     none, which the generator reads as UTF-8
      */
-    public record Request(String projectDirectory, List<String> sources, List<String> classpath,
+    public record Request(@NonNull String projectDirectory, List<String> sources, List<String> classpath,
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
             String compilationId, Integer release, String encoding) {
 
@@ -827,7 +827,6 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
-            Objects.requireNonNull(projectDirectory, "projectDirectory");
             sources = List.copyOf(Objects.requireNonNull(sources, "sources"));
             classpath = List.copyOf(Objects.requireNonNull(classpath, "classpath"));
             Objects.requireNonNull(sourcesOutput, "sourcesOutput");

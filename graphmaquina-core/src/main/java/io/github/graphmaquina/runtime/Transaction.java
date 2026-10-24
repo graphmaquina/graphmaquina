@@ -17,9 +17,9 @@ import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import lombok.NonNull;
 
 /**
  * Engine of a root transaction: the state of its call, which lives here and in the UnitOfWork, the phase of the call
@@ -64,16 +64,17 @@ final class Transaction {
      */
     boolean condemned;
 
-    Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
-                Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
-        this.registry = Objects.requireNonNull(registry, "registry");
-        this.uow = Objects.requireNonNull(uow, "uow");
-        this.callKey = Objects.requireNonNull(callKey, "callKey");
-        this.callEntity = Objects.requireNonNull(callEntity, "callEntity");
-        this.requested = Objects.requireNonNull(requested, "requested");
+    Transaction(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
+                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
+                @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
+        this.registry = registry;
+        this.uow = uow;
+        this.callKey = callKey;
+        this.callEntity = callEntity;
+        this.requested = requested;
         this.reaction = reaction;
-        this.call = Objects.requireNonNull(call, "call");
-        this.log = Objects.requireNonNull(log, "log");
+        this.call = call;
+        this.log = log;
     }
 
     /**

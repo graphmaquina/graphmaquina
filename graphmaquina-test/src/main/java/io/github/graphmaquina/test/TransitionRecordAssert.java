@@ -3,8 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over a single {@link TransitionRecord}, obtained from
@@ -27,34 +27,29 @@ public final class TransitionRecordAssert<E, S extends Enum<S>, T extends Enum<T
         this.actual = actual;
     }
 
-    public TransitionRecordAssert<E, S, T> from(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordAssert<E, S, T> from(@NonNull S expected) {
         Checks.equal(context, "from", expected, actual.from());
         return this;
     }
 
     /** The identifier of the edge that ran, which is what selected it. */
-    public TransitionRecordAssert<E, S, T> hasTransition(T expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordAssert<E, S, T> hasTransition(@NonNull T expected) {
         Checks.equal(context, "transition", expected, actual.transition());
         return this;
     }
 
-    public TransitionRecordAssert<E, S, T> to(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordAssert<E, S, T> to(@NonNull S expected) {
         Checks.equal(context, "to", expected, actual.to());
         return this;
     }
 
-    public TransitionRecordAssert<E, S, T> hasKind(TransitionKind expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordAssert<E, S, T> hasKind(@NonNull TransitionKind expected) {
         Checks.equal(context, "kind", expected, actual.kind());
         return this;
     }
 
     /** The runtime name of the action that ran; a hop that ran none never satisfies it. */
-    public TransitionRecordAssert<E, S, T> hasActionNamed(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public TransitionRecordAssert<E, S, T> hasActionNamed(@NonNull String expected) {
         Checks.equal(context, "action", Optional.of(expected), actual.action());
         return this;
     }

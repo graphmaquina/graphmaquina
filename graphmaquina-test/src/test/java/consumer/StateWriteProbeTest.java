@@ -223,13 +223,17 @@ class StateWriteProbeTest {
     @Test
     void aRecordedWriteRejectsEveryNullComponent() {
         Entity entity = new Entity("e", State.NEW);
-        assertEquals("entity", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("entity is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 null, State.READY, WriteStatus.RETURNED, Optional.empty())).getMessage());
-        assertEquals("requested", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("requested is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, null, WriteStatus.RETURNED, Optional.empty())).getMessage());
-        assertEquals("status", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("status is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, State.READY, null, Optional.empty())).getMessage());
-        assertEquals("cause", assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
+        assertEquals("cause is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> new StateWrite<Entity, State>(
                 entity, State.READY, WriteStatus.RETURNED, null)).getMessage());
     }
 

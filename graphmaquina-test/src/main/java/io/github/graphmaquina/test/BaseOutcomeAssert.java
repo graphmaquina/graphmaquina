@@ -4,9 +4,9 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import lombok.NonNull;
 
 /**
  * Expectations every {@link Outcome} variant shares, returning the concrete view so that a chain keeps
@@ -42,16 +42,14 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     protected abstract SELF self();
 
     /** The state the transition started from, which every variant reports. */
-    public SELF from(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF from(@NonNull S expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "from", expected, actual);
         Checks.equal(context, "from", expected, outcome.from());
         return self();
     }
 
     /** The identifier the caller asked for, whether or not the engine ever ran its edge. */
-    public SELF requestedTransition(T expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF requestedTransition(@NonNull T expected) {
         Optional<T> wanted = Optional.of(expected);
         Outcome<E, S, T> outcome = Checks.subject(context, "requested transition", wanted, actual);
         Checks.equal(context, "requested transition", wanted, outcome.requestedTransition());
@@ -70,8 +68,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      * The state the outcome itself records: the destination for an applied one, the state the
      * failure route landed on for a failed one, and the origin for a rejected or ignored one.
      */
-    public SELF hasRecordedState(S expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasRecordedState(@NonNull S expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "recorded state", expected, actual);
         Checks.equal(context, "recorded state", expected, outcome.recordedState());
         return self();
@@ -81,9 +78,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      * Reads the entity through {@code getter} once, when this expectation runs rather than when the view
      * was built, so the answer is the entity's state now and not a value captured earlier.
      */
-    public SELF hasEntityState(Function<? super E, ? extends S> getter, S expected) {
-        Objects.requireNonNull(getter, "getter");
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasEntityState(@NonNull Function<? super E, ? extends S> getter, @NonNull S expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "entity state", expected, actual);
         S observed = getter.apply(outcome.entity());
         Checks.equal(context, "entity state", expected, observed);
@@ -91,24 +86,21 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     }
 
     /** Entity selection is by reference, so a distinct instance that compares equal does not satisfy it. */
-    public SELF hasEntitySameAs(E expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasEntitySameAs(@NonNull E expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "entity", expected, actual);
         Checks.same(context, "entity", expected, outcome.entity());
         return self();
     }
 
     /** The status this outcome reports, which every variant carries. */
-    public SELF hasStatus(OutcomeStatus expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasStatus(@NonNull OutcomeStatus expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "status", expected, actual);
         Checks.equal(context, "status", expected, outcome.status());
         return self();
     }
 
     /** The code this outcome reports: its status refined by the kind of rejection or why nothing was selected. */
-    public SELF hasCode(OutcomeCode expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasCode(@NonNull OutcomeCode expected) {
         Outcome<E, S, T> outcome = Checks.subject(context, "code", expected, actual);
         Checks.equal(context, "code", expected, outcome.code());
         return self();
@@ -118,8 +110,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      * The reason given for this outcome, compared by value: the graph author's, or the library's fixed text for a
      * terminal state that declares no policy and for a detached sub-machine or a reserved exit.
      */
-    public SELF hasExplanation(String expected) {
-        Objects.requireNonNull(expected, "expected");
+    public SELF hasExplanation(@NonNull String expected) {
         Optional<String> wanted = Optional.of(expected);
         Outcome<E, S, T> outcome = Checks.subject(context, "explanation", wanted, actual);
         Checks.equal(context, "explanation", wanted, outcome.explanation());

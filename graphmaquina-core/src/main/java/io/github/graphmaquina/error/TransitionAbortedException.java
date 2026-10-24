@@ -6,9 +6,9 @@ import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatesWritten;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.Getter;
+import lombok.NonNull;
 
 /**
  * ABORT: nothing moved. When this exception ends the call, the unit of work, if one was started, was discarded, and
@@ -101,17 +101,14 @@ public class TransitionAbortedException extends CallFailedException {
 
     public List<String> cascadePath() { return details.cascadePath(); }
 
-    private static CallPhase beforeTheCommit(CallPhase phase) {
-        Objects.requireNonNull(phase, "phase");
+    private static CallPhase beforeTheCommit(@NonNull CallPhase phase) {
         if (phase != CallPhase.RESOLVE && phase != CallPhase.GUARD && phase != CallPhase.ACTION) {
             throw new IllegalArgumentException("an abort happens before the commit, not in " + phase);
         }
         return phase;
     }
 
-    private static String describe(AbortDetails details, String message) {
-        Objects.requireNonNull(details, "details");
-        Objects.requireNonNull(message, "message");
+    private static String describe(@NonNull AbortDetails details, @NonNull String message) {
         String path = details.cascadePath().isEmpty()
                 ? ""
                 : " [route " + String.join(" → ", details.cascadePath()) + "]";

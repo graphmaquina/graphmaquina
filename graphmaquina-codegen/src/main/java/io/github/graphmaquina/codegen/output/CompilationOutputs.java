@@ -18,12 +18,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
+import lombok.NonNull;
 
 /**
  * The two steps a build runs around javac: {@code prepare} before it and {@code complete} after it succeeded.
@@ -118,8 +118,7 @@ public final class CompilationOutputs {
      * @throws IOException if the manifest, an inventory or a class file cannot be read, the pending inventory
      *     cannot be written, or a source or an output cannot be examined or removed
      */
-    public static void prepare(GenerationRequest request) throws IOException {
-        Objects.requireNonNull(request, "request");
+    public static void prepare(@NonNull GenerationRequest request) throws IOException {
         CompileManifest manifest = manifest(request, "prepare");
         Path work = Files.createDirectories(root(request.workDirectory()));
         Path classes = root(request.classesOutput());
@@ -170,8 +169,7 @@ public final class CompilationOutputs {
      * @throws IOException if the manifest, an inventory or a class file cannot be read, or an output cannot be
      *     examined, written or removed
      */
-    public static void complete(GenerationRequest request) throws IOException {
-        Objects.requireNonNull(request, "request");
+    public static void complete(@NonNull GenerationRequest request) throws IOException {
         CompileManifest manifest = manifest(request, "complete");
         Path work = root(request.workDirectory());
         Path classes = root(request.classesOutput());

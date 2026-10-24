@@ -18,11 +18,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import lombok.NonNull;
 
 /**
  * Discovers the members and properties the original sources export, one symbol per host and member name.
@@ -63,8 +63,7 @@ public final class ExportDeclarations {
      * own name, starts with the simple name of a type the host's package declares or of a public type of
      * {@code java.lang}: inside the container that type obscures the package.
      */
-    public static List<SymbolDescriptor> collect(DeclarationIndex index) {
-        Objects.requireNonNull(index, "index");
+    public static List<SymbolDescriptor> collect(@NonNull DeclarationIndex index) {
         List<TypeHeader> hosts = new ArrayList<>(index.sourceHeaders());
         hosts.sort(Comparator.comparing(TypeHeader::canonicalName));
         Map<String, TypeHeader> containers = new LinkedHashMap<>();

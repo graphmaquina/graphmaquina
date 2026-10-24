@@ -190,20 +190,20 @@ class StartAssertionsTest {
     @Test
     void aNullRequiredArgumentIsAnArgumentErrorNotAnAssertionFailure() {
         StartsAssert starts = StartsAssert.assertThat(List.of(start(OrderState.PAYING, 0)));
-        assertEquals("key", assertThrows(NullPointerException.class,
+        assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> starts.forChild(null, payment)).getMessage());
-        assertEquals("child", assertThrows(NullPointerException.class,
+        assertEquals("child is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> starts.forChild(Checkout.PAYMENTS, null)).getMessage());
         StartAssert<Payment, PaymentState, PaymentChange> view = single(start(OrderState.PAYING, 0));
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.startedAt(null)).getMessage());
-        assertEquals("expected", assertThrows(NullPointerException.class,
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.hadPrevious(null)).getMessage());
-        assertEquals("key", assertThrows(NullPointerException.class,
+        assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.byParent(null, order, OrderState.PAYING)).getMessage());
-        assertEquals("parent", assertThrows(NullPointerException.class,
+        assertEquals("parent is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.byParent(Checkout.ORDERS, null, OrderState.PAYING)).getMessage());
-        assertEquals("node", assertThrows(NullPointerException.class,
+        assertEquals("node is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> view.byParent(Checkout.ORDERS, order, null)).getMessage());
     }
 

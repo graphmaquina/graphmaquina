@@ -4,9 +4,9 @@ import io.github.graphmaquina.annotation.internal.SymbolKind;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * One generated symbol type: the host and member it names and, for a method family, every original member it
@@ -16,18 +16,11 @@ import java.util.Set;
  * roles the same way in every run; a hash set of enums does not, because its iteration order is salted per
  * JVM.</p>
  */
-public record SymbolDescriptor(String qualifiedName, String host, String member,
-        Set<SymbolKind> kinds, List<MemberDescriptor> candidates,
-        Optional<PropertyDescriptor> property, SourceLocation origin) {
+public record SymbolDescriptor(@NonNull String qualifiedName, @NonNull String host, @NonNull String member,
+        @NonNull Set<SymbolKind> kinds, @NonNull List<MemberDescriptor> candidates,
+        @NonNull Optional<PropertyDescriptor> property, @NonNull SourceLocation origin) {
 
     public SymbolDescriptor {
-        Objects.requireNonNull(qualifiedName, "qualifiedName");
-        Objects.requireNonNull(host, "host");
-        Objects.requireNonNull(member, "member");
-        Objects.requireNonNull(kinds, "kinds");
-        Objects.requireNonNull(candidates, "candidates");
-        Objects.requireNonNull(property, "property");
-        Objects.requireNonNull(origin, "origin");
         EnumSet<SymbolKind> ordered = EnumSet.noneOf(SymbolKind.class);
         ordered.addAll(kinds);
         kinds = Collections.unmodifiableSet(ordered);

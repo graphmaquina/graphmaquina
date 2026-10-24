@@ -7,7 +7,7 @@ import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what each kind
@@ -35,8 +35,7 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
      * {@link InterruptedException} is returned like any other exception, with the thread's interrupt status
      * set again.
      */
-    public static Throwable captureFailure(ThrowingRunnable operation) {
-        Objects.requireNonNull(operation, "operation");
+    public static Throwable captureFailure(@NonNull ThrowingRunnable operation) {
         try {
             operation.run();
         } catch (Exception failure) {

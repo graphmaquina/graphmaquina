@@ -19,11 +19,11 @@ import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import lombok.NonNull;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -43,10 +43,10 @@ class CascadeLogPoisonTest {
         private final List<Node> children;
         private State state = State.A;
 
-        Node(String name, boolean blocked, List<Node> children) {
-            this.name = Objects.requireNonNull(name, "name");
+        Node(@NonNull String name, boolean blocked, @NonNull List<Node> children) {
+            this.name = name;
             this.blocked = blocked;
-            this.children = Objects.requireNonNull(children, "children");
+            this.children = children;
         }
     }
 
@@ -58,9 +58,9 @@ class CascadeLogPoisonTest {
         private final String target;
         private final AssertionError fatal;
 
-        BreakingHandler(String target, AssertionError fatal) {
-            this.target = Objects.requireNonNull(target, "target");
-            this.fatal = Objects.requireNonNull(fatal, "fatal");
+        BreakingHandler(@NonNull String target, @NonNull AssertionError fatal) {
+            this.target = target;
+            this.fatal = fatal;
         }
 
         @Override public void publish(LogRecord record) {

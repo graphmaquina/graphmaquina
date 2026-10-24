@@ -1,6 +1,6 @@
 package io.github.graphmaquina.test;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Expected exit of a sub-machine: a terminal state of the child and the identifier of the parent it selects. A list
@@ -11,11 +11,9 @@ import java.util.Objects;
  * @param terminal a terminal state of the child
  * @param transition the identifier of the parent that the terminal state selects
  */
-public record ExitExpectation<Q extends Enum<Q>, T extends Enum<T>>(Q terminal, T transition) {
+public record ExitExpectation<Q extends Enum<Q>, T extends Enum<T>>(@NonNull Q terminal, @NonNull T transition) {
 
     public ExitExpectation {
-        Objects.requireNonNull(terminal, "terminal");
-        Objects.requireNonNull(transition, "transition");
     }
 
     /** The exit through which {@code terminal} leaves the bound state: {@code transition}. */

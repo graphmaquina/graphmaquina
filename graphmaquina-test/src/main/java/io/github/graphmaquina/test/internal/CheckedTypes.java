@@ -5,7 +5,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionRecord;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Narrows a wildcard record or outcome to the machine it belongs to. The engine publishes its hops as
@@ -21,9 +21,7 @@ public final class CheckedTypes {
     private CheckedTypes() { }
 
     public static <E, S extends Enum<S>, T extends Enum<T>> TransitionRecord<E, S, T> record(
-            MachineKey<E, S, T> key, TransitionRecord<?, ?, ?> record) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(record, "record");
+            @NonNull MachineKey<E, S, T> key, @NonNull TransitionRecord<?, ?, ?> record) {
         require("record", key.equals(record.key()), "key", key, record.key());
         require("record", key.entity().isInstance(record.entity()), "entity", key.entity(), record.entity());
         require("record", key.states().isInstance(record.from()) && key.states().isInstance(record.to()),
@@ -43,9 +41,7 @@ public final class CheckedTypes {
      * report at all, and the recovery identifier of a failed outcome.
      */
     public static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> outcome(
-            MachineKey<E, S, T> key, Outcome<?, ?, ?> outcome) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(outcome, "outcome");
+            @NonNull MachineKey<E, S, T> key, @NonNull Outcome<?, ?, ?> outcome) {
         require("outcome", key.entity().isInstance(outcome.entity()), "entity", key.entity(), outcome.entity());
         List<Enum<?>> states = statesOf(outcome);
         require("outcome", states.stream().allMatch(key.states()::isInstance), "states", key.states(), states);

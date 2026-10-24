@@ -8,9 +8,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /**
  * A flow that belongs to no call: the one the five-argument constructor of
@@ -30,8 +30,7 @@ public final class UnboundFlow implements FlowContext {
     public UnboundFlow() { }
 
     @Override
-    public <V> Optional<V> get(FlowKey<V> key) {
-        Objects.requireNonNull(key, "key");
+    public <V> Optional<V> get(@NonNull FlowKey<V> key) {
         return values.containsKey(key) ? Optional.of(key.type().cast(values.get(key))) : Optional.empty();
     }
 
@@ -46,8 +45,7 @@ public final class UnboundFlow implements FlowContext {
     }
 
     @Override
-    public <E> Optional<E> entity(Class<E> type) {
-        Objects.requireNonNull(type, "type");
+    public <E> Optional<E> entity(@NonNull Class<E> type) {
         if (type.isPrimitive()) {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
@@ -61,17 +59,14 @@ public final class UnboundFlow implements FlowContext {
 
     /** Removes the key first, so a key put again moves to the end and the key that put the value is the one kept. */
     @Override
-    public <V> void put(FlowKey<V> key, V value) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(value, "value");
+    public <V> void put(@NonNull FlowKey<V> key, @NonNull V value) {
         V checked = key.type().cast(value);
         values.remove(key);
         values.put(key, checked);
     }
 
     @Override
-    public void remove(FlowKey<?> key) {
-        Objects.requireNonNull(key, "key");
+    public void remove(@NonNull FlowKey<?> key) {
         values.remove(key);
     }
 

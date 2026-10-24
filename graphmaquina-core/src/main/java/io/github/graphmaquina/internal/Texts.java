@@ -1,6 +1,6 @@
 package io.github.graphmaquina.internal;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * How the library prints a value whose {@code toString()} the application wrote, such as a failure, a flow value or an
@@ -20,8 +20,7 @@ public final class Texts {
      * @return the text of {@code value}, never null
      * @throws NullPointerException if {@code value} is null
      */
-    public static String shown(Object value) {
-        Objects.requireNonNull(value, "value");
+    public static String shown(@NonNull Object value) {
         try {
             String text = String.valueOf(value);
             return text != null ? text : "<toString returned null>";
@@ -42,8 +41,7 @@ public final class Texts {
      * @return the text of {@code id}, never null
      * @throws NullPointerException if {@code id} is null
      */
-    public static String identity(Object id) {
-        Objects.requireNonNull(id, "id");
+    public static String identity(@NonNull Object id) {
         try {
             String text = id.toString();
             return text != null ? text : "null";

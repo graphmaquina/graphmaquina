@@ -9,10 +9,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import lombok.NonNull;
 
 /**
  * An {@link AsyncTransitionGuard} that never answers on its own. It behaves as {@link ControlledAsyncAction}
@@ -59,8 +59,8 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>, T extends Enum<T>>
      * Replaces the side effect run on the engine's thread as each invocation is entered. It receives the live
      * context, which the engine invalidates when the transaction ends, so read it now rather than storing it.
      */
-    public ControlledAsyncGuard<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
-        this.onCall = Objects.requireNonNull(onCall, "onCall");
+    public ControlledAsyncGuard<E, S, T> onCall(@NonNull Consumer<GuardContext<E, S, T>> onCall) {
+        this.onCall = onCall;
         return this;
     }
 
@@ -162,8 +162,7 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>, T extends Enum<T>>
         return new GraphAssertionError(CONTEXT, "invocation", "an open fixture", "closed");
     }
 
-    private static long budgetNanos(Duration budget) {
-        Objects.requireNonNull(budget, "budget");
+    private static long budgetNanos(@NonNull Duration budget) {
         if (budget.isZero() || budget.isNegative()) {
             throw new IllegalArgumentException("the budget must be positive, not " + budget);
         }

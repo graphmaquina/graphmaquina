@@ -2,7 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over a {@link Reaction.Aborted}, obtained from
@@ -27,8 +27,7 @@ public final class AbortedReactionAssert<E, S extends Enum<S>, T extends Enum<T>
     }
 
     /** Satisfied by any cause the type accepts, subclasses included. */
-    public AbortedReactionAssert<E, S, T> hasCause(Class<? extends Throwable> expected) {
-        Objects.requireNonNull(expected, "expected");
+    public AbortedReactionAssert<E, S, T> hasCause(@NonNull Class<? extends Throwable> expected) {
         RuntimeException cause = aborted.cause();
         if (!expected.isInstance(cause)) {
             Checks.fail(context, "cause", expected, cause);
@@ -37,8 +36,7 @@ public final class AbortedReactionAssert<E, S extends Enum<S>, T extends Enum<T>
     }
 
     /** Compares by reference, so a distinct throwable of the same type does not satisfy it. */
-    public AbortedReactionAssert<E, S, T> hasCauseSameAs(Throwable expected) {
-        Objects.requireNonNull(expected, "expected");
+    public AbortedReactionAssert<E, S, T> hasCauseSameAs(@NonNull Throwable expected) {
         Checks.same(context, "cause", expected, aborted.cause());
         return this;
     }
