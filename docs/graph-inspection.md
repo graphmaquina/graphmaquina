@@ -85,7 +85,7 @@ classDiagram
 ```
 
 A `TransitionSpec` is one edge: its endpoints and identifier, its `kind()`, `ACTION` or `MOVE`, its `key()`, the
-`TransitionKey` `(from, transition)`, the `ActionRef` and `GuardRef`s that name its action and guards, its
+`TransitionKey` `(from, transition)`, which prints as `FROM/TRANSITION`, the `ActionRef` and `GuardRef`s that name its action and guards, its
 `onFailure`, `failsOn`, `recoveryRules()`, `timeout` and `afterCommit` hook, and `isAsync()`, true when the action
 or any guard is asynchronous. `policy(state)` is never null: a `StatePolicy` holds the state's `otherwise` reason
 and its `rejectionReasons()` per identifier, and `reasonFor(id)` picks the one a request gets. `watch(state)`
@@ -113,7 +113,7 @@ questions:
 | `inducedSubgraph(states)` | The graph restricted to those states |
 
 A query on a state the graph does not hold throws `IllegalArgumentException`. `Graph.of(nodes, edges)` and
-`DirectedGraph.of(nodes, edges)` build graphs of your own, and `StrongComponents.find(graph)` returns their strongly
+`DirectedGraph.of(nodes, edges)` build graphs of your own, from `GraphEdge` and `DirectedEdge` records, and `StrongComponents.find(graph)` returns their strongly
 connected components, in the order of their first declared node, with `cycleWitness(graph, component)` naming one
 cycle of a component; these are what the build uses to report an unauthorised cycle. The
 [testing guide](testing.md#what-each-entry-point-checks) asserts on the same queries through
@@ -190,10 +190,13 @@ dot -Tpng tickets.dot -o tickets.png
 The Java exporter needs no external library or native executable. Image rendering is a separate step.
 `GraphView.of(definition)` is a public record of what the exporter draws, as text: `name()`, `initial()`,
 `terminals()`, `states()`, `transitions()`, `policies()`, `watches()` and `submachines()`, so a renderer of your own
-can read the same data. States come in node order, edges in definition order, rules and exits in declaration order,
+can read the same data, and its public constructors build a view by hand. States come in node order, edges in definition order, rules and exits in declaration order,
 with one policy per state, and each `SubmachineView` carries the child's whole `GraphView`. A `TransitionView` holds the
 edge's endpoints, identifier, kind, action, guards, whether it is asynchronous, its `onFailure`, its rendered watch rule
-and its recovery rules.
+and its recovery rules; a `RecoveryView` the failure kind and the `failsOn` types as binary names and the recovery
+identifier; a `PolicyView` the state, its `otherwise` reason and its rejections rendered as `ID: reason`; and a
+`WatchView` the state, the simple name of the peer's entity class and the rendered rules. The DOT text starts with
+`digraph "<name>"` and `rankdir=LR`.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.

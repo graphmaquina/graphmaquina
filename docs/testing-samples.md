@@ -233,7 +233,8 @@ any other.
 ## Probes
 
 A probe stands where a guard, an action or a hook stands and answers from an explicit script. A shared
-`CallTrace` records the order the callbacks were entered in, which is how the engine's short-circuit becomes
+`CallTrace` records the order the callbacks were entered in, and `events()` lists them as `TraceEvent`s, each with its
+`sequence`, the probe's `name` and the `call` it recorded, which is how the engine's short-circuit becomes
 observable. From [ProbeTest](../graphmaquina-test/src/test/java/consumer/ProbeTest.java):
 
 ```java

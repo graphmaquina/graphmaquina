@@ -121,7 +121,8 @@ To call a contextual hook by hand, in a unit test, build its context with the fi
 `new CommitContext<>(from, transition, to, kind, isTerminal)`. Its flow belongs to no call: it starts empty, has no
 entity, works on any thread, though it is not synchronized, and never goes stale, so the test can put what the steps would have put, run the hook
 and read back what it wrote. The six-argument constructor takes any `FlowContext` as the sixth argument, for a test
-that needs a flow of its own.
+that needs a flow of its own. Two contexts are equal when their components are: the flow the runtime hands a hook is
+equal only to itself, and two flows of the five-argument constructor are equal when they hold equal values.
 
 The DSL takes the entity-only form through `afterCommit("committed", actions::committed)` and the contextual
 one through `afterCommitWith("committed", (entity, commit) -> ...)`; an edge declares at most one hook. An
@@ -168,8 +169,9 @@ before the operation returns or throws. A request refused before it starts, such
 notifies no observer. An observer whose `onStarted` threw still receives its end event, and
 `elapsed` runs from just before `onStarted` until just before that event. Observers belong to a registry: a machine
 built standalone has none. `MachineCall` names the machine, the entity, the requested identifier (empty for
-`reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and the same
-instance reaches every event of the call. A reaction starts and ends inside the call that triggered it, so events nest
+`reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity: it reads `<key> <ID>`, or
+`<key> reevaluate`, followed by ` (watch reaction)` for a reaction. The same instance reaches every event of the call,
+and two calls are equal only when they are the same instance. A reaction starts and ends inside the call that triggered it, so events nest
 like a stack on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
 how far it got in writing states; an `Error` is reported too, then propagates. The phase is one of `CallPhase`'s
 `RESOLVE`, `GUARD`, `ACTION`, `COMMIT`, `HOOK` and `REACTIONS`; only an `Error` reaches `onFailed` in `REACTIONS`, one

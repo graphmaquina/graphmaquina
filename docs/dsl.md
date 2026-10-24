@@ -130,7 +130,10 @@ checks `build()` runs, such as reachability, cycles or failure routes, so the DS
 validated graph. Their constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard
 name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its
 `statesWritten`, a `MachineCall` an identifier of its own catalogue and none for a reaction, a `TransitionSpec` a
-positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The `dsl` package also holds
+positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
+without `starts`, `failureKind` or `flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec`
+whose `failsOn` holds an interface type can make the order of its entries change the route, which the DSL and the
+annotations never allow. The `dsl` package also holds
 the outline records and `MachineOutlineValidator` that the DSL and the annotation processor share to check a graph by
 names; building a graph does not need them.
 
@@ -179,6 +182,7 @@ explains.
 
 Both builders are single-use and not thread-safe: once a `build()` succeeds, every further call throws
 `IllegalStateException`, while a `build()` that fails consumes nothing, so the build can be fixed and run again.
+Their methods refuse a null argument with `NullPointerException`.
 `build()` also throws `IllegalStateException` for a machine without `state(getter, setter)`, for a machine without
 `identity(...)` within a registry, and for a watch whose peer the registry does not hold; a second `as(...)` and an
 `add` of a key already in the registry throw it at once. A standalone machine reaches only its own key and facade as

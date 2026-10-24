@@ -164,7 +164,8 @@ identifier, a recovery, an exit or the identifier a watch selected rather than t
 a guard, a rejection, the watch-chain limit and an abort raised for the caller of a cascade or a peer read; and
 `cascadePath()` lists the entities in flight, outermost first, as `key#identity`. A call failure's message names states
 and identifiers by `name()` and entities as `key#identity`, never through an entity's `toString()`. `InvalidGraphException`
-lists `problems()`, and `codes()`, by code, then origin state, then identifier.
+lists `problems()`, and `codes()`, by code, then origin state, then identifier, and its message reads
+`the graph <key> has <n> problem(s):` followed by one `[code] message` line per problem.
 
 A peer read stages nothing, so `ctx.peer(...)` with a key or a facade the registry does not hold throws
 `UnknownPeerMachineException` or `UnknownFacadeException` into the guard or action without poisoning the call: an action

@@ -191,6 +191,7 @@ The entry-point table names each view's main expectations. These complete them:
 | Reactions | `hasNoAborted()`, which looks at this list alone, not at the reactions' own reactions |
 | Journal | `hasEntry(key, entity, from, id, to, action, depth, status)`, with the entity compared by reference |
 | Abort | `at(key, entity, from, id, to)` for the edge that was running; `atUnresolved(...)`, `atUnread(...)` and `atUnreadState(...)` for an abort before the edge, the identifier or the state was read; `hasActionNamed(name)`, `hasNoAction()`, `hasCascadePathExactly(route)` |
+| Cascade abort | `error(i)`, the abort of the i-th failed element, counted among the failures rather than among the cascaded entities |
 | Commit failure | `hasAppliedExactly(entities…)`, `hasPendingExactly(entities…)`, `hasFailedEntity(entity)`, `hasNoFailedEntity()` |
 | After-commit failure | `hasHookNamed(name)`, `at(key, entity, from, id, to)` for the hop the hook ran for |
 | Any failure | `isCommitFailure()` and `isInvalidGraph()` narrow it, as `isAbort()`, `isCascadeAbort()`, `isAfterCommit()` and `isCallFailure()` do |
@@ -426,6 +427,13 @@ A test that needs no properties at all can pass options explicitly —
 - **The waits fail as assertions.** `AsyncAssertions.await` fails with `GraphAssertionError` when the budget expires,
   the thread is interrupted, or the stage completes exceptionally or is cancelled; `awaitFailure` takes a cancellation
   as the failure and fails when the stage completes normally; `captureFailure` fails when its body completes normally.
+- **A wrong argument is no failed expectation.** A state or an identifier of another enum, reachable only through raw
+  types, a negative index such as `CascadeAbortAssert.error(-1)`, and an entity tracked twice under the same machine in
+  a `StateSnapshot` throw `IllegalArgumentException` instead of `GraphAssertionError`.
+- **Messages carry the evidence.** A `GraphAssertionError` names its context, property, expected and actual values;
+  when two distinct instances print alike, the message names both instances, and a value whose `toString()` throws is
+  shown by its class and identity. A golden mismatch shows only the changed lines, each with three lines of context,
+  and a snapshot mismatch one `path: expected ... but was ...` line per field.
 - **Helpers can raise the same error.** `new GraphAssertionError(context, property, expected, actual)`, with an optional
   advice line that goes into the message only, gives a test helper of your own the same inspectable failure.
 - **`hasTerminalsExactly`, `hasTransitionsExactly` and the topology's `hasNodesExactly`, `hasSuccessorsExactly` and
