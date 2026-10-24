@@ -9,8 +9,10 @@ tasks.jar {
 
 tasks.processResources {
     inputs.property("version", project.version)
+    // Read now: the expansion runs while the task copies, when the configuration cache leaves it no project to ask.
+    val release = project.version.toString()
     filesMatching("io/github/graphmaquina/codegen/version.properties") {
-        expand("version" to project.version)
+        expand("version" to release)
     }
 }
 

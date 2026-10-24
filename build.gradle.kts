@@ -35,12 +35,15 @@ val verifyCentralStaging = tasks.register("verifyCentralStaging") {
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToCentralStagingRepository"))
     inputs.dir(centralStaging)
+    // Locals for the action: the configuration cache cannot store an action that holds this script.
+    val staging = centralStaging
+    val artifacts = centralArtifacts
     doLast {
-        val root = centralStaging.get().asFile
+        val root = staging.get().asFile
         val xml = DocumentBuilderFactory.newInstance().apply {
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         }.newDocumentBuilder()
-        centralArtifacts.get().forEach { path ->
+        artifacts.get().forEach { path ->
             val artifact = root.resolve(path)
             check(artifact.isFile && artifact.length() > 0) { "Missing Central artifact: $path" }
             val signature = root.resolve("$path.asc")
@@ -71,8 +74,10 @@ tasks.register<Zip>("centralBundle") {
     group = "publishing"
     description = "Builds and validates the signed release bundle for a manual Central Portal upload"
     dependsOn(verifyCentralStaging)
+    // A local for the spec, for the same reason as the verification's action.
+    val paths = bundlePaths
     from(centralStaging) {
-        include { it.isDirectory || it.relativePath.pathString in bundlePaths.get() }
+        include { it.isDirectory || it.relativePath.pathString in paths.get() }
     }
     includeEmptyDirs = false
     archiveFileName = "graphmaquina-central-bundle.zip"

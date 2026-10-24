@@ -67,8 +67,12 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     systemProperty("artifactRepository", repository.get().asFile.absolutePath)
     systemProperty("artifactVersion", release)
     inputs.property("artifactVersion", release)
-    // Includes core/test, the generator, the processor, both plugins and the plugin marker POM.
-    inputs.dir(repository).withPropertyName("publishedArtifacts")
+    // Core/test, the generator, the processor, both plugins and the plugin marker POM, at this release only: the
+    // maven-metadata.xml beside each changes on every publication.
+    inputs.files(listOf("graphmaquina-core", "graphmaquina-test", "graphmaquina-codegen", "graphmaquina-processor",
+        "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin", "io.github.graphmaquina.gradle.plugin").map {
+        repository.map { root -> root.dir("io/github/graphmaquina/$it/$release") }
+    }).withPropertyName("publishedArtifacts")
 }
 
 tasks.check { dependsOn(publishedArtifactTest) }

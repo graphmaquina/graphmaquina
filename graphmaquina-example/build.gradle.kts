@@ -25,10 +25,12 @@ dependencies {
 val updateGoldens = providers.systemProperty("graphmaquina.goldens.update")
     .map { it.toBooleanStrict() }.orElse(false)
 tasks.test {
+    // A local for the two specs below: the configuration cache cannot store a spec that holds this script.
+    val update = updateGoldens
     systemProperty("graphmaquina.goldens.update", updateGoldens.get().toString())
     systemProperty("graphmaquina.goldens.root",
         layout.projectDirectory.dir("src/test/resources").asFile.absolutePath)
-    outputs.upToDateWhen { !updateGoldens.get() }
+    outputs.upToDateWhen { !update.get() }
     // GuideCopiesTest reads the guides that quote the shop and the shop's sources, so a change to either reruns it.
     val docs = rootProject.layout.projectDirectory.dir("docs")
     systemProperty("graphmaquina.docs", docs.asFile.absolutePath)
@@ -38,5 +40,5 @@ tasks.test {
         layout.projectDirectory.dir("src/test/java/io/github/graphmaquina/example").asFile.absolutePath)
     inputs.files(docs.asFileTree.matching { include("*.md") }).withPropertyName("guides")
     inputs.dir(layout.projectDirectory.dir("src")).withPropertyName("exampleSources")
-    outputs.doNotCacheIf("Golden update writes source resources") { updateGoldens.get() }
+    outputs.doNotCacheIf("Golden update writes source resources") { update.get() }
 }

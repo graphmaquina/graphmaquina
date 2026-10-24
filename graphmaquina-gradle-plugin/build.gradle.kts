@@ -38,8 +38,10 @@ gradlePlugin {
 // The plugin reports the version it was built at; `filter` replaces that one token and nothing else.
 tasks.processResources {
     inputs.property("graphmaquinaVersion", project.version.toString())
+    // Read now: the filter runs while the task copies, when the configuration cache leaves it no project to ask.
+    val release = project.version.toString()
     filesMatching("io/github/graphmaquina/gradle/version.properties") {
-        filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", project.version.toString()) }
+        filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", release) }
     }
 }
 dependencies {
@@ -110,9 +112,13 @@ publishing {
 }
 
 tasks.withType<PublishToMavenRepository>().configureEach {
+    // Both read here, as in the convention plugin, into locals: the configuration cache can store neither an
+    // action that asks the project nor one that holds this script.
+    val signingKey = providers.environmentVariable("SIGNING_KEY")
+    val staging = name.endsWith("ToCentralStagingRepository")
     doFirst {
-        if (repository.name == "centralStaging") {
-            check(!providers.environmentVariable("SIGNING_KEY").orNull.isNullOrBlank()) {
+        if (staging) {
+            check(!signingKey.orNull.isNullOrBlank()) {
                 "Central staging requires SIGNING_KEY; use adapterTests or publishToMavenLocal for unsigned builds"
             }
         }
