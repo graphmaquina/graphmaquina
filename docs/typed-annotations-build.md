@@ -61,7 +61,7 @@ and requires authorized access; the published artifacts are public.
 A build that resolves its dependencies through an internal repository, such as a mirror of Maven Central, needs
 every component there, including the Gradle implementation and its marker
 `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is what
-`plugins { id("io.github.graphmaquina") version … }` resolves.
+`plugins { id("io.github.graphmaquina") version "<version>" }` resolves.
 
 **Gradle** resolves the plugin marker through `pluginManagement`, so a consumer's `settings.gradle.kts` declares
 the internal repository in both halves:
