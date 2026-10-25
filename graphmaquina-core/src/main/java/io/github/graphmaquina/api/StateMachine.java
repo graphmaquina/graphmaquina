@@ -103,7 +103,8 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * no call may start, such as from a guard, an action or an observer, are refused before the check starts and
      * throw as themselves; while a check runs, no call or check may start on its thread either. A check that cannot
      * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
-     * propagates as itself.
+     * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
+     * {@code check=<id>} in place of {@code call=<id>}.
      *
      * @throws NullPointerException if {@code entity} or {@code transition} is null
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass

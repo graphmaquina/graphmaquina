@@ -12,20 +12,22 @@ import java.util.regex.Pattern;
 
 /**
  * Reads what a {@link LibraryLog} captured as lines that a test compares with literals: what changes from one run to
- * the next, the id of a call, the elapsed time and the budget of an awaiting line, is replaced by a stable text.
+ * the next, the id of a call or of an eligibility check, the elapsed time and the budget of an awaiting line, is
+ * replaced by a stable text.
  */
 public final class LogLines {
 
-    private static final Pattern CALL_ID = Pattern.compile("(call|trigger)=(\\d+)");
+    private static final Pattern CALL_ID = Pattern.compile("(call|trigger|check)=(\\d+)");
     private static final Pattern ELAPSED = Pattern.compile(" elapsed=\\d+us$");
     private static final Pattern BUDGET = Pattern.compile(" budget=(\\d+)us$");
 
     private LogLines() { }
 
     /**
-     * Each record as {@code LEVEL message}, every call id replaced by a letter in order of first appearance, A for the
-     * first, the elapsed time that ends a line replaced by {@code <us>}, and so is the budget of an awaiting line,
-     * which only TRACE logs. No line carries the id 0.
+     * Each record as {@code LEVEL message}, every call, trigger or check id replaced by a letter in order of first
+     * appearance, A for the first, whichever label it follows: calls and checks share one counter, so no
+     * {@code call=<n>} and {@code check=<n>} share a letter. The elapsed time that ends a line is replaced by
+     * {@code <us>}, and so is the budget of an awaiting line, which only TRACE logs. No line carries the id 0.
      */
     public static List<String> lines(LibraryLog log) {
         Map<String, String> letters = new HashMap<>();

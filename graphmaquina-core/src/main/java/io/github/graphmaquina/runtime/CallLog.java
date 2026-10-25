@@ -1,9 +1,11 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.lang.System.Logger;
@@ -16,16 +18,20 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The log of one call, written through {@code System.getLogger("io.github.graphmaquina.runtime")}, at DEBUG and
- * TRACE only.
+ * The log of one call or of one eligibility check, written through
+ * {@code System.getLogger("io.github.graphmaquina.runtime")}, at DEBUG and TRACE only.
  * <ul>
- *   <li>It asks the logger once, when the call opens it, whether each level is loggable, and every log point tests
- *       one of those two answers before it builds a line: a level raised during a call reaches the next call.</li>
- *   <li>A call that finds both levels off gets {@link #OFF}, which is shared and emits nothing, so the call allocates
- *       nothing for its log.</li>
- *   <li>Each line starts with {@code call=<id>}. The id comes from one counter that advances for every call that
- *       logs, at DEBUG, at TRACE or at both; it is 0 only for {@link #OFF}, which logs nothing. A TRACE line of a
- *       step carries its depth next; the TRACE lines of the commit, the hooks and the watch dispatch carry none.</li>
+ *   <li>It asks the logger once, when the call or the check opens it, whether each level is loggable, and every log
+ *       point tests one of those two answers before it builds a line: a level raised during a call reaches the next
+ *       call.</li>
+ *   <li>A call or a check that finds both levels off gets {@link #OFF}, which is shared and emits nothing, so it
+ *       allocates nothing for its log.</li>
+ *   <li>Each line starts with {@code call=<id>}, or with {@code check=<id>} for an eligibility check, which is no
+ *       call and logs only the lines of {@link #start}, {@link #checked} and {@link #checkFailed} and, at TRACE,
+ *       those of the step it admits. The id comes from one counter, shared by calls and checks, that advances for
+ *       every call or check that logs, at DEBUG, at TRACE or at both; it is 0 only for {@link #OFF}, which logs
+ *       nothing, so no {@code call=<n>} and {@code check=<n>} line ever share a number. A TRACE line of a step
+ *       carries its depth next; the TRACE lines of the commit, the hooks and the watch dispatch carry none.</li>
  *   <li>An entity is printed only as an {@link EntityRef} the engine already holds, through {@link #show}: a line
  *       never calls an identity function, a getter or an entity's own {@code toString()}, unless the application put
  *       the entity in the flow under a visible key, whose {@code flow-put} and {@code hook-flow-put} lines print the
@@ -42,8 +48,15 @@ final class CallLog {
     static final String LOGGER_NAME = "io.github.graphmaquina.runtime";
     private static final Logger LOGGER = System.getLogger(LOGGER_NAME);
     private static final AtomicLong IDS = new AtomicLong();
-    /** The log of every call that finds both levels off: id 0, start 0, and it emits nothing. */
-    static final CallLog OFF = new CallLog(LOGGER, false, false, 0, 0, Optional.empty());
+    /** The label of the lines of a call. */
+    private static final String CALL = "call";
+    /** The label of the lines of an eligibility check. */
+    private static final String CHECK = "check";
+    /**
+     * The log of every call or check that finds both levels off: id 0, start 0, and it emits nothing, so its label
+     * is never printed.
+     */
+    static final CallLog OFF = new CallLog(LOGGER, false, false, 0, 0, Optional.empty(), CALL);
 
     private final Logger logger;
     @Getter(AccessLevel.PACKAGE)
@@ -51,7 +64,7 @@ final class CallLog {
     @Getter(AccessLevel.PACKAGE)
     private final boolean trace;
 
-    /** Greater than 0 when this call logs, at DEBUG or TRACE; 0 for {@link #OFF}. */
+    /** Greater than 0 when this call or check logs, at DEBUG or TRACE; 0 for {@link #OFF}. */
     @Getter(AccessLevel.PACKAGE)
     private final long id;
 
@@ -60,6 +73,8 @@ final class CallLog {
     private final long startNanos;
     /** The id of the call whose commit triggered this watch reaction, when that call logged. */
     private final Optional<Long> trigger;
+    /** What starts every line before its id: {@code call}, or {@code check} for an eligibility check. */
+    private final String label;
     /** The root entity's reference, once the engine registered it; kept only by a call that logs at DEBUG. */
     private Optional<EntityRef> entity = Optional.empty();
 
@@ -74,12 +89,29 @@ final class CallLog {
      * once, and then the clock, unless both are off.
      */
     static CallLog open(Logger logger, Optional<Long> trigger) {
+        return open(logger, trigger, CALL);
+    }
+
+    /**
+     * Opens the log of an eligibility check on the runtime logger. Its lines start with {@code check=<id>}, and its id
+     * comes from the counter of the calls.
+     */
+    static CallLog openCheck() {
+        return openCheck(LOGGER);
+    }
+
+    /** Opens the log of an eligibility check on {@code logger}; tests hand in one of their own. */
+    static CallLog openCheck(Logger logger) {
+        return open(logger, Optional.empty(), CHECK);
+    }
+
+    private static CallLog open(Logger logger, Optional<Long> trigger, String label) {
         boolean debug = loggable(logger, Level.DEBUG);
         boolean trace = loggable(logger, Level.TRACE);
         if (!debug && !trace) {
             return OFF;
         }
-        return new CallLog(logger, debug, trace, IDS.incrementAndGet(), System.nanoTime(), trigger);
+        return new CallLog(logger, debug, trace, IDS.incrementAndGet(), System.nanoTime(), trigger, label);
     }
 
     /** Whether {@code level} is loggable; a backend that throws anything but an Error is taken as saying no. */
@@ -94,24 +126,33 @@ final class CallLog {
         }
     }
 
-    /** Logs {@code call=<id> } followed by {@code text} at DEBUG, if this call logs at DEBUG. */
+    /**
+     * Logs {@code call=<id> } followed by {@code text} at DEBUG, if this call logs at DEBUG; {@code check=} in place
+     * of {@code call=} for a check.
+     */
     void debug(String text) {
         if (debug) {
-            emit(Level.DEBUG, "call=" + id + " " + text);
+            emit(Level.DEBUG, label + "=" + id + " " + text);
         }
     }
 
-    /** Logs {@code call=<id> depth=<depth> } followed by {@code text} at TRACE, if this call logs at TRACE. */
+    /**
+     * Logs {@code call=<id> depth=<depth> } followed by {@code text} at TRACE, if this call logs at TRACE;
+     * {@code check=} in place of {@code call=} for a check.
+     */
     void trace(int depth, String text) {
         if (trace) {
-            emit(Level.TRACE, "call=" + id + " depth=" + depth + " " + text);
+            emit(Level.TRACE, label + "=" + id + " depth=" + depth + " " + text);
         }
     }
 
-    /** Logs {@code call=<id> } followed by {@code text} at TRACE, if this call logs at TRACE. */
+    /**
+     * Logs {@code call=<id> } followed by {@code text} at TRACE, if this call logs at TRACE; {@code check=} in place
+     * of {@code call=} for a check.
+     */
     void trace(String text) {
         if (trace) {
-            emit(Level.TRACE, "call=" + id + " " + text);
+            emit(Level.TRACE, label + "=" + id + " " + text);
         }
     }
 
@@ -126,7 +167,10 @@ final class CallLog {
         }
     }
 
-    /** {@code start <machine> <request>[ trigger=<id>]}: the identifier execute was asked for, or reevaluate. */
+    /**
+     * {@code start <machine> <request>[ trigger=<id>]}: the identifier execute or an eligibility check was asked for,
+     * or reevaluate.
+     */
     void start(MachineKey<?, ?, ?> machine, String request) {
         debug("start " + machine + " " + request + (trigger.isPresent() ? " trigger=" + trigger.get() : ""));
     }
@@ -178,6 +222,29 @@ final class CallLog {
     void failed(CallFailure failure) {
         debug("failed phase=" + failure.phase().name() + " written=" + failure.statesWritten().name() + entityField()
                 + " error=" + show(failure.error()) + " elapsed=" + elapsed());
+    }
+
+    /**
+     * The verdict of an eligibility check, on one line. For an eligible one,
+     * {@code end verdict=ELIGIBLE state=<state> entity=<ref> elapsed=<us>}; for an ineligible one,
+     * {@code end verdict=INELIGIBLE kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>"
+     * elapsed=<us>}, the reason printed as given, unescaped. The state is the one the check read.
+     */
+    void checked(Eligibility<?, ?, ?> verdict) {
+        switch (verdict) {
+            case Eligibility.Eligible<?, ?, ?> eligible -> debug("end verdict=ELIGIBLE state="
+                    + eligible.from().name() + entityField() + " elapsed=" + elapsed());
+            case Eligibility.Ineligible<?, ?, ?> ineligible -> debug("end verdict=INELIGIBLE kind="
+                    + ineligible.kind().name()
+                    + (ineligible.guard().isPresent() ? " guard=" + ineligible.guard().get() : "")
+                    + " state=" + ineligible.from().name() + entityField() + " reason=\"" + ineligible.reason()
+                    + "\" elapsed=" + elapsed());
+        }
+    }
+
+    /** {@code failed error=<error> elapsed=<us>}: the {@code EligibilityCheckException} the check throws. */
+    void checkFailed(EligibilityCheckException failure) {
+        debug("failed error=" + show(failure) + " elapsed=" + elapsed());
     }
 
     private String entityField() {

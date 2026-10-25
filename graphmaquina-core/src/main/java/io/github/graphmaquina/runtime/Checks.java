@@ -10,8 +10,10 @@ import java.util.Optional;
 /**
  * The eligibility check of a machine, which {@link DefaultStateMachine#eligibility} runs: the admission of a root step
  * as {@link Steps#admit} runs it, in a transaction of its own that never commits, without the call around it. A check
- * is no call: it records no trail, logs no line and tells no observer, and, whatever it answers or throws, it writes
- * no state, logs no hop, runs no action, hook or watch reaction, starts no sub-machine and runs no exit.
+ * is no call: it records no trail, logs no line of a call and tells no observer, and, whatever it answers or throws, it
+ * writes no state, logs no hop, runs no action, hook or watch reaction, starts no sub-machine and runs no exit. It
+ * logs lines of its own instead, under {@code check=<id>} in place of {@code call=<id>}, as {@link CallLog} says: at
+ * DEBUG a start line and a verdict line, or a failed one, and at TRACE the lines of the step it admits.
  */
 final class Checks {
 
@@ -21,13 +23,17 @@ final class Checks {
      * Whether {@code machine} admits {@code transition} for {@code entity} in the state it is in now, with
      * {@code input} as the operation input its guards read, empty when the check carries none. It is refused before
      * it starts as execute is: an identifier of another catalogue with IllegalArgumentException, and a check where no
-     * call may start with ReentrantTransitionException. Then, in a unit of work of its own, whose deadline is the
-     * machine's counted from now, the root step runs as {@link Steps#admit} says, under the reentrancy marker, which
-     * the first statement of the finally releases with a store before the contexts the step handed out are
-     * invalidated, whatever the step throws. A step refused on the way is {@link Eligibility.Ineligible}, with the
-     * state it read and the reason, the kind and the guard of the refusal; a step admitted is
-     * {@link Eligibility.Eligible}, with the state it read. An Error propagates as itself; anything else the step
-     * throws is the {@link EligibilityCheckException} that {@link #failed} builds once the marker is released.
+     * call may start with ReentrantTransitionException, and a check so refused logs nothing. Then it opens its log,
+     * which logs its start line at DEBUG; in a unit of work of its own, whose deadline is the machine's counted from
+     * now, the root step runs as {@link Steps#admit} says, with that log, under the reentrancy marker, which the first
+     * statement of the finally releases with a store before the contexts the step handed out are invalidated, whatever
+     * the step throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and the
+     * reason, the kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state it
+     * read. The verdict line is logged once the marker is released, as an end line is; so is the failed line of the
+     * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
+     * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
+     * backend throws is contained by the log, as {@link CallLog} says, so a log never changes the verdict or turns
+     * into a failure of the check.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
             DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
@@ -35,8 +41,12 @@ final class Checks {
         Reentrancy.check(machine.key(), entity);
         MachineRegistry registry = machine.registry();
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
+        CallLog log = CallLog.openCheck();
         Transaction.Admission tx = new Transaction.Admission(registry, uow, machine.key(), entity,
-                Optional.of(transition), false, Optional.empty(), CallLog.OFF);
+                Optional.of(transition), false, Optional.empty(), log);
+        if (log.debug()) {
+            log.start(machine.key(), transition.name());
+        }
         StepResult<S, T> step;
         boolean[] marker = Reentrancy.enter(machine.key(), entity);
         try {
@@ -49,8 +59,22 @@ final class Checks {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable failure) {
-            throw failed(tx, machine, entity, transition, failure);
+            EligibilityCheckException unanswered = failed(tx, machine, entity, transition, failure);
+            if (log.debug()) {
+                log.checkFailed(unanswered);
+            }
+            throw unanswered;
         }
+        Eligibility<E, S, T> verdict = verdict(entity, transition, step);
+        if (log.debug()) {
+            log.checked(verdict);
+        }
+        return verdict;
+    }
+
+    /** The answer for a step that was refused on the way, or admitted. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> verdict(
+            E entity, T transition, StepResult<S, T> step) {
         if (step instanceof StepResult.Rejected<S, T> rejected) {
             return new Eligibility.Ineligible<>(entity, rejected.from(), transition, rejected.reason(),
                     rejected.kind(), rejected.guard());
