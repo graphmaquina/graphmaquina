@@ -215,7 +215,7 @@ two generated files in place, the Javadoc link in `TicketActionsRefs` and the ca
 generated class `TicketActionsRefs.Register` and the `action=TicketActionsRefs.Register.class` that names it. The next
 build regenerated the reference as `TicketActionsRefs.Enroll`, and javac, then the IDE, reported `Register` as missing
 until the annotation named `Enroll`. Code completion and an IDE import of the Maven configuration have not been
-exercised; see [known limitations](guide.md#known-limitations).
+exercised.
 
 ---
 

@@ -27,7 +27,6 @@ repository's example module, whose shop and billing domains the guide uses. The
 - [Visual guide](#visual-guide)
 - [Requirements and artifacts](#requirements-and-artifacts)
 - [Publication and verification status](#publication-and-verification-status)
-- [Known limitations](#known-limitations)
 - [License](#license)
 
 ## What GraphMaquina provides
@@ -134,9 +133,6 @@ MVNRepository is an independent index; appearing in its search results is not re
 resolution. Sonatype does not control its update schedule; see the
 [official explanation](https://central.sonatype.org/faq/mvnrepository/).
 
-Releases are signed. [Release signing](release-signing.md) gives the public fingerprint and the commands that
-verify an artifact's signature.
-
 The repository's build checks that the examples of these pages still compile and run:
 
 | Check | What it verifies |
@@ -148,22 +144,6 @@ The repository's build checks that the examples of these pages still compile and
 | Maven quickstart | The [Maven configuration](installation.md#configure-maven) and the quickstart's sources were built with `mvn clean verify` and `App` was run, once by hand, with Maven 3.9.12 on JDK 21, against artifacts built from this repository. No automated check covers it. |
 | Async example | [The runnable async ticket](async.md#runnable-async-ticket-example) was built and `AsyncApp` was run, once by hand, through Gradle and through Maven against artifacts built from this repository, and printed the output documented below it. No automated check covers it. |
 | IDE import | IntelliJ IDEA 2026.2.3 imported the quickstart's Gradle project once, headless and then in a running IDE queried through its MCP server: it registered the generated vocabulary as a source root and the processor's output as a generated source root, resolved references into both, and renamed a binding method as [the IDE workflow](generation.md#ide-workflow) describes. Code completion was not exercised. No automated check covers it. |
-
-## Known limitations
-
-| Area | Current status |
-| --- | --- |
-| Watches and sub-machines between JARs/modules | Unsupported with annotations: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
-| State hierarchy and parallel regions | A state can hold a [sub-machine](composition.md): another machine bound to it, which entering the state starts and whose terminal state selects the parent's exit. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
-| Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge, plus the cascades its actions request and the exits of the sub-machines it ends; nothing walks a path or fires on a timer. |
-| Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` lists every elementary cycle. |
-| IDE behavior | The Gradle plugin's tests check that the generated vocabulary is a source root of its source set. In IntelliJ IDEA 2026.2.3, checked once on the quickstart's Gradle project through the IDE's MCP server, references resolve into both generated roots, but the IDE's Rename of a binding method does not rename the generated reference class that names it: the next build regenerates that class under the new name and javac reports the old name as missing, as [the IDE workflow](generation.md#ide-workflow) shows. Code completion and an IDE import of the Maven configuration have not been exercised. |
-| Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
-| Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. The wait's callback stays registered on that stage until it completes; later waits for the same stage object share it, so the stage carries one however many waits give up on it, plus one per wait already in progress when the first gave up. A new wrapper per call is a new stage. |
-| Preview language features | The generator parses the original sources without `--enable-preview`, whatever javac is given: a source using a preview feature that javac's parser checks is refused with `SG601`. See the [build guide](build-troubleshooting.md#limits). |
-| Kotlin sources | The generator parses Java sources only: a marker on a Kotlin declaration is never read, and in a Gradle source set that mixes Kotlin and Java, a Java machine over an entity or a state enum a Kotlin source declares is refused with `SG601`. See the [build guide](build-troubleshooting.md#limits). |
-| Java modules | `graphmaquina-core` is an automatic module, `io.github.graphmaquina.core`: javac warns about a `requires transitive` of it by default, and about a plain `requires` under `-Xlint:all`. See the [build guide](build-troubleshooting.md#limits) for the lint keys to turn off. |
-| Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
 ## License
 
