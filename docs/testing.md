@@ -143,7 +143,7 @@ to confuse, so keep them apart:
 
 | What you want to establish | Expectation |
 | --- | --- |
-| This origin declares exactly these identifiers | `hasTransitionsExactly(from, ids…)` |
+| This origin declares exactly these identifiers | `hasTransitionsExactly(from, ids...)` |
 | This identifier has no edge from this origin | `hasNoTransition(from, id)` |
 | The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
 | The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
@@ -191,10 +191,10 @@ The entry-point table names each view's main expectations. These complete them:
 | Journal | `hasEntry(key, entity, from, id, to, action, depth, status)`, with the entity compared by reference |
 | Abort | `at(key, entity, from, id, to)` for the edge that was running; `atUnresolved(...)`, `atUnread(...)` and `atUnreadState(...)` for an abort before the edge, the identifier or the state was read; `hasActionNamed(name)`, `hasNoAction()`, `hasCascadePathExactly(route)` |
 | Cascade abort | `error(i)`, the abort of the i-th failed element, counted among the failures rather than among the cascaded entities |
-| Commit failure | `hasAppliedExactly(entities…)`, `hasPendingExactly(entities…)`, `hasFailedEntity(entity)`, `hasNoFailedEntity()` |
+| Commit failure | `hasAppliedExactly(entities...)`, `hasPendingExactly(entities...)`, `hasFailedEntity(entity)`, `hasNoFailedEntity()` |
 | After-commit failure | `hasHookNamed(name)`, `at(key, entity, from, id, to)` for the hop the hook ran for |
 | Any failure | `isCommitFailure()` and `isInvalidGraph()` narrow it, as `isAbort()`, `isCascadeAbort()`, `isAfterCommit()` and `isCallFailure()` do |
-| Invalid graph | `hasCodesExactly(codes…)`, in order and with repeats, `hasProblemCount(n)` |
+| Invalid graph | `hasCodesExactly(codes...)`, in order and with repeats, `hasProblemCount(n)` |
 | Action and guard results | `isOk()`, `isPass()` |
 
 `captureFailure` takes a `ThrowingRunnable`, whose `run()` may throw any exception, so the body can call code that
@@ -384,12 +384,12 @@ A test that needs no properties at all can pass options explicitly —
 | `isApplied()`: the root transition committed | that everything it triggered did. A watch reaction inside an applied outcome may have aborted; `reactions().hasNoAbortedRecursively()` is the expectation that rules that out. |
 | `hasStatus(APPLIED)` or `hasCode(...)`: what the root call reported | that its reactions committed, or where the entity is now. Read `reactions()` and `hasEntityState(...)` for those. |
 | `movedTo(...)` and `hasRecordedState(...)`: the state the outcome recorded | where the entity is now. `hasEntityState(getter, ...)` reads the live entity, and the entity can move again right after. |
-| `hasTransitionsExactly(from, ids…)`: which identifiers the state declares | that any of them would succeed for a given entity. It is structural; guards are not evaluated. |
+| `hasTransitionsExactly(from, ids...)`: which identifiers the state declares | that any of them would succeed for a given entity. It is structural; guards are not evaluated. |
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
 | `flow().hasValue(key, value)`: the flow holds a value equal to that one | that it is the object a step put. The flow keeps values by reference, and `get(key)` returns that very object. |
-| `trail().hasHopsExactly(ids…)`: the identifiers of the hops the call took, in order | which machine or entity took each hop, or the states it joined. `trail().hops()` compares those field by field, on the trail of a failed call too. |
+| `trail().hasHopsExactly(ids...)`: the identifiers of the hops the call took, in order | which machine or entity took each hop, or the states it joined. `trail().hops()` compares those field by field, on the trail of a failed call too. |
 | the recorder: the outcome of every call that completed | anything about a call that threw, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. The recorder keeps completed calls only; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
 | that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and the edge's timeout, which `hasTimeout(...)` asserts, and an expired engine deadline leaves the user's stage alive. |
