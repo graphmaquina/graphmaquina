@@ -9,8 +9,9 @@ import java.util.Set;
 
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
- * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers, and
- * {@code Recovery}, which is written only inside a {@code Transition}.
+ * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers,
+ * {@code Recovery}, which is written only inside a {@code Transition}, and {@code Check}, which is written on a
+ * method.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
