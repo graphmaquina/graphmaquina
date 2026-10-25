@@ -73,12 +73,36 @@ depends on, must be resolvable, which for Maven Central means nothing further to
       <artifactId>graphmaquina-maven-plugin</artifactId>
       <version>${graphmaquina.version}</version>
       <executions>
-        <execution><id>sg-generate</id><phase>generate-sources</phase><goals><goal>generate</goal></goals></execution>
-        <execution><id>sg-prepare</id><phase>process-sources</phase><goals><goal>prepare</goal></goals></execution>
-        <execution><id>sg-complete</id><phase>compile</phase><goals><goal>complete</goal></goals></execution>
-        <execution><id>sg-generate-test</id><phase>generate-test-sources</phase><goals><goal>generate-test</goal></goals></execution>
-        <execution><id>sg-prepare-test</id><phase>process-test-sources</phase><goals><goal>prepare-test</goal></goals></execution>
-        <execution><id>sg-complete-test</id><phase>test-compile</phase><goals><goal>complete-test</goal></goals></execution>
+        <execution>
+          <id>sg-generate</id>
+          <phase>generate-sources</phase>
+          <goals><goal>generate</goal></goals>
+        </execution>
+        <execution>
+          <id>sg-prepare</id>
+          <phase>process-sources</phase>
+          <goals><goal>prepare</goal></goals>
+        </execution>
+        <execution>
+          <id>sg-complete</id>
+          <phase>compile</phase>
+          <goals><goal>complete</goal></goals>
+        </execution>
+        <execution>
+          <id>sg-generate-test</id>
+          <phase>generate-test-sources</phase>
+          <goals><goal>generate-test</goal></goals>
+        </execution>
+        <execution>
+          <id>sg-prepare-test</id>
+          <phase>process-test-sources</phase>
+          <goals><goal>prepare-test</goal></goals>
+        </execution>
+        <execution>
+          <id>sg-complete-test</id>
+          <phase>test-compile</phase>
+          <goals><goal>complete-test</goal></goals>
+        </execution>
       </executions>
     </plugin>
   </plugins>

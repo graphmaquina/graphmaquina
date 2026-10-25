@@ -215,31 +215,31 @@ GraphDefinition<Publication, PublicationState, PublicationChange> graph = StateG
             .onFailure(PublicationChange.MARK_INTEGRATION_FAILED)
             .endTransition()
         .transition(
-            PublicationChange.SCHEDULE_RETRY,
-            PublicationState.READY,
-            PublicationState.RETRY_PENDING)
+                PublicationChange.SCHEDULE_RETRY,
+                PublicationState.READY,
+                PublicationState.RETRY_PENDING)
             .endTransition()
         .transition(
-            PublicationChange.RECORD_REJECTION,
-            PublicationState.READY,
-            PublicationState.REJECTED_BY_PROVIDER)
+                PublicationChange.RECORD_REJECTION,
+                PublicationState.READY,
+                PublicationState.REJECTED_BY_PROVIDER)
             .endTransition()
         .transition(
-            PublicationChange.MARK_INTEGRATION_FAILED,
-            PublicationState.READY,
-            PublicationState.INTEGRATION_FAILED)
+                PublicationChange.MARK_INTEGRATION_FAILED,
+                PublicationState.READY,
+                PublicationState.INTEGRATION_FAILED)
             .endTransition()
         .transition(PublicationChange.RETRY, PublicationState.RETRY_PENDING, PublicationState.READY)
             .endTransition()
         .transition(
-            PublicationChange.CLOSE,
-            PublicationState.REJECTED_BY_PROVIDER,
-            PublicationState.CLOSED)
+                PublicationChange.CLOSE,
+                PublicationState.REJECTED_BY_PROVIDER,
+                PublicationState.CLOSED)
             .endTransition()
         .transition(
-            PublicationChange.CLOSE,
-            PublicationState.INTEGRATION_FAILED,
-            PublicationState.CLOSED)
+                PublicationChange.CLOSE,
+                PublicationState.INTEGRATION_FAILED,
+                PublicationState.CLOSED)
             .endTransition()
         .build();
 ```
@@ -305,9 +305,9 @@ and fallback. In this table, `Unavailable` and `Rejected` are the two members of
 
 | `PUBLISH`'s action | Recovery edge | `movedTo()` | `failureKind()` | `cause()` |
 | --- | --- | --- | --- | --- |
-| returns `failed(Unavailable.class, …)` | `SCHEDULE_RETRY` | `RETRY_PENDING` | `Unavailable` | empty |
+| returns `failed(Unavailable.class, reason)` | `SCHEDULE_RETRY` | `RETRY_PENDING` | `Unavailable` | empty |
 | throws `ServiceUnavailableException` | `SCHEDULE_RETRY` | `RETRY_PENDING` | `Unavailable` | the exception |
-| returns `failed(Rejected.class, …)` | `RECORD_REJECTION` | `REJECTED_BY_PROVIDER` | `Rejected` | empty |
+| returns `failed(Rejected.class, reason)` | `RECORD_REJECTION` | `REJECTED_BY_PROVIDER` | `Rejected` | empty |
 | throws `ProviderRejectedException` | `RECORD_REJECTION` | `REJECTED_BY_PROVIDER` | `Rejected` | the exception |
 | returns `failed("invalid response")` | `MARK_INTEGRATION_FAILED` | `INTEGRATION_FAILED` | empty | empty |
 | throws `InvalidResponseException` | `MARK_INTEGRATION_FAILED` | `INTEGRATION_FAILED` | empty | the exception |
