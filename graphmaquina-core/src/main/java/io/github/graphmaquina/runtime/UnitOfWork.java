@@ -3,6 +3,7 @@ package io.github.graphmaquina.runtime;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
@@ -103,6 +104,20 @@ final class UnitOfWork {
             throw new AmbiguousIdentityException(ref.key(), ref.id(), existing.instance(), ref.instance());
         }
         return existing;
+    }
+
+    /**
+     * The reference {@link #register} kept for {@code instance} under {@code key}, found by walking every reference
+     * this unit of work knows and comparing instances by reference: no identity's equals or hashCode runs. Empty when
+     * none was registered, as when reading the identity threw. Only the failure of an eligibility check asks.
+     */
+    Optional<EntityRef> registered(MachineKey<?, ?, ?> key, Object instance) {
+        for (EntityRef ref : known.values()) {
+            if (ref.instance() == instance && ref.key().equals(key)) {
+                return Optional.of(ref);
+            }
+        }
+        return Optional.empty();
     }
 
     /**

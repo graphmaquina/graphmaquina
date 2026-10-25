@@ -65,11 +65,12 @@ final class Checks {
      * {@link Transaction.Admission#abortReason} keeps it, or the reason below when it kept none. For anything else,
      * which only engine code that calls into the application lets through: the state the step read, {@code failure}
      * itself as the cause, and the reason {@code the engine could not go on: <failure>}, the thread interrupted again
-     * when
-     * {@code failure} is an InterruptedException, as {@link Transaction#classify} does. Each names the guard in flight
-     * as {@link Transaction.Admission#guardInFlight} keeps it, and has the message
-     * {@code eligibility of <ID> in <key> <FROM> could not be decided: <reason>}, where {@code ?} stands for a state
-     * the check did not read.
+     * when {@code failure} is an InterruptedException, as {@link Transaction#classify} does. Each names the guard in
+     * flight as {@link Transaction.Admission#guardInFlight} keeps it, and has the message
+     * {@code eligibility of <ID> for <entity> <FROM> could not be decided: <reason>}. The entity is the reference
+     * the step registered, {@code key#identity}, as the messages of a call's failures name it, or the key alone when
+     * the step could not read the identity; the identity function does not run again here, where the marker is
+     * released. {@code ?} stands for a state the check did not read.
      */
     private static EligibilityCheckException failed(Transaction.Admission tx, DefaultStateMachine<?, ?, ?> machine,
                                                     Object entity, Enum<?> transition, Throwable failure) {
@@ -86,7 +87,8 @@ final class Checks {
             cause = Optional.of(failure);
             reason = stopped(failure);
         }
-        String message = "eligibility of " + transition.name() + " in " + machine.key() + " "
+        String named = tx.ref().map((EntityRef ref) -> ref.toString()).orElse(machine.key().toString());
+        String message = "eligibility of " + transition.name() + " for " + named + " "
                 + from.map((Enum<?> state) -> state.name()).orElse("?") + " could not be decided: " + reason;
         return new EligibilityCheckException(machine.key(), entity, transition, from, tx.guardInFlight(), message,
                 cause);

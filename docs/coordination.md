@@ -316,11 +316,12 @@ the registry's `maxWatchChain` evaluates no rule and ends as a `Reaction.Aborted
 `WatchChainExceededException`.
 
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
-evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
-`reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
-as a separate call on the executor's thread, unless it runs on the function's own thread, through an executor that
-runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, in which case the returned future fails with
-that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
+evaluates the watch, before that root starts, and may not start a transition or an eligibility check on their own
+thread: `execute`, `reevaluate` or `eligibility` called from one of them throws `ReentrantTransitionException`; a call
+submitted through `async(...)` runs as a separate call on the executor's thread, unless it runs on the function's own
+thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, in which case
+the returned future fails with that exception as its cause. Inside a reevaluation, a refusal that one of these
+functions lets through ends
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
 its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`

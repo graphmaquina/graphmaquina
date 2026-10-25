@@ -26,8 +26,10 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
+import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.error.StaleContextException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocMachines;
@@ -43,8 +45,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -55,8 +59,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * What an eligibility check answers through the real engine: the refusal execute's admission would give, with its
  * kind, its reason and its guard, or an eligible answer once every guard passed, from the state the check read. Its
  * guards read the check's input, the confirmed state of a peer and an empty flow; it can be asked where a call may
- * start, from an after-commit hook or on the machine's executor; and it has no effect: no setter, action, hook, watch
- * or observer runs, and a context a guard kept is stale once the check ends.
+ * start, from an after-commit hook or on the machine's executor; and, whatever it answers or fails with, it has no
+ * effect: no setter, action, hook, watch or observer runs, and a context a guard kept is stale once the check ends.
  */
 class EligibilityCheckTest {
 
@@ -175,6 +179,36 @@ class EligibilityCheckTest {
         assertEquals(DRAFT, doc.status());
     }
 
+    static Stream<Arguments> technicalFailures() {
+        TransitionGuard<Doc, DocStatus, DocTransition> throwing =
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    throw new IllegalStateException("boom");
+                };
+        TransitionGuard<Doc, DocStatus, DocTransition> silent =
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> null;
+        TransitionGuard<Doc, DocStatus, DocTransition> passing =
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.pass();
+        Function<Doc, DocStatus> reads = (Doc doc) -> doc.status();
+        Function<Doc, DocStatus> unset = (Doc doc) -> null;
+        return Stream.of(
+                Arguments.of(Named.of("a guard that throws", throwing), Named.of("the state", reads)),
+                Arguments.of(Named.of("a null verdict", silent), Named.of("the state", reads)),
+                Arguments.of(Named.of("a passing guard", passing), Named.of("a null state", unset)));
+    }
+
+    /** A check that fails has no effect either: no setter, action, hook, watch or observer runs. */
+    @ParameterizedTest
+    @MethodSource("technicalFailures")
+    void noEngineEffectsOnAFailure(TransitionGuard<Doc, DocStatus, DocTransition> guard,
+                                   Function<Doc, DocStatus> getter) {
+        List<String> effects = new ArrayList<>();
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> m = instrumented(effects, guard, getter);
+        assertThrows(EligibilityCheckException.class, () -> m.eligibility(doc, SUBMIT));
+        assertEquals(List.of(), effects);
+        assertEquals(DRAFT, doc.status());
+    }
+
     /** The control of {@link #noEngineEffects}: an execute of the same machine shows every effect it counts. */
     @Test
     void anExecuteShowsEveryEffectTheCheckLacks() {
@@ -185,20 +219,29 @@ class EligibilityCheckTest {
         assertEquals(REVIEW, doc.status());
     }
 
-    /**
-     * The doc machine of a registry with an observer, whose SUBMIT edge has a guard that answers {@code verdict}, an
-     * action and an after-commit hook, and whose watch looks for the owner of every doc that moves. Each of them, and
-     * the state setter, notes its run in {@code effects}.
-     */
+    /** {@link #instrumented(List, TransitionGuard, Function)} with a guard that answers {@code verdict}. */
     private static StateMachine<Doc, DocStatus, DocTransition> instrumented(List<String> effects,
                                                                             GuardResult verdict) {
+        return instrumented(effects, (GuardContext<Doc, DocStatus, DocTransition> ctx) -> verdict,
+                (Doc doc) -> doc.status());
+    }
+
+    /**
+     * The doc machine of a registry with an observer, which reads the state with {@code getter}, and whose SUBMIT
+     * edge has {@code guard}, an action and an after-commit hook, and whose watch looks for the owner of every doc
+     * that moves. Each of them, and the state setter, notes its run in {@code effects}.
+     */
+    private static StateMachine<Doc, DocStatus, DocTransition> instrumented(
+            List<String> effects,
+            TransitionGuard<Doc, DocStatus, DocTransition> guard,
+            Function<Doc, DocStatus> getter) {
         GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
                 .terminal(ARCHIVED)
                 .statePolicy(DRAFT, "a draft is submitted")
                 .statePolicy(REVIEW, "a review is published")
                 .statePolicy(PUBLISHED, "a publication is archived")
                 .transition(SUBMIT, DRAFT, REVIEW)
-                    .guard("verdict", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> verdict)
+                    .guard("verdict", guard)
                     .action("submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                         effects.add("action");
                         return ActionOutcome.ok();
@@ -216,7 +259,7 @@ class EligibilityCheckTest {
                     .endWatch()
                 .build();
         return MachineRegistry.builder()
-                .add(StateMachines.from(graph).state(Doc::status, (Doc doc, DocStatus status) -> {
+                .add(StateMachines.from(graph).state(getter, (Doc doc, DocStatus status) -> {
                     effects.add("setter");
                     doc.setStatus(status);
                 }).identity(Doc::id))

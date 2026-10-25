@@ -489,6 +489,14 @@ sealed class Transaction permits Transaction.Admission {
             return ((Transaction) this).rootStep.map(RootStep::from);
         }
 
+        /**
+         * The reference the root's own step registered for the entity of the check, which prints it as
+         * {@code key#identity}; empty when reading its identity failed, before the step registered it.
+         */
+        Optional<EntityRef> ref() {
+            return uow().registered(callKey(), callEntity());
+        }
+
         /** Keeps {@code guard} as the guard in flight. Nothing clears it: after the guards, it names the last one. */
         @Override
         void guarding(String guard) {
