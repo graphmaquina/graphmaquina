@@ -48,8 +48,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Named;
@@ -164,6 +166,35 @@ class EligibilityFailureTest {
         assertEquals(Optional.of(DRAFT), error.from());
     }
 
+    /** A machine whose asynchronous guard {@code remote} returns what {@code stage} supplies, under a deadline. */
+    private static StateMachine<Doc, DocStatus, DocTransition> asyncReturning(
+            Supplier<CompletionStage<GuardResult>> stage) {
+        return timed((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                .asyncGuard("remote", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> stage.get()),
+                Duration.ofSeconds(10));
+    }
+
+    static Stream<Arguments> asyncNulls() {
+        Supplier<CompletionStage<GuardResult>> noStage = () -> null;
+        Supplier<CompletionStage<GuardResult>> nullAnswer = () -> CompletableFuture.completedFuture(null);
+        return Stream.of(
+                Arguments.of(Named.of("a null stage", asyncReturning(noStage)),
+                        "the guard remote returned a null stage"),
+                Arguments.of(Named.of("a stage that answers null", asyncReturning(nullAnswer)),
+                        "the guard remote returned null"));
+    }
+
+    /** The engine finds the null, so the failure has no cause. */
+    @ParameterizedTest
+    @MethodSource("asyncNulls")
+    void asyncGuardThatReturnsNullFailsTheCheck(StateMachine<Doc, DocStatus, DocTransition> machine, String reason) {
+        EligibilityCheckException error = failure(machine);
+        assertNull(error.getCause());
+        assertEquals(Optional.of("remote"), error.guard());
+        assertEquals("eligibility of SUBMIT for Doc/DocStatus#1 DRAFT could not be decided: " + reason,
+                error.getMessage());
+    }
+
     @Test
     void nullStateFailsTheCheck() {
         EligibilityCheckException error = failure(nullState());
@@ -186,6 +217,18 @@ class EligibilityFailureTest {
                 + " java.lang.IllegalStateException: no id", error.getMessage());
     }
 
+    /** The engine finds the null: its NullPointerException is the cause, and the message names the key alone. */
+    @Test
+    void nullIdentityFailsTheCheck() {
+        EligibilityCheckException error = failure(nullIdentity());
+        NullPointerException cause = assertInstanceOf(NullPointerException.class, error.getCause());
+        assertEquals("identity of Doc/DocStatus returned null", cause.getMessage());
+        assertEquals(Optional.empty(), error.from());
+        assertEquals(Optional.empty(), error.guard());
+        assertEquals("eligibility of SUBMIT for Doc/DocStatus ? could not be decided: reading the entity threw"
+                + " java.lang.NullPointerException: identity of Doc/DocStatus returned null", error.getMessage());
+    }
+
     /** A machine whose identity function throws {@code thrown}. */
     private static StateMachine<Doc, DocStatus, DocTransition> unidentifiable(RuntimeException thrown) {
         return MachineRegistry.builder()
@@ -193,6 +236,15 @@ class EligibilityFailureTest {
                         .identity((Doc doc) -> {
                             throw thrown;
                         }))
+                .build()
+                .of(DOCS);
+    }
+
+    /** A machine whose identity function answers null. */
+    private static StateMachine<Doc, DocStatus, DocTransition> nullIdentity() {
+        return MachineRegistry.builder()
+                .add(StateMachines.from(DocGraphs.plain()).state(Doc::status, Doc::setStatus)
+                        .identity((Doc doc) -> null))
                 .build()
                 .of(DOCS);
     }
@@ -248,6 +300,8 @@ class EligibilityFailureTest {
                 Arguments.of(Named.of("a wait past the deadline", neverCompletes()), EligibilityCheckException.class),
                 Arguments.of(Named.of("a null state", nullState()), EligibilityCheckException.class),
                 Arguments.of(Named.of("an identity that throws", unidentifiable(new IllegalStateException("no id"))),
+                        EligibilityCheckException.class),
+                Arguments.of(Named.of("an identity that answers null", nullIdentity()),
                         EligibilityCheckException.class),
                 Arguments.of(Named.of("an Error", throwingError()), AssertionError.class));
     }
