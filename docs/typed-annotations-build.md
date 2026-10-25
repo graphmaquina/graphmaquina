@@ -137,7 +137,8 @@ dependencies {
     implementation("io.github.graphmaquina:graphmaquina-core:$graphmaquinaVersion")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
-    // Lombok first: the GraphMaquina processor reads the accessors Lombok generates on the entities.
+    // Lombok first: the GraphMaquina processor reads the accessors
+    // Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
     annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 }
@@ -362,8 +363,10 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
-dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
+// explicit override; keep all components aligned
+graphmaquina { generatorVersion = "x.y.z" }
+// inside this repository
+dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }
 ```
 
 Declaring any dependency on that configuration replaces the default, which is how `graphmaquina-example` runs

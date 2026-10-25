@@ -68,8 +68,8 @@ record its [trail](testing-advanced.md#the-calls-flow-and-its-trail). From
 final FakeGateway gateway = new FakeGateway();
 final FakeCarrier carrier = new FakeCarrier();
 final TransitionRecorder recorder = TransitionRecorder.create();
-final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
-                new ItemActions())
+final ShopMachines shop = ShopMachinesRuntime
+        .builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
         .observer(recorder)
         .recordTrail()
         .build();
@@ -331,7 +331,8 @@ val updateGoldens = providers.systemProperty("graphmaquina.goldens.update")
     .map { it.toBooleanStrict() }.orElse(false)
 tasks.test {
     systemProperty("graphmaquina.goldens.update", updateGoldens.get().toString())
-    systemProperty("graphmaquina.goldens.root",
+    systemProperty(
+        "graphmaquina.goldens.root",
         layout.projectDirectory.dir("src/test/resources").asFile.absolutePath)
     outputs.upToDateWhen { !updateGoldens.get() }
     outputs.doNotCacheIf("Golden update writes source resources") { updateGoldens.get() }
