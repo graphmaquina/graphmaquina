@@ -84,7 +84,10 @@ class OperationInputDefaultsTest {
         }
         public CompletableFuture<Outcome<Object, S, T>> reevaluate(Object e) { return execute(e, T.GO); }
     }
-    /** A machine that implements only its abstract methods, so the input overload of {@code execute} is the default. */
+    /**
+     * A machine that implements only its abstract methods, so the input overload of {@code execute} and both
+     * {@code eligibility} methods are the defaults.
+     */
     static class PlainMachine implements StateMachine<Object, S, T> {
         public MachineKey<Object, S, T> key() { return MachineKey.of(Object.class, S.class, T.class); }
         public GraphDefinition<Object, S, T> definition() { throw new UnsupportedOperationException(); }
@@ -130,5 +133,28 @@ class OperationInputDefaultsTest {
         CompletableFuture<Outcome<Object, S, T>> future = machine.async().execute(e, T.GO, "value");
         assertInstanceOf(UnsupportedOperationException.class,
                 assertThrows(CompletionException.class, future::join).getCause());
+    }
+    @Test void eligibilityIsUnsupportedByDefault() {
+        Object e = new Object();
+        PlainMachine machine = new PlainMachine();
+        assertEquals("this StateMachine does not support eligibility checks",
+                assertThrows(UnsupportedOperationException.class, () -> machine.eligibility(e, T.GO)).getMessage());
+        assertEquals("this StateMachine does not support eligibility checks",
+                assertThrows(UnsupportedOperationException.class,
+                        () -> machine.eligibility(e, T.GO, "value")).getMessage());
+    }
+    @Test void eligibilityRefusesANullArgumentBeforeAnythingElse() {
+        Object e = new Object();
+        PlainMachine machine = new PlainMachine();
+        assertEquals("entity is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.eligibility(null, T.GO)).getMessage());
+        assertEquals("transition is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.eligibility(e, null)).getMessage());
+        assertEquals("entity is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.eligibility(null, T.GO, "value")).getMessage());
+        assertEquals("transition is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.eligibility(e, null, "value")).getMessage());
+        assertEquals("input is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.eligibility(e, T.GO, null)).getMessage());
     }
 }

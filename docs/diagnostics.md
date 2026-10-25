@@ -110,6 +110,7 @@ classDiagram
     StateMachineException <|-- AmbiguousParentException
     StateMachineException <|-- UnknownFacadeException
     StateMachineException <|-- UnknownPeerMachineException
+    StateMachineException <|-- EligibilityCheckException
     class CallFailedException {
         <<abstract>>
     }
@@ -156,6 +157,7 @@ each exception exposes what identifies its cause:
 | `AmbiguousIdentityException` | `key()`, `id()`, `first()`, `second()` |
 | `AmbiguousParentException` | `child()`, `parents()`, `nodes()` |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | `requested()`, `registered()` |
+| `EligibilityCheckException` | `key()`, `entity()`, `transition()`, and the `Optional`s `from()` and `guard()` |
 | `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
 | `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
 

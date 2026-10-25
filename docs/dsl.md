@@ -196,12 +196,14 @@ key; a second `as(...)` and an
 peers and refuses a watch on another machine.
 
 A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)`,
-`transitionsFrom(state)`, `definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose `execute(entity, id)`,
-`execute(entity, id, input)` and `reevaluate(entity)` return a `CompletableFuture`, and `supplyAsync(call)`, which runs
-any call on the machine's executor. The interfaces' default `execute(entity, id, input)` refuses an input:
-`StateMachine`'s throws `UnsupportedOperationException`, and `AsyncStateMachine`'s returns a future failed with it; the
-machines the runtime builds accept one. A generated application facade intentionally presents the domain operations
-instead. Close the registry when its work is done:
+`eligibility(entity, id)` and `eligibility(entity, id, input)`, which answer with an `Eligibility`,
+`transitionsFrom(state)`, `definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose
+`execute(entity, id)`, `execute(entity, id, input)` and `reevaluate(entity)` return a `CompletableFuture`, and
+`supplyAsync(call)`, which runs any call on the machine's executor. The interfaces' default
+`execute(entity, id, input)` refuses an input: `StateMachine`'s throws `UnsupportedOperationException`, and
+`AsyncStateMachine`'s returns a future failed with it; the machines the runtime builds accept one. The two
+`eligibility` methods of `StateMachine` are defaults as well, and throw `UnsupportedOperationException`. A generated
+application facade intentionally presents the domain operations instead. Close the registry when its work is done:
 that closes the default executors it owns. A standalone machine's internal registry cannot be closed, so its default
 executor never is; give it an `asyncExecutor` you close yourself when it runs calls through `async(...)`.
 

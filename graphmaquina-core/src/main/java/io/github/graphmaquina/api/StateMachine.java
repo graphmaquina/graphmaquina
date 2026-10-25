@@ -88,4 +88,30 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     default Outcome<E, S, T> execute(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         throw new UnsupportedOperationException("this StateMachine does not support operation input");
     }
+
+    /**
+     * Answers whether {@code execute(entity, transition)} would be admitted for {@code entity} in the state it is in,
+     * as an {@link Eligibility}: {@link Eligibility.Eligible}, or {@link Eligibility.Ineligible} with the reason and
+     * kind of the refusal. A {@code null} argument is refused. This default supports no eligibility check: it throws
+     * instead of answering.
+     *
+     * @throws NullPointerException if {@code entity} or {@code transition} is null
+     * @throws UnsupportedOperationException if this machine does not support eligibility checks
+     */
+    default Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition) {
+        throw new UnsupportedOperationException("this StateMachine does not support eligibility checks");
+    }
+
+    /**
+     * Same as the two-argument {@code eligibility}, asking about the operation that carries {@code input}: whether
+     * {@code execute(entity, transition, input)} would be admitted. A {@code null} input is refused, as a {@code null}
+     * entity is; a check that carries no input is the two-argument {@code eligibility}. This default supports no
+     * eligibility check: it throws instead of answering.
+     *
+     * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
+     * @throws UnsupportedOperationException if this machine does not support eligibility checks
+     */
+    default Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
+        throw new UnsupportedOperationException("this StateMachine does not support eligibility checks");
+    }
 }
