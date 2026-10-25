@@ -12,7 +12,8 @@ import io.github.graphmaquina.example.item.Restock;
 public final class ShopFlow {
 
     /** The batch a cancellation restocks its items in. Visible: a TRACE line of its write prints it. */
-    public static final FlowKey<String> CANCELLATION = FlowKey.visible("cancellation", String.class);
+    public static final FlowKey<String> CANCELLATION =
+            FlowKey.visible("cancellation", String.class);
 
     private ShopFlow() { }
 

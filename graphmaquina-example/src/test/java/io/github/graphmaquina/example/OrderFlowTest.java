@@ -44,8 +44,8 @@ class OrderFlowTest {
     final FakeGateway gateway = new FakeGateway();
     final FakeCarrier carrier = new FakeCarrier();
     final TransitionRecorder recorder = TransitionRecorder.create();
-    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
-                    new ItemActions())
+    final ShopMachines shop = ShopMachinesRuntime
+            .builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
             .observer(recorder)
             .recordTrail()
             .build();
@@ -83,10 +83,26 @@ class OrderFlowTest {
 
         recorder.assertRecorded()
                 .hasSize(9)
-                .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                        ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                        ItemsRuntime.KEY)
-                .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
+                .hasKeysExactly(
+                    OrdersRuntime.KEY,
+                    OrdersRuntime.KEY,
+                    ItemsRuntime.KEY,
+                    OrdersRuntime.KEY,
+                    ItemsRuntime.KEY,
+                    OrdersRuntime.KEY,
+                    ItemsRuntime.KEY,
+                    OrdersRuntime.KEY,
+                    ItemsRuntime.KEY)
+                .hasStatusesExactly(
+                    APPLIED,
+                    IGNORED,
+                    APPLIED,
+                    IGNORED,
+                    APPLIED,
+                    IGNORED,
+                    APPLIED,
+                    APPLIED,
+                    APPLIED);
     }
 
     @Test

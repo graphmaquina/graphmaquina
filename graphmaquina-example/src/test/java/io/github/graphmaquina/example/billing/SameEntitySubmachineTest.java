@@ -51,9 +51,12 @@ class SameEntitySubmachineTest {
             .terminal(PaymentStatus.DECLINED)
             .terminal(PaymentStatus.VOIDED)
             .statePolicy(PaymentStatus.AUTHORIZING, "an authorization is captured, declined or voided")
-            .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED).endTransition()
-            .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED).endTransition()
-            .transition(PaymentTransition.VOID, PaymentStatus.AUTHORIZING, PaymentStatus.VOIDED).endTransition()
+            .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED)
+            .endTransition()
+            .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED)
+            .endTransition()
+            .transition(PaymentTransition.VOID, PaymentStatus.AUTHORIZING, PaymentStatus.VOIDED)
+            .endTransition()
             .build();
 
     static final GraphDefinition<Stay, StayStatus, StayTransition> STAY_GRAPH = StateGraph.define(STAYS)
@@ -62,9 +65,12 @@ class SameEntitySubmachineTest {
             .terminal(StayStatus.CANCELLED)
             .statePolicy(StayStatus.REQUESTED, "a stay is booked first")
             .statePolicy(StayStatus.PAYING, "the payment decides")
-            .transition(StayTransition.BOOK, StayStatus.REQUESTED, StayStatus.PAYING).endTransition()
-            .transition(StayTransition.CONFIRM, StayStatus.PAYING, StayStatus.CONFIRMED).endTransition()
-            .transition(StayTransition.CANCEL, StayStatus.PAYING, StayStatus.CANCELLED).endTransition()
+            .transition(StayTransition.BOOK, StayStatus.REQUESTED, StayStatus.PAYING)
+            .endTransition()
+            .transition(StayTransition.CONFIRM, StayStatus.PAYING, StayStatus.CONFIRMED)
+            .endTransition()
+            .transition(StayTransition.CANCEL, StayStatus.PAYING, StayStatus.CANCELLED)
+            .endTransition()
             .submachine(StayStatus.PAYING, PAYMENT_GRAPH)
             .exit(PaymentStatus.CAPTURED, StayTransition.CONFIRM)
             .exit(PaymentStatus.DECLINED, StayTransition.CANCEL)
@@ -101,11 +107,14 @@ class SameEntitySubmachineTest {
     private static MachineRegistry registry() {
         return MachineRegistry.builder()
                 .add(StateMachines.from(STAY_GRAPH)
-                        .state((Stay stay) -> stay.status, (Stay stay, StayStatus status) -> stay.status = status)
+                        .state(
+                            (Stay stay) -> stay.status,
+                            (Stay stay, StayStatus status) -> stay.status = status)
                         .identity((Stay stay) -> stay.id))
                 .add(StateMachines.from(PAYMENT_GRAPH)
-                        .state((Stay stay) -> stay.paymentStatus,
-                                (Stay stay, PaymentStatus status) -> stay.paymentStatus = status)
+                        .state(
+                            (Stay stay) -> stay.paymentStatus,
+                            (Stay stay, PaymentStatus status) -> stay.paymentStatus = status)
                         .identity((Stay stay) -> stay.id))
                 .build();
     }

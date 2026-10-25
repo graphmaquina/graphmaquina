@@ -57,10 +57,15 @@ class TestingApiTest {
                 .hasInitial(OrderStatus.NEW)
                 .hasTerminalsExactly(OrderStatus.SHIPPED, OrderStatus.CANCELLED)
                 .hasAsync()
-                .hasTransitionsExactly(OrderStatus.NEW,
-                        OrderTransition.PAYMENT_DECLINED, OrderTransition.PAY, OrderTransition.CANCEL)
-                .hasTransitionsExactly(OrderStatus.PAYMENT_DECLINED,
-                        OrderTransition.RETRY, OrderTransition.CANCEL)
+                .hasTransitionsExactly(
+                    OrderStatus.NEW,
+                    OrderTransition.PAYMENT_DECLINED,
+                    OrderTransition.PAY,
+                    OrderTransition.CANCEL)
+                .hasTransitionsExactly(
+                    OrderStatus.PAYMENT_DECLINED,
+                    OrderTransition.RETRY,
+                    OrderTransition.CANCEL)
                 .watch(OrderStatus.PAID)
                 .hasPeer(ItemsRuntime.KEY)
                 .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderTransition.SHIP)));
