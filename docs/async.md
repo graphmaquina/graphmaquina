@@ -173,7 +173,7 @@ public interface AsyncTickets extends Machine<Ticket, TicketState, TicketTransit
         guards = AsyncTicketActionsRefs.CanStart.class)
     Outcome<Ticket, TicketState, TicketTransition> submit(Ticket ticket);
 
-    // false or an IOException from approve takes DECLINE; a timeout aborts the call
+    // a declined review or an IOException takes DECLINE; an action timeout aborts the call
     @AsyncTicketsGraph.Transition(
         id = TicketTransition.APPROVE,
         from = REVIEW,

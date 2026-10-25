@@ -241,7 +241,6 @@ HookProbe<Order> receipt = HookProbe.<Order>create("receipt", trace).otherwiseSu
 TransitionRecorder recorder = TransitionRecorder.create();
 Payment payment = new Payment("p5");
 Order order = new Order("o5", payment);
-// orders(pay) applies the lambda to the declaration of the exit PAY
 try (MachineRegistry registry = registry(
         orders((TransitionBuilder<Order, OrderState, OrderChange> pay) -> pay
                 .guard("inStock", inStock)
@@ -358,13 +357,13 @@ receipt, and its trail holds the rejection alone:
 ```java
 FlowKey<String> receipt = FlowKey.of("receipt", String.class);
 StateMachine<Publication, PublicationState, PublicationChange> traced = StateMachines.from(graph(
-                (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
-                    ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
-                    if (ctx.entity().id.startsWith("x")) {
-                        throw new IllegalStateException("the outbox is closed");
-                    }
-                    return ActionOutcome.ok();
-                }))
+    (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
+        ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
+        if (ctx.entity().id.startsWith("x")) {
+            throw new IllegalStateException("the outbox is closed");
+        }
+        return ActionOutcome.ok();
+    }))
         .state(
             (Publication publication) -> publication.state,
             (Publication publication, PublicationState state) -> publication.state = state)

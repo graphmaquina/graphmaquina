@@ -15,7 +15,6 @@ builder argument. The runnable example uses five seconds. An optional per-machin
 budget installed on that asynchronous machine:
 
 ```java
-// the set's default budget is 10 s; asyncTimeout sets 8 s for AsyncTickets
 AsyncTicketMachines machines = AsyncTicketMachinesRuntime
         .builder(Duration.ofSeconds(10), new AsyncTicketActions(reviews))
         .asyncTimeout(AsyncTickets.class, Duration.ofSeconds(8))

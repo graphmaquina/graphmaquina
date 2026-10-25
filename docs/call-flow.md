@@ -227,7 +227,6 @@ static MachineRegistry shop(
             .add(StateMachines.from(orderGraph)
                     .state(Order::status, Order::setStatus)
                     .identity(Order::id)
-                    // the order machine records the trail of the calls it starts
                     .recordTrail())
             .add(StateMachines.from(itemGraph)
                     .state(Item::status, Item::setStatus)
