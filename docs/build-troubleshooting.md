@@ -122,4 +122,4 @@ what javac actually accepted, so:
 
 ---
 
-Next: [Release signing](release-signing.md). Back to the [documentation index](README.md).
+Next: [Documentation illustrations](images/README.md). Back to the [documentation index](README.md).

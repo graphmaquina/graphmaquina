@@ -18,14 +18,13 @@ time; each page links the next one in that order.
 - [Test your machines](#test-your-machines)
 - [Build tooling reference](#build-tooling-reference)
 - [Find a feature](#find-a-feature)
-- [Release signatures](#release-signatures)
 - [Illustrations](#illustrations)
 
 ## Start here
 
 | Page | What it covers |
 | --- | --- |
-| [Overview](guide.md) | What GraphMaquina provides, the visual guide, requirements, artifacts and known limitations |
+| [Overview](guide.md) | What GraphMaquina provides, the visual guide, requirements and artifacts |
 | [Install and configure the build](installation.md) | Gradle and Maven configuration, Lombok, test source sets, multi-module builds |
 | [Quickstart](quickstart.md) | A complete, runnable ticket machine and its first JUnit test |
 | [Code generation and IDE setup](generation.md) | What the generator writes before javac runs, the first build and the IDE workflow |
@@ -107,12 +106,6 @@ time; each page links the next one in that order.
 | Pin a graph's structure in a test | [Goldens and structural snapshots](testing.md#goldens-and-structural-snapshots) |
 | Decide in a test when an async callback answers | [Controlled asynchronous invocations](testing-samples.md#controlled-asynchronous-invocations) |
 | Understand an `SG` error code | [Diagnostics](diagnostics.md) |
-
-## Release signatures
-
-| Page | What it covers |
-| --- | --- |
-| [Release signing](release-signing.md) | The signing key's fingerprint and how to verify a release's signature |
 
 ## Illustrations
 
