@@ -226,16 +226,18 @@ final class CallLog {
 
     /**
      * The verdict of an eligibility check, on one line. For an eligible one,
-     * {@code end verdict=ELIGIBLE state=<state> entity=<ref> elapsed=<us>}; for an ineligible one,
-     * {@code end verdict=INELIGIBLE kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>"
-     * elapsed=<us>}, the reason printed as given, unescaped. The state is the one the check read.
+     * {@code end verdict=ELIGIBLE transition=<T> state=<state> entity=<ref> elapsed=<us>}; for an ineligible one,
+     * {@code end verdict=INELIGIBLE transition=<T> kind=<kind>[ guard=<name>] state=<state> entity=<ref>
+     * reason="<reason>" elapsed=<us>}, the reason printed as given, unescaped. {@code <T>} is the identifier the check
+     * asked about, and the state is the one the check read.
      */
     void checked(Eligibility<?, ?, ?> verdict) {
         switch (verdict) {
-            case Eligibility.Eligible<?, ?, ?> eligible -> debug("end verdict=ELIGIBLE state="
-                    + eligible.from().name() + entityField() + " elapsed=" + elapsed());
-            case Eligibility.Ineligible<?, ?, ?> ineligible -> debug("end verdict=INELIGIBLE kind="
-                    + ineligible.kind().name()
+            case Eligibility.Eligible<?, ?, ?> eligible -> debug("end verdict=ELIGIBLE transition="
+                    + eligible.transition().name() + " state=" + eligible.from().name() + entityField()
+                    + " elapsed=" + elapsed());
+            case Eligibility.Ineligible<?, ?, ?> ineligible -> debug("end verdict=INELIGIBLE transition="
+                    + ineligible.transition().name() + " kind=" + ineligible.kind().name()
                     + (ineligible.guard().isPresent() ? " guard=" + ineligible.guard().get() : "")
                     + " state=" + ineligible.from().name() + entityField() + " reason=\"" + ineligible.reason()
                     + "\" elapsed=" + elapsed());

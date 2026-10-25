@@ -75,14 +75,14 @@ line after its `committed` line.
 `eligibility(entity, id)` on a `StateMachine` is no call, so it logs none of the lines above: no `call=<id>` line, and no
 `committed` or `started` line. It logs lines of its own, which start with `check=<id>` in place of `call=<id>`: at
 `DEBUG` a `start` line and then a verdict line, or a `failed` line, and at `TRACE` the lines of the step it admits. A run
-of its own with the same ticket machine, which asks whether `T-1`, which has a title, and `T-2`, which has none, can be
-submitted, logs these lines:
+of its own with a ticket machine like the quickstart's, which asks whether `T-1`, which has a title, and `T-2`, which has
+none, can be submitted, logs these lines:
 
 ```text
 FINE: check=1 start Ticket/TicketState SUBMIT
-FINE: check=1 end verdict=ELIGIBLE state=OPEN entity=Ticket/TicketState#T-1 elapsed=6511us
+FINE: check=1 end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1 elapsed=6848us
 FINE: check=2 start Ticket/TicketState SUBMIT
-FINE: check=2 end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=123us
+FINE: check=2 end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=147us
 ```
 
 With both levels at `FINER`, the same two checks log these lines:
@@ -90,12 +90,12 @@ With both levels at `FINER`, the same two checks log these lines:
 ```text
 FINE: check=1 start Ticket/TicketState SUBMIT
 FINER: check=1 depth=0 resolved Ticket/TicketState#T-1 OPEN -SUBMIT-> REVIEW kind=ACTION
-FINER: check=1 depth=0 guard hasTitle PASS elapsed=2724us
-FINE: check=1 end verdict=ELIGIBLE state=OPEN entity=Ticket/TicketState#T-1 elapsed=9266us
+FINER: check=1 depth=0 guard hasTitle PASS elapsed=2598us
+FINE: check=1 end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1 elapsed=9000us
 FINE: check=2 start Ticket/TicketState SUBMIT
 FINER: check=2 depth=0 resolved Ticket/TicketState#T-2 OPEN -SUBMIT-> REVIEW kind=ACTION
-FINER: check=2 depth=0 guard hasTitle REJECT reason="a ticket needs a title" elapsed=40us
-FINE: check=2 end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=156us
+FINER: check=2 depth=0 guard hasTitle REJECT reason="a ticket needs a title" elapsed=46us
+FINE: check=2 end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=162us
 ```
 
 The `resolved` line names an edge of kind `ACTION`, but the check runs no action: it stops once the guards passed, so it
@@ -134,7 +134,7 @@ lines are a call's.
 | `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
 | `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call ended with its `CallFailedException`, just before its [observers](commit-and-persistence.md#observers) hear of it: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. An `Error` that an observer then throws reaches the caller in place of the exception. |
 | `DEBUG` | `check=<id> start <machine> <T>` | An eligibility check starts. `<machine>` is the machine key and `<T>` the identifier it was asked about. A check refused before it starts, as a call is, logs nothing. |
-| `DEBUG` | `check=<id> end verdict=ELIGIBLE state=<state> entity=<ref> elapsed=<us>` / `check=<id> end verdict=INELIGIBLE kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>" elapsed=<us>` | The check answered `Eligible` or `Ineligible`. `<state>` is the state it read, `<kind>` the `RejectionKind` of the refusal, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason of the refusal, as given and unescaped. The time is counted since the check started, in whole microseconds. |
+| `DEBUG` | `check=<id> end verdict=ELIGIBLE transition=<T> state=<state> entity=<ref> elapsed=<us>` / `check=<id> end verdict=INELIGIBLE transition=<T> kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>" elapsed=<us>` | The check answered `Eligible` or `Ineligible`. `<T>` is the identifier it was asked about, `<state>` the state it read, `<kind>` the `RejectionKind` of the refusal, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason of the refusal, as given and unescaped. The time is counted since the check started, in whole microseconds. |
 | `DEBUG` | `check=<id> failed error=<error> elapsed=<us>` | The check could not answer and threw its `EligibilityCheckException`: the exception's class name and message, without a stack trace, and the time since the check started. The message names the entity as `<key>#<identity>`, or the key alone when its identity could not be read. An `Error` gets no `failed` line. |
 | `TRACE` | `call=<id> depth=<d> resolved <ref> <from> -<T>-> <to> kind=<kind>[ exit-of=<ref>]` | A step resolved the single edge keyed by its entity's state and the requested identifier, before its guards run. `<kind>` is the edge's `kind()`, `ACTION` or `MOVE`. The step of a sub-machine's exit adds `exit-of=` and the child whose terminal state selected the exit. |
 | `TRACE` | `call=<id> depth=<d> no-edge <ref> <from> <T>` | A step found no edge for its entity's state and the requested identifier: the request is rejected, or, inside a cascade or an exit, the call aborts. |
@@ -202,9 +202,11 @@ loses the line and changes nothing in the call, except that an `InterruptedExcep
 `failed` line ends the call with that `Error`, which the [observers](commit-and-persistence.md#observers) receive as the call's end event, in the
 phase the call reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that
 ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows
-them. A check treats its backend alike: anything but an `Error`
-changes neither its verdict nor its `EligibilityCheckException`, and an `Error` on any of its lines propagates as itself
-in place of the verdict or of that exception, with no `failed` line.
+them. A check treats its backend alike: a line lost to anything
+but an `Error` changes neither its verdict nor its `EligibilityCheckException`, except that an `InterruptedException`
+interrupts the thread again, as for a call, and a later wait of the check, for an asynchronous guard, then fails as
+interrupted with an `EligibilityCheckException`. An `Error` on any line of a check propagates as itself in place of the
+verdict or of that exception, with no `failed` line.
 
 ---
 

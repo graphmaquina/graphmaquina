@@ -116,7 +116,7 @@ class EligibilityLogTest {
     void debugLinesOfAnEligibleCheck() {
         assertEquals(List.of(
                 "FINE check=A start Doc/DocStatus SUBMIT",
-                "FINE check=A end verdict=ELIGIBLE state=DRAFT entity=Doc/DocStatus#d1 elapsed=<us>"),
+                "FINE check=A end verdict=ELIGIBLE transition=SUBMIT state=DRAFT entity=Doc/DocStatus#d1 elapsed=<us>"),
                 logged(Level.FINE, "d1", SUBMIT));
     }
 
@@ -124,7 +124,7 @@ class EligibilityLogTest {
     void debugLinesOfAGuardRejection() {
         assertEquals(List.of(
                 "FINE check=A start Doc/DocStatus SUBMIT",
-                "FINE check=A end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=DRAFT"
+                "FINE check=A end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=DRAFT"
                         + " entity=Doc/DocStatus#d2 reason=\"a draft needs a title\" elapsed=<us>"),
                 logged(Level.FINE, "d2", SUBMIT));
     }
@@ -133,8 +133,8 @@ class EligibilityLogTest {
     void debugLinesOfARequestWithoutAnEdge() {
         assertEquals(List.of(
                 "FINE check=A start Doc/DocStatus PUBLISH",
-                "FINE check=A end verdict=INELIGIBLE kind=NO_TRANSITION state=DRAFT entity=Doc/DocStatus#d1"
-                        + " reason=\"a draft is submitted or discarded\" elapsed=<us>"),
+                "FINE check=A end verdict=INELIGIBLE transition=PUBLISH kind=NO_TRANSITION state=DRAFT"
+                        + " entity=Doc/DocStatus#d1 reason=\"a draft is submitted or discarded\" elapsed=<us>"),
                 logged(Level.FINE, "d1", PUBLISH));
     }
 
@@ -154,13 +154,13 @@ class EligibilityLogTest {
                 "FINE check=A start Doc/DocStatus SUBMIT",
                 "FINER check=A depth=0 resolved Doc/DocStatus#d1 DRAFT -SUBMIT-> REVIEW kind=MOVE",
                 "FINER check=A depth=0 guard hasTitle PASS elapsed=<us>",
-                "FINE check=A end verdict=ELIGIBLE state=DRAFT entity=Doc/DocStatus#d1 elapsed=<us>"),
+                "FINE check=A end verdict=ELIGIBLE transition=SUBMIT state=DRAFT entity=Doc/DocStatus#d1 elapsed=<us>"),
                 logged(Level.FINER, "d1", SUBMIT));
         assertEquals(List.of(
                 "FINE check=A start Doc/DocStatus SUBMIT",
                 "FINER check=A depth=0 resolved Doc/DocStatus#d2 DRAFT -SUBMIT-> REVIEW kind=MOVE",
                 "FINER check=A depth=0 guard hasTitle REJECT reason=\"a draft needs a title\" elapsed=<us>",
-                "FINE check=A end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=DRAFT"
+                "FINE check=A end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=DRAFT"
                         + " entity=Doc/DocStatus#d2 reason=\"a draft needs a title\" elapsed=<us>"),
                 logged(Level.FINER, "d2", SUBMIT));
     }
@@ -170,8 +170,8 @@ class EligibilityLogTest {
         assertEquals(List.of(
                 "FINE check=A start Doc/DocStatus PUBLISH",
                 "FINER check=A depth=0 no-edge Doc/DocStatus#d1 DRAFT PUBLISH",
-                "FINE check=A end verdict=INELIGIBLE kind=NO_TRANSITION state=DRAFT entity=Doc/DocStatus#d1"
-                        + " reason=\"a draft is submitted or discarded\" elapsed=<us>"),
+                "FINE check=A end verdict=INELIGIBLE transition=PUBLISH kind=NO_TRANSITION state=DRAFT"
+                        + " entity=Doc/DocStatus#d1 reason=\"a draft is submitted or discarded\" elapsed=<us>"),
                 logged(Level.FINER, "d1", PUBLISH));
     }
 
@@ -191,7 +191,8 @@ class EligibilityLogTest {
                 "FINE check=A start Payment/PaymentStatus CAPTURE",
                 "FINER check=A depth=0 binding Payment/PaymentStatus#p1 parent=Booking/BookingStatus#b1 node=DEPOSIT",
                 "FINER check=A depth=0 resolved Payment/PaymentStatus#p1 AUTHORIZING -CAPTURE-> CAPTURED kind=ACTION",
-                "FINE check=A end verdict=ELIGIBLE state=AUTHORIZING entity=Payment/PaymentStatus#p1 elapsed=<us>"),
+                "FINE check=A end verdict=ELIGIBLE transition=CAPTURE state=AUTHORIZING"
+                        + " entity=Payment/PaymentStatus#p1 elapsed=<us>"),
                 loggedPayment(DEPOSIT));
     }
 
@@ -201,7 +202,7 @@ class EligibilityLogTest {
                 "FINE check=A start Payment/PaymentStatus CAPTURE",
                 "FINER check=A depth=0 detached Payment/PaymentStatus#p1"
                         + " reason=\"no parent holds it in DEPOSIT or BALANCE\"",
-                "FINE check=A end verdict=INELIGIBLE kind=DETACHED state=AUTHORIZING"
+                "FINE check=A end verdict=INELIGIBLE transition=CAPTURE kind=DETACHED state=AUTHORIZING"
                         + " entity=Payment/PaymentStatus#p1 reason=\"no parent holds it in DEPOSIT or BALANCE\""
                         + " elapsed=<us>"),
                 loggedPayment(CANCELLED));
@@ -262,7 +263,8 @@ class EligibilityLogTest {
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#d1 records=1 starts=0"
                             + " reactions=0 aborted=0 elapsed=<us>",
                     "FINE check=B start Doc/DocStatus SUBMIT",
-                    "FINE check=B end verdict=ELIGIBLE state=DRAFT entity=Doc/DocStatus#d1 elapsed=<us>"),
+                    "FINE check=B end verdict=ELIGIBLE transition=SUBMIT state=DRAFT entity=Doc/DocStatus#d1"
+                            + " elapsed=<us>"),
                     lines(log));
             List<Long> calls = ids(log, "call");
             List<Long> checks = ids(log, "check");
@@ -337,9 +339,10 @@ class EligibilityLogTest {
     void theDebugExampleOfTheLogsPage() {
         assertEquals(List.of(
                 "FINE check=A start Ticket/TicketState SUBMIT",
-                "FINE check=A end verdict=ELIGIBLE state=OPEN entity=Ticket/TicketState#T-1 elapsed=<us>",
+                "FINE check=A end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1"
+                        + " elapsed=<us>",
                 "FINE check=B start Ticket/TicketState SUBMIT",
-                "FINE check=B end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=OPEN"
+                "FINE check=B end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN"
                         + " entity=Ticket/TicketState#T-2 reason=\"a ticket needs a title\" elapsed=<us>"),
                 loggedTickets(Level.FINE));
     }
@@ -350,11 +353,12 @@ class EligibilityLogTest {
                 "FINE check=A start Ticket/TicketState SUBMIT",
                 "FINER check=A depth=0 resolved Ticket/TicketState#T-1 OPEN -SUBMIT-> REVIEW kind=ACTION",
                 "FINER check=A depth=0 guard hasTitle PASS elapsed=<us>",
-                "FINE check=A end verdict=ELIGIBLE state=OPEN entity=Ticket/TicketState#T-1 elapsed=<us>",
+                "FINE check=A end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1"
+                        + " elapsed=<us>",
                 "FINE check=B start Ticket/TicketState SUBMIT",
                 "FINER check=B depth=0 resolved Ticket/TicketState#T-2 OPEN -SUBMIT-> REVIEW kind=ACTION",
                 "FINER check=B depth=0 guard hasTitle REJECT reason=\"a ticket needs a title\" elapsed=<us>",
-                "FINE check=B end verdict=INELIGIBLE kind=GUARD guard=hasTitle state=OPEN"
+                "FINE check=B end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN"
                         + " entity=Ticket/TicketState#T-2 reason=\"a ticket needs a title\" elapsed=<us>"),
                 loggedTickets(Level.FINER));
     }

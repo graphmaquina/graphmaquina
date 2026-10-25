@@ -32,8 +32,9 @@ final class Checks {
      * read. The verdict line is logged once the marker is released, as an end line is; so is the failed line of the
      * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
      * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
-     * backend throws is contained by the log, as {@link CallLog} says, so a log never changes the verdict or turns
-     * into a failure of the check.
+     * backend throws is contained by the log, as {@link CallLog} says: it loses the line and changes nothing in the
+     * check, except that an InterruptedException interrupts the thread again, as for a call, so that a later wait of
+     * the check, for an asynchronous guard, ends as interrupted and fails the check.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
             DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
