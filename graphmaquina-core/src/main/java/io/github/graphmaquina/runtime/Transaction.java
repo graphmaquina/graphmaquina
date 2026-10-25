@@ -475,9 +475,18 @@ sealed class Transaction permits Transaction.Admission {
         /** See {@link #abortReason()}. */
         private Optional<String> abortReason = Optional.empty();
 
-        Admission(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
-                  Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
+        Admission(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
+                  @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
+                  @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
             super(registry, uow, callKey, callEntity, requested, reaction, call, log);
+        }
+
+        /**
+         * The state the root's own step read, as {@link #recordRootStep} kept it when that step threw once it had read
+         * it; empty before, and when the step failed reading the identity or the state.
+         */
+        Optional<Enum<?>> readState() {
+            return ((Transaction) this).rootStep.map(RootStep::from);
         }
 
         /** Keeps {@code guard} as the guard in flight. Nothing clears it: after the guards, it names the last one. */

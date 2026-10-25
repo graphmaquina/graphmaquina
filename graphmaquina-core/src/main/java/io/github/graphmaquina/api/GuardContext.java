@@ -15,6 +15,9 @@ import java.util.Optional;
  * throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. An Error
  * thrown as itself propagates.
  * {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call means inside a cascade.
+ * A guard also runs for an eligibility check, which {@link StateMachine#eligibility} answers without the call: there
+ * the check stands for the root transaction, so the context works until the check ends, and what would abort the call
+ * fails the check with an {@link io.github.graphmaquina.error.EligibilityCheckException} instead.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -46,7 +49,8 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
      * The value passed as this operation's second argument, if any; empty when called without one, and always empty
      * in a cascaded step, the exit of a sub-machine or a reevaluation, which carry none. A {@code null} second
      * argument is refused before the call starts, so it never reads as empty. Scoped to this invocation only, never a
-     * value left over from an earlier call.
+     * value left over from an earlier call. In an eligibility check, the input the check carries, as
+     * {@code eligibility(entity, transition, input)} receives it; empty for a check that carries none.
      */
     default Optional<?> input() {
         return Optional.empty();

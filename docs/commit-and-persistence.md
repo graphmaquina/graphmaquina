@@ -166,7 +166,8 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 
 Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
 before the operation returns or throws. A request refused before it starts, such as one with a null argument,
-notifies no observer. An observer whose `onStarted` threw still receives its end event, and
+notifies no observer. Nor does an eligibility check, `eligibility(entity, id)` on a `StateMachine`: a check is not a
+call. An observer whose `onStarted` threw still receives its end event, and
 `elapsed` runs from just before `onStarted` until just before that event. Observers belong to a registry: a machine
 built standalone has none. `MachineCall` names the machine, the entity, the requested identifier (empty for
 `reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity: it reads `<key> <ID>`, or
@@ -190,10 +191,11 @@ can when the call ended in one: telling them can need the stack or the memory th
 effort, and that `Error` propagates. That warning is the only record
 logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
 `io.github.graphmaquina.runtime`, as [debug a call](logs.md) describes. An observer cannot
-start a transition on its own thread either: an operation called from an observer throws `ReentrantTransitionException`,
-which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless it
-runs on the observer's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s
-queued tasks, in which case the returned future fails with that exception as its cause. When a failure
+start a transition on its own thread either: an operation or an eligibility check called from an observer throws
+`ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread
+as a call of its own, unless it runs on the observer's own thread, through an executor that runs tasks inline or a
+wait that runs a `ForkJoinPool`'s queued tasks, in which case the returned future fails with that exception as its
+cause. When a failure
 must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
 the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order
 they were added.

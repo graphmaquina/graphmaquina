@@ -51,14 +51,14 @@ final class Steps {
      * depth 0. The entity is registered and its state read; for a machine that takes part in a binding, its bindings
      * are checked; its edge is resolved and a reserved exit refused; then, with the step's frame pushed, its guards
      * run in order, each noted as the guard in flight, as {@link Transaction#guarding} says, right before it is
-     * evaluated: an {@link Transaction.Admission} keeps it. The step stops there: it logs no hop, runs no action and
+     * evaluated: a {@link Transaction.Admission} keeps it. The step stops there: it logs no hop, runs no action and
      * calls for no exit, and the call does not enter ACTION. Returns the rejection of
      * a step refused on the way or, once every guard passed, {@link StepResult.Applied} with the state read,
      * {@code id} and the destination of the edge, which here means admitted, nothing ran. A step that throws once it
      * has read its state records that state and its edge as the root's own step does.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> admit(
-            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, Optional<Object> input) {
+            Transaction.Admission tx, DefaultStateMachine<E, S, T> machine, E entity, T id, Optional<Object> input) {
         return transition(tx, machine, entity, id, 0, input, true);
     }
 
