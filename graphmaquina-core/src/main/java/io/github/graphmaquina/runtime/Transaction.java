@@ -65,6 +65,10 @@ final class Transaction {
      * that step throws or when the clock cannot date its rejection; empty before.
      */
     private Optional<RootStep> rootStep = Optional.empty();
+    /** See {@link #abortReason()}. */
+    private Optional<String> abortReason = Optional.empty();
+    /** See {@link #guardInFlight()}. */
+    private Optional<String> guardInFlight = Optional.empty();
     /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
     private final CallLog log;
     /**
@@ -141,6 +145,23 @@ final class Transaction {
     void recordRootStep(Enum<?> from, Enum<?> id, Optional<Enum<?>> to) {
         rootStep = Optional.of(new RootStep(from, id, to));
     }
+
+    /**
+     * Records {@code guard}, the name of the guard a step is about to evaluate, as the guard in flight. Nothing clears
+     * it: once a step's guards are done, it names the last one evaluated.
+     */
+    void guarding(String guard) {
+        guardInFlight = Optional.of(guard);
+    }
+
+    /** The guard that {@link #guarding} recorded last, empty before the first: while a guard runs, that guard. */
+    Optional<String> guardInFlight() { return guardInFlight; }
+
+    /**
+     * The message of the last abort that {@link #unpoisonedAbort}, and so {@link #abort}, or {@link #unread} built, as
+     * it was before {@link TransitionAbortedException} composed its own message from it; empty before the first.
+     */
+    Optional<String> abortReason() { return abortReason; }
 
     /**
      * A handle on the call's flow for a context of this call at {@code depth}, which reaches the call's unit of work
@@ -238,6 +259,7 @@ final class Transaction {
                                                Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
                                                String message, Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
+        abortReason = Optional.of(message);
         return cause.isPresent()
                 ? new TransitionAbortedException(call(), phase, details, message, cause.get())
                 : new TransitionAbortedException(call(), phase, details, message);
@@ -253,8 +275,9 @@ final class Transaction {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
-        return new TransitionAbortedException(call(), CallPhase.RESOLVE, details,
-                "reading the entity threw " + Texts.shown(cause), cause);
+        String message = "reading the entity threw " + Texts.shown(cause);
+        abortReason = Optional.of(message);
+        return new TransitionAbortedException(call(), CallPhase.RESOLVE, details, message, cause);
     }
 
     /**
