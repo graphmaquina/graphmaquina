@@ -37,7 +37,10 @@ sealed interface StepResult<S extends Enum<S>, T extends Enum<T>>
         };
     }
 
-    /** The selected edge ran and is pending commit. */
+    /**
+     * The selected edge ran and is pending commit. A step that only admits, as {@link Steps#admit} runs it, returns it
+     * once its guards passed: admitted, nothing ran.
+     */
     record Applied<S extends Enum<S>, T extends Enum<T>>(S from, T transition, S to) implements StepResult<S, T> { }
 
     /** A reevaluation that selected no edge. No step builds it: reevaluate returns Outcome.Ignored without one. */

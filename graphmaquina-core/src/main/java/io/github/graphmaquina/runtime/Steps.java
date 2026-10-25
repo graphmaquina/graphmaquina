@@ -16,8 +16,9 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * One step of a call, the root's, a cascade's or an exit's: the state read, the edge resolved from it, then, with the
- * step's frame pushed, the guards, the hop and the action, or the rejection. The binding check and the exits of a
- * machine that takes part in a binding are {@link Submachines}'; the action is {@link Actions}'.
+ * step's frame pushed, the guards, the hop and the action, or the rejection. A root step can also only admit, as
+ * {@link #admit} says: the same path, stopped once its guards passed. The binding check and the exits of a machine
+ * that takes part in a binding are {@link Submachines}'; the action is {@link Actions}'.
  */
 final class Steps {
 
@@ -29,34 +30,11 @@ final class Steps {
      */
     record ExitOf(Enum<?> node, EntityRef child) { }
 
-    /** What {@link #resolve} found for a step before its guards: a refusal, or the edge the step goes on along. */
-    sealed interface Resolution<E, S extends Enum<S>, T extends Enum<T>>
-            permits Resolution.Refused, Resolution.Selected {
-
-        /**
-         * The step was refused before its guards: the child is detached, no edge leaves its state with its
-         * identifier, or the identifier is a reserved exit. {@code result} is the rejection a root step returns; a
-         * nested step's refusal throws instead, so it never gets one.
-         */
-        record Refused<E, S extends Enum<S>, T extends Enum<T>>(StepResult<S, T> result)
-                implements Resolution<E, S, T> { }
-
-        /**
-         * The step goes on along {@code transition}, the edge its state and identifier selected. {@code holder} is the
-         * binding that holds the stepping child, as the binding check found it, for the exits the step calls for;
-         * empty for a free child and for a machine that no graph binds as a sub-machine.
-         */
-        record Selected<E, S extends Enum<S>, T extends Enum<T>>(TransitionSpec<E, S, T> transition,
-                                                                 Optional<Submachines.Holder> holder)
-                implements Resolution<E, S, T> { }
-    }
-
     /**
      * One step requested by the call, a cascade or a watch, never the exit of a sub-machine: resolve (current state,
-     * identifier) exactly once, as {@link #resolve} says, then guards, annotate, execute, failure route, as
-     * {@link #runEdge} says. A machine that takes part in a binding takes {@link #step} instead, which runs its exits
-     * too; any other pays one field read for that, besides what {@link #resolve} costs a machine that takes part in no
-     * binding. When the root's own step throws once it has read its state, it records that state and its edge for
+     * identifier) exactly once, guards, annotate, execute, failure route. A machine that takes part in a binding takes
+     * {@link #step} instead, which checks its bindings and runs its exits too; any other pays one field read for that.
+     * When the root's own step throws once it has read its state, it records that state and its edge for
      * {@link Transaction#classify}. The root's own step hands the reference it registered to the call's log, which
      * prints it. A call that logs at TRACE logs the edge the step resolved, or that it found none, at the step's depth.
      * {@code input} is the operation input of the call, empty when it has none; a cascade passes none. The contexts
@@ -64,18 +42,49 @@ final class Steps {
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input) {
+        return transition(tx, machine, entity, id, depth, input, false);
+    }
+
+    /**
+     * The root step of {@code entity} for {@code id} in admit-only mode: the very path that
+     * {@link #transition(Transaction, DefaultStateMachine, Object, Enum, int, Optional)} and {@link #step} run, at
+     * depth 0. The entity is registered and its state read; for a machine that takes part in a binding, its bindings
+     * are checked; its edge is resolved and a reserved exit refused; then, with the step's frame pushed, its guards
+     * run in order, each noted as the guard in flight, as {@link Transaction#guarding} says, right before it is
+     * evaluated: an {@link Transaction.Admission} keeps it. The step stops there: it logs no hop, runs no action and
+     * calls for no exit, and the call does not enter ACTION. Returns the rejection of
+     * a step refused on the way or, once every guard passed, {@link StepResult.Applied} with the state read,
+     * {@code id} and the destination of the edge, which here means admitted, nothing ran. A step that throws once it
+     * has read its state records that state and its edge as the root's own step does.
+     */
+    static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> admit(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, Optional<Object> input) {
+        return transition(tx, machine, entity, id, 0, input, true);
+    }
+
+    /**
+     * {@link #transition(Transaction, DefaultStateMachine, Object, Enum, int, Optional)} or, when {@code admitOnly},
+     * the same step stopped once its guards passed, as {@link #admit} says.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
+            boolean admitOnly) {
         if (machine.hasBindings()) {
-            return step(tx, machine, entity, id, depth, input, Optional.empty());
+            return step(tx, machine, entity, id, depth, input, Optional.empty(), admitOnly);
         }
         Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
         S from = stateOf(tx, machine, ref, entity, id, depth, Optional.empty());
         try {
-            return switch (resolve(tx, machine, ref, entity, from, id, depth, Optional.empty())) {
-                case Resolution.Refused<E, S, T> refused -> refused.result();
-                case Resolution.Selected<E, S, T> selected ->
-                        runEdge(tx, machine, ref, entity, from, selected.transition(), depth, input, Optional.empty());
-            };
+            Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
+            if (selected.isEmpty()) {
+                return noTransition(tx, machine, ref, from, id, depth, Optional.empty());
+            }
+            TransitionSpec<E, S, T> transition = selected.orElseThrow();
+            if (tx.log().trace()) {
+                tx.log().trace(depth, resolved(ref, transition, Optional.empty()));
+            }
+            return runEdge(tx, machine, ref, entity, from, transition, depth, input, Optional.empty(), admitOnly);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
@@ -87,32 +96,62 @@ final class Steps {
     }
 
     /**
-     * One step of a machine that takes part in a binding: read the state, then check the bindings of a sub-machine,
-     * resolve (current state, identifier) exactly once and refuse a reserved exit, as {@link #resolve} says, then
-     * guards, annotate, execute and failure route as {@link #runEdge} says; then, once the step's frame is popped, the
-     * exits it calls for, as {@link Submachines#exits} says. {@code exitOf} is the captured bound node whose exit this
-     * step runs, with the child whose terminal state selected it: the node supplies the source instead of rereading
-     * the parent's getter, and grants reserved-exit privilege only at that source; the child is what the step's
-     * resolved line names. It is empty for any other step. When the root's own step throws once it has read its state,
-     * it records that state and its edge for {@link Transaction#classify}. The root's own step hands the reference it
-     * registered to the call's log, which prints it. A call that logs at TRACE logs what {@link #resolve} says, at the
-     * step's depth.
+     * One step of a machine that takes part in a binding: read the state, check the bindings of a sub-machine,
+     * resolve (current state, identifier) exactly once, refuse a reserved exit, then guards, annotate, execute and
+     * failure route as {@link #runEdge} says; then, once the step's frame is popped, the exits it calls for, as
+     * {@link Submachines#exits} says. {@code exitOf} is the captured bound node whose exit this step runs, with the
+     * child whose terminal state selected it: the node supplies the source instead of rereading the parent's getter,
+     * and grants reserved-exit privilege only at that source; the child is what the step's resolved line names. It is
+     * empty for any other step. For a machine that no graph binds as a sub-machine, the binding check is one test of an
+     * empty list, and for one whose own graph binds none, the reserved-exit check is one field read. When the root's
+     * own step throws once it has read its state, it records that state and its edge for {@link Transaction#classify}.
+     * The root's own step hands the reference it registered to the call's log, which prints it. A call that logs at
+     * TRACE logs what the binding check found, the binding that holds the child or the reason it is detached, then the
+     * edge the step resolved, or that it found none, at the step's depth.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
             Optional<ExitOf> exitOf) {
+        return step(tx, machine, entity, id, depth, input, exitOf, false);
+    }
+
+    /**
+     * {@link #step(Transaction, DefaultStateMachine, Object, Enum, int, Optional, Optional)} or, when
+     * {@code admitOnly}, the same step stopped once its guards passed, as {@link #admit} says, which calls for no exit.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
+            Optional<ExitOf> exitOf, boolean admitOnly) {
         Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
         S from = stateOf(tx, machine, ref, entity, id, depth, exitOf);
         try {
-            return switch (resolve(tx, machine, ref, entity, from, id, depth, exitOf)) {
-                case Resolution.Refused<E, S, T> refused -> refused.result();
-                case Resolution.Selected<E, S, T> selected -> {
-                    StepResult<S, T> result =
-                            runEdge(tx, machine, ref, entity, from, selected.transition(), depth, input, exitOf);
-                    yield Submachines.exits(tx, machine, ref, entity, depth, result, selected.holder());
+            Optional<Submachines.Holder> holder = Optional.empty();
+            if (!machine.bindingsAsChild().isEmpty()) {
+                Submachines.BindingCheck check = Submachines.checkBindings(tx, machine, ref, entity, from, id, depth);
+                traceCheck(tx, ref, depth, check);
+                if (check.detached().isPresent()) {
+                    return rejected(tx, machine, ref, from, id, Optional.empty(), depth, check.detached().get(),
+                            RejectionKind.DETACHED, Optional.empty(), exitOf);
                 }
-            };
+                holder = check.holder();
+            }
+            Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
+            if (selected.isEmpty()) {
+                return noTransition(tx, machine, ref, from, id, depth, exitOf);
+            }
+            TransitionSpec<E, S, T> transition = selected.orElseThrow();
+            if (tx.log().trace()) {
+                tx.log().trace(depth, resolved(ref, transition, exitOf));
+            }
+            if (exitOf.isEmpty() && isReservedExit(machine, from, id)) {
+                return rejected(tx, machine, ref, from, id, Optional.of(transition.to()), depth,
+                        id.name() + " leaves " + from.name() + " only when its sub-machine ends",
+                        RejectionKind.RESERVED_EXIT, Optional.empty(), exitOf);
+            }
+            StepResult<S, T> result =
+                    runEdge(tx, machine, ref, entity, from, transition, depth, input, exitOf, admitOnly);
+            return admitOnly ? result : Submachines.exits(tx, machine, ref, entity, depth, result, holder);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
@@ -121,49 +160,6 @@ final class Steps {
             }
             throw e;
         }
-    }
-
-    /**
-     * The admission of the step of {@code ref} before its guards, once it has read its state {@code from}: for a
-     * machine that some graph binds as a sub-machine, the binding check, as {@link Submachines#checkBindings} says,
-     * which refuses a detached child; then the edge that {@code from} and {@code id} select, looked up exactly once and
-     * refused as {@link #noTransition} says when there is none; then, unless {@code exitOf} is present, the refusal of
-     * an identifier that is an exit of the sub-machine bound to {@code from}, as {@link #isReservedExit} says. A
-     * refusal is {@link Resolution.Refused} at the root and throws when nested, as {@link #rejected} says; otherwise
-     * the result is {@link Resolution.Selected}. {@code exitOf} is present only for the step of an exit, as
-     * {@link #step} says: it grants that step reserved-exit privilege, and its child is what the resolved line names.
-     * For a machine that no graph binds as a sub-machine, the binding check is one test of an empty list, and for one
-     * whose own graph binds none, the reserved-exit check is one field read. A call that logs at TRACE logs what the
-     * binding check found, the binding that holds the child or the reason it is detached, then the edge the step
-     * resolved, or that it found none, at the step's depth. It pushes no frame and runs no guard.
-     */
-    static <E, S extends Enum<S>, T extends Enum<T>> Resolution<E, S, T> resolve(
-            Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth,
-            Optional<ExitOf> exitOf) {
-        Optional<Submachines.Holder> holder = Optional.empty();
-        if (!machine.bindingsAsChild().isEmpty()) {
-            Submachines.BindingCheck check = Submachines.checkBindings(tx, machine, ref, entity, from, id, depth);
-            traceCheck(tx, ref, depth, check);
-            if (check.detached().isPresent()) {
-                return new Resolution.Refused<>(rejected(tx, machine, ref, from, id, Optional.empty(), depth,
-                        check.detached().get(), RejectionKind.DETACHED, Optional.empty(), exitOf));
-            }
-            holder = check.holder();
-        }
-        Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
-        if (selected.isEmpty()) {
-            return new Resolution.Refused<>(noTransition(tx, machine, ref, from, id, depth, exitOf));
-        }
-        TransitionSpec<E, S, T> transition = selected.orElseThrow();
-        if (tx.log().trace()) {
-            tx.log().trace(depth, resolved(ref, transition, exitOf));
-        }
-        if (exitOf.isEmpty() && isReservedExit(machine, from, id)) {
-            return new Resolution.Refused<>(rejected(tx, machine, ref, from, id, Optional.of(transition.to()), depth,
-                    id.name() + " leaves " + from.name() + " only when its sub-machine ends",
-                    RejectionKind.RESERVED_EXIT, Optional.empty(), exitOf));
-        }
-        return new Resolution.Selected<>(transition, holder);
     }
 
     /**
@@ -171,7 +167,7 @@ final class Steps {
      * reference to the call's log, which prints it. An identity that cannot be read aborts the root's step as
      * {@link Transaction#unread} says; nested, what it threw propagates as it is.
      */
-    static <E, S extends Enum<S>, T extends Enum<T>> EntityRef register(
+    private static <E, S extends Enum<S>, T extends Enum<T>> EntityRef register(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth) {
         try {
             EntityRef ref = tx.uow().register(machine.refOf(entity));
@@ -194,7 +190,7 @@ final class Steps {
      * other step. A state that cannot be read aborts the root's step as {@link Transaction#unread} says; nested, what
      * reading it threw propagates as it is.
      */
-    static <E, S extends Enum<S>, T extends Enum<T>> S stateOf(
+    private static <E, S extends Enum<S>, T extends Enum<T>> S stateOf(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, T id, int depth,
             Optional<ExitOf> exitOf) {
         try {
@@ -273,62 +269,50 @@ final class Steps {
 
     /**
      * The selected edge of a {@link #transition} or a {@link #step}, with the step's frame pushed until it ends:
-     * guards, as {@link #admitGuards} says, then annotate, execute, failure route. The hop is logged as
-     * {@link #appendHop} says.
+     * guards, annotate, execute, failure route. The hop is logged as {@link #appendHop} says. When
+     * {@code admitOnly}, the guards alone: each is noted as the guard in flight, as {@link Transaction#guarding}
+     * says, right before it is evaluated, and once every guard passed the step returns {@link StepResult.Applied}
+     * before the call enters ACTION, with nothing run; a step that executes notes no guard.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runEdge(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from,
-            TransitionSpec<E, S, T> transition, int depth, Optional<Object> input, Optional<ExitOf> exitOf) {
+            TransitionSpec<E, S, T> transition, int depth, Optional<Object> input, Optional<ExitOf> exitOf,
+            boolean admitOnly) {
         UnitOfWork uow = tx.uow();
         uow.push(ref, transition);
         try {
-            Optional<StepResult<S, T>> refused =
-                    admitGuards(tx, machine, ref, entity, from, transition, depth, input, exitOf);
-            if (refused.isPresent()) {
-                return refused.get();
+            if (depth == 0 && !transition.guards().isEmpty()) {
+                tx.enter(CallPhase.GUARD);
             }
-            if (depth == 0) {
-                tx.enter(CallPhase.ACTION);
+            for (GuardRef<E, S, T> guard : transition.guards()) {
+                DefaultGuardContext<E, S, T> guardContext =
+                        new DefaultGuardContext<>(tx, machine, entity, transition, depth, input);
+                tx.track(guardContext);
+                if (admitOnly) {
+                    tx.guarding(guard.name());
+                }
+                GuardResult verdict = evaluateGuard(tx, machine, ref, transition, depth, guard, guardContext);
+                if (verdict instanceof GuardResult.Reject reject) {
+                    return rejected(tx, machine, ref, from, transition.transition(), Optional.of(transition.to()),
+                            depth, reject.reason(), RejectionKind.GUARD, Optional.of(guard.name()), exitOf);
+                }
             }
-            int savepoint = uow.savepoint();
-            appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
-            if (transition.action().isEmpty()) {
-                return new StepResult.Applied<>(from, transition.transition(), transition.to());
+            // An admit-only step stops once its guards passed: no ACTION, no hop, no action. Sharing the last return
+            // keeps this method's bytecode under 325 bytes, C2's FreqInlineSize, as it was without the mode.
+            if (!admitOnly) {
+                if (depth == 0) {
+                    tx.enter(CallPhase.ACTION);
+                }
+                int savepoint = uow.savepoint();
+                appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
+                if (transition.action().isPresent()) {
+                    return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
+                }
             }
-            return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
+            return new StepResult.Applied<>(from, transition.transition(), transition.to());
         } finally {
             uow.pop();
         }
-    }
-
-    /**
-     * The guards of {@code transition}, the edge the step of {@code ref} selected from {@code from}, run in
-     * declaration order once the step's frame is pushed, which the caller does. Each gets a new context of its own,
-     * which the call tracks, and is recorded as the guard in flight, as {@link Transaction#guarding} says, right
-     * before it is evaluated as {@link #evaluateGuard} says. The first that rejects refuses the step, as
-     * {@link #rejected} says, and the guards after it do not run. The root's own step enters GUARD before its first
-     * guard. Returns that refusal at the root, where it is the step's result, since a nested one throws; empty when
-     * every guard passed or the edge has none.
-     */
-    static <E, S extends Enum<S>, T extends Enum<T>> Optional<StepResult<S, T>> admitGuards(
-            Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from,
-            TransitionSpec<E, S, T> transition, int depth, Optional<Object> input, Optional<ExitOf> exitOf) {
-        if (depth == 0 && !transition.guards().isEmpty()) {
-            tx.enter(CallPhase.GUARD);
-        }
-        for (GuardRef<E, S, T> guard : transition.guards()) {
-            DefaultGuardContext<E, S, T> guardContext =
-                    new DefaultGuardContext<>(tx, machine, entity, transition, depth, input);
-            tx.track(guardContext);
-            tx.guarding(guard.name());
-            GuardResult verdict = evaluateGuard(tx, machine, ref, transition, depth, guard, guardContext);
-            if (verdict instanceof GuardResult.Reject reject) {
-                return Optional.of(rejected(tx, machine, ref, from, transition.transition(),
-                        Optional.of(transition.to()), depth, reject.reason(), RejectionKind.GUARD,
-                        Optional.of(guard.name()), exitOf));
-            }
-        }
-        return Optional.empty();
     }
 
     /**

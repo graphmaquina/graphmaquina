@@ -31,9 +31,11 @@ import lombok.NonNull;
  * and cascades as {@link Cascades}, and the flow an outcome or a failure hands out as {@link OutcomeFlows}. Wherever
  * the engine contains what application code threw on the calling thread, through a failure route, an abort or a
  * poison, an InterruptedException interrupts the thread again, as {@link Interrupts} says; one that completes a stage
- * leaves the thread as it is.
+ * leaves the thread as it is. The transaction of a root step that only admits, as {@link Steps#admit} runs it, is an
+ * {@link Admission}, which also keeps what a failure of that step needs to be described; a transaction that executes
+ * keeps none of it and has no field for it.
  */
-final class Transaction {
+sealed class Transaction permits Transaction.Admission {
 
     /** The registry the call runs in: its root machine's. */
     @Getter(AccessLevel.PACKAGE)
@@ -56,7 +58,8 @@ final class Transaction {
     private Optional<MachineCall> call;
     /**
      * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
-     * its guards passed; a cascaded step leaves it at ACTION. The root moves it on to COMMIT, HOOK and REACTIONS.
+     * its guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The
+     * root moves it on to COMMIT, HOOK and REACTIONS.
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
@@ -65,10 +68,6 @@ final class Transaction {
      * that step throws or when the clock cannot date its rejection; empty before.
      */
     private Optional<RootStep> rootStep = Optional.empty();
-    /** See {@link #abortReason()}. */
-    private Optional<String> abortReason = Optional.empty();
-    /** See {@link #guardInFlight()}. */
-    private Optional<String> guardInFlight = Optional.empty();
     /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
     private final CallLog log;
     /**
@@ -147,21 +146,24 @@ final class Transaction {
     }
 
     /**
-     * Records {@code guard}, the name of the guard a step is about to evaluate, as the guard in flight. Nothing clears
-     * it: once a step's guards are done, it names the last one evaluated.
+     * Notes {@code guard}, the name of the guard that a step in admit-only mode, as {@link Steps#admit} runs it, is
+     * about to evaluate: an {@link Admission} keeps it as the guard in flight, any other transaction nothing. A step
+     * that executes never calls it.
      */
-    void guarding(String guard) {
-        guardInFlight = Optional.of(guard);
-    }
+    void guarding(String guard) { }
 
-    /** The guard that {@link #guarding} recorded last, empty before the first: while a guard runs, that guard. */
-    Optional<String> guardInFlight() { return guardInFlight; }
+    /** The guard in flight, as an {@link Admission} keeps it; always empty here, where nothing keeps one. */
+    Optional<String> guardInFlight() { return Optional.empty(); }
 
     /**
-     * The message of the last abort that {@link #unpoisonedAbort}, and so {@link #abort}, or {@link #unread} built, as
-     * it was before {@link TransitionAbortedException} composed its own message from it; empty before the first.
+     * Notes {@code message}, the message of an abort {@link #unpoisonedAbort} or {@link #unread} is building, before
+     * {@link TransitionAbortedException} composes its own from it: an {@link Admission} keeps it, any other
+     * transaction nothing.
      */
-    Optional<String> abortReason() { return abortReason; }
+    void aborted(String message) { }
+
+    /** The message of the last abort, as an {@link Admission} keeps it; always empty here, where nothing keeps one. */
+    Optional<String> abortReason() { return Optional.empty(); }
 
     /**
      * A handle on the call's flow for a context of this call at {@code depth}, which reaches the call's unit of work
@@ -259,7 +261,7 @@ final class Transaction {
                                                Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
                                                String message, Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
-        abortReason = Optional.of(message);
+        aborted(message);
         return cause.isPresent()
                 ? new TransitionAbortedException(call(), phase, details, message, cause.get())
                 : new TransitionAbortedException(call(), phase, details, message);
@@ -276,7 +278,7 @@ final class Transaction {
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
         String message = "reading the entity threw " + Texts.shown(cause);
-        abortReason = Optional.of(message);
+        aborted(message);
         return new TransitionAbortedException(call(), CallPhase.RESOLVE, details, message, cause);
     }
 
@@ -459,5 +461,46 @@ final class Transaction {
             uow.poisonWrapping(new TransitionAbortedException(call(), phase, details(caller),
                     "the action caught an Error that ended one of its cascades: the call cannot commit"));
         }
+    }
+
+    /**
+     * The transaction of a root step that only admits, as {@link Steps#admit} runs it: it also keeps the guard in
+     * flight and the message of the last abort, which a failure of that step needs to be described. Its fields live
+     * here, not in every transaction, so that a call that executes allocates none of them.
+     */
+    static final class Admission extends Transaction {
+
+        /** See {@link #guardInFlight()}. */
+        private Optional<String> guardInFlight = Optional.empty();
+        /** See {@link #abortReason()}. */
+        private Optional<String> abortReason = Optional.empty();
+
+        Admission(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
+                  Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
+            super(registry, uow, callKey, callEntity, requested, reaction, call, log);
+        }
+
+        /** Keeps {@code guard} as the guard in flight. Nothing clears it: after the guards, it names the last one. */
+        @Override
+        void guarding(String guard) {
+            guardInFlight = Optional.of(guard);
+        }
+
+        /** The guard that {@link #guarding} kept last: while a guard runs, that guard; empty before the first. */
+        @Override
+        Optional<String> guardInFlight() { return guardInFlight; }
+
+        /** Keeps {@code message} as the message of the last abort. */
+        @Override
+        void aborted(String message) {
+            abortReason = Optional.of(message);
+        }
+
+        /**
+         * The message of the last abort that {@link #unpoisonedAbort}, and so {@link #abort}, or {@link #unread}
+         * built, as it was before {@link TransitionAbortedException} composed its own from it; empty before the first.
+         */
+        @Override
+        Optional<String> abortReason() { return abortReason; }
     }
 }
