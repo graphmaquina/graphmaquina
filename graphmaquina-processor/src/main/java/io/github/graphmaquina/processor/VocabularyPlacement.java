@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
+import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import java.util.ArrayList;
@@ -24,15 +25,15 @@ import javax.lang.model.type.TypeMirror;
  * Reports the generated vocabulary written where no reader of this processor reads it.
  *
  * <p>javac accepts a generated annotation on any element its targets allow, and a {@code Transition} may target
- * any method and any type, since no target says "an abstract operation of this facade". The processor claims the
- * vocabulary, so nothing else ever reports that it was not read; yet the model builders read it on a
- * {@code @GenerateGraphApi} interface and on that interface's abstract operations only. A declaration anywhere
- * else would be dropped without a word, and the graph built would not be the one the author declared, so each
- * one is reported where it is written: as {@code SG504} on a default, static or private method of the facade the
- * vocabulary belongs to, or of any facade when it names no machine, since only an abstract operation declares an
- * edge, and as {@code SG606} on any other element no builder reads it on, with the machine it belongs to named.
- * On the facade of another machine and on that facade's abstract operations a builder does read it: there that
- * facade's builder refuses it as {@code SG606}, and this class reports nothing.</p>
+ * any method and any type, and a {@code Check} any method, since no target says "an abstract method of this facade".
+ * The processor claims the vocabulary, so nothing else ever reports that it was not read; yet the model builders
+ * read it on a {@code @GenerateGraphApi} interface and on that interface's abstract methods only, its operations
+ * and its checks. A declaration anywhere else would be dropped without a word, and the graph built would not be the
+ * one the author declared, so each one is reported where it is written: as {@code SG504} on a default, static or
+ * private method of the facade the vocabulary belongs to, or of any facade when it names no machine, since only an
+ * abstract method declares an edge or a check, and as {@code SG606} on any other element no builder reads it on,
+ * with the machine it belongs to named. On the facade of another machine and on that facade's abstract methods a
+ * builder does read it: there that facade's builder refuses it as {@code SG606}, and this class reports nothing.</p>
  *
  * <p>Either way the machine the vocabulary belongs to misses a declaration of its author, and so does a machine
  * whose vocabulary sits on another facade where a builder reads it, which that facade's builder refuses as
@@ -128,9 +129,9 @@ final class VocabularyPlacement {
     }
 
     /**
-     * Whether a builder reads the vocabulary of {@code element}: on a facade, or on an abstract operation of a
-     * facade. Which facade it is does not matter here: the builder of a facade refuses the vocabulary of another
-     * machine where it reads it.
+     * Whether a builder reads the vocabulary of {@code element}: on a facade, or on an abstract method of a facade,
+     * an operation or a check. Which facade it is does not matter here: the builder of a facade refuses the
+     * vocabulary of another machine where it reads it.
      */
     private boolean read(Element element) {
         if (element instanceof TypeElement type) {
@@ -140,30 +141,42 @@ final class VocabularyPlacement {
                 && isFacade(owner) && StructuralChecks.isOperation(method);
     }
 
-    /** The facade a read placement belongs to: {@code element} itself, or the facade that declares the operation. */
+    /** The facade a read placement belongs to: {@code element} itself, or the facade that declares the method. */
     private static TypeElement facade(Element element) {
         return element instanceof TypeElement type ? type : (TypeElement) element.getEnclosingElement();
     }
 
     /**
      * SG504 for the vocabulary on a default, static or private method of the facade it belongs to, or of any facade
-     * when it names no machine; SG606 on any other element no builder reads it on, naming the facade it belongs to,
-     * so that the place the diagnostic points to is one that reads it.
+     * when it names no machine, saying where it is read instead: a {@code Check} on an abstract method of that
+     * facade, an edge on an abstract operation or on the facade itself; SG606 on any other element no builder reads
+     * it on, naming the facade it belongs to, so that the place the diagnostic points to is one that reads it.
      */
     private void report(Element element, AnnotationMirror mirror, TypeElement annotation, Optional<String> machine) {
         String name = annotation.getQualifiedName().toString();
         if (element instanceof ExecutableElement method && method.getEnclosingElement() instanceof TypeElement owner
                 && isFacade(owner)
                 && machine.map((String facade) -> owner.getQualifiedName().contentEquals(facade)).orElse(true)) {
+            String facade = owner.getSimpleName().toString();
+            String read = isCheck(annotation)
+                    ? "a Check is declared on an abstract method of " + facade
+                    : "an edge is declared on an abstract operation of " + facade + ", or on " + facade + " itself";
             DiagnosticAnchor.of(element, mirror).report(diagnostics, OPERATION, method.getSimpleName() + " is a "
-                    + kind(method) + " method, so its " + name + " is never read: an edge is declared on an abstract"
-                    + " operation of " + owner.getSimpleName() + ", or on " + owner.getSimpleName() + " itself");
+                    + kind(method) + " method, so its " + name + " is never read: " + read);
             return;
         }
         DiagnosticAnchor.of(element, mirror).report(diagnostics, FOREIGN, name + " is read on a @GenerateGraphApi"
-                + " interface and its abstract operations only, so it is never read on " + describe(element) + ": "
+                + " interface and its abstract methods only, so it is never read on " + describe(element) + ": "
                 + machine.map((String facade) -> "declare it on " + facade + ", whose vocabulary it is")
                         .orElse("declare it on the facade whose vocabulary it is"));
+    }
+
+    /** Whether {@code annotation} is a {@code Check}, as its {@code GeneratedVocabulary} metadata names its role. */
+    private boolean isCheck(TypeElement annotation) {
+        return annotations.find(annotation, GeneratedVocabulary.class)
+                .map((AnnotationMirror metadata) -> TypedValues.enumConstant(annotations.value(metadata, "value"))
+                        .getSimpleName().contentEquals(VocabularyKind.CHECK.name()))
+                .orElse(false);
     }
 
     private boolean isFacade(TypeElement type) {

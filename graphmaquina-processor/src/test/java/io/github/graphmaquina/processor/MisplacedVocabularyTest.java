@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * javac accepts the generated vocabulary on any method and any type, since its targets cannot say "an abstract
- * operation of this facade", and the processor claims it, so nothing else ever says it was not read. The
- * processor reads it on the facade and on the facade's abstract operations only, and refuses it everywhere else
- * where it is written: a declaration the author wrote is never dropped without a word.
+ * method of this facade", and the processor claims it, so nothing else ever says it was not read. The
+ * processor reads it on the facade and on the facade's abstract methods only, its operations and its checks, and
+ * refuses it everywhere else where it is written: a declaration the author wrote is never dropped without a word.
  */
 class MisplacedVocabularyTest {
 

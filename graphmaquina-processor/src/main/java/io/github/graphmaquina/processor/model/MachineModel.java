@@ -4,12 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.lang.model.element.TypeElement;
 
-/** Everything the generators need about one machine declared with the vocabulary generated for it. */
+/**
+ * Everything the generators need about one machine declared with the vocabulary generated for it. The checks are
+ * not among the operations: a check executes nothing, so it adds no edge and owns no identifier.
+ */
 public record MachineModel(MachineTypes types, String packageName, String initial, List<String> terminals,
                            List<String> cycleAllowed, Property stateGetter, Property stateSetter, Property idGetter,
                            List<StatePolicyModel> policies, List<RejectionModel> rejections,
                            List<TransitionModel> transitions, List<OperationModel> operations,
-                           List<WatchModel> watches, List<SubmachineModel> submachines) {
+                           List<WatchModel> watches, List<SubmachineModel> submachines, List<CheckModel> checks) {
 
     public MachineModel {
         terminals = List.copyOf(terminals);
@@ -20,6 +23,7 @@ public record MachineModel(MachineTypes types, String packageName, String initia
         operations = List.copyOf(operations);
         watches = List.copyOf(watches);
         submachines = List.copyOf(submachines);
+        checks = List.copyOf(checks);
     }
 
     public String facadeName() {

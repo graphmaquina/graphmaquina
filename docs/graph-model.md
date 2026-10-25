@@ -368,6 +368,18 @@ the interface's own symbol, and a static method that the host or a superclass be
 name and parameter types not at all, the hiding method being exported in its place when it is marked. Generated output and JAR
 exports are checked for collisions; do not manually create classes in generated namespaces or edit symbols.
 
+A facade method that carries the generated `Check` has a signature of its own, `I` being the input type of the
+operation it checks:
+
+| Declaration | Supported signature |
+| --- | --- |
+| `Check` on an abstract facade method | `Eligibility<E, S, T> method(E entity)` or `Eligibility<E, S, T> method(E entity, I input)` |
+
+Its `id` names the identifier of one of the facade's operations, and it repeats that operation's parameters: the
+same entity, and the same input type exactly when the operation takes one, without varargs or method type
+parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
+(`SG512` to `SG514`).
+
 ---
 
 Next: [Actions, guards and failure routes](actions-and-failures.md). Back to the [documentation index](README.md).

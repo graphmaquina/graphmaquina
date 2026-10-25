@@ -186,8 +186,8 @@ final class StructuralChecks {
 
     /**
      * SG504 when {@code method}, which {@code facade} declares and which overrides {@code builtIn}, carries
-     * vocabulary, since it would be an operation the companion cannot declare beside the implementation of
-     * {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
+     * vocabulary, since it would be an operation, or a check, the companion cannot declare beside the implementation
+     * of {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
      * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
      * not implement it at all.
      */
@@ -196,7 +196,7 @@ final class StructuralChecks {
         String owner = ((TypeElement) builtIn.getEnclosingElement()).getSimpleName() + "." + builtIn.getSimpleName();
         if (declared) {
             diagnostics.error("SG504", method.getSimpleName() + " overrides " + owner
-                    + ", which the generated companion implements already: give the operation another name", method);
+                    + ", which the generated companion implements already: give the method another name", method);
         } else if (!signatures.implementedBy(method, builtIn, facade)) {
             diagnostics.error("SG504", method.getSimpleName() + " redeclares " + owner + " with a result the generated"
                     + " companion's " + builtIn.getSimpleName() + " cannot return: declare it with the result "
@@ -204,17 +204,23 @@ final class StructuralChecks {
         }
     }
 
-    /** Whether {@code method} must declare an edge: a default, static or private declaration is not an operation. */
+    /**
+     * Whether {@code method} is read for the vocabulary it carries, as an operation or as a check: a default, static
+     * or private declaration is neither.
+     */
     static boolean isOperation(ExecutableElement method) {
         return !method.isDefault() && !method.getModifiers().contains(Modifier.STATIC)
                 && !method.getModifiers().contains(Modifier.PRIVATE);
     }
 
-    /** SG504 unless the operation carries at least one Transition of its own graph vocabulary. */
+    /**
+     * SG504 unless the operation carries at least one Transition of its own graph vocabulary. An abstract method of
+     * the facade that carries a Check of that vocabulary instead is a check, and never asked.
+     */
     boolean checkOperationDeclared(ExecutableElement method, boolean declared) {
         if (!declared) {
-            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition of its own"
-                    + " graph vocabulary", method);
+            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition, or one Check,"
+                    + " of its own graph vocabulary", method);
             return false;
         }
         return true;
