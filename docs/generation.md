@@ -212,7 +212,7 @@ server. The import registered `build/generated/sources/graphmaquina/main` as a s
 
 Renaming the binding method `register` to `enroll` with the IDE's rename refactoring changed the method and edited
 two generated files in place, the Javadoc link in `TicketActionsRefs` and the call in `TicketsRuntime`, but kept the
-generated class `TicketActionsRefs.Register` and the `action=TicketActionsRefs.Register.class` that names it. The next
+generated class `TicketActionsRefs.Register` and the `action = TicketActionsRefs.Register.class` that names it. The next
 build regenerated the reference as `TicketActionsRefs.Enroll`, and javac, then the IDE, reported `Register` as missing
 until the annotation named `Enroll`. Code completion and an IDE import of the Maven configuration have not been
 exercised.

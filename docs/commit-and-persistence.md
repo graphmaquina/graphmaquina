@@ -266,9 +266,13 @@ A single `Definition.afterCommit` declaration covers every committed hop of the 
 
 ```java
 @GenerateGraphApi
-@DocumentsGraph.Definition(initial = DRAFT, terminals = ARCHIVED,
-        state = DocumentRefs.Status.class, id = DocumentRefs.Id.class,
-        afterCommit = DocumentPersistenceRefs.Save.class)
+@DocumentsGraph.Definition(
+    initial = DRAFT,
+    terminals = ARCHIVED,
+    state = DocumentRefs.Status.class,
+    id = DocumentRefs.Id.class,
+    // names the save hook below, run after every committed hop
+    afterCommit = DocumentPersistenceRefs.Save.class)
 @DocumentsGraph.StatePolicy(state = DRAFT, otherwise = "publish before archiving")
 @DocumentsGraph.StatePolicy(state = PUBLISHED, otherwise = "archive next")
 public interface Documents extends Machine<Document, DocumentStatus, DocumentChange> {

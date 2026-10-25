@@ -48,44 +48,76 @@ imports the `BookingStatus` constants statically:
 
 ```java
 /**
- * The booking machine: {@code DEPOSIT} and {@code BALANCE} each hold a payment of {@link Payments}, the same machine
- * bound twice. The terminal state each payment reaches selects the exit of its state, and {@code CANCEL} interrupts
- * either one. The processor generates BookingsRuntime.
+ * The booking machine: {@code DEPOSIT} and {@code BALANCE} each hold a payment of {@link Payments},
+ * the same machine bound twice. The terminal state each payment reaches selects the exit of its
+ * state, and {@code CANCEL} interrupts either one. The processor generates BookingsRuntime.
  *
- * <p>Exits are declared on the interface, not on operations: an exit runs only when its payment ends, so no
- * operation may declare one.</p>
+ * <p>Exits are declared on the interface, not on operations: an exit runs only when its payment
+ * ends, so no operation may declare one.</p>
  */
 @GenerateGraphApi
 @GraphPeers(Payments.class)
-@BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
-        state = BookingRefs.Status.class, id = BookingRefs.Id.class)
+@BookingsGraph.Definition(
+    initial = REQUESTED,
+    terminals = {CONFIRMED, CANCELLED},
+    state = BookingRefs.Status.class,
+    id = BookingRefs.Id.class)
 @BookingsGraph.StatePolicy(state = REQUESTED, otherwise = "a booking is booked first")
-@BookingsGraph.StatePolicy(state = DEPOSIT,   otherwise = "the deposit payment decides")
-@BookingsGraph.StatePolicy(state = BALANCE,   otherwise = "the balance payment decides")
-@BookingsGraph.Transition(id = BookingTransition.DEPOSIT_PAID, from = DEPOSIT, to = BALANCE,
-        action = BookingActionsRefs.HoldRoom.class, onFailure = BookingTransition.NO_ROOM)
+@BookingsGraph.StatePolicy(state = DEPOSIT, otherwise = "the deposit payment decides")
+@BookingsGraph.StatePolicy(state = BALANCE, otherwise = "the balance payment decides")
+// the exit of a captured deposit; when holdRoom fails, NO_ROOM moves to CANCELLED
+@BookingsGraph.Transition(
+    id = BookingTransition.DEPOSIT_PAID,
+    from = DEPOSIT,
+    to = BALANCE,
+    action = BookingActionsRefs.HoldRoom.class,
+    onFailure = BookingTransition.NO_ROOM)
 @BookingsGraph.Transition(id = BookingTransition.NO_ROOM, from = DEPOSIT, to = CANCELLED)
 @BookingsGraph.Transition(id = BookingTransition.DEPOSIT_DECLINED, from = DEPOSIT, to = CANCELLED)
 @BookingsGraph.Transition(id = BookingTransition.BALANCE_PAID, from = BALANCE, to = CONFIRMED)
 @BookingsGraph.Transition(id = BookingTransition.BALANCE_DECLINED, from = BALANCE, to = CANCELLED)
-@BookingsGraph.Transition(id = BookingTransition.PAYMENT_VOIDED, from = {DEPOSIT, BALANCE}, to = CANCELLED)
-@BookingsPayments.Submachine(state = DEPOSIT, child = BookingRefs.Deposit.class,
-        parentLookup = BillingLookupsRefs.BookingOf.class,
-        exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BookingTransition.DEPOSIT_PAID),
-                 @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = BookingTransition.DEPOSIT_DECLINED),
-                 @BookingsPayments.Exit(on = PaymentStatus.VOIDED, transition = BookingTransition.PAYMENT_VOIDED)})
-@BookingsPayments.Submachine(state = BALANCE, child = BookingRefs.Balance.class,
-        parentLookup = BillingLookupsRefs.BookingOf.class,
-        exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BookingTransition.BALANCE_PAID),
-                 @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = BookingTransition.BALANCE_DECLINED),
-                 @BookingsPayments.Exit(on = PaymentStatus.VOIDED, transition = BookingTransition.PAYMENT_VOIDED)})
+@BookingsGraph.Transition(
+    id = BookingTransition.PAYMENT_VOIDED,
+    from = {DEPOSIT, BALANCE},
+    to = CANCELLED)
+@BookingsPayments.Submachine(
+    state = DEPOSIT,
+    child = BookingRefs.Deposit.class,
+    parentLookup = BillingLookupsRefs.BookingOf.class,
+    exits = {
+        @BookingsPayments.Exit(
+            on = PaymentStatus.CAPTURED,
+            transition = BookingTransition.DEPOSIT_PAID),
+        @BookingsPayments.Exit(
+            on = PaymentStatus.DECLINED,
+            transition = BookingTransition.DEPOSIT_DECLINED),
+        @BookingsPayments.Exit(
+            on = PaymentStatus.VOIDED,
+            transition = BookingTransition.PAYMENT_VOIDED)})
+@BookingsPayments.Submachine(
+    state = BALANCE,
+    child = BookingRefs.Balance.class,
+    parentLookup = BillingLookupsRefs.BookingOf.class,
+    exits = {
+        @BookingsPayments.Exit(
+            on = PaymentStatus.CAPTURED,
+            transition = BookingTransition.BALANCE_PAID),
+        @BookingsPayments.Exit(
+            on = PaymentStatus.DECLINED,
+            transition = BookingTransition.BALANCE_DECLINED),
+        @BookingsPayments.Exit(
+            on = PaymentStatus.VOIDED,
+            transition = BookingTransition.PAYMENT_VOIDED)})
 public interface Bookings extends Machine<Booking, BookingStatus, BookingTransition> {
 
     @BookingsGraph.Transition(id = BookingTransition.BOOK, from = REQUESTED, to = DEPOSIT)
     Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
 
-    @BookingsGraph.Transition(id = BookingTransition.CANCEL, from = {DEPOSIT, BALANCE}, to = CANCELLED,
-            action = BookingActionsRefs.Cancel.class)
+    @BookingsGraph.Transition(
+        id = BookingTransition.CANCEL,
+        from = {DEPOSIT, BALANCE},
+        to = CANCELLED,
+        action = BookingActionsRefs.Cancel.class)
     Outcome<Booking, BookingStatus, BookingTransition> cancel(Booking booking);
 }
 ```
@@ -142,7 +174,8 @@ generated builder takes the instance hosts of every machine, here the booking ac
 
 ```java
 BillingLookups lookups = new BillingLookups();
-BillingMachines billing = BillingMachinesRuntime.builder(Duration.ofSeconds(10), new BookingActions(desk), lookups)
+BillingMachines billing = BillingMachinesRuntime
+        .builder(Duration.ofSeconds(10), new BookingActions(desk), lookups)
         .build();
 ```
 
@@ -166,7 +199,8 @@ lookups.register(booking);
 Payment deposit = booking.deposit().orElseThrow();
 
 Outcome<Booking, BookingStatus, BookingTransition> booked = billing.bookings().book(booking);
-Outcome<Payment, PaymentStatus, PaymentTransition> depositPaid = billing.payments().capture(deposit);
+Outcome<Payment, PaymentStatus, PaymentTransition> depositPaid =
+        billing.payments().capture(deposit);
 ```
 
 `book` enters `DEPOSIT`, so its call also starts the deposit at `AUTHORIZING`. `booked.starts()` holds one
@@ -233,7 +267,8 @@ A parent can leave a bound state by an edge of its own while the child is still 
 @GraphAction
 public ActionOutcome cancel(TransitionContext<Booking, BookingStatus, BookingTransition> ctx) {
     Booking booking = ctx.entity();
-    Payment payment = ctx.from() == BookingStatus.DEPOSIT ? booking.deposit().orElseThrow()
+    Payment payment = ctx.from() == BookingStatus.DEPOSIT
+            ? booking.deposit().orElseThrow()
             : booking.balance().orElseThrow();
     ctx.cascade(Payments.class, payment, PaymentTransition.VOID);
     return ActionOutcome.ok();
@@ -269,11 +304,20 @@ only in `BALANCE`. `Subscriptions` binds the same machine once more, with exits 
 
 ```java
 @GraphPeers(Payments.class)
-@SubscriptionsPayments.Submachine(state = RENEWAL, child = SubscriptionRefs.Renewal.class,
-        parentLookup = BillingLookupsRefs.SubscriptionOf.class,
-        exits = {@SubscriptionsPayments.Exit(on = PaymentStatus.CAPTURED, transition = SubscriptionTransition.RENEWED),
-                 @SubscriptionsPayments.Exit(on = PaymentStatus.DECLINED, transition = SubscriptionTransition.LAPSE),
-                 @SubscriptionsPayments.Exit(on = PaymentStatus.VOIDED, transition = SubscriptionTransition.LAPSE)})
+@SubscriptionsPayments.Submachine(
+    state = RENEWAL,
+    child = SubscriptionRefs.Renewal.class,
+    parentLookup = BillingLookupsRefs.SubscriptionOf.class,
+    exits = {
+        @SubscriptionsPayments.Exit(
+            on = PaymentStatus.CAPTURED,
+            transition = SubscriptionTransition.RENEWED),
+        @SubscriptionsPayments.Exit(
+            on = PaymentStatus.DECLINED,
+            transition = SubscriptionTransition.LAPSE),
+        @SubscriptionsPayments.Exit(
+            on = PaymentStatus.VOIDED,
+            transition = SubscriptionTransition.LAPSE)})
 ```
 
 `DECLINED` and `VOIDED` both select `LAPSE`. The payment machine keeps one definition for all three bindings, and its
@@ -295,9 +339,12 @@ static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRA
         .terminal(PaymentStatus.DECLINED)
         .terminal(PaymentStatus.VOIDED)
         .statePolicy(PaymentStatus.AUTHORIZING, "an authorization is captured, declined or voided")
-        .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED).endTransition()
-        .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED).endTransition()
-        .transition(PaymentTransition.VOID, PaymentStatus.AUTHORIZING, PaymentStatus.VOIDED).endTransition()
+        .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED)
+            .endTransition()
+        .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED)
+            .endTransition()
+        .transition(PaymentTransition.VOID, PaymentStatus.AUTHORIZING, PaymentStatus.VOIDED)
+            .endTransition()
         .build();
 
 static final GraphDefinition<Stay, StayStatus, StayTransition> STAY_GRAPH = StateGraph.define(STAYS)
@@ -306,9 +353,12 @@ static final GraphDefinition<Stay, StayStatus, StayTransition> STAY_GRAPH = Stat
         .terminal(StayStatus.CANCELLED)
         .statePolicy(StayStatus.REQUESTED, "a stay is booked first")
         .statePolicy(StayStatus.PAYING, "the payment decides")
-        .transition(StayTransition.BOOK, StayStatus.REQUESTED, StayStatus.PAYING).endTransition()
-        .transition(StayTransition.CONFIRM, StayStatus.PAYING, StayStatus.CONFIRMED).endTransition()
-        .transition(StayTransition.CANCEL, StayStatus.PAYING, StayStatus.CANCELLED).endTransition()
+        .transition(StayTransition.BOOK, StayStatus.REQUESTED, StayStatus.PAYING)
+            .endTransition()
+        .transition(StayTransition.CONFIRM, StayStatus.PAYING, StayStatus.CONFIRMED)
+            .endTransition()
+        .transition(StayTransition.CANCEL, StayStatus.PAYING, StayStatus.CANCELLED)
+            .endTransition()
         .submachine(StayStatus.PAYING, PAYMENT_GRAPH)
         .exit(PaymentStatus.CAPTURED, StayTransition.CONFIRM)
         .exit(PaymentStatus.DECLINED, StayTransition.CANCEL)
@@ -324,11 +374,14 @@ each with the state accessors of its own field:
 private static MachineRegistry registry() {
     return MachineRegistry.builder()
             .add(StateMachines.from(STAY_GRAPH)
-                    .state((Stay stay) -> stay.status, (Stay stay, StayStatus status) -> stay.status = status)
+                    .state(
+                        (Stay stay) -> stay.status,
+                        (Stay stay, StayStatus status) -> stay.status = status)
                     .identity((Stay stay) -> stay.id))
             .add(StateMachines.from(PAYMENT_GRAPH)
-                    .state((Stay stay) -> stay.paymentStatus,
-                            (Stay stay, PaymentStatus status) -> stay.paymentStatus = status)
+                    .state(
+                        (Stay stay) -> stay.paymentStatus,
+                        (Stay stay, PaymentStatus status) -> stay.paymentStatus = status)
                     .identity((Stay stay) -> stay.id))
             .build();
 }

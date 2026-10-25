@@ -15,8 +15,8 @@ builder argument. The runnable example uses five seconds. An optional per-machin
 budget installed on that asynchronous machine:
 
 ```java
-AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
-        Duration.ofSeconds(10), new AsyncTicketActions(reviews))
+AsyncTicketMachines machines = AsyncTicketMachinesRuntime
+        .builder(Duration.ofSeconds(10), new AsyncTicketActions(reviews))
         .asyncTimeout(AsyncTickets.class, Duration.ofSeconds(8))
         .build();
 ```
@@ -186,9 +186,10 @@ A set can use an application-owned executor instead. For this example, import
 `java.util.concurrent.Executors` and `java.util.concurrent.ExecutorService`:
 
 ```java
+// the application owns operations: the try closes it after the machines
 try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
-     AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
-             Duration.ofSeconds(5), new AsyncTicketActions(reviews))
+     AsyncTicketMachines machines = AsyncTicketMachinesRuntime
+             .builder(Duration.ofSeconds(5), new AsyncTicketActions(reviews))
              .asyncExecutor(operations)
              .build()) {
     Outcome<Ticket, TicketState, TicketTransition> submitted = machines.tickets()

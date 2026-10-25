@@ -159,37 +159,65 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 
 @GenerateGraphApi
-@TicketsGraph.Definition(initial=TicketState.OPEN,
-    terminals={TicketState.DONE, TicketState.FAILED},
-    allowsCycle={TicketState.OPEN, TicketState.REVIEW},
-    state=TicketRefs.State.class, id=TicketRefs.Id.class,
-    afterCommit=TicketActionsRefs.Committed.class)
-@TicketsGraph.StatePolicy(state=TicketState.OPEN, otherwise="submit the ticket first")
-@TicketsGraph.StatePolicy(state=TicketState.REVIEW, otherwise="approve, reject or retouch the ticket")
-@TicketsGraph.Reject(from=TicketState.OPEN, transition=TicketTransition.APPROVE,
-    reason="approval requires review")
-@TicketsGraph.Transition(id=TicketTransition.DECLINE, from=TicketState.OPEN, to=TicketState.FAILED)
-public interface Tickets extends Machine<Ticket,TicketState,TicketTransition> {
+@TicketsGraph.Definition(
+    initial = TicketState.OPEN,
+    terminals = {TicketState.DONE, TicketState.FAILED},
+    allowsCycle = {TicketState.OPEN, TicketState.REVIEW},
+    state = TicketRefs.State.class,
+    id = TicketRefs.Id.class,
+    afterCommit = TicketActionsRefs.Committed.class)
+@TicketsGraph.StatePolicy(state = TicketState.OPEN, otherwise = "submit the ticket first")
+@TicketsGraph.StatePolicy(
+    state = TicketState.REVIEW,
+    otherwise = "approve, reject or retouch the ticket")
+@TicketsGraph.Reject(
+    from = TicketState.OPEN,
+    transition = TicketTransition.APPROVE,
+    reason = "approval requires review")
+// DECLINE has no method: it is the failure route that SUBMIT names in onFailure
+@TicketsGraph.Transition(
+    id = TicketTransition.DECLINE,
+    from = TicketState.OPEN,
+    to = TicketState.FAILED)
+public interface Tickets extends Machine<Ticket, TicketState, TicketTransition> {
 
-    @TicketsGraph.Transition(id=TicketTransition.SUBMIT, from=TicketState.OPEN,
-        to=TicketState.REVIEW, action=TicketActionsRefs.Register.class,
-        guards=TicketActionsRefs.HasTitle.class, onFailure=TicketTransition.DECLINE)
-    Outcome<Ticket,TicketState,TicketTransition> submit(Ticket ticket);
+    // SUBMIT moves OPEN to REVIEW; if Register fails, DECLINE takes the ticket to FAILED
+    @TicketsGraph.Transition(
+        id = TicketTransition.SUBMIT,
+        from = TicketState.OPEN,
+        to = TicketState.REVIEW,
+        action = TicketActionsRefs.Register.class,
+        guards = TicketActionsRefs.HasTitle.class,
+        onFailure = TicketTransition.DECLINE)
+    Outcome<Ticket, TicketState, TicketTransition> submit(Ticket ticket);
 
-    @TicketsGraph.Transition(id=TicketTransition.APPROVE, from=TicketState.REVIEW,
-        to=TicketState.DONE, action=TicketActionsRefs.Approve.class)
-    Outcome<Ticket,TicketState,TicketTransition> approve(Ticket ticket);
+    // APPROVE and AUTO_APPROVE are parallel edges: same states, each with its own action
+    @TicketsGraph.Transition(
+        id = TicketTransition.APPROVE,
+        from = TicketState.REVIEW,
+        to = TicketState.DONE,
+        action = TicketActionsRefs.Approve.class)
+    Outcome<Ticket, TicketState, TicketTransition> approve(Ticket ticket);
 
-    @TicketsGraph.Transition(id=TicketTransition.AUTO_APPROVE, from=TicketState.REVIEW,
-        to=TicketState.DONE, action=TicketActionsRefs.AutoApprove.class)
-    Outcome<Ticket,TicketState,TicketTransition> autoApprove(Ticket ticket);
+    @TicketsGraph.Transition(
+        id = TicketTransition.AUTO_APPROVE,
+        from = TicketState.REVIEW,
+        to = TicketState.DONE,
+        action = TicketActionsRefs.AutoApprove.class)
+    Outcome<Ticket, TicketState, TicketTransition> autoApprove(Ticket ticket);
 
-    @TicketsGraph.Transition(id=TicketTransition.RETOUCH, from=TicketState.REVIEW,
-        to=TicketState.REVIEW, action=TicketActionsRefs.Retouch.class)
-    Outcome<Ticket,TicketState,TicketTransition> retouch(Ticket ticket);
+    @TicketsGraph.Transition(
+        id = TicketTransition.RETOUCH,
+        from = TicketState.REVIEW,
+        to = TicketState.REVIEW,
+        action = TicketActionsRefs.Retouch.class)
+    Outcome<Ticket, TicketState, TicketTransition> retouch(Ticket ticket);
 
-    @TicketsGraph.Transition(id=TicketTransition.REJECT, from=TicketState.REVIEW, to=TicketState.OPEN)
-    Outcome<Ticket,TicketState,TicketTransition> reject(Ticket ticket);
+    @TicketsGraph.Transition(
+        id = TicketTransition.REJECT,
+        from = TicketState.REVIEW,
+        to = TicketState.OPEN)
+    Outcome<Ticket, TicketState, TicketTransition> reject(Ticket ticket);
 }
 ```
 
@@ -242,40 +270,62 @@ public final class App {
             Tickets tickets = machines.tickets();
 
             Ticket accepted = new Ticket("T-1", "Document the workflow", true);
-            require(tickets.submit(accepted).status() == OutcomeStatus.APPLIED, "submit should apply");
-            require(tickets.approve(accepted).status() == OutcomeStatus.APPLIED, "approve should apply");
+            require(
+                tickets.submit(accepted).status() == OutcomeStatus.APPLIED,
+                "submit should apply");
+            require(
+                tickets.approve(accepted).status() == OutcomeStatus.APPLIED,
+                "approve should apply");
             require(accepted.getState() == TicketState.DONE, "an approved ticket should be DONE");
 
             Ticket untitled = new Ticket("T-2", "", true);
-            require(tickets.submit(untitled).code() == OutcomeCode.GUARD_REJECTED, "blank title should reject");
-            require(untitled.getState() == TicketState.OPEN, "a rejected ticket should remain OPEN");
+            require(
+                tickets.submit(untitled).code() == OutcomeCode.GUARD_REJECTED,
+                "blank title should reject");
+            require(
+                untitled.getState() == TicketState.OPEN,
+                "a rejected ticket should remain OPEN");
 
+            // the board refuses T-3: register fails and DECLINE commits FAILED
             Ticket refused = new Ticket("T-3", "Await the board", false);
             Outcome<Ticket, TicketState, TicketTransition> declined = tickets.submit(refused);
-            require(declined.code() == OutcomeCode.FAILURE_ROUTED
-                    && declined.explanation().equals(Optional.of("the review board declined the ticket")),
-                    "a decline should be handled");
-            require(refused.getState() == TicketState.FAILED, "the failure route should commit FAILED");
+            require(
+                declined.code() == OutcomeCode.FAILURE_ROUTED
+                    && declined.explanation().equals(
+                        Optional.of("the review board declined the ticket")),
+                "a decline should be handled");
+            require(
+                refused.getState() == TicketState.FAILED,
+                "the failure route should commit FAILED");
 
+            // OPEN has no APPROVE edge, so the Reject reason answers
             Ticket fresh = new Ticket("T-4", "Not submitted yet", true);
             Outcome<Ticket, TicketState, TicketTransition> refusal = tickets.approve(fresh);
-            require(refusal.code() == OutcomeCode.NO_TRANSITION
+            require(
+                refusal.code() == OutcomeCode.NO_TRANSITION
                     && refusal.explanation().equals(Optional.of("approval requires review")),
-                    "APPROVE leaves no edge from OPEN");
+                "APPROVE leaves no edge from OPEN");
 
             Ticket revised = new Ticket("T-5", "Revise the wording", true);
             tickets.submit(revised);
-            require(tickets.retouch(revised).status() == OutcomeStatus.APPLIED, "a self-loop should apply");
+            require(
+                tickets.retouch(revised).status() == OutcomeStatus.APPLIED,
+                "a self-loop should apply");
             require(revised.getState() == TicketState.REVIEW, "a self-loop ends where it started");
-            require(tickets.reject(revised).status() == OutcomeStatus.APPLIED, "reject should apply");
+            require(
+                tickets.reject(revised).status() == OutcomeStatus.APPLIED,
+                "reject should apply");
             require(revised.getState() == TicketState.OPEN, "reject returns the ticket to OPEN");
 
             Ticket automatic = new Ticket("T-6", "Trivial typo fix", true);
             tickets.submit(automatic);
-            require(tickets.autoApprove(automatic).status() == OutcomeStatus.APPLIED, "autoApprove should apply");
-            require(actions.decisions().equals(List.of(
-                    "approve T-1", "retouch T-5", "autoApprove T-6")),
-                    "each operation runs its own action: " + actions.decisions());
+            require(
+                tickets.autoApprove(automatic).status() == OutcomeStatus.APPLIED,
+                "autoApprove should apply");
+            require(
+                actions.decisions().equals(
+                    List.of("approve T-1", "retouch T-5", "autoApprove T-6")),
+                "each operation runs its own action: " + actions.decisions());
             System.out.println("All ticket scenarios passed.");
         }
     }
