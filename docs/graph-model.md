@@ -257,7 +257,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects` |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, `.Check` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
@@ -296,6 +296,7 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit` |
 | `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
+| `Check` | method | `id: T` | None |
 
 `StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
 `Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes

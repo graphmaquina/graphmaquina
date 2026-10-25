@@ -39,8 +39,9 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Recovery", "Reject", "Rejects");
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
+    private static final String METHOD_TARGET = "java.lang.annotation.ElementType.METHOD";
     private static final String EDGE_TARGETS =
         "{java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD}";
 
@@ -103,6 +104,7 @@ final class MachineVocabularyEmitter {
         recovery(source, simpleName, machine, transition);
         reject(source, simpleName, machine, state, transition);
         rejects(source, simpleName, machine);
+        check(source, machine, transition);
 
         source.outdent();
         source.line("}");
@@ -250,6 +252,14 @@ final class MachineVocabularyEmitter {
             + "}.");
         annotation(source, machine, "REJECTS", TYPE_TARGET, null, "Rejects");
         element(source, vocabulary + ".Reject[] value();", "the repeated declarations");
+        close(source);
+    }
+
+    private static void check(JavaSource source, String machine, String transition) {
+        describe(source, "Declares a method of {@link " + machine + "} that checks, without running it, whether the",
+            "operation that owns {@code id} may pass its admission conditions now.");
+        annotation(source, machine, "CHECK", METHOD_TARGET, null, "Check");
+        element(source, transition + " id();", "the identifier of the operation the method checks");
         close(source);
     }
 

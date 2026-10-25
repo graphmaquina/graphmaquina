@@ -72,8 +72,8 @@ their handwritten declarations:
 | `TicketActionsRefs.java` | Same directory | Same directory |
 
 `TicketsGraph.java` contains the nested annotations `Definition`, `StatePolicy`, `Transition` and `Reject`,
-with `StatePolicies`, `Transitions` and `Rejects` as their repeatable containers, and `Recovery`, which is
-written only inside a `Transition`. `TicketRefs` contains
+with `StatePolicies`, `Transitions` and `Rejects` as their repeatable containers, `Recovery`, which is
+written only inside a `Transition`, and `Check`, which is written on a method. `TicketRefs` contains
 symbols for `@GraphProperty` members; `TicketActionsRefs` contains symbols for marked actions, guards and
 hooks. Generation alone does not produce `TicketsRuntime` or `TicketMachinesRuntime`.
 
