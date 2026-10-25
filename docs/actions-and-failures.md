@@ -58,7 +58,10 @@ planned state changes.
 A failure route is an ordinary edge, declared from the origin of the edge that may fail. In the quickstart:
 
 ```java
-@TicketsGraph.Transition(id=TicketTransition.DECLINE, from=TicketState.OPEN, to=TicketState.FAILED)
+@TicketsGraph.Transition(
+    id = TicketTransition.DECLINE,
+    from = TicketState.OPEN,
+    to = TicketState.FAILED)
 ```
 
 When `register` fails, the runtime discards the `SUBMIT` edge's pending changes, resolves `DECLINE` from
@@ -79,10 +82,15 @@ actually committed, so the failing edge's hook does not run and the route's effe
 This declaration is an excerpt from the shop's `Orders` machine:
 
 ```java
-@OrdersGraph.Transition(id = OrderTransition.PAY, from = NEW, to = PAID,
+// an IOException is a domain failure here; onFailure routes it to PAYMENT_DECLINED
+@OrdersGraph.Transition(
+    id = OrderTransition.PAY,
+    from = NEW,
+    to = PAID,
     action = OrderActionsRefs.Charge.class,
     guards = OrderActionsRefs.RetryBudgetLeft.class,
-    onFailure = OrderTransition.PAYMENT_DECLINED, failsOn = IOException.class,
+    onFailure = OrderTransition.PAYMENT_DECLINED,
+    failsOn = IOException.class,
     timeout = @Timeout(seconds = 5))
 Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
 ```
@@ -146,10 +154,14 @@ machine can use the same kind. One record per kind is enough:
 
 ```java
 /** The states of a publication. */
-public enum PublicationState { READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED }
+public enum PublicationState {
+    READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED
+}
 
 /** The operations and recovery identifiers of a publication. */
-public enum PublicationChange { PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE }
+public enum PublicationChange {
+    PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE
+}
 
 /** Failure kinds reported by the publication adapter. */
 public final class PublicationFailures {
@@ -185,28 +197,49 @@ GraphDefinition<Publication, PublicationState, PublicationChange> graph = StateG
         .statePolicy(PublicationState.REJECTED_BY_PROVIDER, "close the rejected publication")
         .statePolicy(PublicationState.INTEGRATION_FAILED, "close after manual review")
         .transition(PublicationChange.PUBLISH, PublicationState.READY, PublicationState.PUBLISHED)
-            .action("publish", (TransitionContext<Publication, PublicationState, PublicationChange> ctx) ->
+            .action(
+                "publish",
+                (TransitionContext<Publication, PublicationState, PublicationChange> ctx) ->
                     adapter.publish(ctx.entity()))
-            .recover(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
-                    ServiceUnavailableException.class)
-            .recover(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
-                    ProviderRejectedException.class)
+            // one rule per failure kind; its exception type selects it too
+            .recover(
+                PublicationFailures.Unavailable.class,
+                PublicationChange.SCHEDULE_RETRY,
+                ServiceUnavailableException.class)
+            .recover(
+                PublicationFailures.Rejected.class,
+                PublicationChange.RECORD_REJECTION,
+                ProviderRejectedException.class)
+            // fallback: returned failures no rule takes, and InvalidResponseException
             .failsOn(InvalidResponseException.class)
             .onFailure(PublicationChange.MARK_INTEGRATION_FAILED)
             .endTransition()
-        .transition(PublicationChange.SCHEDULE_RETRY, PublicationState.READY, PublicationState.RETRY_PENDING)
+        .transition(
+            PublicationChange.SCHEDULE_RETRY,
+            PublicationState.READY,
+            PublicationState.RETRY_PENDING)
             .endTransition()
-        .transition(PublicationChange.RECORD_REJECTION, PublicationState.READY,
-                PublicationState.REJECTED_BY_PROVIDER)
+        .transition(
+            PublicationChange.RECORD_REJECTION,
+            PublicationState.READY,
+            PublicationState.REJECTED_BY_PROVIDER)
             .endTransition()
-        .transition(PublicationChange.MARK_INTEGRATION_FAILED, PublicationState.READY,
-                PublicationState.INTEGRATION_FAILED)
+        .transition(
+            PublicationChange.MARK_INTEGRATION_FAILED,
+            PublicationState.READY,
+            PublicationState.INTEGRATION_FAILED)
             .endTransition()
         .transition(PublicationChange.RETRY, PublicationState.RETRY_PENDING, PublicationState.READY)
             .endTransition()
-        .transition(PublicationChange.CLOSE, PublicationState.REJECTED_BY_PROVIDER, PublicationState.CLOSED)
+        .transition(
+            PublicationChange.CLOSE,
+            PublicationState.REJECTED_BY_PROVIDER,
+            PublicationState.CLOSED)
             .endTransition()
-        .transition(PublicationChange.CLOSE, PublicationState.INTEGRATION_FAILED, PublicationState.CLOSED)
+        .transition(
+            PublicationChange.CLOSE,
+            PublicationState.INTEGRATION_FAILED,
+            PublicationState.CLOSED)
             .endTransition()
         .build();
 ```
@@ -218,14 +251,20 @@ facade whose bindings host is `PublicationActions`, and its recovery edges are d
 quickstart, by type-level `Transition`s:
 
 ```java
-@PublicationsGraph.Transition(id = PublicationChange.PUBLISH, from = PublicationState.READY,
+@PublicationsGraph.Transition(
+    id = PublicationChange.PUBLISH,
+    from = PublicationState.READY,
     to = PublicationState.PUBLISHED,
     action = PublicationActionsRefs.Publish.class,
     recoveries = {
-        @PublicationsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
-            transition = PublicationChange.SCHEDULE_RETRY, failsOn = ServiceUnavailableException.class),
-        @PublicationsGraph.Recovery(kind = PublicationFailures.Rejected.class,
-            transition = PublicationChange.RECORD_REJECTION, failsOn = ProviderRejectedException.class)},
+        @PublicationsGraph.Recovery(
+            kind = PublicationFailures.Unavailable.class,
+            transition = PublicationChange.SCHEDULE_RETRY,
+            failsOn = ServiceUnavailableException.class),
+        @PublicationsGraph.Recovery(
+            kind = PublicationFailures.Rejected.class,
+            transition = PublicationChange.RECORD_REJECTION,
+            failsOn = ProviderRejectedException.class)},
     failsOn = InvalidResponseException.class,
     onFailure = PublicationChange.MARK_INTEGRATION_FAILED)
 Outcome<Publication, PublicationState, PublicationChange> publish(Publication publication);
@@ -417,7 +456,8 @@ which does not carry the kind:
 ```java
 Outcome<Publication, PublicationState, PublicationChange> outcome =
         machine.execute(publication, PublicationChange.PUBLISH);
-Optional<Class<? extends FailureKind>> kind = outcome.asFailed().flatMap(Outcome.Failed::failureKind);
+Optional<Class<? extends FailureKind>> kind =
+        outcome.asFailed().flatMap(Outcome.Failed::failureKind);
 boolean retryLater = kind.equals(Optional.of(PublicationFailures.Unavailable.class));
 ```
 

@@ -46,7 +46,8 @@ Declare each key once, where every step that uses it can see it, as the shop doe
 ```java
 public final class ShopFlow {
 
-    public static final FlowKey<String> CANCELLATION = FlowKey.visible("cancellation", String.class);
+    public static final FlowKey<String> CANCELLATION =
+            FlowKey.visible("cancellation", String.class);
 
     private ShopFlow() { }
 
@@ -187,6 +188,7 @@ static Optional<String> cancellation(Orders orders, Order order, String cancella
     try {
         return orders.cancel(order, cancellationId).flow().get(ShopFlow.CANCELLATION);
     } catch (CallFailedException failure) {
+        // the flow as it stood when the call failed
         return failure.flow().get(ShopFlow.CANCELLATION);
     }
 }
@@ -218,12 +220,18 @@ A machine records the trail of the calls it starts when its builder, `StateMachi
 `recordTrail()`. For instance, a registry whose order machine records it:
 
 ```java
-static MachineRegistry shop(GraphDefinition<Order, OrderStatus, OrderTransition> orderGraph,
-                            GraphDefinition<Item, ItemStatus, ItemTransition> itemGraph) {
+static MachineRegistry shop(
+        GraphDefinition<Order, OrderStatus, OrderTransition> orderGraph,
+        GraphDefinition<Item, ItemStatus, ItemTransition> itemGraph) {
     return MachineRegistry.builder()
-            .add(StateMachines.from(orderGraph).state(Order::status, Order::setStatus).identity(Order::id)
+            .add(StateMachines.from(orderGraph)
+                    .state(Order::status, Order::setStatus)
+                    .identity(Order::id)
+                    // the order machine records the trail of the calls it starts
                     .recordTrail())
-            .add(StateMachines.from(itemGraph).state(Item::status, Item::setStatus).identity(Item::id))
+            .add(StateMachines.from(itemGraph)
+                    .state(Item::status, Item::setStatus)
+                    .identity(Item::id))
             .build();
 }
 ```
@@ -263,12 +271,17 @@ static List<String> timeline(FlowView flow) {
     List<String> lines = new ArrayList<>();
     for (FlowEntry entry : flow.trail()) {
         String what = switch (entry) {
+            // on a failure route's hop, recovery() holds what failed
             case FlowEntry.Hop hop -> hop.hop().entity() + " " + hop.hop().from() + " -"
                     + hop.hop().transition() + "-> " + hop.hop().to()
-                    + hop.recovery().map((FlowEntry.Recovery recovery) ->
-                            " after " + recovery.failed() + " failed: " + recovery.reason()).orElse("");
-            case FlowEntry.Start start -> start.start().child() + " started in " + start.start().initial();
-            case FlowEntry.Rejected rejected -> "rejected " + rejected.transition() + ": " + rejected.reason();
+                    + hop.recovery()
+                            .map((FlowEntry.Recovery recovery) ->
+                                    " after " + recovery.failed() + " failed: " + recovery.reason())
+                            .orElse("");
+            case FlowEntry.Start start -> start.start().child() + " started in "
+                    + start.start().initial();
+            case FlowEntry.Rejected rejected -> "rejected " + rejected.transition() + ": "
+                    + rejected.reason();
             case FlowEntry.Failed failed -> "failed in " + failed.failure().phase() + ": "
                     + failed.failure().error().getMessage();
         };
