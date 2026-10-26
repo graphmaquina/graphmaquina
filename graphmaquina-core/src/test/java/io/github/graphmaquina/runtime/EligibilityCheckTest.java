@@ -66,8 +66,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * kind, its reason and its guard, or an eligible answer once every guard passed, from the state the check read. Its
  * guards read the check's input, the confirmed state of a peer and an empty flow; it can be asked where a call may
  * start, from an after-commit hook or on the machine's executor; it answers for an identifier that a failure route
- * takes by its edge; and, whatever it answers or fails with, it has no effect: no setter, action, hook, watch or
- * observer runs, it records no trail, and a context a guard kept is stale once the check ends.
+ * or a watch takes by its edge; and, whatever it answers or fails with, it has no effect: no setter, action, hook,
+ * watch or observer runs, it records no trail, and a context a guard kept is stale once the check ends.
  */
 class EligibilityCheckTest {
 
@@ -130,6 +130,31 @@ class EligibilityCheckTest {
         Doc doc = new Doc("1", DRAFT);
         assertEquals(new Eligibility.Eligible<>(doc, DRAFT, DISCARD), m.eligibility(doc, DISCARD));
         assertEquals(OutcomeCode.APPLIED, m.execute(new Doc("2", DRAFT), DISCARD).code());
+    }
+
+    /**
+     * The same for an identifier that a watch takes: PUBLISH, which the watch of REVIEW executes, is eligible from
+     * REVIEW by its edge.
+     */
+    @Test
+    void anIdentifierThatAWatchTakesIsAnsweredByItsEdge() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted")
+                .statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(REVIEW, DOCS, (Doc doc) -> List.of(doc), (Doc moved) -> Optional.<Doc>empty())
+                    .when("always", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(PUBLISH)
+                    .endWatch()
+                .build();
+        StateMachine<Doc, DocStatus, DocTransition> m = DocMachines.registry(graph).of(DOCS);
+        Doc doc = new Doc("1", REVIEW);
+        assertEquals(new Eligibility.Eligible<>(doc, REVIEW, PUBLISH), m.eligibility(doc, PUBLISH));
+        assertEquals(OutcomeCode.APPLIED, m.execute(new Doc("1", REVIEW), PUBLISH).code());
     }
 
     @Test
