@@ -46,10 +46,10 @@ public final class PluginFixture {
     private static final String VERSION = requireProperty("graphmaquina.version");
 
     /** The Lombok version the entity's accessors are generated with; declared before the StateGraph processor. */
-    private static final String LOMBOK = "1.18.48";
+    private static final String LOMBOK = requireProperty("graphmaquina.lombokVersion");
 
     /** The JUnit platform the fixture with plain tests runs its own test source set on. */
-    private static final String JUNIT = "5.13.4";
+    private static final String JUNIT = requireProperty("graphmaquina.junitVersion");
 
     /** Marker the fixture's classpath reporting task prefixes every runtime entry with. */
     private static final String RUNTIME_ENTRY = "RUNTIME_CLASSPATH_ENTRY=";

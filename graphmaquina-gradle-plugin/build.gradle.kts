@@ -50,12 +50,12 @@ dependencies {
     annotationProcessor(libs.lombok)
     testCompileOnly(libs.lombok)
     testAnnotationProcessor(libs.lombok)
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
     testImplementation(gradleTestKit())
     // Only the tests decode the JSON the generator publishes; the plugin itself never loads codegen classes.
-    testImplementation("com.google.code.gson:gson:2.13.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(libs.gson)
+    testRuntimeOnly(libs.junit.launcher)
 }
 signing {
     // Same environment-driven key as the root build's convention plugin; this build cannot see that plugin.
@@ -136,6 +136,9 @@ tasks.test {
     )
     // The fixture publishes and resolves every StateGraph artifact at the version this build resolved.
     systemProperty("graphmaquina.version", project.version.toString())
+    // The fixture projects build with the Lombok and JUnit versions of this build's own catalog.
+    systemProperty("graphmaquina.lombokVersion", libs.versions.lombok.get())
+    systemProperty("graphmaquina.junitVersion", libs.versions.junit.get())
     // The fixtures also resolve core, the generator and the processor, which only the root build publishes. From the
     // root, the tests depend on those publications; the provider defers the lookup until the root's projects are
     // configured, after this build. Alone, with -p, there is no root build and they must already be staged.
