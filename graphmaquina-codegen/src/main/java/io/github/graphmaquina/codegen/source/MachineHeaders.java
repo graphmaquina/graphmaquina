@@ -110,15 +110,14 @@ public final class MachineHeaders {
     }
 
     /**
-     * Refuses a peer whose pair vocabulary its owner's package could not compile. The vocabulary of an ordered
-     * pair is generated in the owner's package and names the peer machine and the peer's state enum, so both must
-     * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
-     * of a qualified name it writes. A peer is the type its class literal names. A declared peer that is none of
-     * {@code machines} is left to {@link DependencyPeers#resolve}, which resolves it against the export indexes of
-     * the dependencies or refuses it, with {@code SG602} when it is a {@code @GenerateGraphApi} machine a dependency
-     * carries without an index that lists it and with {@code SG608} otherwise, unless one of {@code machines} shares
-     * its canonical name: the emitter, which matches peers by name, would take that machine for it, so it is refused
-     * here, in the words of {@link ApiEmitter#unknownPeer}.
+     * Refuses a peer whose pair vocabulary its owner's package could not compile, as {@link #requireNameablePeer}
+     * words it. A peer is the type its class literal names. A declared peer that is none of {@code machines} is left
+     * to {@link DependencyPeers#resolve}, which resolves it against the export indexes of the dependencies, checks
+     * the descriptor it takes from one against the class files and applies the same two rules to it, or refuses it,
+     * with {@code SG602} when it is a {@code @GenerateGraphApi} machine a dependency carries without an index that
+     * lists it and with {@code SG608} otherwise, unless one of {@code machines} shares its canonical name: the
+     * emitter, which matches peers by name, would take that machine for it, so it is refused here, in the words of
+     * {@link ApiEmitter#unknownPeer}.
      *
      * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access or the
      *     peer that no machine of this compilation is though one shares its name; {@code SG603} naming a type of the
@@ -126,7 +125,6 @@ public final class MachineHeaders {
      */
     static void requireWatchablePeers(@NonNull DeclarationIndex index, @NonNull List<Resolved> machines) {
         for (Resolved owner : machines) {
-            GraphDescriptor graph = owner.graph();
             for (TypeHeader peerType : owner.peers()) {
                 String peer = peerType.canonicalName();
                 Optional<Resolved> watched = machines.stream()
@@ -134,26 +132,60 @@ public final class MachineHeaders {
                         .findFirst();
                 if (watched.isEmpty()) {
                     if (machines.stream().anyMatch((Resolved machine) -> machine.graph().facade().equals(peer))) {
-                        throw ApiEmitter.unknownPeer(peer, graph);
+                        throw ApiEmitter.unknownPeer(peer, owner.graph());
                     }
                     continue;
                 }
-                Resolved peerMachine = watched.get();
-                for (TypeHeader named : List.of(peerMachine.facade(), peerMachine.state())) {
-                    Optional<String> reason = index.inaccessibility(named, graph.packageName());
-                    if (reason.isPresent()) {
-                        throw new CodegenException(DiagnosticCode.SG608.name(),
-                                "the peer machine " + peer + " declared by "
-                                + graph.facade() + " cannot be named from " + where(graph.packageName())
-                                + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
-                    }
-                }
-                index.requireUnobscured(graph.packageName(), "the pair vocabulary generated for the machine "
-                        + graph.facade() + " over " + peer + " in " + where(graph.packageName()),
-                        qualifiedNames(index, List.of(owner.facade(), peerMachine.facade(), owner.state(),
-                                owner.transition(), peerMachine.state())), graph.origin());
+                requireNameablePeer(index, owner, watched.get().facade(), watched.get().state());
             }
         }
+    }
+
+    /**
+     * Refuses the peer {@code peerFacade} of {@code owner}, whose state enum is {@code peerState}, when the pair
+     * vocabulary generated in the owner's package could not compile there. That vocabulary names the peer machine and
+     * its state enum, so both must be accessible there, and no type of that package or of {@code java.lang} may be
+     * named like the first segment of a qualified name it writes. The peer is a machine of this compilation or, read
+     * from the classpath, one of a dependency.
+     *
+     * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access;
+     *     {@code SG603} naming a type of the owner's package or of {@code java.lang} that obscures a package the
+     *     vocabulary names
+     */
+    static void requireNameablePeer(@NonNull DeclarationIndex index, @NonNull Resolved owner,
+            @NonNull TypeHeader peerFacade, @NonNull TypeHeader peerState) {
+        GraphDescriptor graph = owner.graph();
+        String peer = peerFacade.canonicalName();
+        for (TypeHeader named : List.of(peerFacade, peerState)) {
+            Optional<String> reason = index.inaccessibility(named, graph.packageName());
+            if (reason.isPresent()) {
+                throw new CodegenException(DiagnosticCode.SG608.name(),
+                        "the peer machine " + peer + " declared by "
+                        + graph.facade() + " cannot be named from " + where(graph.packageName())
+                        + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
+            }
+        }
+        index.requireUnobscured(graph.packageName(), "the pair vocabulary generated for the machine "
+                + graph.facade() + " over " + peer + " in " + where(graph.packageName()),
+                qualifiedNames(index, List.of(owner.facade(), peerFacade, owner.state(), owner.transition(),
+                        peerState)), graph.origin());
+    }
+
+    /**
+     * The state enum and the transition enum that {@code facade} passes to the {@code Machine<E, S, T>} it ultimately
+     * extends, an original source or a classpath binary, walked as {@link #resolveDeclaration} walks it. Empty when it
+     * does not extend {@code Machine}, or when the type it passes as either enum cannot be resolved or is no enum.
+     */
+    static Optional<Enums> enumsOf(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        Optional<Binding> binding = specialization(index, facade, new Binding(Map.of(), Map.of()),
+                Collections.newSetFromMap(new IdentityHashMap<>()));
+        Optional<TypeHeader> state = binding.flatMap((Binding bound) -> bound.type(new TypeParameterKey(MACHINE, 1)))
+                .filter((TypeHeader type) -> type.kind() == ElementKind.ENUM);
+        Optional<TypeHeader> transition = binding
+                .flatMap((Binding bound) -> bound.type(new TypeParameterKey(MACHINE, 2)))
+                .filter((TypeHeader type) -> type.kind() == ElementKind.ENUM);
+        return state.flatMap((TypeHeader stateType) -> transition.map((TypeHeader transitionType) ->
+                new Enums(stateType, transitionType)));
     }
 
     /**
@@ -318,6 +350,15 @@ public final class MachineHeaders {
         Optional<TypeHeader> type(TypeParameterKey parameter) {
             return Optional.ofNullable(types.get(parameter));
         }
+    }
+
+    /**
+     * The enums a facade passes to {@code Machine}, as {@link #enumsOf} finds them.
+     *
+     * @param state the state enum
+     * @param transition the transition enum
+     */
+    record Enums(@NonNull TypeHeader state, @NonNull TypeHeader transition) {
     }
 
     /**

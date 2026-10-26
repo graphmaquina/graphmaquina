@@ -32,10 +32,13 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code @GenerateGraphApi} machine of a jar or a directory of classes whose index is missing or does not list it is
  * reported with {@code SG602}, naming that entry; any other type, a type of the sources among them, is refused with
  * {@code SG608}; and a machine this compilation generates that an index also describes is refused with {@code SG602}
- * before any peer is resolved.
+ * before any peer is resolved. A descriptor is used only once its class files agree with it, its enums declaring the
+ * constants it lists and its facade extending {@code Machine} over them, which is {@code SG602} otherwise, and once
+ * the owner's package can name the peer and its state enum, which is {@code SG608} or {@code SG603} otherwise.
  *
  * <p>The producer {@code pay.Payments} is compiled by javac alone and packed with an index written from a descriptor
- * that matches its class files, so nothing but the generator under test reads it.</p>
+ * that matches its class files, so nothing but the generator under test reads it; a test that needs a stale index
+ * packs one written from a descriptor that does not.</p>
  */
 class DependencyPeersTest {
 
@@ -242,6 +245,109 @@ class DependencyPeersTest {
         assertTrue(annotations.contains("sub.SubscriptionsPayments.Watch"), annotations::toString);
     }
 
+    /** An index that gives the state enum of the peer other constants than its class file declares is stale. */
+    @Test
+    void refusesAPeerWhoseIndexListsOtherStates() throws IOException {
+        Path stale = published("states", producer(), payments("pay.PaymentStatus",
+                List.of("PENDING", "CAPTURED", "REFUSED"), List.of("CAPTURE", "DECLINE")));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "gives pay.PaymentStatus the states [PENDING, CAPTURED, REFUSED], but that enum"
+                + " now declares [PENDING, CAPTURED, DECLINED]");
+    }
+
+    /** So is one that does that to the transition enum, which the pair vocabulary does not name. */
+    @Test
+    void refusesAPeerWhoseIndexListsOtherTransitions() throws IOException {
+        Path stale = published("transitions", producer(), payments("pay.PaymentStatus",
+                List.of("PENDING", "CAPTURED", "DECLINED"), List.of("CAPTURE", "REFUND")));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "gives pay.PaymentTransition the transitions [CAPTURE, REFUND], but that enum"
+                + " now declares [CAPTURE, DECLINE]");
+    }
+
+    /**
+     * An index that describes the peer over a state enum its facade no longer extends {@code Machine} with is stale,
+     * though that enum is still in the jar, unchanged, with the constants the index lists.
+     */
+    @Test
+    void refusesAPeerWhoseFacadeNoLongerUsesTheIndexedEnums() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.OldStatus", "package pay;\npublic enum OldStatus { PENDING, CAPTURED, DECLINED }\n");
+        Path stale = published("facade", sources, payments("pay.OldStatus",
+                List.of("PENDING", "CAPTURED", "DECLINED"), List.of("CAPTURE", "DECLINE")));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "describes it over pay.OldStatus and pay.PaymentTransition, but it extends"
+                + " Machine over pay.PaymentStatus and pay.PaymentTransition");
+    }
+
+    /** So is one that describes a peer whose facade no longer extends {@code Machine} at all. */
+    @Test
+    void refusesAPeerWhoseFacadeNoLongerExtendsMachine() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.Payments", """
+            package pay;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            @GenerateGraphApi
+            public interface Payments {}
+            """);
+        Path stale = published("unmachined", sources, PAYMENTS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
+                + " extend Machine over two enums the classpath declares");
+    }
+
+    /**
+     * The pair vocabulary is generated in the owner's package and names the peer's state enum, so a peer from a jar
+     * whose state enum is not public is refused at the owner, as a peer of the same compilation is.
+     */
+    @Test
+    void refusesAPeerWhoseStateTypeTheOwnersPackageCannotName() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.PaymentStatus", "package pay;\nenum PaymentStatus { PENDING, CAPTURED, DECLINED }\n");
+        Path hidden = published("hidden", sources, PAYMENTS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), hidden));
+
+        assertEquals("SG608", failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings cannot be named from package book,"
+                + " where its pair vocabulary is generated: pay.PaymentStatus is not public and belongs to package"
+                + " pay", failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * A type of the owner's package named like the package of a peer from a jar obscures that package in the pair
+     * vocabulary, which is refused at the owner, naming it, as for a peer of the same compilation.
+     */
+    @Test
+    void refusesAPeerWhosePackageTheOwnersPackageObscures() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(Map.of(
+                "book.pay", "package book; public class pay {}",
+                "book.Bookings", """
+                    package book;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    import pay.Payments;
+                    @GenerateGraphApi
+                    @GraphPeers(Payments.class)
+                    public interface Bookings extends Machine<Object, Thread.State, java.time.DayOfWeek> {}
+                    """)));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the pair vocabulary generated for the machine book.Bookings over pay.Payments in package book"
+                + " cannot name pay.Payments: the type book.pay obscures the package pay there", failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
     /** Reads {@code sources} as {@link #request} gives them, with the indexes its classpath publishes. */
     private Bootstrap.Inspection read(Map<String, String> sources) throws IOException {
         return read(sources, jar);
@@ -282,6 +388,31 @@ class DependencyPeersTest {
                 + PublishedEntries.unlisted(entry, "pay.Payments").orElseThrow(), failure.getMessage());
         assertTrue(failure.getMessage().contains(" comes from " + entry + variant), failure::getMessage);
         assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * Asserts that {@code failure} reports the peer {@code pay.Payments} of {@code book.Bookings} at that owner as the
+     * export index of {@code entry}, which describes it otherwise than its class files do, in the words of
+     * {@code discrepancy}.
+     */
+    private static void assertStale(CodegenException failure, Path entry, String discrepancy) {
+        assertEquals("SG602", failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings comes from " + entry + ", whose export"
+                + " index META-INF/graphmaquina/exports.json " + discrepancy + PublishedEntries.REMEDY,
+                failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
+    /** The jar {@code libs/<name>.jar} of {@code sources}, compiled by javac alone, published with {@code graph}. */
+    private Path published(String name, Map<String, String> sources, GraphDescriptor graph) throws IOException {
+        return ProducerJars.producer(project.resolve(name), sources, index(graph),
+                project.resolve("libs/" + name + ".jar")).toAbsolutePath().normalize();
+    }
+
+    /** The descriptor of {@code pay.Payments} over {@code stateType}, with the constants an index lists. */
+    private static GraphDescriptor payments(String stateType, List<String> states, List<String> transitions) {
+        return new GraphDescriptor("pay.Payments", "pay", "pay.Payment", stateType, states, "pay.PaymentTransition",
+                transitions, List.of(), PAYMENTS.origin());
     }
 
     /** The export index of a producer that describes {@code graph} alone. */

@@ -350,9 +350,10 @@ automatically mean all of its existing peers changed state.
 The child of a sub-machine can come from a dependency, a jar or a directory of classes whose artifact carries the
 export index its build published, as
 [multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A peer that is
-a machine of a dependency whose artifact carries no export index, or one that does not list it, is reported with
-`SG602`, naming that jar or directory whenever the generator can tell it; any other peer that is neither a machine of
-the same compilation nor a machine of a dependency that its export index describes is rejected with `SG608`.
+a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
+otherwise than its classes, is reported with `SG602`, naming that jar or directory whenever the generator can tell
+it; any other peer that is neither a machine of the same compilation nor a machine of a dependency that its export
+index describes is rejected with `SG608`.
 
 ---
 

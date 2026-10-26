@@ -133,8 +133,21 @@ public final class PublishedEntries {
                 .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))
                 || published.model().symbols().stream()
                         .anyMatch((SymbolDescriptor symbol) -> symbol.qualifiedName().equals(name));
-        return listed ? Optional.empty() : Optional.of(" comes from " + entry + ", whose export index "
-                + GenerationFiles.PUBLISHED_INDEX + " does not list it, so that index is stale or another build's"
-                + REMEDY);
+        return listed ? Optional.empty()
+                : Optional.of(staleIndex(entry, "does not list it, so that index is stale or another build's"));
+    }
+
+    /**
+     * What a diagnostic says after naming a machine or a symbol that {@code entry}, a directory of classes or a jar,
+     * carries, when the export index of {@code entry} is stale about it in the way {@code staleness} words: that
+     * entry, its index, {@code staleness} and {@link #REMEDY}.
+     *
+     * @param entry the jar or directory of classes whose export index is stale
+     * @param staleness what that index says, or fails to say, that the classes beside it contradict
+     * @return the rest of the diagnostic
+     */
+    public static String staleIndex(@NonNull Path entry, @NonNull String staleness) {
+        return " comes from " + entry + ", whose export index " + GenerationFiles.PUBLISHED_INDEX + " " + staleness
+                + REMEDY;
     }
 }

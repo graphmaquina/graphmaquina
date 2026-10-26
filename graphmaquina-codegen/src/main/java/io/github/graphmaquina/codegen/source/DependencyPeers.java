@@ -20,7 +20,9 @@ import lombok.RequiredArgsConstructor;
  * <p>A peer is first one of the machines of this compilation, which {@link MachineHeaders#requireWatchablePeers}
  * has already checked. Any other peer read from the classpath is the machine the export index of a dependency
  * describes by its canonical name, the name a manifest knows a machine by; the pair vocabulary is then typed from that
- * descriptor. A peer read from a dependency on the classpath that no index describes but whose class file carries
+ * descriptor, once the class files agree with it, which is {@code SG602} otherwise, and once the owner's package can
+ * name the peer and its state enum, as {@link MachineHeaders#requireNameablePeer} asks of a peer of this compilation.
+ * A peer read from a dependency on the classpath that no index describes but whose class file carries
  * {@code @GenerateGraphApi} is a machine of a dependency whose index is missing or does not list it, and is reported as
  * that index, as {@link PublishedEntries} words it for the processor too. A peer read from the class output of this
  * compilation, as a previous run left it, is no dependency's, just as the processor never reports that output as one,
@@ -57,7 +59,8 @@ final class DependencyPeers {
      * The descriptors of the peers of {@code machines} that none of them is, as the one index of
      * {@code dependencies} that describes each gives it: every one once, in the order the machines, and then the
      * peers each machine declares, first name it. Only a peer read from the classpath takes a descriptor: a type of
-     * the sources is no machine of a dependency.
+     * the sources is no machine of a dependency. Each owner that declares such a peer is checked against it, since
+     * whether a package can name the peer depends on that package.
      *
      * @param index the declarations the machines were resolved in
      * @param machines the machines this compilation generates, as resolved
@@ -66,7 +69,10 @@ final class DependencyPeers {
      * @return the descriptors of the dependency peers, without repetition
      * @throws CodegenException anchored at the owner of the first peer that is neither a machine of this compilation
      *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from a
-     *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type
+     *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type; and
+     *     anchored at the owner of the first peer an index describes: {@code SG602} when the class files contradict
+     *     its descriptor, as {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the owner's
+     *     package cannot name it, as {@link MachineHeaders#requireNameablePeer} words it
      */
     static List<GraphDescriptor> resolve(DeclarationIndex index, List<MachineHeaders.Resolved> machines,
             List<PublishedIndex> dependencies, Path classesOutput) {
@@ -75,15 +81,70 @@ final class DependencyPeers {
             for (TypeHeader peer : owner.peers()) {
                 if (machines.stream().noneMatch((MachineHeaders.Resolved machine) -> machine.facade() == peer)) {
                     String name = peer.canonicalName();
-                    Optional<GraphDescriptor> descriptor = peer.origin().isEmpty()
-                            ? descriptor(dependencies, name)
+                    Optional<PublishedIndex> published = peer.origin().isEmpty()
+                            ? describing(dependencies, name)
                             : Optional.empty();
-                    peers.putIfAbsent(name,
-                            descriptor.orElseThrow(() -> unresolved(index, peer, owner.graph(), classesOutput)));
+                    if (published.isEmpty()) {
+                        throw unresolved(index, peer, owner.graph(), classesOutput);
+                    }
+                    GraphDescriptor descriptor = descriptor(published.get(), name).orElseThrow();
+                    MachineHeaders.Enums enums = requireCurrent(index, peer, owner.graph(), published.get().entry(),
+                            descriptor);
+                    MachineHeaders.requireNameablePeer(index, owner, peer, enums.state());
+                    peers.putIfAbsent(name, descriptor);
                 }
             }
         }
         return List.copyOf(peers.values());
+    }
+
+    /**
+     * The enums {@code peer}, a binary that {@code owner} declares, passes to {@code Machine}, once they are the state
+     * enum and the transition enum that {@code descriptor}, which the index of {@code entry} gives it, names, each
+     * declaring the constants that descriptor lists, in the same order, as the processor asks of the enums of an
+     * index. A descriptor its class files contradict is stale, and a pair vocabulary typed from it would not match the
+     * peer's machine.
+     *
+     * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry} and what its index says
+     *     that the class files contradict, as {@link PublishedEntries#staleIndex} words it
+     */
+    private static MachineHeaders.Enums requireCurrent(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner,
+            Path entry, GraphDescriptor descriptor) {
+        Optional<MachineHeaders.Enums> enums = MachineHeaders.enumsOf(index, peer);
+        Optional<String> staleness = enums.isEmpty()
+                ? Optional.of("describes it over " + descriptor.stateType() + " and " + descriptor.transitionType()
+                        + ", but it does not extend Machine over two enums the classpath declares")
+                : staleness(descriptor, enums.get());
+        if (staleness.isPresent()) {
+            throw new CodegenException(DiagnosticCode.SG602.name(), "the peer machine " + peer.canonicalName()
+                    + " declared by " + owner.facade() + PublishedEntries.staleIndex(entry, staleness.get()),
+                    owner.origin());
+        }
+        return enums.orElseThrow();
+    }
+
+    /**
+     * What {@code descriptor} says that {@code enums}, the enums its machine's facade passes to {@code Machine},
+     * contradict: other enums, then other constants of the state enum, then of the transition enum; empty when
+     * nothing.
+     */
+    private static Optional<String> staleness(GraphDescriptor descriptor, MachineHeaders.Enums enums) {
+        String state = enums.state().canonicalName();
+        String transition = enums.transition().canonicalName();
+        if (!state.equals(descriptor.stateType()) || !transition.equals(descriptor.transitionType())) {
+            return Optional.of("describes it over " + descriptor.stateType() + " and " + descriptor.transitionType()
+                    + ", but it extends Machine over " + state + " and " + transition);
+        }
+        return constants("state", enums.state(), descriptor.states())
+                .or(() -> constants("transition", enums.transition(), descriptor.transitions()));
+    }
+
+    /** What an index that gives {@code type}, the {@code role} enum, the constants {@code claimed} contradicts. */
+    private static Optional<String> constants(String role, TypeHeader type, List<String> claimed) {
+        return type.constants().equals(claimed)
+                ? Optional.empty()
+                : Optional.of("gives " + type.canonicalName() + " the " + role + "s " + claimed
+                        + ", but that enum now declares " + type.constants());
     }
 
     /**
@@ -119,13 +180,6 @@ final class DependencyPeers {
     private static Optional<PublishedIndex> describing(List<PublishedIndex> dependencies, String facade) {
         return dependencies.stream()
                 .filter((PublishedIndex published) -> descriptor(published, facade).isPresent())
-                .findFirst();
-    }
-
-    /** The descriptor of the machine {@code facade} that the first index of {@code dependencies} to describe it gives. */
-    private static Optional<GraphDescriptor> descriptor(List<PublishedIndex> dependencies, String facade) {
-        return dependencies.stream()
-                .flatMap((PublishedIndex published) -> descriptor(published, facade).stream())
                 .findFirst();
     }
 

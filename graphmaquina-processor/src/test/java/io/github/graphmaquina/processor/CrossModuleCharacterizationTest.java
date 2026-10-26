@@ -25,9 +25,10 @@ import org.junit.jupiter.api.io.TempDir;
  * declares it a peer with {@code @GraphPeers} and binds it as the sub-machine of its state {@code DEPOSIT}, in the set
  * {@code book.Shop}, and {@code cons.Shelf} holds it in a set. The generator reads and checks the indexes the
  * dependencies published before it resolves a peer or emits anything, and resolves a peer it does not generate
- * against those indexes. A peer whose jar carries no index is therefore reported by the generator as that missing
- * index, naming the jar, and one whose index is stale reaches the processor, which checks the manifest that carries
- * the indexes as a whole.</p>
+ * against those indexes, checking the descriptor it takes from one against the class files. A peer whose jar carries
+ * no index, or an index that is stale about it, is therefore reported by the generator, naming the jar, while a set
+ * that holds a machine whose index is stale reaches the processor, which checks the manifest that carries the indexes
+ * as a whole.</p>
  */
 class CrossModuleCharacterizationTest {
 
@@ -65,19 +66,18 @@ class CrossModuleCharacterizationTest {
     }
 
     /**
-     * An index that renames a state of the machine passes the generator, which types the pair from it, and is refused
-     * by the processor, and javac reports nothing before it about the vocabulary the generator emitted.
+     * An index that renames a state of the machine is refused by the generator, before it types the pair from it, at
+     * the machine that declares the peer, in words that name the jar.
      */
     @Test
-    void aPeerFromAJarWithAStaleIndexIsRefusedToday() throws Exception {
+    void aPeerFromAJarWithAStaleIndexIsReportedAtThatJar() throws Exception {
         Path jar = publishedProducer("payments.jar", RENAMES_A_STATE);
 
-        Compilation.Prepared prepared = Compilation.prepare(tree("consumer"), List.of(jar));
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-
-        assertEquals(List.of("[SG602] the annotation manifest " + prepared.generation().annotationManifest()
-                + " gives pay.PaymentStatus the states [PENDING, CAPTURED, REFUSED], but that enum now declares"
-                + " [PENDING, CAPTURED, DECLINED]"), result.errors(), result.describe());
+        assertRefused("SG602", "the peer machine pay.Payments declared by book.Bookings comes from " + jar
+                + ", whose export index META-INF/graphmaquina/exports.json gives pay.PaymentStatus the states"
+                + " [PENDING, CAPTURED, REFUSED], but that enum now declares [PENDING, CAPTURED, DECLINED]: package"
+                + " the index the producer's StateGraph build publishes with its classes, or rebuild the producer"
+                + " through the complete lifecycle", tree("consumer"), List.of(jar));
     }
 
     /**

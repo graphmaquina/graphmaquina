@@ -84,18 +84,22 @@ public final class Bootstrap {
     /**
      * The model of {@code request}, as {@link #inspect} reads it, with every original source it was read from, its
      * declared peers resolved against {@code dependencies} too. A peer that is no machine of the request, read from the
-     * classpath, is the machine the one index of {@code dependencies} that describes it gives.
+     * classpath, is the machine the one index of {@code dependencies} that describes it gives, once its class files
+     * agree with that descriptor and the package of each machine that declares it can name it.
      *
      * @param request the request to read
      * @param dependencies the export indexes the dependencies of the request publish, each with its classpath entry
      * @return the model, the original sources it was read from, {@code dependencies} and the descriptors of the
      *     dependency peers
      * @throws CodegenException {@code SG602} for a machine of the request that an index of {@code dependencies}
-     *     describes too, before any machine or peer is resolved, and for a declared peer that is a
+     *     describes too, before any machine or peer is resolved, for a declared peer that is a
      *     {@code @GenerateGraphApi} machine read from a dependency on the classpath, not from the class output of the
      *     request, that no index of {@code dependencies} describes, naming the jar or directory of classes whose index
-     *     is missing or does not list it when that can be told; {@code SG608} for any other declared peer that is
-     *     neither a machine of the request nor a classpath type an index describes
+     *     is missing or does not list it when that can be told, and for a declared peer whose class files contradict
+     *     the descriptor an index gives it, naming the jar or directory of classes of that index; {@code SG608} for
+     *     any other declared peer that is neither a machine of the request nor a classpath type an index describes;
+     *     {@code SG608} or {@code SG603} for a declared peer, of the request or of a dependency, that the package of
+     *     the machine that declares it cannot name
      */
     public static Inspection read(@NonNull GenerationRequest request, @NonNull List<PublishedIndex> dependencies) {
         Parsed parsed = parse(request);
