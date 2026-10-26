@@ -35,11 +35,15 @@ class DiagnosticCodeTest {
     private static final Pattern FROM_ENUM = Pattern.compile("(?<![\\p{L}\\p{N}_$])DiagnosticCode\\.SG\\d{3}");
     private static final Pattern ROW = Pattern.compile("^\\| `(SG\\d{3})` \\|", Pattern.MULTILINE);
     /**
-     * The lines Checkstyle's LineLength also reads as comments: a line that begins with {@code *}, as a Javadoc line
-     * does, or with {@code //}, or that opens a block comment which nothing but comment follows on the line. No
-     * line inside a text block is read as one, whatever it begins with.
+     * A line that is nothing but a comment: after its leading whitespace it begins with {@code //}, or with
+     * {@code /*} or {@code *}, and no end delimiter of a block comment occurs on it with anything but whitespace
+     * after it (the opening of a block comment does not close it). That is Checkstyle's reading of a comment line for
+     * LineLength, but for one case: Checkstyle also ignores a line that begins with {@code *} and goes on as code
+     * after such a delimiter. So a Javadoc line, a line that closes a block comment and a line that opens and closes
+     * one are comments, and a line that goes on after the delimiter, as code or as another comment, is not. No line
+     * inside a text block is read as a comment, whatever it begins with.
      */
-    private static final Pattern COMMENT = Pattern.compile("^\\s*(\\*|//|/\\*(?!.*\\*/\\s*\\S))");
+    private static final Pattern COMMENT = Pattern.compile("^\\s*(//|/\\*(?!.*\\*/\\s*\\S)|(?!.*\\*/\\s*\\S)\\*)");
     private static final String TEXT_BLOCK_DELIMITER = "\"\"\"";
     private static final String SPELLS = " spells a code: take it from its DiagnosticCode constant";
     /** Numbers once used and then removed, from the repository's history; they have no constant to name. */
@@ -87,6 +91,9 @@ class DiagnosticCodeTest {
                 "assertEquals(\"[#] Bookings\", message);",
                 "foo(); // # is named after code",
                 "/* note */ assertEquals(\"#\", code);",
+                "/* note */ // # is named after another comment",
+                "*/ assertEquals(\"#\", code);",
+                "     * note */ assertEquals(\"#\", code);",
                 "    package fx; /** Entity of the # fixture. */",
                 "assertEquals(XDiagnosticCode.#.name(), code);",
                 "assertEquals(\"x\" + DiagnosticCode.# + \"#\", code);")) {
@@ -101,6 +108,8 @@ class DiagnosticCodeTest {
                 "assertEquals(DiagnosticCode.#.name(), code);",
                 "assertEquals(io.github.graphmaquina.annotation.internal.DiagnosticCode.#.name(), code);",
                 "     * {@code #} is named in prose.",
+                "     * {@code #} is named in prose. */",
+                "     */",
                 "    // # is named in prose.",
                 "    /* # is named in prose. */",
                 "    /** # is named in prose. */")) {
