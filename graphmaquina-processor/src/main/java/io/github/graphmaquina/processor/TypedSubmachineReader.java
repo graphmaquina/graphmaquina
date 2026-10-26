@@ -122,15 +122,16 @@ final class TypedSubmachineReader {
         if (!hasWays(facade, submachine, machine, child, state.get(), childValue, parentValue, lookupValue)) {
             return Optional.empty();
         }
-        Optional<Property> childOf = childValue.flatMap((AnnotationValue value) -> symbol(value).flatMap(
+        Optional<Property> childOf = childValue.flatMap((AnnotationValue value) -> TypedValues.symbol(value).flatMap(
                 (TypeMirror property) -> properties.child(property, machine, child,
                         DiagnosticAnchor.of(facade, submachine, value))));
-        Optional<Property> parentOf = parentValue.flatMap((AnnotationValue value) -> symbol(value).flatMap(
+        Optional<Property> parentOf = parentValue.flatMap((AnnotationValue value) -> TypedValues.symbol(value).flatMap(
                 (TypeMirror property) -> properties.parent(property, machine, child,
                         DiagnosticAnchor.of(facade, submachine, value))));
-        Optional<Binding> parentLookup = lookupValue.flatMap((AnnotationValue value) -> symbol(value).flatMap(
-                (TypeMirror lookup) -> symbols.resolve(lookup, Bindings.Role.LOOKUP, machine, Optional.of(child),
-                        DiagnosticAnchor.of(facade, submachine, value))));
+        Optional<Binding> parentLookup = lookupValue.flatMap((AnnotationValue value) ->
+                TypedValues.symbol(value).flatMap((TypeMirror lookup) -> symbols.resolve(lookup,
+                        Bindings.Role.LOOKUP, machine, Optional.of(child), DiagnosticAnchor.of(facade, submachine,
+                                value))));
         List<AnnotationMirror> declaredExits = annotations.annotations(submachine, "exits");
         List<SubmachineModel.Exit> exits = exits(facade, declaredExits, machine, child, state.get(), operations);
         Optional<List<String>> terminals = terminals(child);
@@ -323,10 +324,5 @@ final class TypedSubmachineReader {
             }
         }
         return ordinal;
-    }
-
-    /** The symbol {@code value} names, or empty when javac could not read it as a class literal. */
-    private static Optional<TypeMirror> symbol(AnnotationValue value) {
-        return value.getValue() instanceof TypeMirror type ? Optional.of(type) : Optional.empty();
     }
 }

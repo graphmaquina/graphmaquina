@@ -88,6 +88,26 @@ class WatchOwnerLookupTest {
         assertCompanion(result, " graph(OrderLookups orderLookups) {");
     }
 
+    /**
+     * Within one machine the hosts come watch by watch, the conditions and then the owner lookup of each, before the
+     * hosts of the edges declared on operations: here a condition host, the lookup host and the host of the action of
+     * {@code pay}, three classes, so the scenario's builder call compiles only in that order.
+     */
+    @Test
+    void theLookupHostComesWithItsWatchBeforeTheHostsOfOperations() throws Exception {
+        Map<String, String> sources = sources("ownerLookup = OrderLookupsRefs.HeldOrderOf.class,",
+                "new OrderConditions(), new OrderLookups(), new OrderActions()");
+        String orders = replaced(sources.get("shop.Orders"), "allIn = ItemStatus.PACKED",
+                "condition = OrderConditionsRefs.Ready.class");
+        sources.put("shop.Orders", replaced(orders, "@OrdersGraph.Transition(id = PAY, from = NEW, to = PAID)",
+                "@OrdersGraph.Transition(id = PAY, from = NEW, to = PAID, action = OrderActionsRefs.Charge.class)"));
+        Compilation.Result result = compile(sources);
+
+        assertEquals("PAID SHIPPED", run(result));
+        assertCompanion(result, " graph(OrderConditions orderConditions, OrderLookups orderLookups,"
+                + " OrderActions orderActions) {");
+    }
+
     /** {@code order} returns an {@code Optional} of the order and {@code placedIn} the order itself. */
     @Test
     void ownerPropertiesKeepBothShapes() throws Exception {

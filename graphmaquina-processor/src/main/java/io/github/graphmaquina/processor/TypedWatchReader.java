@@ -107,8 +107,8 @@ final class TypedWatchReader {
             DiagnosticAnchor.of(facade, watch, declaredState.get()).report(diagnostics, DiagnosticCode.SG403,
                     "the state " + state.get() + " declares two watches");
         }
-        Optional<Property> peersOf = symbol(declaredPeers.get()).flatMap((TypeMirror property) -> properties.peers(
-                property, machine, peer, DiagnosticAnchor.of(facade, watch, declaredPeers.get())));
+        Optional<Property> peersOf = TypedValues.symbol(declaredPeers.get()).flatMap((TypeMirror property) ->
+                properties.peers(property, machine, peer, DiagnosticAnchor.of(facade, watch, declaredPeers.get())));
         Optional<WatchOwner> owner = owners.read(facade, watch, state.get(), machine, peer);
         List<AnnotationMirror> declared = annotations.annotations(watch, "rules");
         if (declared.isEmpty()) {
@@ -188,7 +188,7 @@ final class TypedWatchReader {
     /** A rule that asks a condition, resolved against the machine and the peer the pair names. */
     private Optional<RuleModel> condition(AnnotationValue value, String executed, MachineTypes machine,
             MachineTypes peer, DiagnosticAnchor anchor) {
-        return symbol(value).flatMap((TypeMirror symbol) ->
+        return TypedValues.symbol(value).flatMap((TypeMirror symbol) ->
                         symbols.resolve(symbol, Bindings.Role.CONDITION, machine, Optional.of(peer), anchor))
                 .map((Binding condition) -> new RuleModel(RuleKind.CONDITION, "", Optional.of(condition), executed));
     }
@@ -202,11 +202,6 @@ final class TypedWatchReader {
     /** The values of an array element, and none when this annotation does not declare that element at all. */
     private List<AnnotationValue> values(AnnotationMirror mirror, String name) {
         return annotations.find(mirror, name).isEmpty() ? List.of() : annotations.array(mirror, name);
-    }
-
-    /** The symbol {@code value} names, or empty when javac could not read it as a class literal. */
-    private static Optional<TypeMirror> symbol(AnnotationValue value) {
-        return value.getValue() instanceof TypeMirror type ? Optional.of(type) : Optional.empty();
     }
 
     private static RuleKind kind(String alternative) {

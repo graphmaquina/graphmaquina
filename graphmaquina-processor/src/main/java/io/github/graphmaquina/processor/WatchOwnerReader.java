@@ -51,7 +51,7 @@ final class WatchOwnerReader {
         String name = owner ? OWNER : OWNER_LOOKUP;
         Optional<AnnotationValue> value = TypedValues.optional(watch, name, annotations,
                 DiagnosticAnchor.of(facade, watch, annotations.value(watch, name)), diagnostics);
-        Optional<TypeMirror> symbol = value.flatMap(WatchOwnerReader::symbol);
+        Optional<TypeMirror> symbol = value.flatMap(TypedValues::symbol);
         if (symbol.isEmpty()) {
             return Optional.empty();
         }
@@ -77,10 +77,5 @@ final class WatchOwnerReader {
     /** Whether the watch declares at least one value in the element {@code name}. */
     private boolean declares(AnnotationMirror watch, String name) {
         return annotations.find(watch, name).isPresent() && !annotations.array(watch, name).isEmpty();
-    }
-
-    /** The symbol {@code value} names, or empty when javac could not read it as a class literal. */
-    private static Optional<TypeMirror> symbol(AnnotationValue value) {
-        return value.getValue() instanceof TypeMirror type ? Optional.of(type) : Optional.empty();
     }
 }

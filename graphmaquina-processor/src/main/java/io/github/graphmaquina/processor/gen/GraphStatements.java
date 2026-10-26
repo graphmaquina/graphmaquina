@@ -366,8 +366,8 @@ final class GraphStatements {
 
     /**
      * The lambda that hands an entity, typed {@code p}, to {@code binding}, an exported lookup: the
-     * {@code parentLookup} of a sub-machine, which finds the parent of its child, or the {@code ownerLookup} of a watch,
-     * which finds the owner of its peer. The lookup is called on the host class for a static member and on the
+     * {@code parentLookup} of a sub-machine, which finds the parent of its child, or the {@code ownerLookup} of a
+     * watch, which finds the owner of its peer. The lookup is called on the host class for a static member and on the
      * injected parameter for an instance one, and its {@code Optional} is handed to the DSL as it is.
      */
     private static String lookup(Binding binding, String p, String peer, Variables variables, Names names,

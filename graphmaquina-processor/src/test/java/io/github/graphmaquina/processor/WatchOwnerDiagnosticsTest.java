@@ -70,6 +70,12 @@ class WatchOwnerDiagnosticsTest {
                 compile(sources("ownerLookup = {OrderLookupsRefs.OrderOf.class, OrderLookupsRefs.NoOrder.class},")));
     }
 
+    @Test
+    void twoOwnerPropertiesAreTooManyValues() throws URISyntaxException {
+        assertErrors(List.of("[" + DiagnosticCode.SG607 + "] owner declares 2 values but holds one at most"),
+                compile(sources("owner = {ItemRefs.Order.class, ItemRefs.PlacedIn.class},")));
+    }
+
     /** {@code unrelated} takes the order rather than the item, so it is no lookup of an item's owner. */
     @Test
     void aLookupWithTheWrongSignatureNamesTheOneItNeeds() throws URISyntaxException {

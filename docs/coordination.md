@@ -23,9 +23,10 @@ The generated builder takes the instance binding hosts used by the machines. Its
 the set's declarations; inspect the generated method or completion when dependencies change. It takes the hosts in
 the order of the set's accessors, after the shared timeout when it has one, a host at the first accessor whose machine
 uses it: `ShopMachines` above gets `builder(Duration, OrderActions, ItemActions)`. Within one machine, hosts come in
-this order: the actions, guards and after-commit hooks of the edges the interface declares itself, then the watch
-conditions, then those of the edges declared on operations, then the lookups of its sub-machines. Reordering the accessors can
-therefore reorder its parameters, a source-incompatible change for every caller of `builder(...)`. GraphMaquina
+this order: the actions, guards and after-commit hooks of the edges the interface declares itself, then, watch by
+watch, its conditions and its owner lookup, then those of the edges declared on operations, then the lookups of its
+sub-machines. Reordering the accessors can therefore reorder its parameters, a source-incompatible change for every
+caller of `builder(...)`. GraphMaquina
 does not instantiate service classes or discover dependency-injection beans.
 
 | Builder option | Purpose / default |

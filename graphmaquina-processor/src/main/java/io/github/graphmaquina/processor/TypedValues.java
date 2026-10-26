@@ -47,6 +47,14 @@ final class TypedValues {
     }
 
     /**
+     * The symbol {@code value} names, and empty when javac could not read it as a class literal: javac has already
+     * reported such a value, and no code wraps that report in one of its own.
+     */
+    static Optional<TypeMirror> symbol(AnnotationValue value) {
+        return value.getValue() instanceof TypeMirror type ? Optional.of(type) : Optional.empty();
+    }
+
+    /**
      * The name of the constant {@code value} holds, and empty when it holds anything else or a constant of
      * another enum. The enum is compared by identity, not by name, so a constant only names a state or an
      * identifier of the machine that declares {@code declaring}; javac has already refused what this returns
