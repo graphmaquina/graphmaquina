@@ -5,6 +5,7 @@ import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.DependencyExports;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestAssembler;
+import io.github.graphmaquina.codegen.manifest.PublishedIndex;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.output.GenerationOutput;
@@ -47,7 +48,8 @@ public final class StateGraphCodegen {
         Bootstrap.Inspection inspection = Bootstrap.read(request);
         GenerationModel model = inspection.model();
         List<GeneratedSource> sources = ApiEmitter.emit(model, request.compilationId());
-        List<ExportIndex> dependencies = DependencyExports.read(dependencyClasspath(request));
+        List<ExportIndex> dependencies = DependencyExports.read(dependencyClasspath(request)).stream()
+            .map(PublishedIndex::index).toList();
         CompileManifest manifest = ManifestAssembler.assemble(request, model, sources, dependencies);
         return GenerationOutput.publish(request, sources, manifest, inspection.sources());
     }

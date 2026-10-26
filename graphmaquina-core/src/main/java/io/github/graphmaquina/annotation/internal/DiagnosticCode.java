@@ -108,7 +108,10 @@ public enum DiagnosticCode {
     /** Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. */
     SG601,
 
-    /** A manifest, an inventory or an export index is missing, incompatible, stale or malformed. */
+    /**
+     * A manifest, an inventory or an export index is missing, incompatible, stale or malformed, or the export indexes
+     * of two classpath entries describe one machine.
+     */
     SG602,
 
     /** Generated output or export collision, a name generated code cannot write, or a forbidden output path. */

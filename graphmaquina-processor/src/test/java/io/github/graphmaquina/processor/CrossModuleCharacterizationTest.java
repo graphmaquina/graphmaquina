@@ -72,22 +72,18 @@ class CrossModuleCharacterizationTest {
     }
 
     /**
-     * A set that holds a machine two jars describe is refused by the processor, and not by the generator: the
-     * manifest names the first thing both indexes list, which is an annotation type of the machine's vocabulary
-     * and not the machine, as copies of one producer share every one of them. The message names the manifest, not
-     * either jar.
+     * A set that holds a machine two jars describe is refused by the generator, before it publishes anything, in words
+     * that name both jars in classpath order. The control is the same sources over the first jar alone.
      */
     @Test
-    void aSetHoldingAMachineListedByTwoJarsIsRefusedToday() throws Exception {
+    void aSetHoldingAMachineListedByTwoJarsIsRefusedNamingBothJars() throws Exception {
         Path first = publishedProducer("a.jar", UnaryOperator.identity());
         Path second = publishedProducer("b.jar", UnaryOperator.identity());
         assertCompiles(tree("shelf"), List.of(first));
 
-        Compilation.Prepared prepared = Compilation.prepare(tree("shelf"), List.of(first, second));
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-
-        assertEquals(List.of("[SG602] the annotation manifest " + prepared.generation().annotationManifest()
-                + " lists the annotation type pay.PaymentsGraph.Check twice"), result.errors(), result.describe());
+        assertRefused("SG602", "the machine pay.Payments is described by the export indexes of " + first + " and "
+                + second + ": keep one artifact of its producer on the classpath", tree("shelf"),
+                List.of(first, second));
     }
 
     /**
