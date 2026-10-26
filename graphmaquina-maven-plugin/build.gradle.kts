@@ -47,7 +47,8 @@ dependencies {
     // started over the plugin's own artifacts, and its classes are never loaded into this plugin's realm.
     runtimeOnly(project(":graphmaquina-codegen"))
 
-    // Only the tests name diagnostic codes through core's DiagnosticCode; the plugin itself never loads library classes.
+    // Only the tests name diagnostic codes through core's DiagnosticCode; the plugin itself never loads library
+    // classes.
     testImplementation(project(":graphmaquina-core"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
