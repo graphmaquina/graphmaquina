@@ -225,6 +225,8 @@ static ButtonState buttonFor(
 
 ## What a check runs and never does
 
+![The decisions of an operation, with a band for an eligibility check: it runs the binding check, the edge lookup, the reserved exit and the guards, in that order, answers Ineligible with the kind of the first refusal, and answers Eligible once every guard passed, before the action. The action and what follows it run in a call only.](images/operation-decisions.svg)
+
 Whatever it answers or throws, a check:
 
 - writes no state: it calls no setter;

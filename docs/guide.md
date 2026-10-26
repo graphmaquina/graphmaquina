@@ -81,7 +81,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | What runs at build time, and what at runtime? | [From declarations to a running machine](images/build-pipeline.svg) | [Generation lifecycle](generation.md#generation-lifecycle-and-ide-setup) |
 | How can my source use annotations that do not exist yet? | [Source → vocabulary → compilation](images/annotation-bootstrap.svg) | [First generation](generation.md#how-your-flow-annotations-are-generated) |
 | Which transitions are permitted? | [The ticket graph](images/ticket-workflow.svg) | [Understand the graph](graph-model.md#understand-the-graph) |
-| Why did an operation apply, reject or fail? | [Edge selection and outcomes](images/operation-decisions.svg) | [Outcomes](outcomes.md) |
+| Why did an operation apply, reject or fail? | [Edge selection, outcomes and where a check stops](images/operation-decisions.svg) | [Outcomes](outcomes.md) |
 | Which thread waits for my service? | [Direct call and async submission](images/async-execution.svg) | [Calling styles](async.md#choose-the-calling-style) |
 | How much time is left for an action? | [Root and action deadline timeline](images/async-deadlines.svg) | [Deadline rules](async-deadlines.md#deadline-rules) |
 | What happens if the service finishes too late? | [Timeout and late completion](images/async-late-completion.svg) | [Cancellation](async-deadlines.md#timeout-cancellation-and-late-completion) |
