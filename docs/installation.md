@@ -385,7 +385,9 @@ For a multi-module build:
    build error: one that is missing, or that does not list a machine or a symbol the classes beside it carry, is
    reported as `SG602` wherever the consumer uses that machine or symbol, naming the jar or directory of classes
    that carries it. Build producers and consumers with the same GraphMaquina version: an index that another version
-   wrote is refused with `SG602` too.
+   wrote is refused with `SG602` too, and so is a machine that the indexes of two jars or directories on the
+   classpath both describe, as two versions of one producer do: the error names both entries, and keeping one
+   artifact of that producer on the classpath fixes it.
 
 Support for published symbols and sets does not imply support for a watch whose pair spans separate
 compilations. Keep watched owner and peer declarations in the same compilation until

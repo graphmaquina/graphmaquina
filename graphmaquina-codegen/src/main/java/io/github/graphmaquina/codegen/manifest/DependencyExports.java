@@ -29,7 +29,8 @@ import lombok.NonNull;
  * the {@code pending-exports.json} a processor writes during its own compilation belongs to that run and is
  * promoted by its build, never consumed here. An entry that carries an index of another schema or of another tool
  * version is refused rather than interpreted with the wrong rules, and so is a machine that the indexes of two
- * different entries describe: they are two copies of one producer, and no rule here says which one is current.</p>
+ * different entries describe, as two copies or two versions of one producer do: only the machine's facade name is
+ * compared, and no rule here says which description is current.</p>
  */
 public final class DependencyExports {
 
