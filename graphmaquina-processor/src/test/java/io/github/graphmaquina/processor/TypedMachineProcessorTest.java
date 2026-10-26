@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +60,7 @@ class TypedMachineProcessorTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG607"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG607.name()), result.describe());
     }
 
     @Test
@@ -109,7 +110,7 @@ class TypedMachineProcessorTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG606"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG606.name()), result.describe());
     }
 
     /**
@@ -176,7 +177,7 @@ class TypedMachineProcessorTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG105"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG105.name()), result.describe());
     }
 
     @Test
@@ -191,7 +192,7 @@ class TypedMachineProcessorTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG302"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG302.name()), result.describe());
     }
 
     @Test
@@ -203,7 +204,7 @@ class TypedMachineProcessorTest {
                 """, OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG701"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG701.name()), result.describe());
     }
 
     @Test
@@ -212,7 +213,7 @@ class TypedMachineProcessorTest {
                 HEADER.replace("\"a review is published\"", "\"\""), OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG103"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG103.name()), result.describe());
     }
 
     /** A self-loop is a real edge now; only the cycle it takes part in has to be authorised. */
@@ -222,7 +223,7 @@ class TypedMachineProcessorTest {
                 OPERATIONS.replace("from = REVIEW, to = PUBLISHED", "from = REVIEW, to = REVIEW")));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG204"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG204.name()), result.describe());
     }
 
     @Test
@@ -231,7 +232,7 @@ class TypedMachineProcessorTest {
                 HEADER.replace("terminals = PUBLISHED", "terminals = {REVIEW, PUBLISHED}"), OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG202"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG202.name()), result.describe());
     }
 
     @Test
@@ -241,7 +242,7 @@ class TypedMachineProcessorTest {
                 OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG702"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG702.name()), result.describe());
     }
 
     @Test
@@ -253,7 +254,7 @@ class TypedMachineProcessorTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG203"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG203.name()), result.describe());
     }
 
     @Test
@@ -264,6 +265,6 @@ class TypedMachineProcessorTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG204"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG204.name()), result.describe());
     }
 }

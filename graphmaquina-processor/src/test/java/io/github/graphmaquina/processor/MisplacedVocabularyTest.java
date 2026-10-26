@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +42,7 @@ class MisplacedVocabularyTest {
                     private Outcome<Doc, DocStatus, DocTransition> rush(Doc doc) { return submit(doc); }
                 """));
 
-        assertEquals(3, result.countError("SG504"), result.describe());
+        assertEquals(3, result.countError(DiagnosticCode.SG504.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch(
                 (String error) -> error.contains("reopen") && error.contains("default")),
                 result.describe());
@@ -71,7 +72,7 @@ class MisplacedVocabularyTest {
                             default Outcome<Doc, DocStatus, DocTransition> archive(Doc doc) { return submit(doc); }
                         """)));
 
-        assertEquals(1, result.countError("SG504"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG504.name()), result.describe());
         assertEquals(1, result.errors().size(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
@@ -89,7 +90,7 @@ class MisplacedVocabularyTest {
                     Outcome<Refund, RefundStatus, RefundTransition> close(Refund refund);
                 """));
 
-        assertEquals(1, result.countError("SG606"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG606.name()), result.describe());
         assertEquals(1, result.errors().size(), result.describe());
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
         assertFalse(result.hasGenerated("shop.RefundsRuntime"), result.describe());
@@ -110,8 +111,8 @@ class MisplacedVocabularyTest {
                 { return close(refund); }
                 """));
 
-        assertEquals(1, result.countError("SG606"), result.describe());
-        assertEquals(0, result.countError("SG504"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG606.name()), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG504.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shop.Orders") && !result.errors().get(0).contains("of Refunds"),
                 result.describe());
         assertEquals(1, result.errors().size(), result.describe());
@@ -185,7 +186,7 @@ class MisplacedVocabularyTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(3, result.countError("SG606"), result.describe());
+        assertEquals(3, result.countError(DiagnosticCode.SG606.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocService.misplaced")
                 && error.contains("Transitions")), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocService")

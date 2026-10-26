@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -59,7 +60,8 @@ class CrossModuleCharacterizationTest {
         Path jar = publishedProducer("payments.jar", UnaryOperator.identity());
         PublishedJars.stripIndex(jar);
 
-        assertRefused("SG602", "the peer machine pay.Payments declared by book.Bookings comes from " + jar
+        assertRefused(DiagnosticCode.SG602.name(),
+                "the peer machine pay.Payments declared by book.Bookings comes from " + jar
                 + ", which carries no export index META-INF/graphmaquina/exports.json, so no index this compilation"
                 + " reads lists it: package the index the producer's StateGraph build publishes with its classes, or"
                 + " rebuild the producer through the complete lifecycle", tree("consumer"), List.of(jar));
@@ -73,7 +75,8 @@ class CrossModuleCharacterizationTest {
     void aPeerFromAJarWithAStaleIndexIsReportedAtThatJar() throws Exception {
         Path jar = publishedProducer("payments.jar", RENAMES_A_STATE);
 
-        assertRefused("SG602", "the peer machine pay.Payments declared by book.Bookings comes from " + jar
+        assertRefused(DiagnosticCode.SG602.name(),
+                "the peer machine pay.Payments declared by book.Bookings comes from " + jar
                 + ", whose export index META-INF/graphmaquina/exports.json gives pay.PaymentStatus the states"
                 + " [PENDING, CAPTURED, REFUSED], but that enum now declares [PENDING, CAPTURED, DECLINED]: package"
                 + " the index the producer's StateGraph build publishes with its classes, or rebuild the producer"
@@ -89,7 +92,8 @@ class CrossModuleCharacterizationTest {
         Path first = publishedProducer("a.jar", UnaryOperator.identity());
         Path second = publishedProducer("b.jar", UnaryOperator.identity());
 
-        assertRefused("SG602", "the machine pay.Payments is described by the export indexes of " + first + " and "
+        assertRefused(DiagnosticCode.SG602.name(),
+                "the machine pay.Payments is described by the export indexes of " + first + " and "
                 + second + ": keep one artifact of its producer on the classpath", tree("consumer"),
                 List.of(first, second));
     }
@@ -104,7 +108,8 @@ class CrossModuleCharacterizationTest {
         Path second = publishedProducer("b.jar", UnaryOperator.identity());
         assertCompiles(tree("shelf"), List.of(first));
 
-        assertRefused("SG602", "the machine pay.Payments is described by the export indexes of " + first + " and "
+        assertRefused(DiagnosticCode.SG602.name(),
+                "the machine pay.Payments is described by the export indexes of " + first + " and "
                 + second + ": keep one artifact of its producer on the classpath", tree("shelf"),
                 List.of(first, second));
     }
@@ -122,7 +127,8 @@ class CrossModuleCharacterizationTest {
         Compilation.Prepared prepared = Compilation.prepare(tree("shelf"), List.of(stale));
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
-        assertEquals(List.of("[SG602] the annotation manifest " + prepared.generation().annotationManifest()
+        assertEquals(List.of("[" + DiagnosticCode.SG602 + "] the annotation manifest "
+                + prepared.generation().annotationManifest()
                 + " gives pay.PaymentStatus the states [PENDING, CAPTURED, REFUSED], but that enum now declares"
                 + " [PENDING, CAPTURED, DECLINED]"), result.errors(), result.describe());
     }
@@ -134,7 +140,8 @@ class CrossModuleCharacterizationTest {
         Map<String, String> sources = new LinkedHashMap<>(tree("consumer"));
         sources.putAll(tree("unresolvable"));
 
-        assertRefused("SG601", "the peer machine nowhere.Missing declared by book.Bookings is unresolved", sources,
+        assertRefused(DiagnosticCode.SG601.name(),
+                "the peer machine nowhere.Missing declared by book.Bookings is unresolved", sources,
                 List.of(jar));
     }
 

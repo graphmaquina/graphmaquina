@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -51,6 +52,25 @@ class TypedRecoveryDiagnosticsTest {
     /** What SG304 says after a throwable type one edge declares twice. */
     private static final String REPEATED = " is declared more than once across recover and failsOn; a throwable type"
             + " selects a single route";
+
+    /** The dependency {@code lib.Outages}, which nests the kinds and the types the recoveries name. */
+    private static final String OUTAGES = """
+        package lib;
+        import io.github.graphmaquina.api.FailureKind;
+        /** Fixture declaration for recovery diagnostics. */ public final class Outages {
+            private Outages() { }
+            /** Fixture declaration for recovery diagnostics. */ \
+        public record Unavailable() implements FailureKind { }
+            /** Fixture declaration for recovery diagnostics. */ \
+        public static class Open implements FailureKind { }
+            /** Fixture declaration for recovery diagnostics. */ \
+        public static final class DownException extends RuntimeException {
+                public DownException(String message) {
+                    super(message);
+                }
+            }
+        }
+        """;
 
     @TempDir
     Path directory;
@@ -134,12 +154,16 @@ class TypedRecoveryDiagnosticsTest {
                 """);
         Compilation.Result cancellation = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
+        assertEquals(List.of("[" + DiagnosticCode.SG302
+                + "] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
                 + " java.lang.RuntimeException" + FORBIDDEN), catchAll.errors(), catchAll.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, catchAll.lineOf("SG302"), catchAll.describe());
-        assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, catchAll.lineOf(DiagnosticCode.SG302.name()),
+                catchAll.describe());
+        assertEquals(List.of("[" + DiagnosticCode.SG302
+                + "] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
                 + " fx.Adapter$Halted" + FORBIDDEN), cancellation.errors(), cancellation.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 3, cancellation.lineOf("SG302"), cancellation.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 3, cancellation.lineOf(DiagnosticCode.SG302.name()),
+                cancellation.describe());
     }
 
     /**
@@ -178,8 +202,10 @@ class TypedRecoveryDiagnosticsTest {
 
             Compilation.Result result = Compilation.compileTyped(sources);
 
-            assertEquals(List.of("[SG303] " + kind.getKey() + NOT_A_KIND), result.errors(), result.describe());
-            assertEquals(RecoveryFixtures.PUBLISH_LINE + 2, result.lineOf("SG303"), result.describe());
+            assertEquals(List.of("[" + DiagnosticCode.SG303 + "] " + kind.getKey() + NOT_A_KIND), result.errors(),
+                    result.describe());
+            assertEquals(RecoveryFixtures.PUBLISH_LINE + 2, result.lineOf(DiagnosticCode.SG303.name()),
+                    result.describe());
         }
     }
 
@@ -197,9 +223,10 @@ class TypedRecoveryDiagnosticsTest {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """));
 
-        assertEquals(List.of("[SG304] failure kind fx.PublicationFailures$Unavailable is declared by more than one"
+        assertEquals(List.of("[" + DiagnosticCode.SG304
+                + "] failure kind fx.PublicationFailures$Unavailable is declared by more than one"
                 + " recover"), result.errors(), result.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, result.lineOf("SG304"), result.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, result.lineOf(DiagnosticCode.SG304.name()), result.describe());
     }
 
     /** A kind that is not a failure kind and that two rules name is refused once, where it first appears. */
@@ -223,11 +250,11 @@ class TypedRecoveryDiagnosticsTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG303] fx.Open" + NOT_A_KIND,
-                "[SG304] failure kind fx.Open is declared by more than one recover"),
+        assertEquals(List.of("[" + DiagnosticCode.SG303 + "] fx.Open" + NOT_A_KIND,
+                "[" + DiagnosticCode.SG304 + "] failure kind fx.Open is declared by more than one recover"),
                 result.errors(), result.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 3, result.lineOf("SG303"), result.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, result.lineOf("SG304"), result.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 3, result.lineOf(DiagnosticCode.SG303.name()), result.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, result.lineOf(DiagnosticCode.SG304.name()), result.describe());
     }
 
     /**
@@ -266,13 +293,16 @@ class TypedRecoveryDiagnosticsTest {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """));
 
-        List<String> refused = List.of("[SG304] fx.ServiceUnavailableException" + REPEATED);
+        List<String> refused = List.of("[" + DiagnosticCode.SG304 + "] fx.ServiceUnavailableException" + REPEATED);
         assertEquals(refused, withinARule.errors(), withinARule.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, withinARule.lineOf("SG304"), withinARule.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, withinARule.lineOf(DiagnosticCode.SG304.name()),
+                withinARule.describe());
         assertEquals(refused, acrossRules.errors(), acrossRules.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 6, acrossRules.lineOf("SG304"), acrossRules.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 6, acrossRules.lineOf(DiagnosticCode.SG304.name()),
+                acrossRules.describe());
         assertEquals(refused, ruleAndFailsOn.errors(), ruleAndFailsOn.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, ruleAndFailsOn.lineOf("SG304"), ruleAndFailsOn.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 5, ruleAndFailsOn.lineOf(DiagnosticCode.SG304.name()),
+                ruleAndFailsOn.describe());
     }
 
     /**
@@ -310,8 +340,9 @@ class TypedRecoveryDiagnosticsTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG507] recoveries need an action"), result.errors(), result.describe());
-        assertEquals(RecoveryFixtures.RETRY_LINE, result.lineOf("SG507"), result.describe());
+        assertEquals(List.of("[" + DiagnosticCode.SG507 + "] recoveries need an action"), result.errors(),
+                result.describe());
+        assertEquals(RecoveryFixtures.RETRY_LINE, result.lineOf(DiagnosticCode.SG507.name()), result.describe());
     }
 
     @Test
@@ -324,9 +355,10 @@ class TypedRecoveryDiagnosticsTest {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """));
 
-        assertEquals(List.of("[SG301] READY -PUBLISH-> PUBLISHED declares recovery PUBLISH, which is its own key"),
+        assertEquals(List.of("[" + DiagnosticCode.SG301
+                + "] READY -PUBLISH-> PUBLISHED declares recovery PUBLISH, which is its own key"),
                 result.errors(), result.describe());
-        assertEquals(RecoveryFixtures.DEFINITION_LINE, result.lineOf("SG301"), result.describe());
+        assertEquals(RecoveryFixtures.DEFINITION_LINE, result.lineOf(DiagnosticCode.SG301.name()), result.describe());
     }
 
     /**
@@ -347,9 +379,10 @@ class TypedRecoveryDiagnosticsTest {
                     Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """));
 
-        assertEquals(List.of("[SG301] RETRY_PENDING -PUBLISH-> PUBLISHED declares recovery RECORD_REJECTION, but no"
+        assertEquals(List.of("[" + DiagnosticCode.SG301
+                + "] RETRY_PENDING -PUBLISH-> PUBLISHED declares recovery RECORD_REJECTION, but no"
                 + " transition RECORD_REJECTION leaves RETRY_PENDING"), result.errors(), result.describe());
-        assertEquals(RecoveryFixtures.DEFINITION_LINE, result.lineOf("SG301"), result.describe());
+        assertEquals(RecoveryFixtures.DEFINITION_LINE, result.lineOf(DiagnosticCode.SG301.name()), result.describe());
     }
 
     /**
@@ -358,23 +391,7 @@ class TypedRecoveryDiagnosticsTest {
      */
     @Test
     void readsTheKindsAndTypesOfADependencysJar() throws IOException {
-        List<Path> library = List.of(jar(Map.of("lib.Outages", """
-                package lib;
-                import io.github.graphmaquina.api.FailureKind;
-                /** Fixture declaration for recovery diagnostics. */ public final class Outages {
-                    private Outages() { }
-                    /** Fixture declaration for recovery diagnostics. */ \
-                public record Unavailable() implements FailureKind { }
-                    /** Fixture declaration for recovery diagnostics. */ \
-                public static class Open implements FailureKind { }
-                    /** Fixture declaration for recovery diagnostics. */ \
-                public static final class DownException extends RuntimeException {
-                        public DownException(String message) {
-                            super(message);
-                        }
-                    }
-                }
-                """)));
+        List<Path> library = List.of(jar(Map.of("lib.Outages", OUTAGES)));
 
         Compilation.Result valid = Compilation.compileTyped(RecoveryFixtures.sources("""
                     @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
@@ -402,10 +419,13 @@ class TypedRecoveryDiagnosticsTest {
 
         assertTrue(valid.success(), valid.describe());
         assertEquals(List.of(), valid.diagnostics(), valid.describe());
-        assertEquals(List.of("[SG303] lib.Outages$Open" + NOT_A_KIND), open.errors(), open.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 2, open.lineOf("SG303"), open.describe());
-        assertEquals(List.of("[SG304] lib.Outages$DownException" + REPEATED), repeated.errors(), repeated.describe());
-        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, repeated.lineOf("SG304"), repeated.describe());
+        assertEquals(List.of("[" + DiagnosticCode.SG303 + "] lib.Outages$Open" + NOT_A_KIND), open.errors(),
+                open.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 2, open.lineOf(DiagnosticCode.SG303.name()), open.describe());
+        assertEquals(List.of("[" + DiagnosticCode.SG304 + "] lib.Outages$DownException" + REPEATED), repeated.errors(),
+                repeated.describe());
+        assertEquals(RecoveryFixtures.PUBLISH_LINE + 4, repeated.lineOf(DiagnosticCode.SG304.name()),
+                repeated.describe());
     }
 
     /**
@@ -434,7 +454,7 @@ class TypedRecoveryDiagnosticsTest {
         assertTrue(result.diagnostics().stream().anyMatch((Diagnostic<? extends JavaFileObject> diagnostic) ->
                 diagnostic.getKind() == Diagnostic.Kind.ERROR
                         && "compiler.err.not.def.public.cant.access".equals(diagnostic.getCode())), result.describe());
-        assertEquals(0, result.countError("SG303"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG303.name()), result.describe());
         assertFalse(result.errors().stream().anyMatch((String error) -> error.startsWith("[SG")), result.describe());
     }
 
@@ -453,17 +473,17 @@ class TypedRecoveryDiagnosticsTest {
                 "repeated-method")) {
             Map<String, String> sources = RecoveryFixtures.sources(edge
                     + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
-            sources.put("fx.Open", "package fx; /** Nonfinal candidate rejected by SG303. */ "
+            sources.put("fx.Open", "package fx; /** Nonfinal candidate rejected by " + DiagnosticCode.SG303 + ". */ "
                     + "public class Open implements io.github.graphmaquina.api.FailureKind {}\n");
             String source = declaredAs(form, sources.get("fx.Tickets"), edge);
             sources.put("fx.Tickets", source);
             Compilation.Result result = Compilation.compileTyped(sources);
             assertEquals(5, result.errors().size(), form + "\n" + result.describe());
-            assertLocation(result, "SG303", 0, source, "Open.class", 0);
-            assertLocation(result, "SG304", 0, source, "Open.class", 1);
-            assertLocation(result, "SG302", 0, source, "RuntimeException.class", 0);
-            assertLocation(result, "SG302", 1, source, "RuntimeException.class", 1);
-            assertLocation(result, "SG304", 1, source, "RuntimeException.class", 1);
+            assertLocation(result, DiagnosticCode.SG303.name(), 0, source, "Open.class", 0);
+            assertLocation(result, DiagnosticCode.SG304.name(), 0, source, "Open.class", 1);
+            assertLocation(result, DiagnosticCode.SG302.name(), 0, source, "RuntimeException.class", 0);
+            assertLocation(result, DiagnosticCode.SG302.name(), 1, source, "RuntimeException.class", 1);
+            assertLocation(result, DiagnosticCode.SG304.name(), 1, source, "RuntimeException.class", 1);
         }
     }
 
@@ -474,10 +494,12 @@ class TypedRecoveryDiagnosticsTest {
             for (boolean duplicateFallback : List.of(false, true)) {
                 Map<String, String> sources = ruleAndFallback(fallbackFirst, duplicateFallback);
                 Compilation.Result result = Compilation.compileTyped(sources);
-                assertEquals(List.of("[SG304] fx.ServiceUnavailableException" + REPEATED), result.errors(),
+                assertEquals(List.of("[" + DiagnosticCode.SG304 + "] fx.ServiceUnavailableException" + REPEATED),
+                        result.errors(),
                         result.describe());
                 int occurrence = fallbackFirst && duplicateFallback ? 2 : 1;
-                assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "ServiceUnavailableException.class",
+                assertLocation(result, DiagnosticCode.SG304.name(), 0, sources.get("fx.Tickets"),
+                        "ServiceUnavailableException.class",
                         occurrence);
             }
         }
@@ -494,8 +516,10 @@ class TypedRecoveryDiagnosticsTest {
                 Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
-        assertEquals(List.of("[SG304] fx.ServiceUnavailableException" + REPEATED), result.errors(), result.describe());
-        assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "ServiceUnavailableException.class", 1);
+        assertEquals(List.of("[" + DiagnosticCode.SG304 + "] fx.ServiceUnavailableException" + REPEATED),
+                result.errors(), result.describe());
+        assertLocation(result, DiagnosticCode.SG304.name(), 0, sources.get("fx.Tickets"),
+                "ServiceUnavailableException.class", 1);
         Compilation.Result fallback = Compilation.compileTyped(RecoveryFixtures.sources("""
                 @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                     action = TicketActionsRefs.Publish.class,
@@ -518,15 +542,18 @@ class TypedRecoveryDiagnosticsTest {
                 Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
-        String forbidden = "[SG302] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
+        String forbidden = "[" + DiagnosticCode.SG302
+                + "] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
                 + " java.lang.RuntimeException" + FORBIDDEN;
-        assertEquals(List.of(forbidden, forbidden, forbidden, "[SG304] java.lang.RuntimeException" + REPEATED),
+        assertEquals(List.of(forbidden, forbidden, forbidden,
+                "[" + DiagnosticCode.SG304 + "] java.lang.RuntimeException" + REPEATED),
                 result.errors(), result.describe());
         for (int occurrence = 0; occurrence < 3; occurrence++) {
-            assertLocation(result, "SG302", occurrence, sources.get("fx.Tickets"), "RuntimeException.class",
+            assertLocation(result, DiagnosticCode.SG302.name(), occurrence, sources.get("fx.Tickets"),
+                    "RuntimeException.class",
                     occurrence);
         }
-        assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "RuntimeException.class", 1);
+        assertLocation(result, DiagnosticCode.SG304.name(), 0, sources.get("fx.Tickets"), "RuntimeException.class", 1);
     }
 
     /** An unreadable sibling leaves SG302 on the full forbidden edge-level literal, in either array order. */
@@ -550,10 +577,12 @@ class TypedRecoveryDiagnosticsTest {
                             && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                             && diagnostic.getMessage(null).contains("class Missing"))
                     .count(), result.describe());
-            assertEquals(List.of("[SG302] failsOn does not allow java.lang.RuntimeException" + FORBIDDEN),
+            assertEquals(List.of("[" + DiagnosticCode.SG302 + "] failsOn does not allow java.lang.RuntimeException"
+                    + FORBIDDEN),
                     result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
                     result.describe());
-            assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
+            assertLocation(result, DiagnosticCode.SG302.name(), 0, sources.get("fx.Tickets"), "RuntimeException.class",
+                    0);
         }
     }
 
@@ -605,11 +634,12 @@ class TypedRecoveryDiagnosticsTest {
                         && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                         && diagnostic.getMessage(null).contains("MissingKind")).count(), result.describe());
         assertEquals(2, result.errors().size(), result.describe());
-        assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
+        assertEquals(List.of("[" + DiagnosticCode.SG302
+                + "] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
                 + " java.lang.RuntimeException" + FORBIDDEN),
                 result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
                 result.describe());
-        assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
+        assertLocation(result, DiagnosticCode.SG302.name(), 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
     }
 
     /** An unreadable sibling leaves SG302 on the full forbidden literal of a rule, in either array order. */
@@ -634,11 +664,13 @@ class TypedRecoveryDiagnosticsTest {
                             && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                             && diagnostic.getMessage(null).contains("class Missing"))
                     .count(), result.describe());
-            assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
+            assertEquals(List.of("[" + DiagnosticCode.SG302
+                    + "] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
                     + " java.lang.RuntimeException" + FORBIDDEN),
                     result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
                     result.describe());
-            assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
+            assertLocation(result, DiagnosticCode.SG302.name(), 0, sources.get("fx.Tickets"), "RuntimeException.class",
+                    0);
         }
     }
 

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallPhase;
@@ -40,10 +41,10 @@ class ExceptionsTest {
     @Test
     void invalidGraphListsProblemsInMessageAndCodes() {
         InvalidGraphException error = new InvalidGraphException(KEY, List.of(
-                new InvalidGraphException.Problem("SG102", "duplicate transition"),
-                new InvalidGraphException.Problem("SG201", "no initial")));
-        assertEquals(List.of("SG102", "SG201"), error.codes());
-        assertTrue(error.getMessage().contains("[SG102] duplicate transition"));
+                new InvalidGraphException.Problem(DiagnosticCode.SG102.name(), "duplicate transition"),
+                new InvalidGraphException.Problem(DiagnosticCode.SG201.name(), "no initial")));
+        assertEquals(List.of(DiagnosticCode.SG102.name(), DiagnosticCode.SG201.name()), error.codes());
+        assertTrue(error.getMessage().contains("[" + DiagnosticCode.SG102 + "] duplicate transition"));
         assertTrue(error.getMessage().startsWith("the graph String/DayOfWeek has 2 problem(s):"));
     }
 

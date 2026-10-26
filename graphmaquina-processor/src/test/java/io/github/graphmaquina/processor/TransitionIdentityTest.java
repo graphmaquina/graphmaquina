@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +42,7 @@ class TransitionIdentityTest {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER
                 + "@DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = DRAFT)\n", BODY);
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG102"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG102.name()), result.describe());
     }
 
     /** An identifier of another machine's catalogue is a type error of javac, never a diagnostic of this tool. */
@@ -58,14 +59,14 @@ class TransitionIdentityTest {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER.replace(
                 "@DocsGraph.StatePolicy(state = REVIEW, otherwise = \"a review is published or sent back\")\n", ""),
                 BODY);
-        assertTrue(result.hasError("SG701"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG701.name()), result.describe());
     }
 
     @Test
     void sg702ARejectionOfAnIdentifierThatStateDeclares() {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER
                 + "@DocsGraph.Reject(from = REVIEW, transition = PUBLISH, reason = \"already declared\")\n", BODY);
-        assertTrue(result.hasError("SG702"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG702.name()), result.describe());
     }
 
     @Test
@@ -73,14 +74,14 @@ class TransitionIdentityTest {
         Compilation.Result result = compile(Fixtures.DOCS_HEADER,
                 BODY.replace("action = DocActionsRefs.Publish.class",
                         "action = DocActionsRefs.Publish.class, onFailure = ARCHIVE"));
-        assertTrue(result.hasError("SG301"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG301.name()), result.describe());
     }
 
     @Test
     void sg401AWatchThatExecutesAnIdentifierItsStateDoesNotDeclare() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withPages(Fixtures.DOCS_HEADER
                 + Fixtures.DOCS_WATCH.replace("transition = PUBLISH", "transition = ARCHIVE"), BODY));
-        assertTrue(result.hasError("SG401"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG401.name()), result.describe());
     }
 
     @Test
@@ -91,9 +92,9 @@ class TransitionIdentityTest {
                         "    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n"
                                 + "    @DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)\n"));
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG703"), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG703]") && error.contains("submit")),
-                result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG703.name()), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG703 + "]")
+                && error.contains("submit")), result::describe);
     }
 
     @Test
@@ -102,9 +103,9 @@ class TransitionIdentityTest {
                 + "    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = REVIEW)\n"
                 + "    Outcome<Doc, DocStatus, DocTransition> rush(Doc doc);\n");
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG703"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG703.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch(error ->
-                error.contains("[SG703]") && error.contains("publish")), result::describe);
+                error.contains("[" + DiagnosticCode.SG703 + "]") && error.contains("publish")), result::describe);
     }
 
     @Test

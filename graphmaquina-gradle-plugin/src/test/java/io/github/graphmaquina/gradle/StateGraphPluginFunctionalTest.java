@@ -2,6 +2,7 @@ package io.github.graphmaquina.gradle;
 
 import com.google.gson.JsonElement;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -399,7 +400,7 @@ class StateGraphPluginFunctionalTest {
         BuildResult mixed = fixture.runFailing("classes", "--stacktrace");
 
         assertEquals(TaskOutcome.FAILED, mixed.task(":generateStateGraphApi").getOutcome());
-        assertTrue(mixed.getOutput().contains("[SG602]"), mixed::getOutput);
+        assertTrue(mixed.getOutput().contains("[" + DiagnosticCode.SG602 + "]"), mixed::getOutput);
         assertTrue(mixed.getOutput().contains("was written by tool version 0.0.0-other"), mixed::getOutput);
 
         assertTrue(fixture.inventoryIsSealed("main"));
@@ -713,7 +714,7 @@ class StateGraphPluginFunctionalTest {
     /** The index of the first line that reports {@code SG304} at {@code lineNumber} of {@code Tickets.java}, or -1. */
     private static int indexOfDiagnostic(String[] lines, int lineNumber) {
         for (int index = 0; index < lines.length; index++) {
-            if (lines[index].contains("Tickets.java:" + lineNumber + ": error: [SG304]")) {
+            if (lines[index].contains("Tickets.java:" + lineNumber + ": error: [" + DiagnosticCode.SG304 + "]")) {
                 return index;
             }
         }

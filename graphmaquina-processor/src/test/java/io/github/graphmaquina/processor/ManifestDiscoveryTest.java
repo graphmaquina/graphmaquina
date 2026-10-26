@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -92,7 +93,7 @@ class ManifestDiscoveryTest {
         Compilation.Result result = Compilation.compileRaw(Map.of("thirdparty.MapperImpl", FOREIGN_GENERATED),
                 List.of("-Xlint:-processing"));
 
-        assertEquals(0, result.countError("SG602"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG602.name()), result.describe());
         assertTrue(result.success(), result.describe());
     }
 
@@ -164,8 +165,8 @@ class ManifestDiscoveryTest {
         Compilation.Result result = Compilation.compileRaw(UNGENERATED, List.of());
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG602"), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
+        assertEquals(1, result.countError(DiagnosticCode.SG602.name()), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG602 + "]")
                 && error.contains(ManifestRegistry.OPTION)), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
 
@@ -182,8 +183,8 @@ class ManifestDiscoveryTest {
                 List.of("-A" + ManifestRegistry.OPTION + '=' + absentManifest()));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG602"), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
+        assertEquals(1, result.countError(DiagnosticCode.SG602.name()), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG602 + "]")
                 && error.contains("annotation-manifest.json") && error.contains("does not exist")),
                 result::describe);
     }
@@ -355,8 +356,8 @@ class ManifestDiscoveryTest {
     /** Exactly one SG602, naming the manifest and the claim that no longer holds. */
     private static void assertSingleManifestError(Compilation.Result result, String cause) {
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG602"), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
+        assertEquals(1, result.countError(DiagnosticCode.SG602.name()), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG602 + "]")
                 && error.contains("annotation-manifest.json") && error.contains(cause)), result::describe);
     }
 

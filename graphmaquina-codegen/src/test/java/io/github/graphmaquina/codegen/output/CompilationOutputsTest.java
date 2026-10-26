@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.ToolVersion;
@@ -112,7 +113,7 @@ class CompilationOutputsTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("unsupported schemaVersion 99 in " + inventory + "; expected 2", failure.getMessage());
         for (Map.Entry<Path, byte[]> entry : original.entrySet()) {
             assertArrayEquals(entry.getValue(), Files.readAllBytes(entry.getKey()), entry.getKey().toString());
@@ -200,7 +201,7 @@ class CompilationOutputsTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().startsWith("malformed JSON in " + pending + ": "), failure.getMessage());
     }
 
@@ -209,7 +210,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("annotation-manifest.json"), failure.getMessage());
     }
 
@@ -227,7 +228,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains(entry), failure.getMessage());
     }
 
@@ -245,7 +246,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("claims ''"), failure.getMessage());
         assertTrue(Files.exists(kept), failure.getMessage());
     }
@@ -259,7 +260,7 @@ class CompilationOutputsTest {
                     List.of(), List.of(entry), List.of(), List.of()));
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> CompilationOutputs.prepare(request()));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertTrue(Files.exists(kept));
         }
     }
@@ -279,7 +280,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx/Old_"), failure.getMessage());
         assertTrue(Files.exists(kept));
     }
@@ -317,10 +318,10 @@ class CompilationOutputsTest {
         assertArrayEquals(interrupted, Files.readAllBytes(pending), failure.toString());
         CodegenException refusal = assertInstanceOf(CodegenException.class, failure);
         if (file.equals(manifest.getFileName().toString())) {
-            assertEquals("SG602", refusal.code());
+            assertEquals(DiagnosticCode.SG602.name(), refusal.code());
             assertEquals("inventory path '" + entry + "' names no Java source in " + manifest, refusal.getMessage());
         } else {
-            assertEquals("SG603", refusal.code());
+            assertEquals(DiagnosticCode.SG603.name(), refusal.code());
             Path root = kind.equals("class file") ? classesOutput : processorSourcesOutput;
             assertEquals("the inventory " + file + " claims '" + entry + "', which is not a " + kind + " under "
                     + root.toAbsolutePath().normalize(), refusal.getMessage());
@@ -347,7 +348,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(Files.exists(throughLink));
         assertTrue(Files.exists(upFromLink));
         assertTrue(Files.exists(kept));
@@ -424,7 +425,7 @@ class CompilationOutputsTest {
         });
 
         CodegenException refusal = assertInstanceOf(CodegenException.class, failure);
-        assertEquals("SG602", refusal.code());
+        assertEquals(DiagnosticCode.SG602.name(), refusal.code());
         assertEquals("processor inventory '" + inventory + "' is not a path in " + manifest, refusal.getMessage());
         assertArrayEquals(pending, Files.readAllBytes(workDirectory.resolve(PENDING_INVENTORY)));
         assertTrue(Files.exists(classesOutput.resolve(PENDING)));
@@ -437,7 +438,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains(PENDING_INVENTORY), failure.getMessage());
     }
 
@@ -449,7 +450,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("pending-exports.json"), failure.getMessage());
     }
 
@@ -462,7 +463,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("another generation"), failure.getMessage());
     }
 
@@ -512,7 +513,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertArrayEquals(index, Files.readAllBytes(outside.resolve("graphmaquina/pending-exports.json")));
         assertFalse(Files.exists(outside.resolve("graphmaquina/exports.json")));
         assertTrue(Files.isRegularFile(classesOutput.resolve(CARRIER_BINARY)));
@@ -530,7 +531,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains(CARRIER), failure.getMessage());
         assertTrue(failure.getMessage().contains("-g:none"), failure.getMessage());
         assertFalse(Files.exists(classesOutput.resolve(PUBLISHED)));
@@ -557,7 +558,7 @@ class CompilationOutputsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("-g:lines,vars"), failure.getMessage());
         assertTrue(failure.getMessage().contains("-g:source"), failure.getMessage());
     }

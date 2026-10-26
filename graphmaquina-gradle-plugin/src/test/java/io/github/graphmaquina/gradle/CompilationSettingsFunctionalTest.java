@@ -2,6 +2,7 @@ package io.github.graphmaquina.gradle;
 
 import com.google.gson.JsonObject;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -619,7 +620,7 @@ class CompilationSettingsFunctionalTest {
         assertEquals(TaskOutcome.FAILED, noDebug.task(":compileJava").getOutcome());
         assertTrue(noDebug.getOutput().contains("cannot run with options.debug = false: javac then leaves the"
                 + " SourceFile attribute out of every class file"), noDebug::getOutput);
-        assertFalse(noDebug.getOutput().contains("[SG602]"), noDebug::getOutput);
+        assertFalse(noDebug.getOutput().contains("[" + DiagnosticCode.SG602 + "]"), noDebug::getOutput);
         assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
 
         fixture.replaceInBuildScript("options.isDebug = false",

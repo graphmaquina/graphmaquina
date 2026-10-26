@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -203,7 +204,7 @@ class UnnamedPackageClassTest {
         assertStates("same-package", machine("shop"), classpath, List.of("OPEN", "CLOSED"), List.of("CLOSE"));
         CodegenException refused = assertThrows(CodegenException.class,
                 () -> generate("other-package", machine("fx"), List.of(classpath)));
-        assertEquals("SG601", refused.code());
+        assertEquals(DiagnosticCode.SG601.name(), refused.code());
         assertEquals("the state type shop.Statuses.OrderStatus of fx.Orders is not accessible to the vocabulary"
                 + " generated in package fx: shop.Statuses.OrderStatus is not public and belongs to package shop",
                 refused.getMessage());
@@ -263,7 +264,7 @@ class UnnamedPackageClassTest {
                     CodegenException refused = assertThrows(CodegenException.class,
                             () -> generate("import-" + file + "-" + transition.length(),
                                     beside(layout, file, STATUS_HOMONYMS), List.of()), label);
-                    assertEquals("SG603", refused.code(), label);
+                    assertEquals(DiagnosticCode.SG603.name(), refused.code(), label);
                     assertEquals("the vocabulary generated for the machine Orders in the unnamed package cannot name"
                             + " shop.Statuses.OrderStatus: the type shop obscures the package shop there",
                             refused.getMessage(), label);
@@ -353,7 +354,7 @@ class UnnamedPackageClassTest {
 
         CodegenException refused = assertThrows(CodegenException.class, () -> generate("machines", sources, List.of()));
 
-        assertEquals("SG603", refused.code());
+        assertEquals(DiagnosticCode.SG603.name(), refused.code());
         assertEquals("the machines shop.Orders of the unnamed package at sources/shop.java:8 and shop.Orders of package"
                 + " shop at sources/shop/Orders.java:4 share one canonical name, which is all a manifest names a"
                 + " machine by; rename one of them", refused.getMessage());
@@ -645,7 +646,7 @@ class UnnamedPackageClassTest {
                         : beside(sources, layout, "    public static final class io { }\n");
                 CodegenException refused = assertThrows(CodegenException.class,
                         () -> generate("obscured-" + layout, layoutSources, List.of()), layout);
-                assertEquals("SG603", refused.code(), layout);
+                assertEquals(DiagnosticCode.SG603.name(), refused.code(), layout);
                 assertEquals("the vocabulary generated for the machine shop.Orders in package shop cannot name"
                         + " io.github.graphmaquina: the type shop.io obscures the package io there",
                         refused.getMessage(), layout);
@@ -717,12 +718,12 @@ class UnnamedPackageClassTest {
         assertAll(() -> {
             CodegenException refused = assertThrows(CodegenException.class,
                     () -> generate("unnamed-entity", entity, List.of()));
-            assertEquals("SG601", refused.code());
+            assertEquals(DiagnosticCode.SG601.name(), refused.code());
             assertEquals("the entity type Order of fx.Orders is unresolved", refused.getMessage());
         }, () -> {
             CodegenException refused = assertThrows(CodegenException.class,
                     () -> generate("unnamed-state", state, List.of()));
-            assertEquals("SG601", refused.code());
+            assertEquals(DiagnosticCode.SG601.name(), refused.code());
             assertEquals("the state type Status of fx.Orders is unresolved", refused.getMessage());
         });
     }
@@ -974,7 +975,7 @@ class UnnamedPackageClassTest {
                             @GenerateGraphApi
                             public interface Orders extends Base { }
                             """), List.of(classpath)));
-            assertEquals("SG603", machine.code());
+            assertEquals(DiagnosticCode.SG603.name(), machine.code());
             assertEquals("the vocabulary generated for the machine Orders in the unnamed package cannot name"
                     + " shop.Statuses.OrderStatus: the type shop obscures the package shop there",
                     machine.getMessage());
@@ -1009,7 +1010,7 @@ class UnnamedPackageClassTest {
                 }
                 """), List.of(classpath)));
 
-        assertEquals("SG603", refused.code());
+        assertEquals(DiagnosticCode.SG603.name(), refused.code());
         assertEquals("the class file of Pair of the unnamed package names both shop.Statuses.Marker of package shop on"
                 + " the classpath and shop.Statuses.Marker of the unnamed package on the classpath, which the"
                 + " generator cannot tell apart by their canonical name; rename one of them", refused.getMessage());
@@ -1054,7 +1055,7 @@ class UnnamedPackageClassTest {
                 Map<String, String> layoutSources = layout.equals("alone") ? sources : beside(sources, layout, machine);
                 CodegenException refused = assertThrows(CodegenException.class,
                         () -> generate("peer-" + layout, layoutSources, List.of()), layout);
-                assertEquals("SG608", refused.code(), layout);
+                assertEquals(DiagnosticCode.SG608.name(), refused.code(), layout);
                 assertEquals("the peer machine shop.Docs declared by shop.Orders is not a @GenerateGraphApi machine of"
                         + " this compilation or of a dependency export index", refused.getMessage(), layout);
                 assertEquals("sources/shop/Orders.java", refused.location().orElseThrow().path(), layout);

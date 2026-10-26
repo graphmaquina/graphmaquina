@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -527,7 +528,7 @@ class GeneratedApiCompilationTest {
                     public interface Tickets extends Machine<Doc, Timeout, Transition> {}
                     """));
         CodegenException vocabulary = assertThrows(CodegenException.class, () -> ApiEmitter.emit(tickets, "tickets"));
-        assertEquals("SG603", vocabulary.code());
+        assertEquals(DiagnosticCode.SG603.name(), vocabulary.code());
         assertEquals("the vocabulary TicketsGraph cannot name the transition type Transition of Tickets: inside it,"
                 + " Transition means its own nested type TicketsGraph.Transition", vocabulary.getMessage());
         assertEquals("tickets/Tickets.java", vocabulary.location().orElseThrow().path());
@@ -541,7 +542,7 @@ class GeneratedApiCompilationTest {
                 }
                 """));
         CodegenException container = assertThrows(CodegenException.class, () -> ApiEmitter.emit(item, "item"));
-        assertEquals("SG603", container.code());
+        assertEquals(DiagnosticCode.SG603.name(), container.code());
         assertEquals("the references container ItemRefs cannot name its host Item: inside it, Item means its own"
                 + " nested type ItemRefs.Item", container.getMessage());
         assertEquals("item/Item.java", container.location().orElseThrow().path());
@@ -693,7 +694,7 @@ class GeneratedApiCompilationTest {
             SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
             directory.resolve("classes"), directory.resolve("work"), "invalid"));
         CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(model, "invalid"));
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("sources/fx/_1machine.java", failure.location().orElseThrow().path());
         assertTrue(failure.getMessage().contains("_1machine"), failure.getMessage());
     }
@@ -801,7 +802,7 @@ class GeneratedApiCompilationTest {
             String path) {
         GenerationModel model = inspect(id, originals);
         CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(model, id));
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals(message, failure.getMessage());
         assertEquals(path, failure.location().orElseThrow().path());
     }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,7 +52,7 @@ class TypedTimeoutTest {
                 TypedFixtures.archive(", timeout = @Timeout")));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG511"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG511.name()), result.describe());
     }
 
     @Test
@@ -60,7 +61,7 @@ class TypedTimeoutTest {
                 TypedFixtures.archive(", timeout = @Timeout(seconds = -1)")));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG511"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG511.name()), result.describe());
     }
 
     @Test
@@ -69,13 +70,13 @@ class TypedTimeoutTest {
                 TypedFixtures.archive(", timeout = @Timeout(seconds = 1, nanos = 1000000000)")));
 
         assertFalse(above.success(), above.describe());
-        assertTrue(above.hasError("SG511"), above.describe());
+        assertTrue(above.hasError(DiagnosticCode.SG511.name()), above.describe());
 
         Compilation.Result below = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 TypedFixtures.archive(", timeout = @Timeout(seconds = 1, nanos = -1)")));
 
         assertFalse(below.success(), below.describe());
-        assertTrue(below.hasError("SG511"), below.describe());
+        assertTrue(below.hasError(DiagnosticCode.SG511.name()), below.describe());
     }
 
     /**
@@ -91,7 +92,8 @@ class TypedTimeoutTest {
                 TypedFixtures.archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 1000000000)")));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(List.of("[SG511] timeout must be a positive duration: seconds 9223372036854775807 and nanos"
+        assertEquals(List.of("[" + DiagnosticCode.SG511
+                + "] timeout must be a positive duration: seconds 9223372036854775807 and nanos"
                 + " 1000000000 must not be negative, nanos must be at most 999999999, and the two must not both be"
                 + " zero"), result.errors(), result.describe());
     }
@@ -108,6 +110,6 @@ class TypedTimeoutTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG507"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG507.name()), result.describe());
     }
 }

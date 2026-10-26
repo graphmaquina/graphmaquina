@@ -3,6 +3,7 @@ package io.github.graphmaquina.codegen;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.source.ProducerJars;
@@ -45,12 +46,12 @@ class StateGraphCodegenTest {
                         new GenerationModel(List.of(), List.of()), List.of()));
         CodegenException control = assertThrows(CodegenException.class,
                 () -> StateGraphCodegen.generate(request(root, List.of())));
-        assertEquals("SG603", control.code());
+        assertEquals(DiagnosticCode.SG603.name(), control.code());
 
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> StateGraphCodegen.generate(request(root, List.of(jar))));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("the StateGraph export index published by " + jar.toAbsolutePath().normalize()
                 + " was written by tool version 0.0.0-other; this tool is " + ToolVersion.current(),
                 failure.getMessage());

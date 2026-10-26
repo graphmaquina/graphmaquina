@@ -3,6 +3,7 @@ package io.github.graphmaquina.dsl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException.Problem;
 import java.util.ArrayList;
@@ -89,11 +90,14 @@ class SubmachineValidationTest {
     @Test
     void sg801ATerminalWithoutExactlyOneExitAndAnExitOnAStateThatIsNotTerminal() {
         assertEquals(List.of(
-                        new Problem("SG801", "Order/OrderStatus.NEW: the terminal CAPTURED of Payment/PaymentStatus has"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the terminal CAPTURED of Payment/PaymentStatus has"
                                 + " more than one exit"),
-                        new Problem("SG801", "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
                                 + " no exit"),
-                        new Problem("SG801", "Order/OrderStatus.NEW: the exit on AUTHORIZING names no terminal of"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the exit on AUTHORIZING names no terminal of"
                                 + " Payment/PaymentStatus")),
                 validate(payments("NEW", exit("CAPTURED", "CHARGE"), exit("AUTHORIZING", "DECLINE"),
                         exit("CAPTURED", "CANCEL"), exit("DECLINED", "DECLINE"))));
@@ -103,11 +107,14 @@ class SubmachineValidationTest {
     @Test
     void sg802AnExitWhoseIdentifierHasNoEdgeFromTheNode() {
         assertEquals(List.of(
-                        new Problem("SG802", "Order/OrderStatus.NEW: the exit on CAPTURED names RETRY, which has no"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.NEW: the exit on CAPTURED names RETRY, which has no"
                                 + " edge from NEW"),
-                        new Problem("SG802", "Order/OrderStatus.NEW: the exit on DECLINED names SHIP, which has no edge"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.NEW: the exit on DECLINED names SHIP, which has no edge"
                                 + " from NEW"),
-                        new Problem("SG802", "Order/OrderStatus.NEW: the exit on VOIDED names SHIP, which has no edge"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.NEW: the exit on VOIDED names SHIP, which has no edge"
                                 + " from NEW")),
                 validate(payments("NEW", exit("DECLINED", "SHIP"), exit("CAPTURED", "RETRY"),
                         exit("VOIDED", "SHIP"))));
@@ -120,14 +127,19 @@ class SubmachineValidationTest {
     @Test
     void sg803ATerminalNodeAndANodeWithTwoBindings() {
         assertEquals(List.of(
-                        new Problem("SG802", "Order/OrderStatus.SHIPPED: the exit on CAPTURED names SHIP, which has no"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.SHIPPED: the exit on CAPTURED names SHIP, which has no"
                                 + " edge from SHIPPED"),
-                        new Problem("SG802", "Order/OrderStatus.SHIPPED: the exit on DECLINED names CANCEL, which has"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.SHIPPED: the exit on DECLINED names CANCEL, which has"
                                 + " no edge from SHIPPED"),
-                        new Problem("SG802", "Order/OrderStatus.SHIPPED: the exit on VOIDED names CANCEL, which has no"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.SHIPPED: the exit on VOIDED names CANCEL, which has no"
                                 + " edge from SHIPPED"),
-                        new Problem("SG803", "Order/OrderStatus.NEW holds more than one sub-machine"),
-                        new Problem("SG803", "Order/OrderStatus.SHIPPED is terminal and cannot hold a sub-machine")),
+                        new Problem(DiagnosticCode.SG803.name(),
+                                "Order/OrderStatus.NEW holds more than one sub-machine"),
+                        new Problem(DiagnosticCode.SG803.name(),
+                                "Order/OrderStatus.SHIPPED is terminal and cannot hold a sub-machine")),
                 validate(payments("SHIPPED", exit("CAPTURED", "SHIP"), exit("DECLINED", "CANCEL"),
                                 exit("VOIDED", "CANCEL")),
                         payments("NEW", exit("CAPTURED", "CHARGE"), exit("DECLINED", "DECLINE"),
@@ -152,17 +164,23 @@ class SubmachineValidationTest {
         MachineOutline outline = outline(edges, watches,
                 payments("NEW", exit("CAPTURED", "CHARGE"), exit("DECLINED", "DECLINE"), exit("VOIDED", "CANCEL")));
         assertEquals(List.of(
-                        new Problem("SG804", "Order/OrderStatus.NEW: CHARGE is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CHARGE is an exit of its sub-machine and cannot be"
                                 + " executed by a watch rule"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
                                 + " be a recovery of CHARGE"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
                                 + " be the onFailure of CANCEL"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
                                 + " a recovery of CHARGE"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
                                 + " the onFailure of CHARGE"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
                                 + " executed by a watch rule")),
                 MachineOutlineValidator.validate(outline));
     }
@@ -183,9 +201,11 @@ class SubmachineValidationTest {
     @Test
     void theProblemsOfSeveralBindingsFollowTheOrderOfTheirNodes() {
         assertEquals(List.of(
-                        new Problem("SG801", "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
                                 + " no exit"),
-                        new Problem("SG801", "Order/OrderStatus.PAYMENT_DECLINED: the terminal DECLINED of"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.PAYMENT_DECLINED: the terminal DECLINED of"
                                 + " Payment/PaymentStatus has no exit")),
                 validate(payments("PAYMENT_DECLINED", exit("CAPTURED", "RETRY"), exit("VOIDED", "CANCEL")),
                         payments("NEW", exit("CAPTURED", "CHARGE"), exit("DECLINED", "DECLINE"))));

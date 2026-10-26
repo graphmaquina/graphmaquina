@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.sun.source.util.JavacTask;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -131,7 +132,7 @@ class MachineHeadersTest {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> MachineHeaders.resolve(index, "fx.Orders"));
 
-            assertEquals("SG608", failure.code());
+            assertEquals(DiagnosticCode.SG608.name(), failure.code());
             assertEquals("fx.Bills is declared twice as a peer of fx.Orders", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
             assertEquals(5L, failure.location().orElseThrow().line());
@@ -251,7 +252,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the type Status is ambiguous between a.Status and b.Status", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
@@ -385,7 +386,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the state type fx.Status of fx.Orders is not an enum", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
@@ -409,7 +410,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the transition type fx.DocTransition of fx.Orders is not an enum", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
@@ -432,7 +433,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the machine fx.Orders uses fx.Status as both its state type and its transition type; "
                     + "states and transitions require distinct enum types", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
@@ -456,7 +457,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the transition type DocTransition of fx.Orders is unresolved", failure.getMessage());
             assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
@@ -482,7 +483,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("the machine fx.Docs declares the type parameters <X, Y>; a @GenerateGraphApi machine "
                     + "cannot be generic", failure.getMessage());
             assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
@@ -535,7 +536,7 @@ class MachineHeadersTest {
             try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
                 CodegenException failure =
                         assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, shop[0]));
-                assertEquals("SG601", failure.code());
+                assertEquals(DiagnosticCode.SG601.name(), failure.code());
                 assertEquals(shop[1] + (shop[1].startsWith("the machine") ? "" : " of " + shop[0])
                         + " is not accessible to the vocabulary generated in package fx: " + shop[2]
                         + " is private", failure.getMessage());
@@ -579,7 +580,7 @@ class MachineHeadersTest {
                         directory.resolve("out/sources"), directory.resolve("out/processor"),
                         directory.resolve("out/classes"), directory.resolve("out/work"), "shop:main")));
 
-        assertEquals("SG608", failure.code());
+        assertEquals(DiagnosticCode.SG608.name(), failure.code());
         assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be named from package shop,"
                 + " where its pair vocabulary is generated: stock.StockState is not public and belongs to package"
                 + " stock", failure.getMessage());
@@ -615,7 +616,7 @@ class MachineHeadersTest {
             try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
                 CodegenException failure =
                         assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
-                assertEquals("SG603", failure.code(), obscured[0]);
+                assertEquals(DiagnosticCode.SG603.name(), failure.code(), obscured[0]);
                 assertEquals("the vocabulary generated for the machine fx.Docs in package fx cannot name "
                         + obscured[3] + ": the type " + obscured[0] + " obscures the package "
                         + obscured[3].substring(0, obscured[3].indexOf('.')) + " there", failure.getMessage());
@@ -646,7 +647,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertEquals("the vocabulary generated for the machine fx.Docs in package fx cannot name String.Doc.Status:"
                     + " the type java.lang.String obscures the package String there", failure.getMessage());
             assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
@@ -688,7 +689,7 @@ class MachineHeadersTest {
                         directory.resolve("out/sources"), directory.resolve("out/processor"),
                         directory.resolve("out/classes"), directory.resolve("out/work"), "fx:main")));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the pair vocabulary generated for the machine fx.Docs over shop.Orders in package fx cannot"
                 + " name shop.Orders: the type fx.shop obscures the package shop there", failure.getMessage());
         assertEquals("src/fx/Docs.java", failure.location().orElseThrow().path());
@@ -708,7 +709,7 @@ class MachineHeadersTest {
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertEquals("fx.Orders does not extend io.github.graphmaquina.api.Machine", failure.getMessage());
         }
     }

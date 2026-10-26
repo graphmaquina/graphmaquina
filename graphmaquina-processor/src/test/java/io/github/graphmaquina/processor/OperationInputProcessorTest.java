@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.lang.reflect.AnnotatedArrayType;
 import java.lang.reflect.AnnotatedType;
 import java.util.LinkedHashMap;
@@ -277,7 +278,7 @@ class OperationInputProcessorTest {
                 "publish(Doc doc, String a, String b)", "publish(Doc doc, String... values)")) {
             Compilation.Result result = Compilation.compileTyped(source(declaration));
             assertFalse(result.success());
-            assertTrue(result.hasError("SG504"), result.describe());
+            assertTrue(result.hasError(DiagnosticCode.SG504.name()), result.describe());
             assertFalse(result.hasGenerated("fx.DocsRuntime"));
         }
         Map<String, String> generic = source("publish(Doc doc, I input)");
@@ -285,7 +286,7 @@ class OperationInputProcessorTest {
                 .replace("Outcome<Doc, DocStatus, DocTransition> publish",
                         "<I> Outcome<Doc, DocStatus, DocTransition> publish"));
         Compilation.Result result = Compilation.compileTyped(generic);
-        assertTrue(result.hasError("SG504"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG504.name()), result.describe());
     }
 
     @Test

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.GuardContext;
@@ -85,36 +86,37 @@ class DraftProblemsTest {
         InvalidGraphException duplicateKey = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(SUBMIT, DRAFT, PUBLISHED).endTransition()));
-        assertEquals(List.of("SG102"), duplicateKey.codes());
+        assertEquals(List.of(DiagnosticCode.SG102.name()), duplicateKey.codes());
         assertTrue(duplicateKey.problems().get(0).message().contains("duplicate transition DRAFT/SUBMIT"));
 
         InvalidGraphException duplicatePolicy = failing(tail(head().statePolicy(DRAFT, "again")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
-        assertEquals(List.of("SG102"), duplicatePolicy.codes());
+        assertEquals(List.of(DiagnosticCode.SG102.name()), duplicatePolicy.codes());
 
         InvalidGraphException duplicateRejection = failing(tail(head()
                 .reject(DRAFT, PUBLISH, "not yet").reject(DRAFT, PUBLISH, "still not")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
-        assertEquals(List.of("SG102"), duplicateRejection.codes());
+        assertEquals(List.of(DiagnosticCode.SG102.name()), duplicateRejection.codes());
     }
 
     @Test
     void sg103BlankReason() {
-        assertEquals(List.of("SG103"), failing(tail(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+        assertEquals(List.of(DiagnosticCode.SG103.name()),
+                failing(tail(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .allowsCycle(REVIEW)
                 .statePolicy(DRAFT, " ")
                 .statePolicy(REVIEW, "in review it is published or sent back")
                 .statePolicy(PUBLISHED, "published only archives")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
 
-        assertEquals(List.of("SG103"), failing(tail(head().reject(DRAFT, PUBLISH, "  ")
+        assertEquals(List.of(DiagnosticCode.SG103.name()), failing(tail(head().reject(DRAFT, PUBLISH, "  ")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
     }
 
     @Test
     void sg105SameGuardTwice() {
         Approved approved = new Approved();
-        assertEquals(List.of("SG105"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG105.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).guard(approved).guard(approved).endTransition())).codes());
     }
 
@@ -129,18 +131,18 @@ class DraftProblemsTest {
                     .guard("approved", new Approved())
                     .guard("approved", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.reject("no"))
                     .endTransition()));
-        assertEquals(List.of("SG105"), named.codes());
+        assertEquals(List.of(DiagnosticCode.SG105.name()), named.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares two guards named approved", named.problems().get(0).message());
 
         InvalidGraphException derived = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).guard(new Approved()).guard(new Approved()).endTransition()));
-        assertEquals(List.of("SG105"), derived.codes());
+        assertEquals(List.of(DiagnosticCode.SG105.name()), derived.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares two guards named Approved", derived.problems().get(0).message());
     }
 
     @Test
     void sg106ALambdaWithoutAName() {
-        assertEquals(List.of("SG106"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG106.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW)
                     .action((TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok())
                     .endTransition())).codes());
@@ -148,7 +150,7 @@ class DraftProblemsTest {
 
     @Test
     void sg107BlankExplicitName() {
-        assertEquals(List.of("SG107"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG107.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).guard(" ", new Approved()).endTransition())).codes());
     }
 
@@ -159,8 +161,8 @@ class DraftProblemsTest {
                 .statePolicy(REVIEW, "in review it is published or sent back")
                 .statePolicy(PUBLISHED, "published only archives")
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
-        assertEquals(List.of("SG201"), missing.codes());
-        assertEquals(List.of("SG201"), failing(tail(head().initial(REVIEW)
+        assertEquals(List.of(DiagnosticCode.SG201.name()), missing.codes());
+        assertEquals(List.of(DiagnosticCode.SG201.name()), failing(tail(head().initial(REVIEW)
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
     }
 
@@ -168,7 +170,7 @@ class DraftProblemsTest {
     void sg302ForbiddenFailsOnTypes() {
         for (Class<? extends Throwable> type : List.of(RuntimeException.class, StateMachineException.class,
                 OutOfMemoryError.class)) {
-            assertEquals(List.of("SG302"), failing(tail(head()
+            assertEquals(List.of(DiagnosticCode.SG302.name()), failing(tail(head()
                     .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(type).endTransition())).codes(),
                     type.getSimpleName());
         }
@@ -192,7 +194,7 @@ class DraftProblemsTest {
         InvalidGraphException cancellation = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(CancellationException.class)
                 .endTransition()));
-        assertEquals(List.of("SG302"), cancellation.codes());
+        assertEquals(List.of(DiagnosticCode.SG302.name()), cancellation.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW: failsOn does not allow CancellationException; only throwable types"
                 + " foreign to the library, and never Throwable, Exception, RuntimeException, an Error or a"
                 + " CancellationException, which are never domain failures, nor CompletionException or"
@@ -200,7 +202,7 @@ class DraftProblemsTest {
                 cancellation.problems().get(0).message());
         for (Class<? extends Throwable> type : List.of(Cancelled.class, CompletionException.class,
                 ExecutionException.class)) {
-            assertEquals(List.of("SG302"), failing(tail(head()
+            assertEquals(List.of(DiagnosticCode.SG302.name()), failing(tail(head()
                     .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(type).endTransition())).codes(),
                     type.getSimpleName());
         }
@@ -223,7 +225,7 @@ class DraftProblemsTest {
                     .when(WatchCondition.allIn(REVIEW)).execute(SUBMIT).endWatch()
                 .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
                     .when(WatchCondition.allIn(REVIEW)).execute(SUBMIT).endWatch()));
-        assertEquals(List.of("SG403"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG403.name()), error.codes());
     }
 
     @Test
@@ -231,7 +233,7 @@ class DraftProblemsTest {
         InvalidGraphException error = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty()).endWatch()));
-        assertEquals(List.of("SG404"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG404.name()), error.codes());
     }
 
     /** A valid machine whose DRAFT can leave through SUBMIT and RETOUCH, ready for a watch on DRAFT. */
@@ -254,7 +256,7 @@ class DraftProblemsTest {
         watch.when(WatchCondition.anyIn(ARCHIVED));
         watch.endWatch();
         InvalidGraphException error = failing(builder);
-        assertEquals(List.of("SG404"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG404.name()), error.codes());
         assertEquals("the watch of DRAFT declares when(anyIn ARCHIVED) without execute(...)",
                 error.problems().get(0).message());
     }
@@ -267,7 +269,7 @@ class DraftProblemsTest {
         watch.when(WatchCondition.anyIn(ARCHIVED)).execute(RETOUCH);
         watch.endWatch();
         InvalidGraphException error = failing(builder);
-        assertEquals(List.of("SG404"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG404.name()), error.codes());
         assertEquals("the watch of DRAFT declares when(allIn REVIEW) without execute(...)",
                 error.problems().get(0).message());
     }
@@ -280,21 +282,21 @@ class DraftProblemsTest {
         rule.execute(SUBMIT);
         rule.execute(RETOUCH).endWatch();
         InvalidGraphException error = failing(builder);
-        assertEquals(List.of("SG404"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG404.name()), error.codes());
         assertEquals("the watch of DRAFT declares execute(RETOUCH) without when(...)",
                 error.problems().get(0).message());
     }
 
     @Test
     void sg507ElementsThatNeedAnActionAndSg511ADurationThatIsNotPositive() {
-        assertEquals(List.of("SG507"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG507.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).onFailure(RETOUCH).endTransition())).codes());
-        assertEquals(List.of("SG507"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG507.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).timeout(Duration.ofSeconds(1)).endTransition())).codes());
-        assertEquals(List.of("SG507"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG507.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).timeout(Duration.ofSeconds(1))
                 .endTransition())).codes());
-        assertEquals(List.of("SG511"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG511.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW)
                     .asyncAction("slow", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                             java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()))
@@ -310,17 +312,17 @@ class DraftProblemsTest {
         InvalidGraphException sync = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).action("charge", new Publish()).action(new Publish())
                 .endTransition()));
-        assertEquals(List.of("SG507"), sync.codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), sync.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 actions, but an edge runs at most one",
                 sync.problems().get(0).message());
 
-        assertEquals(List.of("SG507"), failing(tail(head()
+        assertEquals(List.of(DiagnosticCode.SG507.name()), failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).asyncAction("slow", slow()).asyncAction("slower", slow())
                 .endTransition())).codes());
 
         InvalidGraphException mixed = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).asyncAction("slow", slow()).endTransition()));
-        assertEquals(List.of("SG507"), mixed.codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), mixed.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares both a synchronous and an asynchronous action",
                 mixed.problems().get(0).message());
     }
@@ -332,7 +334,7 @@ class DraftProblemsTest {
                 .endTransition()
                 .transition(RETOUCH, DRAFT, ARCHIVED).endTransition()
                 .transition(DISCARD, DRAFT, ARCHIVED).endTransition()));
-        assertEquals(List.of("SG507"), routes.codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), routes.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 onFailure routes, but an edge has at most one",
                 routes.problems().get(0).message());
     }
@@ -342,7 +344,7 @@ class DraftProblemsTest {
         InvalidGraphException timeouts = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).asyncAction("slow", slow())
                 .timeout(Duration.ofSeconds(1)).timeout(Duration.ofSeconds(9)).endTransition()));
-        assertEquals(List.of("SG507"), timeouts.codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), timeouts.codes());
         assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 timeouts, but an edge has at most one",
                 timeouts.problems().get(0).message());
     }
@@ -359,14 +361,15 @@ class DraftProblemsTest {
                 tail(head().transition(SUBMIT, DRAFT, REVIEW).endTransition());
         builder.transition(RETOUCH, DRAFT, ARCHIVED).action(new Publish());
         InvalidGraphException alongside = failing(builder);
-        assertEquals(List.of("SG507"), alongside.codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), alongside.codes());
         assertEquals("the graph Doc/DocStatus has 1 problem(s):\n"
-                + "  [SG507] DRAFT -RETOUCH-> ARCHIVED was never closed with endTransition()", alongside.getMessage());
+                + "  [" + DiagnosticCode.SG507 + "] DRAFT -RETOUCH-> ARCHIVED was never closed with endTransition()",
+                alongside.getMessage());
 
         // The only edge out of DRAFT left open: its absence must not surface as SG202/SG203 about the shape.
         GraphBuilder<Doc, DocStatus, DocTransition> only = head();
         only.transition(SUBMIT, DRAFT, REVIEW);
-        assertEquals(List.of("SG507"), failing(tail(only)).codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()), failing(tail(only)).codes());
     }
 
     @Test
@@ -375,6 +378,6 @@ class DraftProblemsTest {
         InvalidGraphException error = failing(tail(head()
                 .transition(SUBMIT, DRAFT, REVIEW).guard(" ", new Approved()).endTransition()
                 .transition(RETOUCH, DRAFT, ARCHIVED).guard(approved).guard(approved).endTransition()));
-        assertEquals(List.of("SG105", "SG107"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG105.name(), DiagnosticCode.SG107.name()), error.codes());
     }
 }

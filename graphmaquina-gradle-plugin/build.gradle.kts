@@ -44,6 +44,9 @@ tasks.processResources {
         filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", release) }
     }
 }
+// Core's jar as the root build stages it in the adapter-test repository at this build's version.
+val stagedCore = layout.projectDirectory.dir("../build/adapter-test-repository/io/github/graphmaquina")
+    .file("graphmaquina-core/$version/graphmaquina-core-$version.jar").asFile
 dependencies {
     // Lombok is tooling for this build's own sources: compile-only, so the published plugin never depends on it.
     compileOnly(libs.lombok)
@@ -55,6 +58,9 @@ dependencies {
     testImplementation(gradleTestKit())
     // Only the tests decode the JSON the generator publishes; the plugin itself never loads codegen classes.
     testImplementation(libs.gson)
+    // Only the tests name diagnostic codes through core's DiagnosticCode, from the jar the sibling build stages for
+    // the fixtures; the published plugin depends on no library class.
+    testImplementation(files(stagedCore))
     testRuntimeOnly(libs.junit.launcher)
 }
 signing {
@@ -121,6 +127,25 @@ tasks.withType<PublishToMavenRepository>().configureEach {
             check(!signingKey.orNull.isNullOrBlank()) {
                 "Central staging requires SIGNING_KEY; use adapterTests or publishToMavenLocal for unsigned builds"
             }
+        }
+    }
+}
+
+tasks.compileTestJava {
+    // The tests compile against the staged core jar, so the root build stages it first. Alone, with -p, there is no
+    // root build and it must already be staged, as for the tests below.
+    gradle.parent?.let { root ->
+        dependsOn(provider {
+            root.rootProject.project(":graphmaquina-core").tasks
+                .named("publishMavenPublicationToAdapterTestsRepository").get()
+        })
+    }
+    // A local for the action: the configuration cache cannot store an action that holds this script.
+    val core = stagedCore
+    doFirst {
+        check(core.isFile) {
+            "$core is not staged; run ./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository" +
+                " first"
         }
     }
 }

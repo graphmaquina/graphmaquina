@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CascadePolicy;
@@ -81,10 +82,11 @@ class EngineFailureAssertionsTest {
                         .terminal(LabelStatus.BLANK).terminal(LabelStatus.PRINTED).terminal(LabelStatus.VOID)
                         .build());
         InvalidGraphAssert view = InvalidGraphAssert.assertThat(unreachable);
-        assertSame(view, view.hasCodesExactly("SG203", "SG203"));
+        assertSame(view, view.hasCodesExactly(DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name()));
         assertSame(view, view.hasProblemCount(2));
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCodesExactly("SG203")),
-                "invalid graph", "codes", List.of("SG203"), List.of("SG203", "SG203"));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCodesExactly(DiagnosticCode.SG203.name())),
+                "invalid graph", "codes", List.of(DiagnosticCode.SG203.name()),
+                List.of(DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name()));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasProblemCount(1)),
                 "invalid graph", "problem count", 1, 2);
     }
@@ -98,10 +100,11 @@ class EngineFailureAssertionsTest {
         Throwable failure = TransitionFailureAssert.captureFailure(
                 () -> StateGraph.define(LABELS).terminal(LabelStatus.BLANK)
                         .terminal(LabelStatus.PRINTED).terminal(LabelStatus.VOID).build());
-        TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly("SG201");
+        TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly(DiagnosticCode.SG201.name());
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly("SG203")),
-                "invalid graph", "codes", List.of("SG203"), List.of("SG201"));
+                () -> TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly(
+                        DiagnosticCode.SG203.name())),
+                "invalid graph", "codes", List.of(DiagnosticCode.SG203.name()), List.of(DiagnosticCode.SG201.name()));
     }
 
     @Test
@@ -110,15 +113,23 @@ class EngineFailureAssertionsTest {
                 () -> StateGraph.define(LABELS).initial(LabelStatus.BLANK)
                         .terminal(LabelStatus.PRINTED).terminal(LabelStatus.VOID).build());
         InvalidGraphAssert.assertThat(several)
-                .hasCodesExactly("SG202", "SG203", "SG203", "SG701").hasProblemCount(4);
+                .hasCodesExactly(DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name(),
+                        DiagnosticCode.SG701.name()).hasProblemCount(4);
         assertFailure(assertThrows(GraphAssertionError.class, () -> InvalidGraphAssert.assertThat(several)
-                        .hasCodesExactly("SG203", "SG202", "SG203", "SG701")),
-                "invalid graph", "codes", List.of("SG203", "SG202", "SG203", "SG701"),
-                List.of("SG202", "SG203", "SG203", "SG701"));
+                        .hasCodesExactly(DiagnosticCode.SG203.name(), DiagnosticCode.SG202.name(),
+                                DiagnosticCode.SG203.name(), DiagnosticCode.SG701.name())),
+                "invalid graph", "codes",
+                List.of(DiagnosticCode.SG203.name(), DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(),
+                        DiagnosticCode.SG701.name()),
+                List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name(),
+                        DiagnosticCode.SG701.name()));
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> InvalidGraphAssert.assertThat(several).hasCodesExactly("SG202", "SG203", "SG701")),
-                "invalid graph", "codes", List.of("SG202", "SG203", "SG701"),
-                List.of("SG202", "SG203", "SG203", "SG701"));
+                () -> InvalidGraphAssert.assertThat(several).hasCodesExactly(DiagnosticCode.SG202.name(),
+                        DiagnosticCode.SG203.name(), DiagnosticCode.SG701.name())),
+                "invalid graph", "codes",
+                List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG701.name()),
+                List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name(),
+                        DiagnosticCode.SG701.name()));
     }
 
     // --- against the real engine -------------------------------------------------------------------

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -101,7 +102,7 @@ class CodegenMainTest {
         assertEquals(1, invocation.exitCode(), invocation.errors());
         assertTrue(invocation.errors().contains("prepare-compile"), invocation.errors());
         assertTrue(invocation.errors().contains(corrupt.toString()), invocation.errors());
-        assertTrue(invocation.errors().contains("SG602"), invocation.errors());
+        assertTrue(invocation.errors().contains(DiagnosticCode.SG602.name()), invocation.errors());
     }
 
     @Test
@@ -113,7 +114,7 @@ class CodegenMainTest {
         assertEquals(1, invocation.exitCode(), invocation.errors());
         assertTrue(invocation.errors().contains("prepare-compile"), invocation.errors());
         assertTrue(invocation.errors().contains(request.toString()), invocation.errors());
-        assertTrue(invocation.errors().contains("SG602"), invocation.errors());
+        assertTrue(invocation.errors().contains(DiagnosticCode.SG602.name()), invocation.errors());
     }
 
     /**
@@ -134,8 +135,9 @@ class CodegenMainTest {
         Invocation invocation = run("generate", request(classpath));
 
         assertEquals(1, invocation.exitCode(), invocation.errors());
-        assertTrue(invocation.errors().contains("SG602") && invocation.errors().contains("the StateGraph export index"
-                + " published by " + dependency + " cannot be read"), invocation.errors());
+        assertTrue(invocation.errors().contains(DiagnosticCode.SG602.name())
+                && invocation.errors().contains("the StateGraph export index"
+                        + " published by " + dependency + " cannot be read"), invocation.errors());
         assertTrue(invocation.errors().contains("an unpaired surrogate \\ud800 at path $.annotationTypes[0]"),
                 invocation.errors());
         try (Stream<Path> files = Files.list(Files.createDirectories(directory.resolve("work")))) {
@@ -198,21 +200,23 @@ class CodegenMainTest {
     void describesEveryCauseOfAWrappedFailure() {
         String described = CodegenMain.describe(new UncheckedIOException("cannot read the original sources",
                 new IOException("classes/fx is a directory",
-                        new CodegenException("SG603", "the inventory claims a file it does not own"))));
+                        new CodegenException(DiagnosticCode.SG603.name(),
+                                "the inventory claims a file it does not own"))));
 
         assertEquals("java.io.UncheckedIOException: cannot read the original sources"
                 + ": java.io.IOException: classes/fx is a directory"
-                + ": [SG603] the inventory claims a file it does not own", described);
+                + ": [" + DiagnosticCode.SG603 + "] the inventory claims a file it does not own", described);
     }
 
     /** A diagnostic anchored to an original source carries that anchor onto the line the build prints. */
     @Test
     void describesTheSourceLocationADiagnosticIsAnchoredTo() {
-        String described = CodegenMain.describe(new CodegenException("SG601",
+        String described = CodegenMain.describe(new CodegenException(DiagnosticCode.SG601.name(),
                 "the type Status is ambiguous between a.Status and b.Status",
                 new SourceLocation("src/fx/Docs.java", 8, 1)));
 
-        assertEquals("[SG601] the type Status is ambiguous between a.Status and b.Status (at src/fx/Docs.java:8:1)",
+        assertEquals("[" + DiagnosticCode.SG601
+                + "] the type Status is ambiguous between a.Status and b.Status (at src/fx/Docs.java:8:1)",
                 described);
     }
 

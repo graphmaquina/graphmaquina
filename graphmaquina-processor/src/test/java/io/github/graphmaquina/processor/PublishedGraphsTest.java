@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
@@ -60,7 +61,7 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Client"));
 
-        assertEquals(1, result.countError("SG602"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG602.name()), result.describe());
         assertTrue(result.errors().get(0).contains("fx.Docs") && result.errors().get(0).contains("implicitly"),
                 result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
@@ -87,10 +88,11 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Library"));
 
-        assertEquals(List.of("[SG602] fx.Library holds fx.Docs, which this compilation never processed, so neither"
+        assertEquals(List.of("[" + DiagnosticCode.SG602
+                + "] fx.Library holds fx.Docs, which this compilation never processed, so neither"
                 + " gets a companion: javac does not process a source it compiles implicitly, from the source path,"
                 + " so pass every source of the compilation to javac"), result.errors(), result.describe());
-        assertEquals(5, result.lineOf("SG602"), result.describe());
+        assertEquals(5, result.lineOf(DiagnosticCode.SG602.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
@@ -135,7 +137,7 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG404"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG404.name()), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result::describe);
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PUBLISHED)), result::describe);
         assertFalse(Files.exists(Path.of(ManifestCodec.readCompile(prepared.generation().annotationManifest())
@@ -287,7 +289,8 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
 
-        String missing = "[SG806] the sub-machine of Bookings.%s is Payments, which is not in Shop";
+        String missing = "[" + DiagnosticCode.SG806
+                + "] the sub-machine of Bookings.%s is Payments, which is not in Shop";
         assertEquals(List.of(missing.formatted("DEPOSIT"), missing.formatted("BALANCE")), result.errors(),
                 result.describe());
         assertFalse(result.hasGenerated("cons.ShopRuntime"), result.describe());
@@ -307,12 +310,13 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillRefs.Status" + unlisted(jar),
-                "[SG602] prod.BillRefs.Id" + unlisted(jar),
-                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(jar),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(jar)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Status" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Id" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(jar)),
+                result.errors(),
                 result.describe());
-        assertTrue(result.lineOf("SG602") > 0, result.describe());
+        assertTrue(result.lineOf(DiagnosticCode.SG602.name()) > 0, result.describe());
         assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
         assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
     }
@@ -329,10 +333,11 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillRefs.Status" + unlisted(classes),
-                "[SG602] prod.BillRefs.Id" + unlisted(classes),
-                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(classes),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(classes)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Status" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Id" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(classes)),
+                result.errors(),
                 result.describe());
     }
 
@@ -357,8 +362,9 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillActionsRefs.Cancel" + stale(jar),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(jar)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + stale(jar),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + stale(jar)),
+                result.errors(),
                 result.describe());
         assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
         assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
@@ -377,8 +383,9 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillActionsRefs.Cancel" + stale(classes),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(classes)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + stale(classes),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + stale(classes)),
+                result.errors(),
                 result.describe());
     }
 
@@ -397,7 +404,7 @@ class PublishedGraphsTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> Compilation.prepare(consumer(), List.of(jar)));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("compilationId"), failure.getMessage());
     }
 

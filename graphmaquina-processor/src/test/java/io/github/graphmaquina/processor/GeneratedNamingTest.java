@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -75,7 +76,8 @@ class GeneratedNamingTest {
         sources.put("fx._Library", LIBRARY.replace("interface Library ", "interface _Library "));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
-        assertEquals(List.of("[SG603] the generated runtime fx.LibraryRuntime is claimed by both fx.Library and"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the generated runtime fx.LibraryRuntime is claimed by both fx.Library and"
                 + " fx._Library"), result.errors(), result.describe());
         Diagnostic<? extends JavaFileObject> refusal = result.diagnostics().stream()
                 .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
@@ -108,7 +110,8 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG603] the generated runtimes fx.LibraryRuntime of fx.Library and fx.LIBRARYRuntime of"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the generated runtimes fx.LibraryRuntime of fx.Library and fx.LIBRARYRuntime of"
                 + " fx.LIBRARY differ only in case, and the volume of the generated sources "
                 + result.output().toRealPath() + " does not tell their files apart"), result.errors(),
                 result.describe());
@@ -137,7 +140,7 @@ class GeneratedNamingTest {
         sources.put("fx.DocsRuntime", "package fx; public class DocsRuntime {}");
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG603"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.describe().contains("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
     }
@@ -165,9 +168,9 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
-        assertEquals(1, result.countError("SG103"), result.describe());
-        assertEquals(1, result.countError("SG510"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG103.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG510.name()), result.describe());
         assertEquals(3, result.errors().size(), result.describe());
     }
 
@@ -184,7 +187,8 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG603] the generated runtime fx.PagesRuntime for fx.Pages conflicts with existing type"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the generated runtime fx.PagesRuntime for fx.Pages conflicts with existing type"
                 + " fx.PagesRuntime"), result.errors(), result.describe());
         assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
@@ -200,8 +204,8 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
-        assertEquals(1, result.countError("SG103"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG103.name()), result.describe());
         assertEquals(2, result.errors().size(), result.describe());
         assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
@@ -225,10 +229,11 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
-        assertEquals(1, result.countError("SG510"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG510.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains(
-                "[SG510] builder() is the static builder() the companion of __ declares")), result.describe());
+                "[" + DiagnosticCode.SG510 + "] builder() is the static builder() the companion of __ declares")),
+                result.describe());
         assertEquals(2, result.errors().size(), result.describe());
     }
 
@@ -471,7 +476,7 @@ class GeneratedNamingTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains("the companion OrdersRuntime of Orders writes Hosts.Payments, but in"
                 + " its scope Hosts names the member type Orders.Hosts, not the type Hosts of the unnamed package:"
                 + " rename that member type or the type Hosts"), result.describe());
@@ -533,6 +538,6 @@ class GeneratedNamingTest {
         sources.put("fx.__", LIBRARY.replace("interface Library ", "interface __ "));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG603"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG603.name()), result.describe());
     }
 }

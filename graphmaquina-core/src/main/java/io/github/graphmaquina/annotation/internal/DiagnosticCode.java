@@ -5,7 +5,8 @@ package io.github.graphmaquina.annotation.internal;
  * and no report prints a code that does not exist. A constant's name is the code as diagnostics print it, such as
  * {@code [SG603]}, and a public surface that carries a code, such as {@code InvalidGraphException.Problem}, carries
  * that name. The constants follow the numeric order, and {@code docs/diagnostics.md} documents each of them: a test
- * keeps the two in step and refuses the literal of a code anywhere else in production sources.
+ * keeps the two in step and refuses the spelling of a code anywhere but here in the main and test sources of every
+ * module, except on a line that is a comment.
  *
  * <p>A new code takes the next free number of its block. A number once used and then removed is never given again,
  * so that an old build log never reads as a new problem; the test of this registry lists the retired numbers.

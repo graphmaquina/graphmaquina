@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -193,7 +194,7 @@ class LaterRoundValuesTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG102"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG102.name()), result.describe());
         assertEquals(1, result.errors().stream().filter((String error) -> error.contains("[SG")).count(),
                 result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("cannot find symbol")),

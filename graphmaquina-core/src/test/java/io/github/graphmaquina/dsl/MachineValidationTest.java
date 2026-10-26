@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.TransitionAction;
@@ -74,7 +75,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG202", "SG701"), notMarked.codes());
+        assertEquals(List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG701.name()), notMarked.codes());
         assertTrue(notMarked.problems().get(0).message().startsWith("ARCHIVED"));
 
         InvalidGraphException marked = failing(policies(StateGraph.define(DOCS)
@@ -83,7 +84,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG202"), marked.codes());
+        assertEquals(List.of(DiagnosticCode.SG202.name()), marked.codes());
         assertTrue(marked.problems().get(0).message().contains("PUBLISHED is terminal but declares [ARCHIVE]"));
     }
 
@@ -94,7 +95,8 @@ class MachineValidationTest {
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG202", "SG203", "SG203"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name()),
+                error.codes());
         assertTrue(error.problems().get(1).message().contains("PUBLISHED is unreachable from DRAFT"));
         assertTrue(error.problems().get(2).message().contains("ARCHIVED is unreachable from DRAFT"));
     }
@@ -106,7 +108,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG204"), cycle.codes());
+        assertEquals(List.of(DiagnosticCode.SG204.name()), cycle.codes());
         assertTrue(cycle.problems().get(0).message().contains("[DRAFT, REVIEW, DRAFT]"));
     }
 
@@ -119,7 +121,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(RETOUCH, PUBLISHED, REVIEW).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG204"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG204.name()), error.codes());
         assertTrue(error.problems().get(0).message().contains("[REVIEW, PUBLISHED, REVIEW]"));
     }
 
@@ -130,7 +132,7 @@ class MachineValidationTest {
                 .transition(RETOUCH, REVIEW, REVIEW).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG204"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG204.name()), error.codes());
         assertTrue(error.problems().get(0).message().contains("[REVIEW, REVIEW]"));
 
         GraphDefinition<Doc, DocStatus, DocTransition> allowed =
@@ -152,7 +154,7 @@ class MachineValidationTest {
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .transition(RETOUCH, ARCHIVED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG202"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG202.name()), error.codes());
         assertTrue(error.problems().get(0).message().contains("ARCHIVED is terminal but declares [RETOUCH]"));
     }
 
@@ -176,7 +178,7 @@ class MachineValidationTest {
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG205"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG205.name()), error.codes());
         assertTrue(error.problems().get(0).message().contains("unused cycle permission PUBLISHED"));
     }
 
@@ -191,7 +193,7 @@ class MachineValidationTest {
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG205", "SG205"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG205.name(), DiagnosticCode.SG205.name()), error.codes());
         assertEquals(List.of("unused cycle permission REVIEW", "unused cycle permission PUBLISHED"),
                 error.problems().stream().map(InvalidGraphException.Problem::message).toList());
     }
@@ -204,7 +206,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).onFailure(PUBLISH).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG301"), sameKey.codes());
+        assertEquals(List.of(DiagnosticCode.SG301.name()), sameKey.codes());
 
         InvalidGraphException missing = failing(policies(StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW))
@@ -212,7 +214,7 @@ class MachineValidationTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).onFailure(ARCHIVE).endTransition()
                 .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG301"), missing.codes());
+        assertEquals(List.of(DiagnosticCode.SG301.name()), missing.codes());
         assertTrue(missing.problems().get(0).message().contains("no transition ARCHIVE leaves REVIEW"));
 
         GraphDefinition<Doc, DocStatus, DocTransition> ok = policies(StateGraph.define(DOCS)
@@ -250,7 +252,7 @@ class MachineValidationTest {
                 .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
                     .when(WatchCondition.allIn(REVIEW)).execute(PUBLISH)
                     .endWatch());
-        assertEquals(List.of("SG401"), noSuchTransition.codes());
+        assertEquals(List.of(DiagnosticCode.SG401.name()), noSuchTransition.codes());
 
         InvalidGraphException onTerminal = failing(policies(StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW))
@@ -261,7 +263,7 @@ class MachineValidationTest {
                 .watch(ARCHIVED, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
                     .when(WatchCondition.allIn(REVIEW)).execute(ARCHIVE)
                     .endWatch());
-        assertEquals(List.of("SG401", "SG402"), onTerminal.codes());
+        assertEquals(List.of(DiagnosticCode.SG401.name(), DiagnosticCode.SG402.name()), onTerminal.codes());
     }
 
     @Test
@@ -271,7 +273,7 @@ class MachineValidationTest {
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG701", "SG701"), missing.codes());
+        assertEquals(List.of(DiagnosticCode.SG701.name(), DiagnosticCode.SG701.name()), missing.codes());
         assertTrue(missing.problems().get(0).message().contains("REVIEW declares no rejection policy"));
 
         InvalidGraphException conflict = failing(policies(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED))
@@ -279,7 +281,7 @@ class MachineValidationTest {
                 .transition(SUBMIT, DRAFT, REVIEW).endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
-        assertEquals(List.of("SG702"), conflict.codes());
+        assertEquals(List.of(DiagnosticCode.SG702.name()), conflict.codes());
         assertTrue(conflict.problems().get(0).message().contains("REVIEW both declares and rejects PUBLISH"));
     }
 }

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.maven;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
@@ -250,7 +251,7 @@ class MavenPluginIntegrationTest {
         MavenResult result = fixture.run("package");
 
         assertNotEquals(0, result.exitCode(), result.output());
-        assertTrue(result.output().contains("[SG604]"), result.output());
+        assertTrue(result.output().contains("[" + DiagnosticCode.SG604 + "]"), result.output());
         assertNothingWasRetired(fixture, published);
         assertArrayEquals(manifestBefore, Files.readAllBytes(manifest));
         assertArrayEquals(jarBefore, Files.readAllBytes(jar));

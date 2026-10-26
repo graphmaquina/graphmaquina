@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.model.GenerationModel;
@@ -71,7 +72,7 @@ class DependencyExportsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> DependencyExports.read(List.of(first, second)));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("the machine fx.Docs is described by the export indexes of " + first + " and " + second
                 + ": keep one artifact of its producer on the classpath", failure.getMessage());
         CodegenException reversed =
@@ -133,7 +134,7 @@ class DependencyExportsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> DependencyExports.read(List.of(classes)));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains(classes.toString()), failure.getMessage());
         assertTrue(failure.getMessage().contains("0.0.1-OTHER"), failure.getMessage());
     }
@@ -149,7 +150,7 @@ class DependencyExportsTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> DependencyExports.read(List.of(directory.resolve("classes"))));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains(directory.resolve("classes").toString()),
                 failure.getMessage());
     }
@@ -164,7 +165,7 @@ class DependencyExportsTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> DependencyExports.read(List.of(directory.resolve("classes"))));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().startsWith("the StateGraph export index published by "
                 + directory.resolve("classes") + " cannot be read: malformed JSON in "), failure.getMessage());
     }
@@ -184,7 +185,7 @@ class DependencyExportsTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> DependencyExports.read(List.of(directory.resolve("classes"))));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("the StateGraph export index published by " + directory.resolve("classes") + " cannot be read:"
                 + " malformed JSON in " + metadata.resolve("exports.json") + ": an unpaired surrogate \\ud800 at path"
                 + " $.annotationTypes[0]", failure.getMessage());

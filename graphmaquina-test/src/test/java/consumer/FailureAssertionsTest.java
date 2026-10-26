@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallPhase;
@@ -719,8 +720,8 @@ class FailureAssertionsTest {
     @Test
     void nullSubjectFailsHasCodesExactly() {
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> InvalidGraphAssert.assertThat(null).hasCodesExactly("SG102")),
-                "invalid graph", "codes", List.of("SG102"), null);
+                () -> InvalidGraphAssert.assertThat(null).hasCodesExactly(DiagnosticCode.SG102.name())),
+                "invalid graph", "codes", List.of(DiagnosticCode.SG102.name()), null);
     }
 
     @Test

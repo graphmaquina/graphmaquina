@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -36,10 +37,10 @@ class WatchAndStructureErrorsTest {
     void sg503PeersAndOwnerProperties() {
         Compilation.Result peers = watch(Fixtures.DOCS_WATCH.replace("peers = DocRefs.Pages.class",
                 "peers = DocRefs.Status.class"));
-        assertTrue(peers.hasError("SG503"), peers.describe());
+        assertTrue(peers.hasError(DiagnosticCode.SG503.name()), peers.describe());
         Compilation.Result owner = watch(Fixtures.DOCS_WATCH.replace("owner = PageRefs.Doc.class",
                 "owner = PageRefs.Id.class"));
-        assertTrue(owner.hasError("SG503"), owner.describe());
+        assertTrue(owner.hasError(DiagnosticCode.SG503.name()), owner.describe());
     }
 
     /**
@@ -55,7 +56,7 @@ class WatchAndStructureErrorsTest {
         rawPeers.put("fx.Doc", rawPeers.get("fx.Doc").replace("public List<Page> getPages()",
                 "@SuppressWarnings(\"rawtypes\") public List getPages()"));
         Compilation.Result peers = Compilation.compileTyped(rawPeers);
-        assertEquals(List.of("[SG503] Doc has no public reader for property 'pages' returning"
+        assertEquals(List.of("[" + DiagnosticCode.SG503 + "] Doc has no public reader for property 'pages' returning"
                 + " Collection<? extends Page>"), sgErrors(peers), peers.describe());
 
         Map<String, String> rawOwner = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
@@ -63,7 +64,8 @@ class WatchAndStructureErrorsTest {
         rawOwner.put("fx.Page", rawOwner.get("fx.Page").replace("@GraphProperty public Optional<Doc> doc()",
                 "@SuppressWarnings(\"rawtypes\") @GraphProperty public Optional doc()"));
         Compilation.Result owner = Compilation.compileTyped(rawOwner);
-        assertEquals(List.of("[SG503] Page has no public reader for property 'doc' returning Optional<Doc> or Doc:"
+        assertEquals(List.of("[" + DiagnosticCode.SG503
+                + "] Page has no public reader for property 'doc' returning Optional<Doc> or Doc:"
                 + " the marker names fx.Page.doc()"), sgErrors(owner), owner.describe());
     }
 
@@ -79,29 +81,30 @@ class WatchAndStructureErrorsTest {
                             @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
                             Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
                         """, "")));
-        assertTrue(unreachable.hasError("SG203"), unreachable.describe());
-        assertEquals(Fixtures.HEADER_LINE, unreachable.lineOf("SG203"), unreachable.describe());
+        assertTrue(unreachable.hasError(DiagnosticCode.SG203.name()), unreachable.describe());
+        assertEquals(Fixtures.HEADER_LINE, unreachable.lineOf(DiagnosticCode.SG203.name()), unreachable.describe());
 
         Compilation.Result terminalExits = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("terminals = ARCHIVED", "terminals = {ARCHIVED, PUBLISHED}"),
                 Fixtures.DOCS_BODY));
-        assertTrue(terminalExits.hasError("SG202"), terminalExits.describe());
+        assertTrue(terminalExits.hasError(DiagnosticCode.SG202.name()), terminalExits.describe());
 
         Compilation.Result cycle = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace(", allowsCycle = REVIEW", ""), Fixtures.DOCS_BODY));
-        assertTrue(cycle.hasError("SG204"), cycle.describe());
+        assertTrue(cycle.hasError(DiagnosticCode.SG204.name()), cycle.describe());
 
         Compilation.Result deadCycle = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("allowsCycle = REVIEW", "allowsCycle = {REVIEW, PUBLISHED}"),
                 Fixtures.DOCS_BODY));
-        assertTrue(deadCycle.hasError("SG205"), deadCycle.describe());
+        assertTrue(deadCycle.hasError(DiagnosticCode.SG205.name()), deadCycle.describe());
 
         Compilation.Result badRoute = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
                 Fixtures.DOCS_BODY.replace("onFailure = RETURN", "onFailure = ARCHIVE")));
-        assertTrue(badRoute.hasError("SG301"), badRoute.describe());
+        assertTrue(badRoute.hasError(DiagnosticCode.SG301.name()), badRoute.describe());
 
         assertTrue(watch(Fixtures.DOCS_WATCH.replace("transition = PUBLISH", "transition = ARCHIVE"))
-                .hasError("SG401"));
-        assertTrue(watch(Fixtures.DOCS_WATCH.replace("state = REVIEW", "state = ARCHIVED")).hasError("SG402"));
+                .hasError(DiagnosticCode.SG401.name()));
+        assertTrue(watch(Fixtures.DOCS_WATCH.replace("state = REVIEW",
+                "state = ARCHIVED")).hasError(DiagnosticCode.SG402.name()));
     }
 }

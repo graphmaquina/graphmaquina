@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -37,7 +38,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("publish") && error.contains("public")), result::describe);
     }
 
@@ -55,7 +56,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("publish") && error.contains("ActionOutcome")), result::describe);
     }
 
@@ -71,7 +72,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("approved") && error.contains("GuardResult")), result::describe);
     }
 
@@ -101,9 +102,11 @@ class ExportValidationTest {
                 }
                 """));
 
-        assertEquals(List.of("[SG604] fx.Raw.approved does not have the signature of a guard: expected GuardResult"
+        assertEquals(List.of("[" + DiagnosticCode.SG604
+                + "] fx.Raw.approved does not have the signature of a guard: expected GuardResult"
                         + " or CompletionStage<GuardResult> from one GuardContext",
-                "[SG604] fx.Raw.publish does not have the signature of an action: expected ActionOutcome"
+                "[" + DiagnosticCode.SG604
+                        + "] fx.Raw.publish does not have the signature of an action: expected ActionOutcome"
                         + " or CompletionStage<ActionOutcome> from one TransitionContext"),
                 result.errors(), result.describe());
     }
@@ -119,7 +122,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("notified")), result::describe);
     }
 
@@ -140,7 +143,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("notified") && error.contains("overrides")), result::describe);
     }
 
@@ -169,7 +172,8 @@ class ExportValidationTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG604] fx.SubHooks.notified is exported as a guard, but it overrides"
+        assertEquals(List.of("[" + DiagnosticCode.SG604
+                + "] fx.SubHooks.notified is exported as a guard, but it overrides"
                 + " fx.Notifying.notified, whose contract is a hook"), result.errors().stream()
                 .filter((String error) -> error.contains("overrides")).toList(), result.describe());
     }
@@ -197,7 +201,7 @@ class ExportValidationTest {
                 """));
 
         assertTrue(result.success(), result.describe());
-        assertEquals(0, result.countError("SG604"), result::describe);
+        assertEquals(0, result.countError(DiagnosticCode.SG604.name()), result::describe);
     }
 
     @Test
@@ -211,7 +215,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("status") && error.contains("public instance method")), result::describe);
     }
 
@@ -226,7 +230,7 @@ class ExportValidationTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("id") && error.contains("public instance method")), result::describe);
     }
 
@@ -238,7 +242,7 @@ class ExportValidationTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("no longer declares as a graph member")), result::describe);
     }
 
@@ -252,7 +256,7 @@ class ExportValidationTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG604 + "]")
                 && error.contains("as an action, which it no longer declares")), result::describe);
     }
 
@@ -288,8 +292,8 @@ class ExportValidationTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG604"), result.describe());
-        assertEquals(1, result.countError("SG103"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG604.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG103.name()), result.describe());
         assertEquals(2, result.errors().size(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
@@ -312,9 +316,9 @@ class ExportValidationTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG604"), result.describe());
-        assertEquals(0, result.countError("SG505"), result.describe());
-        assertEquals(1, result.countError("SG103"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG604.name()), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG505.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG103.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }

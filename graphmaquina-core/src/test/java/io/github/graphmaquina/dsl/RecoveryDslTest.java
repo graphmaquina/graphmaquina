@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.FailureKind;
@@ -235,7 +236,7 @@ class RecoveryDslTest {
         InvalidGraphException error = refused(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.PUBLISH));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
                 WHERE + " declares recovery PUBLISH, which is its own key")), error.problems());
     }
 
@@ -247,7 +248,8 @@ class RecoveryDslTest {
                         .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY)
                         .recover(PublicationFailures.Rejected.class, TicketChange.SCHEDULE_RETRY);
         InvalidGraphException error = assertThrows(InvalidGraphException.class, () -> twoOrigins(rules, rules));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG301", "RETRY_PENDING -PUBLISH-> PUBLISHED declares"
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                "RETRY_PENDING -PUBLISH-> PUBLISHED declares"
                         + " recovery SCHEDULE_RETRY, but no transition SCHEDULE_RETRY leaves RETRY_PENDING")),
                 error.problems());
     }
@@ -263,9 +265,11 @@ class RecoveryDslTest {
                         .recover(PublicationFailures.Unavailable.class, TicketChange.CLOSE)
                         .onFailure(TicketChange.CLOSE));
         assertEquals(List.of(
-                        new InvalidGraphException.Problem("SG301", WHERE + " declares recovery CLOSE, but no"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                WHERE + " declares recovery CLOSE, but no"
                                 + " transition CLOSE leaves READY"),
-                        new InvalidGraphException.Problem("SG301", WHERE + " declares onFailure = CLOSE, but no"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                WHERE + " declares onFailure = CLOSE, but no"
                                 + " transition CLOSE leaves READY")),
                 error.problems());
     }
@@ -276,12 +280,14 @@ class RecoveryDslTest {
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
                                 RuntimeException.class));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG302", WHERE + ": recover(" + UNAVAILABLE
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG302.name(),
+                WHERE + ": recover(" + UNAVAILABLE
                 + ", SCHEDULE_RETRY) does not allow java.lang.RuntimeException; " + RULE)), error.problems());
         for (Class<? extends Throwable> type : List.of(Throwable.class, Exception.class, OutOfMemoryError.class,
                 StateMachineException.class, CancellationException.class, Cancelled.class, CompletionException.class,
                 ExecutionException.class)) {
-            assertEquals(List.of("SG302"), refused((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+            assertEquals(List.of(DiagnosticCode.SG302.name()),
+                    refused((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
                     publish.action("publish", SUCCEEDS).recover(PublicationFailures.Unavailable.class,
                             TicketChange.SCHEDULE_RETRY, List.of(ServiceUnavailableException.class, type))).codes(),
                     type.getName());
@@ -296,13 +302,14 @@ class RecoveryDslTest {
         InvalidGraphException inARule = refused(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY, notThrowable));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG302", WHERE + ": recover(" + UNAVAILABLE
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG302.name(),
+                WHERE + ": recover(" + UNAVAILABLE
                 + ", SCHEDULE_RETRY) does not allow java.lang.String; " + RULE)), inARule.problems());
         Class rawType = String.class;
         InvalidGraphException inFailsOn = refused(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .failsOn(rawType).onFailure(TicketChange.MARK_INTEGRATION_FAILED));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG302",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG302.name(),
                 WHERE + ": failsOn does not allow String; " + RULE)), inFailsOn.problems());
     }
 
@@ -312,7 +319,7 @@ class RecoveryDslTest {
         InvalidGraphException open = refused(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .recover(Open.class, TicketChange.SCHEDULE_RETRY));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG303", WHERE
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG303.name(), WHERE
                 + ": io.github.graphmaquina.dsl.RecoveryDslTest$Open is not a failure kind; a failure kind is a named"
                 + " final class or record that implements FailureKind and is not an interface, an enum, a local or"
                 + " anonymous class, or a Throwable")), open.problems());
@@ -325,7 +332,8 @@ class RecoveryDslTest {
         for (Class<? extends FailureKind> kind : kinds) {
             InvalidGraphException error = refused((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
                     publish.action("publish", SUCCEEDS).recover(kind, TicketChange.SCHEDULE_RETRY));
-            assertEquals(List.of(new InvalidGraphException.Problem("SG303", WHERE + ": " + kind.getName()
+            assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG303.name(),
+                    WHERE + ": " + kind.getName()
                     + NOT_A_KIND)), error.problems(), kind.getName());
         }
     }
@@ -339,7 +347,7 @@ class RecoveryDslTest {
                         .recover(PublicationFailures.Unavailable.class, TicketChange.RECORD_REJECTION,
                                 ServiceUnavailableException.class)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.MARK_INTEGRATION_FAILED));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG304",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG304.name(),
                 WHERE + ": failure kind " + UNAVAILABLE + " is declared by more than one recover")), error.problems());
     }
 
@@ -373,7 +381,8 @@ class RecoveryDslTest {
                         .recover(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
                                 ServiceUnavailableException.class));
         for (UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> edge : edges) {
-            assertEquals(List.of(new InvalidGraphException.Problem("SG304", expected)), refused(edge).problems());
+            assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG304.name(), expected)),
+                    refused(edge).problems());
         }
     }
 
@@ -381,15 +390,18 @@ class RecoveryDslTest {
     void sg507RulesWithoutAnAction() {
         InvalidGraphException rules = refused((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
                 publish.recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY));
-        assertEquals(List.of(new InvalidGraphException.Problem("SG507", WHERE + " declares recover without an action")),
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG507.name(),
+                WHERE + " declares recover without an action")),
                 rules.problems());
         InvalidGraphException withOnFailure = refused((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
                 publish.recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY)
                         .onFailure(TicketChange.MARK_INTEGRATION_FAILED));
         assertEquals(List.of(
-                        new InvalidGraphException.Problem("SG507", WHERE + " declares onFailure or failsOn without an"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG507.name(),
+                                WHERE + " declares onFailure or failsOn without an"
                                 + " action"),
-                        new InvalidGraphException.Problem("SG507", WHERE + " declares recover without an action")),
+                        new InvalidGraphException.Problem(DiagnosticCode.SG507.name(),
+                                WHERE + " declares recover without an action")),
                 withOnFailure.problems());
     }
 
@@ -400,7 +412,8 @@ class RecoveryDslTest {
                 publish.recover(Open.class, TicketChange.SCHEDULE_RETRY,
                                 List.of(RuntimeException.class, RuntimeException.class))
                         .recover(Open.class, TicketChange.RECORD_REJECTION));
-        assertEquals(List.of("SG302", "SG302", "SG303", "SG304", "SG304", "SG507"), error.codes());
+        assertEquals(List.of(DiagnosticCode.SG302.name(), DiagnosticCode.SG302.name(), DiagnosticCode.SG303.name(),
+                DiagnosticCode.SG304.name(), DiagnosticCode.SG304.name(), DiagnosticCode.SG507.name()), error.codes());
     }
 
     /** Each problem is filed at its edge: sorted by origin, whatever order the edges were declared in. */
@@ -414,8 +427,9 @@ class RecoveryDslTest {
                         .action("publish", SUCCEEDS).recover(Open.class, TicketChange.SCHEDULE_RETRY).endTransition();
         InvalidGraphException error = assertThrows(InvalidGraphException.class, builder::build);
         String open = Open.class.getName() + NOT_A_KIND;
-        assertEquals(List.of(new InvalidGraphException.Problem("SG303", WHERE + ": " + open),
-                        new InvalidGraphException.Problem("SG303", "RETRY_PENDING -PUBLISH-> PUBLISHED: " + open)),
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG303.name(), WHERE + ": " + open),
+                        new InvalidGraphException.Problem(DiagnosticCode.SG303.name(),
+                                "RETRY_PENDING -PUBLISH-> PUBLISHED: " + open)),
                 error.problems());
     }
 

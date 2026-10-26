@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.output.CompilationOutputs;
 import java.io.File;
@@ -102,7 +103,7 @@ class NoJdkCompilerFallbackTest {
             List<Diagnostic<? extends JavaFileObject>> sg302 = diagnostics.getDiagnostics().stream()
                     .filter((Diagnostic<? extends JavaFileObject> candidate) ->
                             candidate.getKind() == Diagnostic.Kind.ERROR
-                                    && candidate.getMessage(null).startsWith("[SG302]"))
+                                    && candidate.getMessage(null).startsWith("[" + DiagnosticCode.SG302 + "]"))
                     .toList();
             assertEquals(1, sg302.size(), diagnostics.getDiagnostics().toString());
             assertEquals(start, sg302.get(0).getStartPosition());

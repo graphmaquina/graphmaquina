@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -216,7 +217,7 @@ class WatchVocabularyTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(
                 new GenerationModel(List.of(owner), List.of()), "io.github.graphmaquina:test:main"));
 
-        assertEquals("SG608", failure.code());
+        assertEquals(DiagnosticCode.SG608.name(), failure.code());
         assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
         assertEquals("the peer machine other.Bills declared by fx.Docs is not a @GenerateGraphApi machine of this"
                 + " compilation or of a dependency export index", failure.getMessage());

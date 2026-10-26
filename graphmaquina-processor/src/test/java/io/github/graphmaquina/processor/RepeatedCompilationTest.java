@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
@@ -101,8 +102,8 @@ class RepeatedCompilationTest {
         Compilation.Result rerun = Compilation.recompileWithoutLifecycle(prepared);
 
         assertFalse(rerun.success(), rerun.describe());
-        assertEquals(0, rerun.countError("SG603"), rerun.describe());
-        assertEquals(2, rerun.countError("SG602"), rerun.describe());
+        assertEquals(0, rerun.countError(DiagnosticCode.SG603.name()), rerun.describe());
+        assertEquals(2, rerun.countError(DiagnosticCode.SG602.name()), rerun.describe());
         assertTrue(rerun.errors().stream().allMatch((String error) -> error.contains("previous compilation")
                 && error.contains("prepare-compile")), rerun.describe());
     }
@@ -124,7 +125,8 @@ class RepeatedCompilationTest {
         Compilation.Result rerun = Compilation.recompileWithoutLifecycle(Compilation.prepare(project, sources));
 
         assertFalse(rerun.success(), rerun.describe());
-        assertTrue(rerun.errors().contains("[SG605] fx.DocActionsRefs.Publish is not a symbol this compilation exports"
+        assertTrue(rerun.errors().contains("[" + DiagnosticCode.SG605
+                + "] fx.DocActionsRefs.Publish is not a symbol this compilation exports"
                 + " or depends on; use one of the generated <Host>Refs types"), rerun.describe());
         assertFalse(rerun.errors().stream().anyMatch((String error) -> error.contains("export index")),
                 rerun.describe());
@@ -169,7 +171,7 @@ class RepeatedCompilationTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.compilePrepared(prepared));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("unsupported schemaVersion 99 in " + request.workDirectory().resolve("owned-outputs.json")
                 + "; expected 2", failure.getMessage());
         for (Map.Entry<Path, byte[]> entry : before.entrySet()) {

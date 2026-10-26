@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -159,13 +160,13 @@ class CheckVocabularyTest {
      * package named {@code Check} is refused at the machine's declaration.
      */
     @Test
-    void aNameCheckWouldTakeOverIsSG603() {
+    void aNameCheckWouldTakeOverIsAGeneratedNameCollision() {
         GenerationModel unnamed = inspect("unnamed", Map.of(
                 "Doc", "/** Entity fixture for the unnamed-package collision case. */ public class Doc {}",
                 "Phase",
                 "/** State enum used by the unnamed-package collision fixture. */ public enum Phase { OPEN, CLOSED }",
                 "Check",
-                "/** Transition enum deliberately named Check for the SG603 fixture. */ "
+                "/** Transition enum deliberately named Check for the " + DiagnosticCode.SG603 + " fixture. */ "
                         + "public enum Check { CLOSE }",
                 "Tickets", """
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -176,7 +177,7 @@ class CheckVocabularyTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(unnamed, "unnamed"));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the vocabulary TicketsGraph cannot name the transition type Check of Tickets: inside it,"
                 + " Check means its own nested type TicketsGraph.Check", failure.getMessage());
         assertEquals("unnamed/Tickets.java", failure.location().orElseThrow().path());
