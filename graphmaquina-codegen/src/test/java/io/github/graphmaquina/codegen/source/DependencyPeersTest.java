@@ -376,6 +376,57 @@ class DependencyPeersTest {
     }
 
     /**
+     * So is one beside a facade that reaches {@code Machine} only through a supertype the classpath lacks: the
+     * generator skips a supertype it cannot resolve, so nothing binds the enums. The control is the same producer
+     * with that supertype in its jar.
+     */
+    @Test
+    void refusesAPeerWhoseFacadeReachesMachineThroughASupertypeTheClasspathLacks() throws IOException {
+        Map<String, String> sources = based("Base<Payment, PaymentStatus, PaymentTransition>");
+        assertEquals(List.of(PAYMENTS), read(bookings(), published("intact", sources, PAYMENTS)).dependencyPeers());
+        Path stale = published("based", sources, PAYMENTS);
+        try (FileSystem archive = FileSystems.newFileSystem(stale)) {
+            Files.delete(archive.getPath("pay/Base.class"));
+        }
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
+                + " extend Machine over two enums the classpath declares");
+    }
+
+    /** So is one beside a facade that extends {@code Machine} as a raw type, which binds no enum. */
+    @Test
+    void refusesAPeerWhoseFacadeExtendsARawMachine() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.Payments", """
+            package pay;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            @SuppressWarnings("rawtypes")
+            public interface Payments extends Machine {}
+            """);
+        Path stale = published("raw", sources, PAYMENTS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
+                + " extend Machine over two enums the classpath declares");
+    }
+
+    /** So is one beside a facade that extends, as a raw type, the supertype through which it reaches it. */
+    @Test
+    void refusesAPeerWhoseFacadeExtendsARawSupertypeOfMachine() throws IOException {
+        Path stale = published("raw-based", based("Base"), PAYMENTS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
+                + " extend Machine over two enums the classpath declares");
+    }
+
+    /**
      * The pair vocabulary is generated in the owner's package and names the peer's state enum, so a peer from a jar
      * whose state enum is not public is refused at the owner, as a peer of the same compilation is.
      */
@@ -615,6 +666,27 @@ class DependencyPeersTest {
                     @GenerateGraphApi
                     public interface Payments extends Machine<Payment, Payment.Status, Payment.Step> {}
                     """);
+    }
+
+    /**
+     * The producer's sources with {@code pay.Payments} extending {@code supertype}, a use of the generic
+     * {@code pay.Base} that extends {@code Machine} over its own type parameters.
+     */
+    private static Map<String, String> based(String supertype) {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.Base", """
+            package pay;
+            import io.github.graphmaquina.api.Machine;
+            public interface Base<E, S extends Enum<S>, T extends Enum<T>> extends Machine<E, S, T> {}
+            """);
+        sources.put("pay.Payments", """
+            package pay;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            @GenerateGraphApi
+            @SuppressWarnings("rawtypes")
+            public interface Payments extends %s {}
+            """.formatted(supertype));
+        return sources;
     }
 
     /** The producer's sources, which declare the machine {@link #PAYMENTS} describes. */
