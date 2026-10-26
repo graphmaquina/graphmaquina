@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1305" viewBox="0 0 1440 1305" role="img" aria-labelledby="title desc">
-<title id="title">How an operation selects its edge and its result</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1648" viewBox="0 0 1440 1648" role="img" aria-labelledby="title desc">
+<title id="title">How an operation selects its edge and its result, and where an eligibility check stops</title>
 <desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current
 state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise
 guards run, and a rejecting guard rejects as GUARD. Before the edge is resolved, a machine bound as a sub-machine
@@ -12,13 +12,17 @@ Applied; a returned business failure resolves, from the same origin,
 the identifier of the recovery rule that declares its failure kind, or else the onFailure identifier,
 and commits it as Failed. Reevaluation is a separate entry point. With no watch it returns Ignored with NO_WATCH;
 with no matching rule it returns Ignored with NO_RULE_MATCHED. With a matching rule it executes the selected edge
-and returns that execution's outcome. Technical errors throw instead of producing an outcome.</desc>
+and returns that execution's outcome. Technical errors throw instead of producing an outcome. An eligibility
+check runs the same admission in the same order: the binding check, the edge lookup, the refusal of a reserved exit
+and the guards, up to the first that rejects. At a refusal it answers Ineligible with the kind, reason and guard that
+execute would reject with; once every guard passed it answers Eligible. It stops before the action: it writes no
+state and runs no action, commit, exit, hook or watch.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
 </defs>
-<rect x="0" y="0" width="1440" height="1305" rx="24" fill="url(#back)" />
-<rect x="0" y="0" width="1440" height="1305" rx="24" fill="url(#grid)" />
+<rect x="0" y="0" width="1440" height="1648" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="1648" rx="24" fill="url(#grid)" />
 <text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / OPERATION FLOW</text>
 <text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">One identifier. One edge. One answer.</text>
 <text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Simplified root operation; hooks and watches follow a successful commit.</text>
@@ -109,9 +113,39 @@ and returns that execution's outcome. Technical errors throw instead of producin
 <text x="78" y="1015" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">After resolving, an exit of the sub-machine bound to the origin: Rejected · RESERVED_EXIT.</text>
 <text x="78" y="1049" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A step that ends a held sub-machine also commits its parent's exit, unless the parent is in flight or the step moved it.</text>
 
-<rect x="52" y="1116" width="1336" height="89" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<text x="78" y="1152" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">TECHNICAL EXCEPTION</text>
-<text x="78" y="1186" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook failure may happen after commit. Neither becomes an Outcome.</text>
-<path d="M 52 1241 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="1276" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">No second edge is ever tried: another edge reaching the same state is a different transition, and it is not a substitute.</text>
+<rect x="52" y="1116" width="1336" height="296" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="1152" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#7aafff" text-anchor="start">ELIGIBILITY CHECK</text>
+<text x="1362" y="1152" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="end">eligibility(entity, APPROVE)</text>
+<text x="78" y="1186" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">It runs the admission of execute in the same order. A refusal answers Ineligible with its kind.</text>
+<rect x="78" y="1218" width="220" height="80" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="188" y="1250" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="650" fill="#f2f6fc" text-anchor="middle">Binding check</text>
+<text x="188" y="1282" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">DETACHED</text>
+<path d="M 298 1258 L 342 1258" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 332 1251 L 342 1258 L 332 1265" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="342" y="1218" width="220" height="80" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="452" y="1250" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="650" fill="#f2f6fc" text-anchor="middle">Edge lookup</text>
+<text x="452" y="1282" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">NO_TRANSITION</text>
+<path d="M 562 1258 L 606 1258" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 596 1251 L 606 1258 L 596 1265" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="606" y="1218" width="220" height="80" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="716" y="1250" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="650" fill="#f2f6fc" text-anchor="middle">Reserved exit</text>
+<text x="716" y="1282" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">RESERVED_EXIT</text>
+<path d="M 826 1258 L 870 1258" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 860 1251 L 870 1258 L 860 1265" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="870" y="1218" width="220" height="80" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="980" y="1250" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="650" fill="#f2f6fc" text-anchor="middle">Guards, in order</text>
+<text x="980" y="1282" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">GUARD</text>
+<path d="M 1116 1208 V 1364" fill="none" stroke="#55e0c0" stroke-width="2" stroke-dasharray="9 8" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1142" y="1218" width="220" height="80" rx="14" fill="#0b1220" stroke="#7692b0" stroke-width="2" stroke-dasharray="7 6" />
+<text x="1252" y="1250" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="650" fill="#a9b8ce" text-anchor="middle">Action onward</text>
+<text x="1252" y="1282" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="middle">a call only</text>
+<path d="M 78 1310 V 1322 H 1090 V 1310" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1102" y="1354" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="600" fill="#55e0c0" text-anchor="end">an eligibility check runs up to here, then answers Eligible</text>
+<text x="78" y="1392" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A check writes no state and runs no action, commit, exit, hook or watch.</text>
+
+<rect x="52" y="1459" width="1336" height="89" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="1495" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">TECHNICAL EXCEPTION</text>
+<text x="78" y="1529" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook failure may happen after commit. Neither becomes an Outcome.</text>
+<path d="M 52 1584 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="1619" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">No second edge is ever tried: another edge reaching the same state is a different transition, and it is not a substitute.</text>
 </svg>

@@ -170,7 +170,7 @@ class RecoveryVocabularyTest {
 
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
                 "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
-                "fx.DocsGraph.Rejects"), ApiEmitter.annotationTypes(model));
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check"), ApiEmitter.annotationTypes(model));
         assertEquals(ApiEmitter.annotationTypes(model), declared);
     }
 

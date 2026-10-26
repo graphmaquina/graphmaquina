@@ -67,13 +67,15 @@ on that future blocks the caller again; at an asynchronous application boundary,
 future instead of joining it on an event-loop thread.
 
 Guards execute in order. Each async guard is awaited before the next guard or action runs. A guard rejection
-stops the edge. The action method itself runs on the operation thread up to the point where it returns its
-stage. Any blocking I/O performed before that return still blocks the operation thread. Use a service API
+stops the edge. An [eligibility check](eligibility.md#asynchronous-guards-and-the-deadline) awaits asynchronous
+guards the same way, and runs no action. The action method itself runs on the operation thread up to the point where
+it returns its stage. Any blocking I/O performed before that return still blocks the operation thread. Use a service API
 that returns promptly, or an application-managed executor for genuinely blocking service code.
 
 ## Runnable async ticket example
 
-This example adds an asynchronous eligibility check and approval service to the ticket domain. Reuse
+This example adds a review service, which the asynchronous guard `canStart` and the asynchronous action `approve`
+call, to the ticket domain. Reuse
 `Ticket.java`, `TicketState.java` and `TicketTransition.java` from the
 [quickstart](quickstart.md), with the same Gradle or Maven configuration and
 dependencies. Add the following five files under `src/main/java/com/example/tickets/`. They can coexist with

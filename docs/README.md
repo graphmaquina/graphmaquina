@@ -36,6 +36,7 @@ time; each page links the next one in that order.
 | [Graphs, annotations and bindings](graph-model.md) | Edges, identity, self-loops, guards, policies, structural rules, operations, markers, generated names, signatures |
 | [Actions, guards and failure routes](actions-and-failures.md) | Action and guard contexts, operation input, domain failures, `failsOn`, recovery rules by failure kind |
 | [Handle transition outcomes](outcomes.md) | The four outcome variants, status and code, records, journals, reactions and failed calls |
+| [Check an operation before you call it](eligibility.md) | Whether an operation would be admitted now, and why not, through a facade or the DSL, without running it |
 | [Programmatic DSL](dsl.md) | Building a graph and a machine without annotations |
 
 ## Asynchronous work
@@ -89,6 +90,7 @@ time; each page links the next one in that order.
 | --- | --- |
 | Allow two different operations between the same pair of states | [Identity, not destination](graph-model.md#identity-not-destination) |
 | Explain why a state refuses an operation | [Policies](graph-model.md#policies-every-node-answers) |
+| Show whether an operation is available, and why not | [Check an operation before you call it](eligibility.md) |
 | Pass a value from the caller to guards and actions | [Operations and internal edges](graph-model.md#operations-and-internal-edges) |
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
 | Send different failures to different states | [Recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type) |
@@ -98,7 +100,7 @@ time; each page links the next one in that order.
 | React when other machines change | [Watch other machines](coordination.md#watch-other-machines) |
 | Run a whole machine inside one state | [Compose machines](composition.md) |
 | Run code only after a transition committed | [After-commit hooks](commit-and-persistence.md#after-commit-hooks) |
-| Count or audit every call | [Observers](commit-and-persistence.md#observers) |
+| Count or audit every call; an eligibility check is no call | [Observers](commit-and-persistence.md#observers) |
 | Share values between the steps of one call | [The call's flow](call-flow.md) |
 | See what a call did, step by step | [Logs](logs.md) and [the call's trail](call-flow.md#record-the-calls-trail) |
 | Draw the graph | [Inspect graphs and export diagrams](graph-inspection.md) |

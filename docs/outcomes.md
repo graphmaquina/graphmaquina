@@ -1,6 +1,6 @@
 # Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the step moved it.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the step moved it. An eligibility check runs the same admission in the same order, the binding check, the edge lookup, the reserved exit and the guards, and stops before the action: a refusal answers Ineligible with its kind, and once every guard passed it answers Eligible.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -299,4 +299,4 @@ actions make idempotent, and reconcile the rest.
 
 ---
 
-Next: [Programmatic DSL](dsl.md). Back to the [documentation index](README.md).
+Next: [Check an operation before you call it](eligibility.md). Back to the [documentation index](README.md).

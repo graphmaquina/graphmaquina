@@ -16,8 +16,9 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * One step of a call, the root's, a cascade's or an exit's: the state read, the edge resolved from it, then, with the
- * step's frame pushed, the guards, the hop and the action, or the rejection. The binding check and the exits of a
- * machine that takes part in a binding are {@link Submachines}'; the action is {@link Actions}'.
+ * step's frame pushed, the guards, the hop and the action, or the rejection. A root step can also only admit, as
+ * {@link #admit} says: the same path, stopped once its guards passed. The binding check and the exits of a machine
+ * that takes part in a binding are {@link Submachines}'; the action is {@link Actions}'.
  */
 final class Steps {
 
@@ -41,8 +42,35 @@ final class Steps {
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input) {
+        return transition(tx, machine, entity, id, depth, input, false);
+    }
+
+    /**
+     * The root step of {@code entity} for {@code id} in admit-only mode: the very path that
+     * {@link #transition(Transaction, DefaultStateMachine, Object, Enum, int, Optional)} and {@link #step} run, at
+     * depth 0. The entity is registered and its state read; for a machine that takes part in a binding, its bindings
+     * are checked; its edge is resolved and a reserved exit refused; then, with the step's frame pushed, its guards
+     * run in order, each noted as the guard in flight, as {@link Transaction#guarding} says, right before it is
+     * evaluated: a {@link Transaction.Admission} keeps it. The step stops there: it logs no hop, runs no action and
+     * calls for no exit, and the call does not enter ACTION. Returns the rejection of
+     * a step refused on the way or, once every guard passed, {@link StepResult.Applied} with the state read,
+     * {@code id} and the destination of the edge, which here means admitted, nothing ran. A step that throws once it
+     * has read its state records that state and its edge as the root's own step does.
+     */
+    static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> admit(
+            Transaction.Admission tx, DefaultStateMachine<E, S, T> machine, E entity, T id, Optional<Object> input) {
+        return transition(tx, machine, entity, id, 0, input, true);
+    }
+
+    /**
+     * {@link #transition(Transaction, DefaultStateMachine, Object, Enum, int, Optional)} or, when {@code admitOnly},
+     * the same step stopped once its guards passed, as {@link #admit} says.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
+            boolean admitOnly) {
         if (machine.hasBindings()) {
-            return step(tx, machine, entity, id, depth, input, Optional.empty());
+            return step(tx, machine, entity, id, depth, input, Optional.empty(), admitOnly);
         }
         Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
@@ -56,7 +84,7 @@ final class Steps {
             if (tx.log().trace()) {
                 tx.log().trace(depth, resolved(ref, transition, Optional.empty()));
             }
-            return runEdge(tx, machine, ref, entity, from, transition, depth, input, Optional.empty());
+            return runEdge(tx, machine, ref, entity, from, transition, depth, input, Optional.empty(), admitOnly);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
@@ -84,6 +112,16 @@ final class Steps {
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
             Optional<ExitOf> exitOf) {
+        return step(tx, machine, entity, id, depth, input, exitOf, false);
+    }
+
+    /**
+     * {@link #step(Transaction, DefaultStateMachine, Object, Enum, int, Optional, Optional)} or, when
+     * {@code admitOnly}, the same step stopped once its guards passed, as {@link #admit} says, which calls for no exit.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
+            Optional<ExitOf> exitOf, boolean admitOnly) {
         Transaction.requireTransition(machine.key(), id);
         EntityRef ref = register(tx, machine, entity, id, depth);
         S from = stateOf(tx, machine, ref, entity, id, depth, exitOf);
@@ -111,8 +149,9 @@ final class Steps {
                         id.name() + " leaves " + from.name() + " only when its sub-machine ends",
                         RejectionKind.RESERVED_EXIT, Optional.empty(), exitOf);
             }
-            StepResult<S, T> result = runEdge(tx, machine, ref, entity, from, transition, depth, input, exitOf);
-            return Submachines.exits(tx, machine, ref, entity, depth, result, holder);
+            StepResult<S, T> result =
+                    runEdge(tx, machine, ref, entity, from, transition, depth, input, exitOf, admitOnly);
+            return admitOnly ? result : Submachines.exits(tx, machine, ref, entity, depth, result, holder);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
@@ -230,11 +269,15 @@ final class Steps {
 
     /**
      * The selected edge of a {@link #transition} or a {@link #step}, with the step's frame pushed until it ends:
-     * guards, annotate, execute, failure route. The hop is logged as {@link #appendHop} says.
+     * guards, annotate, execute, failure route. The hop is logged as {@link #appendHop} says. When
+     * {@code admitOnly}, the guards alone: each is noted as the guard in flight, as {@link Transaction#guarding}
+     * says, right before it is evaluated, and once every guard passed the step returns {@link StepResult.Applied}
+     * before the call enters ACTION, with nothing run; a step that executes notes no guard.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runEdge(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from,
-            TransitionSpec<E, S, T> transition, int depth, Optional<Object> input, Optional<ExitOf> exitOf) {
+            TransitionSpec<E, S, T> transition, int depth, Optional<Object> input, Optional<ExitOf> exitOf,
+            boolean admitOnly) {
         UnitOfWork uow = tx.uow();
         uow.push(ref, transition);
         try {
@@ -245,21 +288,28 @@ final class Steps {
                 DefaultGuardContext<E, S, T> guardContext =
                         new DefaultGuardContext<>(tx, machine, entity, transition, depth, input);
                 tx.track(guardContext);
+                if (admitOnly) {
+                    tx.guarding(guard.name());
+                }
                 GuardResult verdict = evaluateGuard(tx, machine, ref, transition, depth, guard, guardContext);
                 if (verdict instanceof GuardResult.Reject reject) {
                     return rejected(tx, machine, ref, from, transition.transition(), Optional.of(transition.to()),
                             depth, reject.reason(), RejectionKind.GUARD, Optional.of(guard.name()), exitOf);
                 }
             }
-            if (depth == 0) {
-                tx.enter(CallPhase.ACTION);
+            // An admit-only step stops once its guards passed: no ACTION, no hop, no action. Sharing the last return
+            // keeps this method's bytecode under 325 bytes, C2's FreqInlineSize, as it was without the mode.
+            if (!admitOnly) {
+                if (depth == 0) {
+                    tx.enter(CallPhase.ACTION);
+                }
+                int savepoint = uow.savepoint();
+                appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
+                if (transition.action().isPresent()) {
+                    return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
+                }
             }
-            int savepoint = uow.savepoint();
-            appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
-            if (transition.action().isEmpty()) {
-                return new StepResult.Applied<>(from, transition.transition(), transition.to());
-            }
-            return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
+            return new StepResult.Applied<>(from, transition.transition(), transition.to());
         } finally {
             uow.pop();
         }

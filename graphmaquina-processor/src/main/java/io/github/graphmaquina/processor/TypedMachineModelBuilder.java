@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.Binding;
+import io.github.graphmaquina.processor.model.CheckModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
@@ -50,16 +51,17 @@ import javax.lang.model.type.TypeMirror;
  * edges claim, a state given two policies, a rejection declared twice and a blank reason are reported here instead,
  * as {@code SG102} and {@code SG103}, the codes the outline check gives a duplicate and a blank reason.</p>
  *
- * <p>Only what the companion can implement is accepted. The operations are the abstract methods the facade
- * declares itself, so an abstract method it inherits from another interface than {@code Machine} is refused as
- * {@code SG504}, except a redeclaration of a method of {@code Machine} or a public method of {@code Object} that
- * the method the companion writes or inherits for it implements; one whose result that method cannot return is
- * refused with that reason. A method the facade declares that overrides one of those is no operation, and is
- * refused as {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return.
- * So is an instance method the facade declares or inherits that has the signature of the companion's static
- * {@code graph(...)}, which only a model whose bindings all resolved tells, and only when no vocabulary of the machine
- * is missing from it. An entity of a parameterized type, which generated code can only name by its class, is refused
- * as {@code SG601}.</p>
+ * <p>Only what the companion can implement is accepted. The operations and the checks are read from the abstract
+ * methods the facade declares itself, so an abstract method it inherits from another interface than {@code Machine} is
+ * refused as {@code SG504}, except a redeclaration of a method of {@code Machine} or a public method of {@code Object}
+ * that the method the companion writes or inherits for it implements; one whose result that method cannot return is
+ * refused with that reason. A method the facade declares that overrides one of those is no operation, and is refused as
+ * {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return. So is an instance
+ * method the facade declares or inherits that has the signature of the companion's static {@code graph(...)}, which
+ * only a model whose bindings all resolved tells, and only when no vocabulary of the machine is missing from it. An
+ * abstract method the facade declares that carries a {@code Check} of its own vocabulary and no {@code Transition} is
+ * no operation either, but a check, which {@link TypedChecks} reads against the operations once they are all known. An
+ * entity of a parameterized type, which generated code can only name by its class, is refused as {@code SG601}.</p>
  */
 final class TypedMachineModelBuilder {
 
@@ -80,6 +82,7 @@ final class TypedMachineModelBuilder {
     private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
+    private final TypedChecks checks;
 
     TypedMachineModelBuilder(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
             TypedTransitions transitions, TypedPairs pairs, TypedWatchReader watches, TypedSubmachineReader submachines,
@@ -94,6 +97,7 @@ final class TypedMachineModelBuilder {
         this.signatures = signatures;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
+        this.checks = new TypedChecks(vocabulary, signatures, diagnostics);
     }
 
     /**
@@ -194,7 +198,9 @@ final class TypedMachineModelBuilder {
         List<StatePolicyModel> policies = policies(type, types);
         List<RejectionModel> rejections = rejections(type, types);
         List<TransitionModel> declared = declared(type, types, defaultAfterCommit);
-        List<OperationModel> operations = operations(type, types, defaultAfterCommit);
+        List<ExecutableElement> checkMethods = new ArrayList<>();
+        List<OperationModel> operations = operations(type, types, defaultAfterCommit, checkMethods);
+        List<CheckModel> declaredChecks = checks.read(type, types, checkMethods, operations);
         structure.checkInheritedOperations(type);
         TypedPairs.Peers peers = pairs.peers(type);
         Set<String> used = new LinkedHashSet<>();
@@ -207,7 +213,7 @@ final class TypedMachineModelBuilder {
         }
         return Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
                 cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies, rejections,
-                declared, operations, watched, bound));
+                declared, operations, watched, bound, declaredChecks));
     }
 
     /** The policy of each state: the reason every identifier it declares no edge for is refused with. */
@@ -288,10 +294,14 @@ final class TypedMachineModelBuilder {
      * open. All of a method's annotations must name one identifier, and no two methods may own the same one. A
      * redeclaration of a method of {@code Machine} or a public method of {@code Object} is no operation, since the
      * companion writes or inherits that method already: one that carries vocabulary, or declares a result the
-     * companion's method cannot return, is refused as {@code SG504}.
+     * companion's method cannot return, is refused as {@code SG504}. A method that carries a {@code Check} of the
+     * facade's own vocabulary and no {@code Transition} is no operation either: it is added to
+     * {@code checkMethods}, for {@link TypedChecks} to read once every operation is known. One that carries both is
+     * {@code SG514}, and is still read as the operation its {@code Transition} declares.
      */
     private List<OperationModel> operations(TypeElement type, MachineTypes types,
-                                            Optional<Binding> defaultAfterCommit) {
+                                            Optional<Binding> defaultAfterCommit,
+                                            List<ExecutableElement> checkMethods) {
         List<OperationModel> operations = new ArrayList<>();
         Map<String, ExecutableElement> owners = new LinkedHashMap<>();
         for (Element member : type.getEnclosedElements()) {
@@ -303,36 +313,55 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             List<AnnotationMirror> mirrors = own(method, VocabularyKind.TRANSITION, type);
+            List<AnnotationMirror> checked = own(method, VocabularyKind.CHECK, type);
             Optional<ExecutableElement> builtIn = structure.overriddenBuiltIn(method, type);
             if (builtIn.isPresent()) {
-                structure.checkNotAnOperation(method, builtIn.get(), type, !mirrors.isEmpty());
+                structure.checkNotAnOperation(method, builtIn.get(), type, !mirrors.isEmpty() || !checked.isEmpty());
                 continue;
             }
-            if (!structure.checkOperationDeclared(method, !mirrors.isEmpty())
-                    || !structure.checkOperationSignature(method, types)) {
+            if (!checked.isEmpty() && mirrors.isEmpty()) {
+                checkMethods.add(method);
                 continue;
             }
-            Optional<String> identifier = identity(method, mirrors, types);
-            if (identifier.isEmpty() || !owns(method, identifier.get(), owners)) {
-                continue;
+            if (!checked.isEmpty()) {
+                checks.checkNotOnOperation(method, checked.get(0));
             }
-            String name = method.getSimpleName().toString();
-            Optional<VariableElement> input = method.getParameters().size() == 2
-                    ? Optional.of(method.getParameters().get(1)) : Optional.empty();
-            Optional<TypeMirror> inputType = input.map(VariableElement::asType);
-            String entityParameter = method.getParameters().get(0).getSimpleName().toString();
-            Optional<String> inputParameter =
-                    input.map((VariableElement parameter) -> parameter.getSimpleName().toString());
-            List<TransitionModel> edges = new ArrayList<>();
-            for (AnnotationMirror mirror : mirrors) {
-                transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
-            }
-            if (edges.size() == mirrors.size()) {
-                operations.add(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
-                        inputParameter));
-            }
+            operation(method, mirrors, types, defaultAfterCommit, owners).ifPresent(operations::add);
         }
         return operations;
+    }
+
+    /**
+     * The operation {@code method} declares with {@code mirrors}, the {@code Transition} annotations of its own
+     * vocabulary it carries, or empty when it has a problem, which was reported. {@code owners} holds the method that
+     * owns each identifier claimed so far.
+     */
+    private Optional<OperationModel> operation(ExecutableElement method, List<AnnotationMirror> mirrors,
+            MachineTypes types, Optional<Binding> defaultAfterCommit, Map<String, ExecutableElement> owners) {
+        if (!structure.checkOperationDeclared(method, !mirrors.isEmpty())
+                || !structure.checkOperationSignature(method, types)) {
+            return Optional.empty();
+        }
+        Optional<String> identifier = identity(method, mirrors, types);
+        if (identifier.isEmpty() || !owns(method, identifier.get(), owners)) {
+            return Optional.empty();
+        }
+        String name = method.getSimpleName().toString();
+        Optional<VariableElement> input = method.getParameters().size() == 2
+                ? Optional.of(method.getParameters().get(1)) : Optional.empty();
+        Optional<TypeMirror> inputType = input.map(VariableElement::asType);
+        String entityParameter = method.getParameters().get(0).getSimpleName().toString();
+        Optional<String> inputParameter =
+                input.map((VariableElement parameter) -> parameter.getSimpleName().toString());
+        List<TransitionModel> edges = new ArrayList<>();
+        for (AnnotationMirror mirror : mirrors) {
+            transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
+        }
+        if (edges.size() != mirrors.size()) {
+            return Optional.empty();
+        }
+        return Optional.of(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
+                inputParameter));
     }
 
     /**

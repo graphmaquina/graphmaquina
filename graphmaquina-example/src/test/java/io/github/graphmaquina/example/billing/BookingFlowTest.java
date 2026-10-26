@@ -104,6 +104,24 @@ class BookingFlowTest {
     }
 
     /**
+     * A deposit its booking holds in {@code DEPOSIT} may be captured. Once the booking is cancelled the deposit is
+     * detached, and the check says so before it looks for an edge, as the operation does.
+     */
+    @Test
+    void aDetachedDepositCannotBeCaptured() {
+        Booking booking = booking("b4");
+        Payment deposit = booking.deposit().orElseThrow();
+        bookings.book(booking);
+
+        assertThat(payments.canCapture(deposit)).isEligible().from(PaymentStatus.AUTHORIZING);
+
+        bookings.cancel(booking);
+
+        assertThat(payments.canCapture(deposit)).isDetached()
+                .hasReason("no parent holds it in DEPOSIT or BALANCE");
+    }
+
+    /**
      * The exit {@code DEPOSIT_PAID} holds a room, and a desk with none left fails its action: the booking takes the
      * route {@code NO_ROOM} and the whole call commits. The payment's own outcome is still applied.
      */

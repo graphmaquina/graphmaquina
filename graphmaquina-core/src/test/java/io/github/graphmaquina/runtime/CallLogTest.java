@@ -254,6 +254,20 @@ class CallLogTest {
         assertSame(CallLog.OFF, CallLog.open(backend, Optional.empty()));
     }
 
+    /**
+     * A check reads its levels as a call does: a backend that throws anything but an Error there counts as off, and an
+     * Error propagates.
+     */
+    @Test
+    void aCheckWhoseLevelsCannotBeReadGetsTheOffLog() {
+        Backend backend = new Backend(Level.DEBUG, Level.TRACE);
+        backend.failsOnCheck = Optional.of(new IllegalStateException("no configuration"));
+        assertSame(CallLog.OFF, CallLog.openCheck(backend));
+        AssertionError broken = new AssertionError("backend invariant");
+        backend.failsOnCheck = Optional.of(broken);
+        assertSame(broken, assertThrows(AssertionError.class, () -> CallLog.openCheck(backend)));
+    }
+
     @Test
     void aBackendErrorPropagates() {
         Backend backend = new Backend(Level.DEBUG, Level.TRACE);

@@ -1,6 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
@@ -27,7 +28,8 @@ import lombok.NonNull;
 
 /**
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
- * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none.
+ * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none. An eligibility
+ * check runs the admission of that root step alone, as {@link Checks} says, and is no call.
  */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
@@ -161,6 +163,16 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Optional<Observed> observed = RootCall.observe(this, entity, requested, false, log);
         return RootCall.run(this, entity, requested, false, observed, log,
                 (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
+    }
+
+    @Override
+    public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition) {
+        return Checks.check(this, entity, transition, Optional.empty());
+    }
+
+    @Override
+    public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
+        return Checks.check(this, entity, transition, Optional.of(input));
     }
 
     @Override

@@ -159,8 +159,8 @@ final class StructuralChecks {
     /**
      * SG504 for every abstract method {@code facade} inherits from a super-interface other than {@code Machine},
      * except one that the method the companion writes or inherits for a method of {@code Machine} or a public
-     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations are read
-     * from the facade's own declarations, so the companion would not implement any other inherited method. A
+     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations and checks
+     * are read from the facade's own declarations, so the companion would not implement any other inherited method. A
      * redeclaration of one of those methods whose result the companion's method cannot return is told apart, since
      * declaring it on the facade would be refused as well.
      */
@@ -179,15 +179,15 @@ final class StructuralChecks {
             }
             diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method "
                     + method.getSimpleName() + " from " + from
-                    + ", which the generated companion would not implement: declare every operation on "
+                    + ", which the generated companion would not implement: declare every operation and check on "
                     + facade.getSimpleName() + " itself", facade);
         }
     }
 
     /**
      * SG504 when {@code method}, which {@code facade} declares and which overrides {@code builtIn}, carries
-     * vocabulary, since it would be an operation the companion cannot declare beside the implementation of
-     * {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
+     * vocabulary, since it would be an operation, or a check, the companion cannot declare beside the implementation
+     * of {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
      * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
      * not implement it at all.
      */
@@ -196,7 +196,7 @@ final class StructuralChecks {
         String owner = ((TypeElement) builtIn.getEnclosingElement()).getSimpleName() + "." + builtIn.getSimpleName();
         if (declared) {
             diagnostics.error("SG504", method.getSimpleName() + " overrides " + owner
-                    + ", which the generated companion implements already: give the operation another name", method);
+                    + ", which the generated companion implements already: give the method another name", method);
         } else if (!signatures.implementedBy(method, builtIn, facade)) {
             diagnostics.error("SG504", method.getSimpleName() + " redeclares " + owner + " with a result the generated"
                     + " companion's " + builtIn.getSimpleName() + " cannot return: declare it with the result "
@@ -204,17 +204,23 @@ final class StructuralChecks {
         }
     }
 
-    /** Whether {@code method} must declare an edge: a default, static or private declaration is not an operation. */
+    /**
+     * Whether {@code method} is read for the vocabulary it carries, as an operation or as a check: a default, static
+     * or private declaration is neither.
+     */
     static boolean isOperation(ExecutableElement method) {
         return !method.isDefault() && !method.getModifiers().contains(Modifier.STATIC)
                 && !method.getModifiers().contains(Modifier.PRIVATE);
     }
 
-    /** SG504 unless the operation carries at least one Transition of its own graph vocabulary. */
+    /**
+     * SG504 unless the operation carries at least one Transition of its own graph vocabulary. An abstract method of
+     * the facade that carries a Check of that vocabulary instead is a check, and never asked.
+     */
     boolean checkOperationDeclared(ExecutableElement method, boolean declared) {
         if (!declared) {
-            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition of its own"
-                    + " graph vocabulary", method);
+            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition, or one Check,"
+                    + " of its own graph vocabulary", method);
             return false;
         }
         return true;
@@ -382,9 +388,9 @@ final class StructuralChecks {
      * the static {@code graph(...)} of its companion would clash with, as {@link Signatures#clashing} finds it: one
      * named {@code graph} taking what that {@code graph(...)} takes, the definition of each machine it binds as a
      * sub-machine, then one parameter per class with instance members the machine binds. javac would refuse the
-     * companion. A method the facade declares is reported where it is declared, as an operation when it is abstract,
-     * and one it only inherits at the facade, with the interface that declares it. This is the facade's counterpart
-     * of the refusal of a set's {@code builder} method by {@link SetModelBuilder}.
+     * companion. A method the facade declares, an operation, a check or a default method, is reported where it is
+     * declared, and one it only inherits at the facade, with the interface that declares it. This is the facade's
+     * counterpart of the refusal of a set's {@code builder} method by {@link SetModelBuilder}.
      */
     void checkGraphFactory(MachineModel model) {
         TypeElement facade = model.types().facade();
@@ -415,8 +421,7 @@ final class StructuralChecks {
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(facade)) {
                 diagnostics.error("SG504", graph + " is the static " + graph + " " + companion
-                        + " declares, which takes " + takes + ": give the "
-                        + (method.isDefault() ? "method" : "operation") + " another name", method);
+                        + " declares, which takes " + takes + ": give the method another name", method);
                 return;
             }
         }

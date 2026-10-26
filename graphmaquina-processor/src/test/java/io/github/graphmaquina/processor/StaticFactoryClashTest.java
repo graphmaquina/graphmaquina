@@ -120,7 +120,7 @@ class StaticFactoryClashTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(List.of("[SG504] graph(Doc) is the static graph(Doc) the generated DocsRuntime declares, which"
-                + " takes every class with instance members the machine binds: give the operation another name"),
+                + " takes every class with instance members the machine binds: give the method another name"),
                 result.errors(), result.describe());
         assertEquals(line(sources, "fx.Docs", "graph(Doc doc);"), at(result, "SG504"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());

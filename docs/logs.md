@@ -3,8 +3,9 @@
 The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
 machine sets alike, at two levels. `DEBUG` logs how each call started, the hops and starts it committed and how it
 ended; `TRACE` adds each step the call took on the way. Nothing is logged on this logger at `INFO` or above: the
-caller already receives the outcome or the exception. The library's only other record is a `WARNING` on the logger
-`io.github.graphmaquina` for an observer that threw. The logger is off by default. `java.util.logging`, the JDK's default backend for
+caller already receives the outcome or the exception. An eligibility check is no call, but it logs lines of its own on
+the same logger, as [What a check logs](#what-a-check-logs) shows. The library's only other record is a `WARNING` on
+the logger `io.github.graphmaquina` for an observer that threw. The logger is off by default. `java.util.logging`, the JDK's default backend for
 `System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to `FINER`, and its default configuration logs neither.
 
 ## Contents
@@ -69,6 +70,39 @@ FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 
 The quickstart's own machine also runs its `committed` hook for the `DECLINE` hop, so at `TRACE` it also logs a `hook`
 line after its `committed` line.
 
+### What a check logs
+
+`eligibility(entity, id)` on a `StateMachine` is no call, so it logs none of the lines above: no `call=<id>` line, and no
+`committed` or `started` line. It logs lines of its own, which start with `check=<id>` in place of `call=<id>`: at
+`DEBUG` a `start` line and then a verdict line, or a `failed` line, and at `TRACE` the lines of the step it admits. A run
+of its own with a ticket machine like the quickstart's, which asks whether `T-1`, which has a title, and `T-2`, which has
+none, can be submitted, logs these lines:
+
+```text
+FINE: check=1 start Ticket/TicketState SUBMIT
+FINE: check=1 end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1 elapsed=6848us
+FINE: check=2 start Ticket/TicketState SUBMIT
+FINE: check=2 end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=147us
+```
+
+With both levels at `FINER`, the same two checks log these lines:
+
+```text
+FINE: check=1 start Ticket/TicketState SUBMIT
+FINER: check=1 depth=0 resolved Ticket/TicketState#T-1 OPEN -SUBMIT-> REVIEW kind=ACTION
+FINER: check=1 depth=0 guard hasTitle PASS elapsed=2598us
+FINE: check=1 end verdict=ELIGIBLE transition=SUBMIT state=OPEN entity=Ticket/TicketState#T-1 elapsed=9000us
+FINE: check=2 start Ticket/TicketState SUBMIT
+FINER: check=2 depth=0 resolved Ticket/TicketState#T-2 OPEN -SUBMIT-> REVIEW kind=ACTION
+FINER: check=2 depth=0 guard hasTitle REJECT reason="a ticket needs a title" elapsed=46us
+FINE: check=2 end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=OPEN entity=Ticket/TicketState#T-2 reason="a ticket needs a title" elapsed=162us
+```
+
+The `resolved` line names an edge of kind `ACTION`, but the check runs no action: it stops once the guards passed, so it
+logs no `action`, `route`, `commit-check`, `setter`, `hook` or `watch` line. The `TRACE` lines of a check are the
+`binding`, `detached`, `no-edge`, `resolved` and `guard` lines of the table below, each starting with
+`check=<id> depth=0`.
+
 ## SLF4J and Log4j
 
 SLF4J and Log4j receive the same lines through their `System.LoggerFinder` bridges on the class path, which map
@@ -84,10 +118,13 @@ These two bridges were checked with SLF4J 2.0.20 and Log4j 2.26.1 on JDK 21.
 
 ## Line formats
 
-Each message starts with `call=<id>`. The id numbers the calls that log, at either level, from 1, with one counter shared
-by every machine and registry in the JVM. A `TRACE` line of a step names its depth next: 0 for the root's own step, one more for each cascade and
+Each message starts with `call=<id>`, or with `check=<id>` for an eligibility check. The id numbers the calls and the
+checks that log, at either level, from 1, with one counter shared by every machine and registry in the JVM: a `call=<n>`
+and a `check=<n>` never share a number. A `TRACE` line of a step names its depth next: 0 for the root's own step, one more for each cascade and
 each exit of a sub-machine below it. The `TRACE` lines of the commit, the hooks and the watch dispatch name none.
-Square brackets below mark the parts a line may leave out.
+Square brackets below mark the parts a line may leave out. A check logs the `DEBUG` lines marked `check=<id>` and, at
+`TRACE`, only the `resolved`, `no-edge`, `binding`, `detached` and `guard` lines, as `check=<id> depth=0 …`; the other
+lines are a call's.
 
 | Level | Line | Logged when |
 | --- | --- | --- |
@@ -96,6 +133,9 @@ Square brackets below mark the parts a line may leave out.
 | `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
 | `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
 | `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call ended with its `CallFailedException`, just before its [observers](commit-and-persistence.md#observers) hear of it: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. An `Error` that an observer then throws reaches the caller in place of the exception. |
+| `DEBUG` | `check=<id> start <machine> <T>` | An eligibility check starts. `<machine>` is the machine key and `<T>` the identifier it was asked about. A check refused before it starts, as a call is, logs nothing. |
+| `DEBUG` | `check=<id> end verdict=ELIGIBLE transition=<T> state=<state> entity=<ref> elapsed=<us>` / `check=<id> end verdict=INELIGIBLE transition=<T> kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>" elapsed=<us>` | The check answered `Eligible` or `Ineligible`. `<T>` is the identifier it was asked about, `<state>` the state it read, `<kind>` the `RejectionKind` of the refusal, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason of the refusal, as given and unescaped. The time is counted since the check started, in whole microseconds. |
+| `DEBUG` | `check=<id> failed error=<error> elapsed=<us>` | The check could not answer and threw its `EligibilityCheckException`: the exception's class name and message, without a stack trace, and the time since the check started. The message names the entity as `<key>#<identity>`, or the key alone when its identity could not be read. An `Error` gets no `failed` line. |
 | `TRACE` | `call=<id> depth=<d> resolved <ref> <from> -<T>-> <to> kind=<kind>[ exit-of=<ref>]` | A step resolved the single edge keyed by its entity's state and the requested identifier, before its guards run. `<kind>` is the edge's `kind()`, `ACTION` or `MOVE`. The step of a sub-machine's exit adds `exit-of=` and the child whose terminal state selected the exit. |
 | `TRACE` | `call=<id> depth=<d> no-edge <ref> <from> <T>` | A step found no edge for its entity's state and the requested identifier: the request is rejected, or, inside a cascade or an exit, the call aborts. |
 | `TRACE` | `call=<id> depth=<d> binding <ref> parent=<ref> node=<node>` | The step of a sub-machine's child found the parent that holds it in `<node>`, before it looked up its edge. |
@@ -127,8 +167,9 @@ The `committed` and `started` lines follow the order the call took its hops and 
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
 the `committed` lines and the `end` line of the call that triggered it. A cascade is part of the call that runs it: it
 logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A request refused
-before it starts, as [observers](commit-and-persistence.md#observers) see it, logs nothing. Each call logs on the thread that runs it: one
-submitted through `async()` logs on the executor's thread, and the submission itself logs nothing.
+before it starts, as [observers](commit-and-persistence.md#observers) see it, logs nothing. Each call, and each check, logs
+on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the submission itself logs
+nothing.
 
 At `TRACE`, a step logs as it goes: its binding check, its edge, its guards, the start of the sub-machine its hop
 enters, its action and, in the order the action makes them, its writes to the flow and its cascades, then its failure
@@ -143,7 +184,8 @@ the entity's `toString()`, unless your code puts the entity in the flow under a 
 `start` line names no entity, and `end` and `failed` name it only once the call computed it, which its step does as it
 begins: a reevaluation that selected no edge names none, and so does one that failed before its step began, while it
 read the state, ran its watch or exceeded the watch chain. A reevaluation whose step began names it, even when the step
-failed before its edge ran, in its binding check for instance. The identity may be personal data, such as an e-mail
+failed before its edge ran, in its binding check for instance. A check's `end` line always names it, since a verdict
+comes from a step that computed it; its `failed` line names none, but the exception's message does. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
 of an exception or of a visible flow value throws anything but an `Error`, a checked exception included, the line prints
@@ -160,7 +202,12 @@ loses the line and changes nothing in the call, except that an `InterruptedExcep
 `failed` line ends the call with that `Error`, which the [observers](commit-and-persistence.md#observers) receive as the call's end event, in the
 phase the call reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that
 ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows
-them.
+them. A check treats its backend alike: when the backend throws anything but an `Error`, while the check reads the two
+levels, where a level whose read throws counts as off, or on a line, which is lost, that changes neither the verdict of
+the check nor its `EligibilityCheckException`, except that an `InterruptedException` interrupts the thread again, as
+for a call, and a later wait of the check, for an asynchronous guard, then fails as interrupted with an
+`EligibilityCheckException`. An `Error` on any line of a check, or while it reads the levels, propagates as itself in
+place of the verdict or of that exception, with no `failed` line.
 
 ---
 

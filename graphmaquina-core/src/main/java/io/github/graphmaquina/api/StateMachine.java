@@ -52,7 +52,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      */
     Outcome<E, S, T> reevaluate(E entity);
 
-    /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */
+    /**
+     * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; {@link #eligibility}
+     * asks whether one entity would be admitted now, its guards included.
+     */
     Set<T> transitionsFrom(S state);
 
     /**
@@ -87,5 +90,49 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      */
     default Outcome<E, S, T> execute(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         throw new UnsupportedOperationException("this StateMachine does not support operation input");
+    }
+
+    /**
+     * Answers whether {@code execute(entity, transition)} would be admitted for {@code entity} in the state it is in
+     * now, as an {@link Eligibility}: {@link Eligibility.Eligible}, or {@link Eligibility.Ineligible} with the reason,
+     * the kind and the guard of the refusal. This default supports no eligibility check: it throws instead of
+     * answering. The machines the runtime builds implement it with the admission of execute's own step, and nothing
+     * after it: the binding check of a sub-machine, the edge lookup, the refusal of a reserved exit, then the guards
+     * in declaration order until one rejects, each with the context it gets in execute; asynchronous guards are awaited
+     * under this machine's asyncTimeout, counted from the start of the check. A check is no call: whatever it answers
+     * or throws, it writes no state, runs no action, hook or watch reaction, starts no sub-machine, runs no exit and
+     * tells no observer, and a context its guards got is stale once it ends. It answers for any identifier of the
+     * catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a check made where
+     * no call may start, such as from a guard, an action or an observer, are refused before the check starts and
+     * throw as themselves; while a check runs, no call or check may start on its thread either. A check that cannot
+     * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
+     * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
+     * {@code check=<id>} in place of {@code call=<id>}.
+     *
+     * @throws NullPointerException if {@code entity} or {@code transition} is null
+     * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.EligibilityCheckException if the check cannot reach an answer
+     * @throws UnsupportedOperationException if this machine does not support eligibility checks
+     */
+    default Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition) {
+        throw new UnsupportedOperationException("this StateMachine does not support eligibility checks");
+    }
+
+    /**
+     * Same as the two-argument {@code eligibility}, asking about the operation that carries {@code input}: whether
+     * {@code execute(entity, transition, input)} would be admitted. The guards read {@code input} back through their
+     * context's {@code input} accessors, as they do in that execute. A {@code null} input is refused, as a
+     * {@code null} entity is; a check that carries no input is the two-argument {@code eligibility}. This default
+     * supports no eligibility check: it throws instead of answering; the machines the runtime builds implement it.
+     *
+     * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
+     * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.EligibilityCheckException if the check cannot reach an answer
+     * @throws UnsupportedOperationException if this machine does not support eligibility checks
+     */
+    default Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
+        throw new UnsupportedOperationException("this StateMachine does not support eligibility checks");
     }
 }

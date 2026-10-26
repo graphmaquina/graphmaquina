@@ -165,7 +165,8 @@ public Optional<Subscription> subscriptionOf(Payment payment) {
 An empty `Optional` means that this binding finds no parent. Lookups and the `child` and `parent` properties are
 synchronous and run inside the call. One that returns `null` instead of an `Optional` aborts the call, so does one
 that throws, with what it threw as the cause, and so does a parent or a child whose identity or state cannot be read;
-`execute` or `reevaluate` called from one of them throws `ReentrantTransitionException`, which aborts the call too.
+`execute`, `reevaluate` or `eligibility` called from one of them throws `ReentrantTransitionException`, which aborts
+the call too. An eligibility check that meets any of these fails with an `EligibilityCheckException` instead.
 
 ## Build the set
 
@@ -297,6 +298,12 @@ state, or while leaving it, a call to the child aborts with an `AmbiguousParentE
 leaves one bound state for another that binds the same child holds it only in the state it enters, whose entry has just
 restarted the child, so the action of that edge can cascade into the child.
 
+[`StateMachine.eligibility(entity, id)`](eligibility.md#sub-machines) asks the same questions without running the
+edge: where `execute` would reject a
+request as `DETACHED` or `RESERVED_EXIT`, it answers `Ineligible` with that kind and that reason, and it starts no
+child and runs no exit. Where a call to the child would abort with an `AmbiguousParentException`, it throws an
+`EligibilityCheckException` with that cause.
+
 ## Reuse a machine
 
 Each binding of `Bookings` reaches its own payment, so the booking holds its deposit only in `DEPOSIT` and its balance
@@ -424,8 +431,8 @@ holds no other machine.
 Assert bindings, starts and both refusals with the typed views of the testing guide's
 [sub-machines](testing-advanced.md#sub-machines) section. The
 [billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) run the flows of this
-section: the starts and exits of a booking, the detached deposit of a cancelled booking, the `NO_ROOM` route, a renewal
-that restarts its payment, the stay and the asynchronous exit.
+section: the starts and exits of a booking, the detached deposit of a cancelled booking, which a check of `capture`
+also finds, the `NO_ROOM` route, a renewal that restarts its payment, the stay and the asynchronous exit.
 
 ---
 

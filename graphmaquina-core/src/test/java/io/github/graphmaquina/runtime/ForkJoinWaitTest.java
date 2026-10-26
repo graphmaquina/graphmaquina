@@ -9,17 +9,23 @@ import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
+import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.fixtures.Doc;
+import io.github.graphmaquina.fixtures.DocGraphs;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
@@ -29,6 +35,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,7 +49,7 @@ import org.junit.jupiter.api.Test;
  * carries the reentrancy marker, owns the contexts and enforces the deadline. The engine's wait never runs another
  * task, and the pool can still start a spare worker while it blocks; the time that takes counts against the
  * deadline. A wait that an interrupt or a spent budget has already ended never asks the pool for a spare worker, and
- * a pool's refusal to let its worker block ends the call in an abort.
+ * a pool's refusal to let its worker block ends the call in an abort, and an eligibility check in its failure.
  *
  * <p>The first three tests run a root on a common-pool worker while the pool's other workers wait on a latch, so
  * that a task the root queues on its own worker has no idle worker to steal it: a wait that runs queued tasks would
@@ -334,6 +341,30 @@ class ForkJoinWaitTest {
         }
         assertEquals("TransitionAbortedException caused by RejectedExecutionException, a DRAFT",
                 end + ", a " + a.status());
+    }
+
+    /**
+     * An eligibility check runs on the only worker of a pool that may not start a spare one, and waits, with time left
+     * and no interrupt, for the stage of an asynchronous guard that is not complete. The pool refuses to let its only
+     * worker block, and the check fails with that refusal as its cause, naming the guard and the state it read.
+     */
+    @Test
+    void aCheckWhoseWaitThePoolRefusesToLetBlockFails() throws Exception {
+        Doc a = new Doc("a", DRAFT);
+        EligibilityCheckException error;
+        try (ForkJoinPool pool = capped()) {
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(DocGraphs.docs(
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("remote",
+                            (GuardContext<Doc, DocStatus, DocTransition> ctx) -> new CompletableFuture<GuardResult>()
+                                    .completeOnTimeout(GuardResult.pass(), 5, TimeUnit.SECONDS))))
+                    .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(10)).build();
+            error = CompletableFuture.supplyAsync(() -> assertThrows(EligibilityCheckException.class,
+                    () -> machine.eligibility(a, SUBMIT)), pool).get(5, TimeUnit.SECONDS);
+        }
+        assertInstanceOf(RejectedExecutionException.class, error.getCause());
+        assertEquals(Optional.of("remote"), error.guard());
+        assertEquals(Optional.of(DRAFT), error.from());
+        assertEquals(DRAFT, a.status());
     }
 
     /**

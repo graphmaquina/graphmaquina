@@ -11,8 +11,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -20,8 +22,10 @@ import org.junit.jupiter.api.Test;
  * tests introduces appears verbatim in that test, and the first four Java blocks of the guide's page on the call's flow
  * are the shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes.
  * The Java blocks of the composition page's section on sub-machines over the same entity, from its mention of
- * {@code SameEntitySubmachineTest} on, appear verbatim in that test. A block may sit deeper in the source than in the
- * guide, by whole levels of four spaces. A blank block quotes nothing, so it fails.
+ * {@code SameEntitySubmachineTest} on, appear verbatim in that test. Every Java block of the eligibility page that a
+ * link to a file of the example introduces appears verbatim in that file: the checks the shop's and the billing's
+ * facades declare, and the tests that ask them. A block may sit deeper in the source than in the guide, by whole
+ * levels of four spaces. A blank block quotes nothing, so it fails.
  */
 class GuideCopiesTest {
 
@@ -29,10 +33,9 @@ class GuideCopiesTest {
     private record Quote(String source, String declaration) { }
 
     /**
-     * A Java block of the testing guide that a link to one of the shop's tests introduces: that test, the line the
-     * block starts at, and its code.
+     * A Java block of a guide that a link introduces: what the link names, the line the block starts at, and its code.
      */
-    private record TestQuote(String test, int start, String code) { }
+    private record TestQuote(String source, int start, String code) { }
 
     private static final List<String> TESTING_PAGES =
             List.of("testing.md", "testing-samples.md", "testing-advanced.md");
@@ -40,6 +43,21 @@ class GuideCopiesTest {
             List.of("OrderFlowTest", "TestingApiTest", "DiagramsTest", "GraphContractsTest");
     private static final Pattern LINK =
             Pattern.compile("\\[(" + String.join("|", SHOP_TESTS) + ")\\]\\(");
+    /** A link to a file of the example, which names its path below the module's {@code src} directory. */
+    private static final String EXAMPLE_PACKAGE = "/java/io/github/graphmaquina/example/";
+    private static final Pattern EXAMPLE_LINK = Pattern.compile(
+            "\\]\\(\\.\\./graphmaquina-example/src/((?:main|test)" + EXAMPLE_PACKAGE + "[^)]+\\.java)\\)");
+    /** The files the eligibility page quotes: the two facades that declare checks, and the two tests that ask them. */
+    private static final Set<String> ELIGIBILITY_SOURCES = Set.of(
+            "main/java/io/github/graphmaquina/example/order/Orders.java",
+            "main/java/io/github/graphmaquina/example/billing/Payments.java",
+            "test/java/io/github/graphmaquina/example/EligibilityTest.java",
+            "test/java/io/github/graphmaquina/example/billing/BookingFlowTest.java");
+    /**
+     * The Java blocks of the eligibility page that a link to a file of the example introduces: eight of its twelve, the
+     * other four being those that GuideOutcomeFragmentsTest, in graphmaquina-test, compiles.
+     */
+    private static final int ELIGIBILITY_QUOTES = 8;
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
 
@@ -49,6 +67,12 @@ class GuideCopiesTest {
 
     private static String read(Path file) throws IOException {
         return Files.readString(file, UTF_8);
+    }
+
+    /** The example's file that {@link #EXAMPLE_LINK} names: a source of {@code main}, or a test of {@code test}. */
+    private static Path exampleFile(String link) {
+        String root = link.startsWith("main/") ? "graphmaquina.example.sources" : "graphmaquina.example.tests";
+        return path(root, link.substring(link.indexOf(EXAMPLE_PACKAGE) + EXAMPLE_PACKAGE.length()));
     }
 
     /** {@code block} with each of its lines that is not blank indented by {@code spaces} spaces. */
@@ -76,16 +100,35 @@ class GuideCopiesTest {
         List<String> missing = new ArrayList<>();
         int quoted = 0;
         for (String page : TESTING_PAGES) {
-            List<TestQuote> quotes = new TestQuoteReader().read(read(path("graphmaquina.docs", page)));
+            List<TestQuote> quotes = new TestQuoteReader(LINK).read(read(path("graphmaquina.docs", page)));
             quoted += quotes.size();
             for (TestQuote quote : quotes) {
-                String source = read(path("graphmaquina.example.tests", quote.test() + ".java"));
+                String source = read(path("graphmaquina.example.tests", quote.source() + ".java"));
                 if (quote.code().isBlank() || !holds(source, quote.code(), 0, 4, 8, 12)) {
-                    missing.add("docs/" + page + ":" + quote.start() + " " + quote.test());
+                    missing.add("docs/" + page + ":" + quote.start() + " " + quote.source());
                 }
             }
         }
         assertTrue(quoted > 0, "no block of the testing guide quotes a test of the shop");
+        assertEquals(List.of(), missing);
+    }
+
+    /**
+     * The eligibility page quotes the checks of {@code Orders} and {@code Payments} and the tests that ask them, each
+     * block after a link to the file it comes from, and it quotes every one of those four files, in eight blocks.
+     */
+    @Test
+    void theEligibilityPageQuotesTheExampleVerbatim() throws IOException {
+        List<TestQuote> quotes = new TestQuoteReader(EXAMPLE_LINK).read(read(path("graphmaquina.docs",
+                "eligibility.md")));
+        List<String> missing = new ArrayList<>();
+        for (TestQuote quote : quotes) {
+            if (quote.code().isBlank() || !holds(read(exampleFile(quote.source())), quote.code(), 0, 4, 8, 12)) {
+                missing.add("docs/eligibility.md:" + quote.start() + " " + quote.source());
+            }
+        }
+        assertEquals(ELIGIBILITY_QUOTES, quotes.size());
+        assertEquals(ELIGIBILITY_SOURCES, quotes.stream().map(TestQuote::source).collect(Collectors.toSet()));
         assertEquals(List.of(), missing);
     }
 
@@ -130,17 +173,23 @@ class GuideCopiesTest {
     }
 
     /**
-     * Reads the testing guide line by line. A link outside a code block names the test that the Java blocks after it
-     * quote, up to the next heading; a heading is any line that starts with {@code #}, even inside a code block.
+     * Reads a guide line by line. The first link of a line outside a code block that {@code link} matches names, as
+     * its first group, the file that the Java blocks after it quote, up to the next link or heading; a heading is any
+     * line that starts with {@code #}, even inside a code block.
      */
     private static final class TestQuoteReader {
 
+        private final Pattern link;
         private final List<TestQuote> quotes = new ArrayList<>();
         private final List<String> block = new ArrayList<>();
-        private Optional<String> test = Optional.empty();
+        private Optional<String> source = Optional.empty();
         private boolean inBlock;
         private boolean isJava;
         private int start;
+
+        TestQuoteReader(Pattern link) {
+            this.link = link;
+        }
 
         List<TestQuote> read(String guide) {
             List<String> lines = List.of(guide.split("\n", -1));
@@ -152,7 +201,7 @@ class GuideCopiesTest {
 
         private void accept(int index, String line) {
             if (line.startsWith("#")) {
-                test = Optional.empty();
+                source = Optional.empty();
             }
             if (!inBlock) {
                 scanOutsideBlock(index, line);
@@ -164,9 +213,9 @@ class GuideCopiesTest {
         }
 
         private void scanOutsideBlock(int index, String line) {
-            Matcher link = LINK.matcher(line);
-            if (link.find()) {
-                test = Optional.of(link.group(1));
+            Matcher found = link.matcher(line);
+            if (found.find()) {
+                source = Optional.of(found.group(1));
             }
             if (line.startsWith("```")) {
                 inBlock = true;
@@ -178,8 +227,8 @@ class GuideCopiesTest {
 
         private void closeBlock() {
             inBlock = false;
-            if (isJava && test.isPresent()) {
-                quotes.add(new TestQuote(test.get(), start, String.join("\n", block)));
+            if (isJava && source.isPresent()) {
+                quotes.add(new TestQuote(source.get(), start, String.join("\n", block)));
             }
         }
     }

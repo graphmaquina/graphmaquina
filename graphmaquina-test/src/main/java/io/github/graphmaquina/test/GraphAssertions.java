@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
@@ -39,6 +40,11 @@ public final class GraphAssertions {
     public static <E, S extends Enum<S>, T extends Enum<T>> OutcomeAssert<E, S, T> assertThat(
             Outcome<E, S, T> actual) {
         return OutcomeAssert.assertThat(actual);
+    }
+
+    public static <E, S extends Enum<S>, T extends Enum<T>> EligibilityAssert<E, S, T> assertThat(
+            Eligibility<E, S, T> actual) {
+        return EligibilityAssert.assertThat(actual);
     }
 
     public static ActionOutcomeAssert assertThat(ActionOutcome actual) {

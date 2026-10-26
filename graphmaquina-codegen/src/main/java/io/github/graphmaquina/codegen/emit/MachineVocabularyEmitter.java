@@ -5,12 +5,14 @@ import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
- * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers, and
- * {@code Recovery}, which is written only inside a {@code Transition}.
+ * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers,
+ * {@code Recovery}, which is written only inside a {@code Transition}, and {@code Check}, which is written on a
+ * method.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
@@ -39,8 +41,9 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Recovery", "Reject", "Rejects");
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
+    private static final String METHOD_TARGET = "java.lang.annotation.ElementType.METHOD";
     private static final String EDGE_TARGETS =
         "{java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD}";
 
@@ -103,6 +106,7 @@ final class MachineVocabularyEmitter {
         recovery(source, simpleName, machine, transition);
         reject(source, simpleName, machine, state, transition);
         rejects(source, simpleName, machine);
+        check(source, machine, transition);
 
         source.outdent();
         source.line("}");
@@ -134,7 +138,7 @@ final class MachineVocabularyEmitter {
         describe(source, "Declares the graph of {@link " + machine + "}: its initial state, its terminal states,",
             "the states a cycle may return to, the properties reading the entity's identity and state,",
             "and the default hook edges inherit unless they declare their own.");
-        annotation(source, machine, "DEFINITION", TYPE_TARGET, null, "Definition");
+        annotation(source, machine, "DEFINITION", TYPE_TARGET, Optional.empty(), "Definition");
         element(source, state + " initial();", "the initial state, from which every state must be reachable");
         element(source, state + "[] terminals() default {};",
             "the terminal states, which no edge leaves; none by default");
@@ -153,7 +157,7 @@ final class MachineVocabularyEmitter {
     private static void statePolicy(JavaSource source, String vocabulary, String machine, String state) {
         describe(source, "Gives one state of {@link " + machine + "} the reason every identifier it declares",
             "no edge for is refused with.");
-        annotation(source, machine, "STATE_POLICY", TYPE_TARGET, vocabulary + ".StatePolicies",
+        annotation(source, machine, "STATE_POLICY", TYPE_TARGET, Optional.of(vocabulary + ".StatePolicies"),
             "StatePolicy");
         element(source, state + " state();", "the state whose refusals the policy words");
         element(source, "java.lang.String otherwise();",
@@ -164,7 +168,7 @@ final class MachineVocabularyEmitter {
     private static void statePolicies(JavaSource source, String vocabulary, String machine) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".StatePolicy} declarations of {@link "
             + machine + "}.");
-        annotation(source, machine, "STATE_POLICIES", TYPE_TARGET, null, "StatePolicies");
+        annotation(source, machine, "STATE_POLICIES", TYPE_TARGET, Optional.empty(), "StatePolicies");
         element(source, vocabulary + ".StatePolicy[] value();", "the repeated declarations");
         close(source);
     }
@@ -173,7 +177,8 @@ final class MachineVocabularyEmitter {
             String transition) {
         describe(source, "Declares one edge of {@link " + machine + "}, identified by {@code id} from each of",
             "its origins. An absent {@code action} makes the edge a move; a single action makes it an action.");
-        annotation(source, machine, "TRANSITION", EDGE_TARGETS, vocabulary + ".Transitions", "Transition");
+        annotation(source, machine, "TRANSITION", EDGE_TARGETS, Optional.of(vocabulary + ".Transitions"),
+            "Transition");
         element(source, transition + " id();", "the identifier of the edge");
         element(source, state + "[] from();", "the states the edge leaves, at least one");
         element(source, state + " to();", "the state the edge enters");
@@ -205,7 +210,7 @@ final class MachineVocabularyEmitter {
     private static void transitions(JavaSource source, String vocabulary, String machine) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Transition} declarations of {@link "
             + machine + "}.");
-        annotation(source, machine, "TRANSITIONS", EDGE_TARGETS, null, "Transitions");
+        annotation(source, machine, "TRANSITIONS", EDGE_TARGETS, Optional.empty(), "Transitions");
         element(source, vocabulary + ".Transition[] value();", "the repeated declarations");
         close(source);
     }
@@ -224,7 +229,7 @@ final class MachineVocabularyEmitter {
             "resolved from the origin the entity is in, so an edge with that identifier must leave every",
             "origin of the declaring edge. Entered as a recovery, that edge runs without its guards and",
             "applies no rule or fallback of its own: a recovery never chains.</p>");
-        annotation(source, machine, "RECOVERY", "{}", null, "Recovery");
+        annotation(source, machine, "RECOVERY", "{}", Optional.empty(), "Recovery");
         element(source, "java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();",
             "the failure kind the rule takes");
         element(source, transition + " transition();",
@@ -238,7 +243,7 @@ final class MachineVocabularyEmitter {
             String transition) {
         describe(source, "Refuses one identifier of {@link " + machine + "} from one state, with an explicit",
             "reason that overrides that state's policy.");
-        annotation(source, machine, "REJECT", TYPE_TARGET, vocabulary + ".Rejects", "Reject");
+        annotation(source, machine, "REJECT", TYPE_TARGET, Optional.of(vocabulary + ".Rejects"), "Reject");
         element(source, state + " from();", "the state the identifier is refused from");
         element(source, transition + " transition();", "the identifier refused");
         element(source, "java.lang.String reason();", "the reason the identifier is refused with");
@@ -248,8 +253,16 @@ final class MachineVocabularyEmitter {
     private static void rejects(JavaSource source, String vocabulary, String machine) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Reject} declarations of {@link " + machine
             + "}.");
-        annotation(source, machine, "REJECTS", TYPE_TARGET, null, "Rejects");
+        annotation(source, machine, "REJECTS", TYPE_TARGET, Optional.empty(), "Rejects");
         element(source, vocabulary + ".Reject[] value();", "the repeated declarations");
+        close(source);
+    }
+
+    private static void check(JavaSource source, String machine, String transition) {
+        describe(source, "Declares a method of {@link " + machine + "} that checks, without running it, whether the",
+            "operation that owns {@code id} may pass its admission conditions now.");
+        annotation(source, machine, "CHECK", METHOD_TARGET, Optional.empty(), "Check");
+        element(source, transition + " id();", "the identifier of the operation the method checks");
         close(source);
     }
 
@@ -259,15 +272,18 @@ final class MachineVocabularyEmitter {
         source.javadoc(javadoc);
     }
 
-    /** Writes the metadata, target, retention and repeatability of one nested annotation and opens its body. */
+    /**
+     * Writes the metadata, target, retention and repeatability of one nested annotation and opens its body.
+     * {@code container} is the repeatable container of a repeatable annotation, empty for any other.
+     */
     private static void annotation(JavaSource source, String machine, String kind, String target,
-            String container, String name) {
+            Optional<String> container, String name) {
         source.line("@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = " + machine
             + ".class, value = io.github.graphmaquina.annotation.internal.VocabularyKind." + kind + ")");
         source.line("@java.lang.annotation.Target(" + target + ")");
         source.line("@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)");
-        if (container != null) {
-            source.line("@java.lang.annotation.Repeatable(" + container + ".class)");
+        if (container.isPresent()) {
+            source.line("@java.lang.annotation.Repeatable(" + container.get() + ".class)");
         }
         source.line("public @interface " + name + " {");
         source.indent();

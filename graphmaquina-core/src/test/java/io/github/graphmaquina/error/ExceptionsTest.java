@@ -1,6 +1,8 @@
 package io.github.graphmaquina.error;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -204,5 +206,59 @@ class ExceptionsTest {
         assertThrows(UnsupportedOperationException.class, () -> error.parents().clear());
         assertThrows(NullPointerException.class,
                 () -> new AmbiguousParentException(KEY, parent, Month.MARCH, parent, null));
+    }
+
+    /** A check is not a call: it reports what it asked, the message it was given and the cause, and nothing more. */
+    @Test
+    void anEligibilityCheckCarriesWhatItAskedAndKeepsItsMessage() {
+        IllegalStateException cause = new IllegalStateException("guard down");
+        EligibilityCheckException error = new EligibilityCheckException(KEY, "e", Month.JANUARY,
+                Optional.of(DayOfWeek.MONDAY), Optional.of("reviewed"), "the check failed", Optional.of(cause));
+        assertEquals(KEY, error.key());
+        assertEquals("e", error.entity());
+        assertEquals(Month.JANUARY, error.transition());
+        assertEquals(Optional.of(DayOfWeek.MONDAY), error.from());
+        assertEquals(Optional.of("reviewed"), error.guard());
+        assertEquals("the check failed", error.getMessage());
+        assertSame(cause, error.getCause());
+        assertFalse(CallFailedException.class.isInstance(error));
+    }
+
+    @Test
+    void anEligibilityCheckThatReadNoStateNorRanAGuardHasNeitherAndMayHaveNoCause() {
+        EligibilityCheckException error = new EligibilityCheckException(KEY, "e", Month.JANUARY, Optional.empty(),
+                Optional.empty(), "the state is null", Optional.empty());
+        assertEquals(Optional.empty(), error.from());
+        assertEquals(Optional.empty(), error.guard());
+        assertNull(error.getCause());
+        assertEquals("the state is null", error.getMessage());
+    }
+
+    @Test
+    void anEligibilityCheckRefusesANullArgument() {
+        assertEquals("key is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(null, "e", Month.JANUARY, Optional.empty(), Optional.empty(), "m", Optional.empty()))
+                .getMessage());
+        assertEquals("entity is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(KEY, null, Month.JANUARY, Optional.empty(), Optional.empty(), "m", Optional.empty()))
+                .getMessage());
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", null, Optional.empty(), Optional.empty(), "m", Optional.empty()))
+                .getMessage());
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", Month.JANUARY, null, Optional.empty(), "m", Optional.empty())).getMessage());
+        assertEquals("guard is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", Month.JANUARY, Optional.empty(), null, "m", Optional.empty())).getMessage());
+        assertEquals("message", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", Month.JANUARY, Optional.empty(), Optional.empty(), null, Optional.empty()))
+                .getMessage());
+        assertEquals("cause is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", Month.JANUARY, Optional.empty(), Optional.empty(), "m", null)).getMessage());
+    }
+
+    private static EligibilityCheckException check(MachineKey<?, ?, ?> key, Object entity, Enum<?> transition,
+                                                   Optional<Enum<?>> from, Optional<String> guard, String message,
+                                                   Optional<Throwable> cause) {
+        return new EligibilityCheckException(key, entity, transition, from, guard, message, cause);
     }
 }
