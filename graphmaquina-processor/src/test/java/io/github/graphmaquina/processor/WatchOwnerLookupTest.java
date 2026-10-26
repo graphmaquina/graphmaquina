@@ -3,11 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.nio.file.Path;
 import java.util.Map;
-import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -142,10 +138,8 @@ class WatchOwnerLookupTest {
      * The fixture, whose watch declares {@code owner} in place of its owner line and whose scenario hands the builder
      * {@code hosts}.
      */
-    private static Map<String, String> sources(String owner, String hosts) throws URISyntaxException {
-        URL root = Objects.requireNonNull(WatchOwnerLookupTest.class.getResource(RESOURCES),
-                RESOURCES + " is not on the test classpath");
-        Map<String, String> sources = FixtureSources.read(Path.of(root.toURI()));
+    private static Map<String, String> sources(String owner, String hosts) {
+        Map<String, String> sources = FixtureSources.resource(RESOURCES);
         sources.put("shop.Orders", replaced(sources.get("shop.Orders"), OWNER, owner));
         sources.put("shop.Scenario", replaced(sources.get("shop.Scenario"), HOSTS, hosts));
         return sources;

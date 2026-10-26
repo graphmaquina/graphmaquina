@@ -5,12 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,7 +32,7 @@ class WatchOwnerDiagnosticsTest {
 
     /** The refusal names the watch, at the line that opens it. */
     @Test
-    void neitherOwnerNorLookupIsRefusedAtTheWatch() throws URISyntaxException {
+    void neitherOwnerNorLookupIsRefusedAtTheWatch() {
         Map<String, String> sources = sources("");
         Compilation.Result result = compile(sources);
 
@@ -47,38 +43,38 @@ class WatchOwnerDiagnosticsTest {
 
     /** Both elements resolve on their own, yet the watch reports only that it declares both. */
     @Test
-    void bothOwnerAndLookupAreRefusedWithNothingElse() throws URISyntaxException {
+    void bothOwnerAndLookupAreRefusedWithNothingElse() {
         assertErrors(List.of(BOTH),
                 compile(sources("owner = ItemRefs.Order.class, ownerLookup = OrderLookupsRefs.OrderOf.class,")));
     }
 
     /** {@code owner} names a property of the order, not of the item, which is never resolved once both are declared. */
     @Test
-    void bothWithAWrongOwnerAreStillRefusedWithNothingElse() throws URISyntaxException {
+    void bothWithAWrongOwnerAreStillRefusedWithNothingElse() {
         assertErrors(List.of(BOTH),
                 compile(sources("owner = OrderRefs.Id.class, ownerLookup = OrderLookupsRefs.OrderOf.class,")));
     }
 
     @Test
-    void anEmptyOwnerArrayIsNoOwner() throws URISyntaxException {
+    void anEmptyOwnerArrayIsNoOwner() {
         assertErrors(List.of(NEITHER), compile(sources("owner = {},")));
     }
 
     @Test
-    void twoLookupsAreTooManyValues() throws URISyntaxException {
+    void twoLookupsAreTooManyValues() {
         assertErrors(List.of("[" + DiagnosticCode.SG607 + "] ownerLookup declares 2 values but holds one at most"),
                 compile(sources("ownerLookup = {OrderLookupsRefs.OrderOf.class, OrderLookupsRefs.NoOrder.class},")));
     }
 
     @Test
-    void twoOwnerPropertiesAreTooManyValues() throws URISyntaxException {
+    void twoOwnerPropertiesAreTooManyValues() {
         assertErrors(List.of("[" + DiagnosticCode.SG607 + "] owner declares 2 values but holds one at most"),
                 compile(sources("owner = {ItemRefs.Order.class, ItemRefs.PlacedIn.class},")));
     }
 
     /** {@code unrelated} takes the order rather than the item, so it is no lookup of an item's owner. */
     @Test
-    void aLookupWithTheWrongSignatureNamesTheOneItNeeds() throws URISyntaxException {
+    void aLookupWithTheWrongSignatureNamesTheOneItNeeds() {
         assertErrors(List.of("[" + DiagnosticCode.SG505 + "] no exported lookup named unrelated on shop.OrderLookups"
                 + " has the signature this machine needs; expected Optional<Order> unrelated(Item)"),
                 compile(sources("ownerLookup = OrderLookupsRefs.Unrelated.class,")));
@@ -86,7 +82,7 @@ class WatchOwnerDiagnosticsTest {
 
     /** A watch with no owner still has its rules read, and a watch without rules is reported as one. */
     @Test
-    void theRestOfAWatchWithoutAnOwnerIsStillRead() throws URISyntaxException {
+    void theRestOfAWatchWithoutAnOwnerIsStillRead() {
         Map<String, String> sources = sources("");
         sources.put("shop.Orders", replaced(sources.get("shop.Orders"),
                 "rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = SHIP)", "rules = {}"));
@@ -105,10 +101,8 @@ class WatchOwnerDiagnosticsTest {
     }
 
     /** The fixture, whose watch declares {@code owner} in place of its owner line. */
-    private static Map<String, String> sources(String owner) throws URISyntaxException {
-        URL root = Objects.requireNonNull(WatchOwnerDiagnosticsTest.class.getResource(RESOURCES),
-                RESOURCES + " is not on the test classpath");
-        Map<String, String> sources = FixtureSources.read(Path.of(root.toURI()));
+    private static Map<String, String> sources(String owner) {
+        Map<String, String> sources = FixtureSources.resource(RESOURCES);
         sources.put("shop.Orders", replaced(sources.get("shop.Orders"), OWNER, owner));
         return sources;
     }

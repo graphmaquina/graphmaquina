@@ -6,14 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -183,9 +181,7 @@ class CrossModuleCharacterizationTest {
     }
 
     /** The sources of the fixture tree {@code name}, read from the test resources. */
-    private static Map<String, String> tree(String name) throws URISyntaxException {
-        URL root = Objects.requireNonNull(CrossModuleCharacterizationTest.class.getResource(RESOURCES),
-                RESOURCES + " is not on the test classpath");
-        return FixtureSources.read(Path.of(root.toURI()).resolve(name));
+    private static Map<String, String> tree(String name) {
+        return FixtureSources.resource(RESOURCES + "/" + name);
     }
 }

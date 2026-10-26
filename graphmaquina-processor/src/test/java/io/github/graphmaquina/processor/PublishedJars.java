@@ -23,7 +23,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * Producers packaged the way a build publishes them: a fixture compiled on its own through the complete lifecycle,
  * its classes and the export index its completion step wrote packed into a jar that a consumer puts on its
- * classpath. A test chooses the index the jar carries, or drops it.
+ * classpath, or that directory of classes itself. A test chooses the index the jar carries, or drops it.
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class PublishedJars {
@@ -37,10 +37,13 @@ final class PublishedJars {
      */
     static Path publish(Map<String, String> sources, Path jar, UnaryOperator<String> index)
             throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-        assertTrue(result.success(), result.describe());
-        Path classes = prepared.request().classesOutput();
+        return publish(sources, List.of(), jar, index);
+    }
+
+    /** The same, for a producer compiled over {@code classpath}, as a module that depends on another jar is. */
+    static Path publish(Map<String, String> sources, List<Path> classpath, Path jar, UnaryOperator<String> index)
+            throws IOException {
+        Path classes = classes(sources, classpath);
         String published = Files.readString(classes.resolve(PUBLISHED), StandardCharsets.UTF_8);
         try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
             for (Path file : files(classes)) {
@@ -63,10 +66,19 @@ final class PublishedJars {
 
     /** The export index a compilation of {@code sources} publishes. */
     static String publishedIndex(Map<String, String> sources) throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
+        return Files.readString(classes(sources, List.of()).resolve(PUBLISHED), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * A producer compiled on its own over {@code classpath} through the complete lifecycle: its class output, which
+     * carries the export index its completion step published, as a multi-project build hands a project dependency's
+     * classes to the projects that depend on it.
+     */
+    static Path classes(Map<String, String> sources, List<Path> classpath) {
+        Compilation.Prepared prepared = Compilation.prepare(sources, classpath);
         Compilation.Result result = Compilation.compilePrepared(prepared);
         assertTrue(result.success(), result.describe());
-        return Files.readString(prepared.request().classesOutput().resolve(PUBLISHED), StandardCharsets.UTF_8);
+        return prepared.request().classesOutput();
     }
 
     /** Deletes the export index from {@code jar}, as an assembly step that drops {@code META-INF/graphmaquina} does. */

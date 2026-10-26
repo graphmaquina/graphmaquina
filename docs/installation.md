@@ -394,10 +394,13 @@ For a multi-module build:
    of one producer do: the error names both entries, and keeping one artifact of that producer on the classpath
    fixes it.
 
-A consumer can also bind a machine of a dependency as the sub-machine of one of its own states, declaring it with
-`@GraphPeers` like any child. The pair vocabulary is generated from what the dependency's export index says of that
-machine, so its artifact must carry the index its build published, and the consumer's `@StateGraphs` set must hold
-both machines.
+A consumer can also bind a machine of a dependency as the sub-machine of one of its own states, or watch it,
+declaring it with `@GraphPeers` like any child or peer. The pair vocabulary is generated from what the dependency's
+export index says of that machine, so its artifact must carry the index its build published, and the consumer's
+`@StateGraphs` set must hold both machines. A producer that does not know the consumer's entity cannot give its own
+entity a property that returns it, so the way back is a lookup of the consumer: `parentLookup` for a sub-machine,
+`ownerLookup` for a watch. A watch can still use `owner` when the producer also publishes the owner's entity.
+[Compose machines across modules and JARs](cross-module-composition.md) walks through both.
 
 ---
 

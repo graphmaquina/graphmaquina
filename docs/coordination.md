@@ -251,8 +251,11 @@ edge keyed by `(PAID, SHIP)`, including its guard, action and hook — never ano
 owner itself. When the peer's entity has no such property, `ownerLookup` names a lookup instead: a method marked
 `@GraphLookup`, of signature `Optional<Owner> name(Peer)`, static or instance, on any class, which the generator
 exports as a symbol of that class's `Refs`, as it does for the
-[lookup that finds the parent of a sub-machine](composition.md#find-the-parent-with-a-lookup). This lookup of an
-`OrderLookups` host reads a map of orders by item id, where an application would ask its repository:
+[lookup that finds the parent of a sub-machine](composition.md#find-the-parent-with-a-lookup). In the scenario of
+[compose machines across modules and JARs](cross-module-composition.md#watch-the-machines-of-a-jar), a consumer's
+orders watch the items of a producer's jar, whose `Item` cannot name an order. This lookup of the consumer's
+`OrderLookups` reads a map of orders by item id, where an application would ask its repository, and the watch names
+it:
 
 ```java
 @GraphLookup
@@ -266,7 +269,7 @@ public Optional<Order> orderOf(Item item) {
     state = PAID,
     peers = OrderRefs.Items.class,
     ownerLookup = OrderLookupsRefs.OrderOf.class,
-    rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = OrderTransition.SHIP))
+    rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = SHIP))
 ```
 
 A watch declares exactly one of `owner` and `ownerLookup`, each with one value at most. Neither or both is `SG405`,
@@ -385,9 +388,12 @@ rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-ma
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
-The child of a sub-machine can come from a dependency, a jar or a directory of classes whose artifact carries the
-export index its build published, as
-[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A peer that is
+The peer of a watch, like the child of a sub-machine, can come from a dependency, a jar or a directory of classes
+whose artifact carries the export index its build published, as
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A producer
+that does not know the owner's entity cannot give the peer a property that returns it, so the watch finds its owner
+with `ownerLookup`; `owner` still serves when the producer also publishes the owner's entity and the peer's entity
+returns it. [Compose machines across modules and JARs](cross-module-composition.md) runs such a watch. A peer that is
 a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
 otherwise than its classes, is reported with `SG602`, naming that jar or directory whenever the generator can tell
 it; any other peer that is neither a machine of the same compilation nor a machine of a dependency that its export

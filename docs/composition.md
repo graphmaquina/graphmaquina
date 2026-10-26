@@ -428,7 +428,8 @@ out of the commit, so serialize the calls of a parent and its sub-machines as th
 A parent and its child must be held by the same `@StateGraphs` set: a set that holds the parent but not its child
 is `SG806`. The child can be a machine of the same compilation, or of a dependency, a jar or a directory of classes
 whose artifact carries the export index its build published, as
-[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A child that
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes;
+[compose machines across modules and JARs](cross-module-composition.md) binds one through a parent lookup. A child that
 is a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
 otherwise than its classes, is `SG602`, naming that jar or directory whenever the generator can tell it; any other
 child that is neither is `SG608`. A standalone machine built with `StateMachines.Builder.build()` refuses any
@@ -442,4 +443,4 @@ also finds, the `NO_ROOM` route, a renewal that restarts its payment, the stay a
 
 ---
 
-Next: [Commit, hooks, observers and persistence](commit-and-persistence.md). Back to the [documentation index](README.md).
+Next: [Compose machines across modules and JARs](cross-module-composition.md). Back to the [documentation index](README.md).

@@ -101,6 +101,10 @@ what javac actually accepted, so:
 
 ## Limits
 
+- **A pair across modules is typed from the producer's export index.** A watch or a sub-machine over a machine of a
+  dependency needs that dependency's artifact to carry the export index its build published, built with the same
+  GraphMaquina version; [compose machines across modules and JARs](cross-module-composition.md) lists what the
+  producer publishes and what is checked when.
 - **The generator parses without `--enable-preview`.** No member of the request carries it, whatever javac is
   given. An original source using a preview feature that javac's parser checks, such as string templates on
   JDK 21, is refused with SG601; one using a preview feature javac checks only after parsing, such as primitive

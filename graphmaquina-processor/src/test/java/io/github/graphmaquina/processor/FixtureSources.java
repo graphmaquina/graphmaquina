@@ -3,11 +3,14 @@ package io.github.graphmaquina.processor;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -38,5 +41,19 @@ final class FixtureSources {
             throw new UncheckedIOException(failure);
         }
         return sources;
+    }
+
+    /**
+     * The sources of the test resource directory {@code path}, such as {@code /watch-owner}, read as {@link #read}
+     * reads a tree.
+     */
+    static Map<String, String> resource(String path) {
+        URL root = Objects.requireNonNull(FixtureSources.class.getResource(path),
+                path + " is not on the test classpath");
+        try {
+            return read(Path.of(root.toURI()));
+        } catch (URISyntaxException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 }
