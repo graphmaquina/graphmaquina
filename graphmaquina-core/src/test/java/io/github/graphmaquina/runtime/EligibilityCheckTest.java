@@ -6,12 +6,14 @@ import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
 import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
+import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CallFailure;
@@ -22,6 +24,7 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
@@ -37,6 +40,8 @@ import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.GuardProbe;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -44,6 +49,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -59,8 +65,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * What an eligibility check answers through the real engine: the refusal execute's admission would give, with its
  * kind, its reason and its guard, or an eligible answer once every guard passed, from the state the check read. Its
  * guards read the check's input, the confirmed state of a peer and an empty flow; it can be asked where a call may
- * start, from an after-commit hook or on the machine's executor; and, whatever it answers or fails with, it has no
- * effect: no setter, action, hook, watch or observer runs, and a context a guard kept is stale once the check ends.
+ * start, from an after-commit hook or on the machine's executor; it answers for an identifier that a failure route
+ * takes by its edge; and, whatever it answers or fails with, it has no effect: no setter, action, hook, watch or
+ * observer runs, it records no trail, and a context a guard kept is stale once the check ends.
  */
 class EligibilityCheckTest {
 
@@ -107,6 +114,22 @@ class EligibilityCheckTest {
         assertEquals(new Eligibility.Ineligible<>(doc, REVIEW, SUBMIT, "it is in review already",
                 RejectionKind.NO_TRANSITION, Optional.empty()),
                 DocMachines.registry(graph).of(DOCS).eligibility(doc, SUBMIT));
+    }
+
+    /**
+     * A StateMachine answers for any identifier of its catalogue by the edge it keys from the current state, as
+     * execute does: DISCARD, which the graph takes as the failure route of SUBMIT, is eligible from DRAFT.
+     */
+    @Test
+    void anIdentifierThatAFailureRouteTakesIsAnsweredByItsEdge() {
+        StateMachine<Doc, DocStatus, DocTransition> m = machine(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("refuse", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ActionOutcome.failed("refused"))
+                        .onFailure(DISCARD));
+        Doc doc = new Doc("1", DRAFT);
+        assertEquals(new Eligibility.Eligible<>(doc, DRAFT, DISCARD), m.eligibility(doc, DISCARD));
+        assertEquals(OutcomeCode.APPLIED, m.execute(new Doc("2", DRAFT), DISCARD).code());
     }
 
     @Test
@@ -207,6 +230,50 @@ class EligibilityCheckTest {
         assertThrows(EligibilityCheckException.class, () -> m.eligibility(doc, SUBMIT));
         assertEquals(List.of(), effects);
         assertEquals(DRAFT, doc.status());
+    }
+
+    /** A machine of a registry that records a trail on {@code clock}, whose SUBMIT edge has {@code guard}. */
+    private static StateMachine<Doc, DocStatus, DocTransition> trailed(
+            InstantSource clock, TransitionGuard<Doc, DocStatus, DocTransition> guard) {
+        return MachineRegistry.builder()
+                .add(StateMachines.from(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
+                                submit.guard("verdict", guard)))
+                        .state(Doc::status, Doc::setStatus).identity(Doc::id).recordTrail(clock))
+                .build()
+                .of(DOCS);
+    }
+
+    /** A clock that counts in {@code reads} each time it is read. */
+    private static InstantSource counting(AtomicInteger reads) {
+        return () -> {
+            reads.incrementAndGet();
+            return Instant.EPOCH;
+        };
+    }
+
+    /** A check records no trail: whatever it answers, it never reads the trail's clock, which an execute reads. */
+    @ParameterizedTest
+    @MethodSource("verdicts")
+    void aCheckRecordsNoTrail(GuardResult verdict, boolean eligible) {
+        AtomicInteger reads = new AtomicInteger();
+        StateMachine<Doc, DocStatus, DocTransition> m = trailed(counting(reads),
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> verdict);
+        assertEquals(eligible, m.eligibility(new Doc("1", DRAFT), SUBMIT).isEligible());
+        assertEquals(0, reads.get());
+        m.execute(new Doc("2", DRAFT), SUBMIT);
+        assertTrue(reads.get() > 0, "the execute read the clock " + reads.get() + " times");
+    }
+
+    /** A check that fails records no trail either. */
+    @Test
+    void aFailedCheckRecordsNoTrail() {
+        AtomicInteger reads = new AtomicInteger();
+        StateMachine<Doc, DocStatus, DocTransition> m = trailed(counting(reads),
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    throw new IllegalStateException("boom");
+                });
+        assertThrows(EligibilityCheckException.class, () -> m.eligibility(new Doc("1", DRAFT), SUBMIT));
+        assertEquals(0, reads.get());
     }
 
     /** The control of {@link #noEngineEffects}: an execute of the same machine shows every effect it counts. */

@@ -41,6 +41,7 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.GuardProbe;
 import io.github.graphmaquina.fixtures.OrderTransition;
 import java.io.IOException;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,8 +50,11 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -62,11 +66,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * An eligibility check that cannot reach an answer throws an {@link EligibilityCheckException}, and no
- * {@link CallFailedException} hides in its causes: with the guard that threw, its stage's unwrapped failure, a null
- * verdict, a wait past the deadline or ended by an interrupt, a null state or an identity that cannot be read, it names
+ * {@link CallFailedException} hides in its causes: with the guard that threw, its stage's failure unwrapped from
+ * CompletionException or ExecutionException, a null verdict, a wait past the deadline or ended by an interrupt, a null
+ * state, a state of another type, which the engine could not go on with, or an identity that cannot be read, it names
  * the entity, the state it read and the guard in flight when it knew them, and its cause. An Error propagates as
  * itself. A check is refused before it starts where no call may start, from a guard, an action, an observer or a
- * watch's owner lookup, and while it runs, neither its guards nor its state getter can start a call or a check.
+ * watch's owner lookup, and while it runs, neither its guards nor its state getter can start a call, a reevaluation
+ * or a check.
  */
 class EligibilityFailureTest {
 
@@ -97,9 +103,14 @@ class EligibilityFailureTest {
 
     /** A machine whose asynchronous guard {@code remote} completes its stage with {@code CompletionException(cause)}. */
     private static StateMachine<Doc, DocStatus, DocTransition> asyncFailing(Throwable cause) {
+        return asyncCompletingWith(new CompletionException(cause));
+    }
+
+    /** A machine whose asynchronous guard {@code remote} completes its stage exceptionally with {@code failure}. */
+    private static StateMachine<Doc, DocStatus, DocTransition> asyncCompletingWith(Throwable failure) {
         return timed((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                 .asyncGuard("remote", (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
-                        CompletableFuture.<GuardResult>failedFuture(new CompletionException(cause))),
+                        CompletableFuture.<GuardResult>failedFuture(failure)),
                 Duration.ofSeconds(10));
     }
 
@@ -140,10 +151,18 @@ class EligibilityFailureTest {
                 + " java.lang.IllegalStateException: boom", error.getMessage());
     }
 
-    @Test
-    void asyncGuardFailureIsUnwrapped() {
+    static Stream<Arguments> wrappedFailures() {
         IOException down = new IOException("down");
-        EligibilityCheckException error = failure(asyncFailing(down));
+        return Stream.of(
+                Arguments.of(Named.of("a CompletionException", new CompletionException(down)), down),
+                Arguments.of(Named.of("an ExecutionException", new ExecutionException(down)), down));
+    }
+
+    /** What the stage completed with is unwrapped from CompletionException and ExecutionException alike. */
+    @ParameterizedTest
+    @MethodSource("wrappedFailures")
+    void asyncGuardFailureIsUnwrapped(Throwable completion, IOException down) {
+        EligibilityCheckException error = failure(asyncCompletingWith(completion));
         assertSame(down, error.getCause());
         assertEquals(Optional.of("remote"), error.guard());
         assertEquals(Optional.of(DRAFT), error.from());
@@ -227,6 +246,27 @@ class EligibilityFailureTest {
         assertEquals(Optional.empty(), error.guard());
         assertEquals("eligibility of SUBMIT for Doc/DocStatus ? could not be decided: reading the entity threw"
                 + " java.lang.NullPointerException: identity of Doc/DocStatus returned null", error.getMessage());
+    }
+
+    /**
+     * A state getter that broke its type through an unchecked cast: the edge lookup refuses the state it read with an
+     * IllegalArgumentException, which is no abort of the check, so the check names that state and the engine could
+     * not go on.
+     */
+    @Test
+    void stateOfAnotherTypeFailsTheCheckAsTheEngineCouldNotGoOn() {
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        Function<Doc, DocStatus> broken = (Function) (Function<Doc, Object>) (Doc read) -> DayOfWeek.MONDAY;
+        EligibilityCheckException error = failure(MachineRegistry.builder()
+                .add(StateMachines.from(DocGraphs.plain()).state(broken, Doc::setStatus).identity(Doc::id))
+                .build()
+                .of(DOCS));
+        assertInstanceOf(IllegalArgumentException.class, error.getCause());
+        assertEquals(Optional.of(DayOfWeek.MONDAY), error.from());
+        assertEquals(Optional.empty(), error.guard());
+        assertEquals("eligibility of SUBMIT for Doc/DocStatus#1 MONDAY could not be decided: the engine could not go"
+                + " on: java.lang.IllegalArgumentException: state must belong to io.github.graphmaquina.fixtures"
+                + ".DocStatus: MONDAY", error.getMessage());
     }
 
     /** A machine whose identity function throws {@code thrown}. */
@@ -397,41 +437,58 @@ class EligibilityFailureTest {
         assertSame(other, caught.get(0).entity());
     }
 
-    /** While a check runs, its guard can start neither a call nor another check; the one it lets through fails it. */
-    @Test
-    void executeFromAGuardDuringACheckIsReentrant() {
+    /** Each call that code of a check may try to start on its thread: an execute, a reevaluation and a check. */
+    static Stream<Named<BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object>>> nestedCalls() {
+        BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> execute =
+                (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.execute(other, DISCARD);
+        BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> reevaluate =
+                (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.reevaluate(other);
+        BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> eligibility =
+                (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.eligibility(other, DISCARD);
+        return Stream.of(Named.of("execute", execute), Named.of("reevaluate", reevaluate),
+                Named.of("eligibility", eligibility));
+    }
+
+    /** While a check runs, its guard can start neither a call nor another check; the refusal it lets through fails it. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("nestedCalls")
+    void guardThatStartsACallOrACheckDuringACheckIsReentrant(
+            BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> nested) {
         AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
         AtomicReference<ReentrantTransitionException> caught = new AtomicReference<>();
         Doc other = new Doc("2", DRAFT);
         self.set(machine((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                 .guard("moves", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                    assertThrows(ReentrantTransitionException.class, () -> self.get().eligibility(other, DISCARD));
                     caught.set(assertThrows(ReentrantTransitionException.class,
-                            () -> self.get().execute(other, DISCARD)));
+                            () -> nested.apply(self.get(), other)));
                     throw caught.get();
                 })));
         EligibilityCheckException error = failure(self.get());
         assertSame(caught.get(), error.getCause());
+        assertSame(other, caught.get().entity());
         assertEquals(Optional.of("moves"), error.guard());
         assertEquals(DRAFT, other.status());
     }
 
-    /** A state getter that calls execute while a check reads it is refused, and the check fails with the refusal. */
-    @Test
-    void stateGetterThatCallsExecuteDuringACheckIsReentrant() {
+    /** A state getter that starts a call or a check while a check reads it is refused, and the check fails with it. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("nestedCalls")
+    void stateGetterThatStartsACallOrACheckDuringACheckIsReentrant(
+            BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> nested) {
         AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
         AtomicReference<ReentrantTransitionException> caught = new AtomicReference<>();
         Doc other = new Doc("2", DRAFT);
         self.set(MachineRegistry.builder()
                 .add(StateMachines.from(DocGraphs.plain()).state((Doc doc) -> {
                     caught.set(assertThrows(ReentrantTransitionException.class,
-                            () -> self.get().execute(other, DISCARD)));
+                            () -> nested.apply(self.get(), other)));
                     throw caught.get();
                 }, Doc::setStatus).identity(Doc::id))
                 .build()
                 .of(DOCS));
         EligibilityCheckException error = failure(self.get());
         assertSame(caught.get(), error.getCause());
+        assertSame(other, caught.get().entity());
         assertEquals(Optional.empty(), error.from());
         assertEquals(DRAFT, other.status());
     }

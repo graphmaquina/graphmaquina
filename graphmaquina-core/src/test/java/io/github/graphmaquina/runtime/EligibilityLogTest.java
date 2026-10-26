@@ -35,8 +35,11 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -49,7 +52,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 /**
  * The lines an eligibility check logs on the runtime logger, read through {@code java.util.logging}: at {@code FINE} a
  * {@code start} line and a verdict line, or a {@code failed} one, and at {@code FINER} the lines of the step it admits,
- * all of them under {@code check=<id>} in place of {@code call=<id>}. A check is no call, so it logs no line of a
+ * an asynchronous guard's included, all of them under {@code check=<id>} in place of {@code call=<id>}. A check is no call, so it logs no line of a
  * call, and it takes its id from the counter of the calls. A backend that fails on these lines is read in
  * {@link EligibilityLogBackendTest}.
  */
@@ -163,6 +166,29 @@ class EligibilityLogTest {
                 "FINE check=A end verdict=INELIGIBLE transition=SUBMIT kind=GUARD guard=hasTitle state=DRAFT"
                         + " entity=Doc/DocStatus#d2 reason=\"a draft needs a title\" elapsed=<us>"),
                 logged(Level.FINER, "d2", SUBMIT));
+    }
+
+    /**
+     * An asynchronous guard whose stage passes 20 ms later, on another thread, logs the guard line a synchronous one
+     * logs, once the check waited for it.
+     */
+    @Test
+    void traceLinesNameAnAsynchronousGuardThatPasses() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("remote",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> CompletableFuture.supplyAsync(
+                                GuardResult::pass, CompletableFuture.delayedExecutor(20, TimeUnit.MILLISECONDS))));
+        try (MachineRegistry registry = registry(graph, Duration.ofSeconds(10));
+             LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            registry.of(DOCS).eligibility(new Doc("d1", DRAFT), SUBMIT);
+            assertEquals(List.of(
+                    "FINE check=A start Doc/DocStatus SUBMIT",
+                    "FINER check=A depth=0 resolved Doc/DocStatus#d1 DRAFT -SUBMIT-> REVIEW kind=MOVE",
+                    "FINER check=A depth=0 guard remote PASS elapsed=<us>",
+                    "FINE check=A end verdict=ELIGIBLE transition=SUBMIT state=DRAFT entity=Doc/DocStatus#d1"
+                            + " elapsed=<us>"),
+                    lines(log));
+        }
     }
 
     @Test

@@ -249,8 +249,9 @@ class ExceptionsTest {
                 () -> check(KEY, "e", Month.JANUARY, null, Optional.empty(), "m", Optional.empty())).getMessage());
         assertEquals("guard is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> check(KEY, "e", Month.JANUARY, Optional.empty(), null, "m", Optional.empty())).getMessage());
-        assertThrows(NullPointerException.class,
-                () -> check(KEY, "e", Month.JANUARY, Optional.empty(), Optional.empty(), null, Optional.empty()));
+        assertEquals("message", assertThrows(NullPointerException.class,
+                () -> check(KEY, "e", Month.JANUARY, Optional.empty(), Optional.empty(), null, Optional.empty()))
+                .getMessage());
         assertEquals("cause is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> check(KEY, "e", Month.JANUARY, Optional.empty(), Optional.empty(), "m", null)).getMessage());
     }

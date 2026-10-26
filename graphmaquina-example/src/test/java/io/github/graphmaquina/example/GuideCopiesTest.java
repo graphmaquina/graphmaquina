@@ -53,6 +53,11 @@ class GuideCopiesTest {
             "main/java/io/github/graphmaquina/example/billing/Payments.java",
             "test/java/io/github/graphmaquina/example/EligibilityTest.java",
             "test/java/io/github/graphmaquina/example/billing/BookingFlowTest.java");
+    /**
+     * The Java blocks of the eligibility page that a link to a file of the example introduces: eight of its twelve, the
+     * other four being those that GuideOutcomeFragmentsTest, in graphmaquina-test, compiles.
+     */
+    private static final int ELIGIBILITY_QUOTES = 8;
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
 
@@ -110,7 +115,7 @@ class GuideCopiesTest {
 
     /**
      * The eligibility page quotes the checks of {@code Orders} and {@code Payments} and the tests that ask them, each
-     * block after a link to the file it comes from, and it quotes every one of those four files.
+     * block after a link to the file it comes from, and it quotes every one of those four files, in eight blocks.
      */
     @Test
     void theEligibilityPageQuotesTheExampleVerbatim() throws IOException {
@@ -122,6 +127,7 @@ class GuideCopiesTest {
                 missing.add("docs/eligibility.md:" + quote.start() + " " + quote.source());
             }
         }
+        assertEquals(ELIGIBILITY_QUOTES, quotes.size());
         assertEquals(ELIGIBILITY_SOURCES, quotes.stream().map(TestQuote::source).collect(Collectors.toSet()));
         assertEquals(List.of(), missing);
     }

@@ -24,14 +24,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.AmbiguousParentException;
 import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
+import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.fixtures.Billing;
 import io.github.graphmaquina.fixtures.Billing.Booking;
@@ -43,16 +47,17 @@ import io.github.graphmaquina.fixtures.Billing.PaymentTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.LogLines;
 import io.github.graphmaquina.fixtures.Refusal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 import lombok.Getter;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -61,8 +66,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * An eligibility check answers for a sub-machine as execute would refuse it. A child its parent holds is answered by
  * its own edges; one no parent holds is {@code DETACHED}, and the parent's exit from its bound state is
  * {@code RESERVED_EXIT}, each with the reason execute gives and no guard. The check starts no child on an entry and
- * runs no exit when the child would end, and it fails when two parents hold the child or a lookup breaks its contract.
- * Each case asks one scene and executes the same request on an equal one, which must refuse alike.
+ * runs no exit when the child would end, so an eligible answer predicts neither, and it fails when two parents hold the
+ * child, or a lookup breaks its contract or starts a call or a check. Each case asks one scene and executes the same
+ * request on an equal one, which must refuse alike.
  */
 class EligibilitySubmachineTest {
 
@@ -263,6 +269,48 @@ class EligibilitySubmachineTest {
         }
     }
 
+    /**
+     * An eligible capture of a held deposit says nothing of the exit that ending the child triggers: the check runs no
+     * guard of the parent's exit, while the call runs it, and aborts when it refuses.
+     */
+    @Test
+    void anEligibleCapturePredictsNothingOfTheParentsExit() {
+        try (Scene scene = held((Billing billing) -> billing.settled.verdict =
+                (GuardContext<Booking, BookingStatus, BookingTransition> ctx) -> GuardResult.reject("not settled"))) {
+            assertEquals(new Eligibility.Eligible<>(scene.payment(), AUTHORIZING, CAPTURE),
+                    scene.payments().eligibility(scene.payment(), CAPTURE));
+            assertEquals(0, scene.billing().settled.calls);
+            TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class,
+                    () -> scene.payments().execute(scene.payment(), CAPTURE));
+            assertEquals(1, scene.billing().settled.calls);
+            assertTrue(aborted.getMessage().contains(
+                    "rejected inside the exit of DEPOSIT by guard Settled: not settled"), aborted.getMessage());
+            assertEquals(AUTHORIZING, scene.payment().status());
+            assertEquals(DEPOSIT, scene.booking().status());
+        }
+    }
+
+    /**
+     * An eligible entry to a bound state says nothing of the child it starts: the check reads no childOf of the
+     * binding, while the call does, and aborts when it throws.
+     */
+    @Test
+    void anEligibleEntryPredictsNothingOfTheChildItStarts() {
+        Billing billing = new Billing();
+        billing.depositOf = (Booking booking) -> {
+            throw new IllegalStateException("no deposit");
+        };
+        try (Scene scene = scene(billing, REQUESTED, HELD)) {
+            assertEquals(new Eligibility.Eligible<>(scene.booking(), REQUESTED, BOOK),
+                    scene.bookings().eligibility(scene.booking(), BOOK));
+            TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class,
+                    () -> scene.bookings().execute(scene.booking(), BOOK));
+            assertInstanceOf(IllegalStateException.class, aborted.getCause());
+            assertEquals(REQUESTED, scene.booking().status());
+            assertEquals(HELD, scene.payment().status());
+        }
+    }
+
     @Test
     void detachedChildIsIneligible() {
         try (Scene scene = detached(AUTHORIZING)) {
@@ -346,6 +394,9 @@ class EligibilitySubmachineTest {
             assertEquals(List.of(BOOKINGS, ESCROWS), cause.parents());
             assertEquals(List.of(DEPOSIT, EscrowStatus.HOLDING), cause.nodes());
             assertEquals(Optional.of(AUTHORIZING), error.from());
+            TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(PAYMENTS).execute(payment, CAPTURE));
+            assertInstanceOf(AmbiguousParentException.class, aborted.getCause());
             assertEquals(AUTHORIZING, payment.status());
         }
     }
@@ -380,7 +431,28 @@ class EligibilitySubmachineTest {
                 new Broken("parent identity is null", () -> scene(new Billing(), null, DEPOSIT, AUTHORIZING),
                         causedBy(NullPointerException.class)),
                 new Broken("parent state is null", () -> scene(new Billing(), null, AUTHORIZING),
-                        causedBy(UninitializedStateException.class)));
+                        causedBy(UninitializedStateException.class)),
+                new Broken("childOf answers a child whose identity is null",
+                        () -> held((Billing billing) -> billing.depositOf =
+                                (Booking booking) -> Optional.of(new Payment(null, AUTHORIZING))),
+                        causedBy(NullPointerException.class)),
+                new Broken("childOf answers another instance with the child's identity",
+                        () -> held((Billing billing) -> billing.depositOf =
+                                (Booking booking) -> Optional.of(new Payment("p1", AUTHORIZING))),
+                        causedBy(AmbiguousIdentityException.class)),
+                new Broken("childOf starts a check", EligibilitySubmachineTest::reentrantChildOf,
+                        causedBy(ReentrantTransitionException.class)));
+    }
+
+    /** A booking in DEPOSIT whose childOf asks for a check of its deposit before it answers it. */
+    private static Scene reentrantChildOf() {
+        AtomicReference<Scene> self = new AtomicReference<>();
+        Scene scene = held((Billing billing) -> billing.depositOf = (Booking booking) -> {
+            self.get().payments().eligibility(self.get().payment(), VOID);
+            return booking.deposit();
+        });
+        self.set(scene);
+        return scene;
     }
 
     /** Each fails the check with an EligibilityCheckException, where a call would abort, and writes nothing. */
@@ -399,27 +471,38 @@ class EligibilitySubmachineTest {
         }
     }
 
-    /**
-     * A lookup that asks for a call, a reevaluation or a check while the check runs is refused each time, and the
-     * last refusal, which it throws, fails the check.
-     */
-    @Test
-    void lookupThatStartsACallOrACheckFailsTheCheck() {
+    /** Each call that a lookup of a check may try to start on its thread: an execute, a reevaluation and a check. */
+    static Stream<Named<BiFunction<StateMachine<Payment, PaymentStatus, PaymentTransition>, Payment, Object>>>
+            nestedCalls() {
+        BiFunction<StateMachine<Payment, PaymentStatus, PaymentTransition>, Payment, Object> execute =
+                (StateMachine<Payment, PaymentStatus, PaymentTransition> m, Payment payment) ->
+                        m.execute(payment, VOID);
+        BiFunction<StateMachine<Payment, PaymentStatus, PaymentTransition>, Payment, Object> reevaluate =
+                (StateMachine<Payment, PaymentStatus, PaymentTransition> m, Payment payment) -> m.reevaluate(payment);
+        BiFunction<StateMachine<Payment, PaymentStatus, PaymentTransition>, Payment, Object> eligibility =
+                (StateMachine<Payment, PaymentStatus, PaymentTransition> m, Payment payment) ->
+                        m.eligibility(payment, VOID);
+        return Stream.of(Named.of("execute", execute), Named.of("reevaluate", reevaluate),
+                Named.of("eligibility", eligibility));
+    }
+
+    /** A parentOf that starts a call or a check while the check runs is refused, and the check fails with it. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("nestedCalls")
+    void lookupThatStartsACallOrACheckFailsTheCheck(
+            BiFunction<StateMachine<Payment, PaymentStatus, PaymentTransition>, Payment, Object> nested) {
         AtomicReference<Scene> self = new AtomicReference<>();
-        List<ReentrantTransitionException> refused = new ArrayList<>();
+        AtomicReference<ReentrantTransitionException> refused = new AtomicReference<>();
         Scene scene = held((Billing billing) -> billing.bookingOf = (Payment payment) -> {
-            StateMachine<Payment, PaymentStatus, PaymentTransition> payments = self.get().payments();
-            refused.add(assertThrows(ReentrantTransitionException.class, () -> payments.execute(payment, VOID)));
-            refused.add(assertThrows(ReentrantTransitionException.class, () -> payments.reevaluate(payment)));
-            refused.add(assertThrows(ReentrantTransitionException.class, () -> payments.eligibility(payment, VOID)));
-            throw refused.get(2);
+            refused.set(assertThrows(ReentrantTransitionException.class,
+                    () -> nested.apply(self.get().payments(), payment)));
+            throw refused.get();
         });
         self.set(scene);
         try (scene) {
             EligibilityCheckException error = assertThrows(EligibilityCheckException.class,
                     () -> scene.payments().eligibility(scene.payment(), CAPTURE));
-            assertEquals(3, refused.size());
-            assertSame(refused.get(2), error.getCause());
+            assertSame(refused.get(), error.getCause());
             assertEquals(AUTHORIZING, scene.payment().status());
         }
     }

@@ -2,7 +2,9 @@ package io.github.graphmaquina.example;
 
 import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
@@ -11,13 +13,15 @@ import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * Asking the shop whether an operation would be admitted, without making the call. A check reads the order's state and
  * runs the guards of the edge, and answers with the reason a call would be refused for. It writes no state and runs no
- * action and no hook.
+ * action and no hook, and the facade's async runs it on the machine's executor.
  */
 class EligibilityTest {
 
@@ -93,6 +97,21 @@ class EligibilityTest {
 
         assertThat(orders.pay(fresh)).isApplied();
         assertEquals(List.of(fresh), gateway.charged);
+    }
+
+    /** The facade's async runs the check on the machine's executor, and its future completes with the answer. */
+    @Test
+    void aCheckRunsOnTheMachinesExecutorThroughAsync() {
+        Order order = orderIn(OrderStatus.PAYMENT_DECLINED);
+        AtomicReference<Thread> ran = new AtomicReference<>();
+
+        CompletableFuture<Eligibility<Order, OrderStatus, OrderTransition>> pending = orders.async(() -> {
+            ran.set(Thread.currentThread());
+            return orders.canRetry(order);
+        });
+
+        assertThat(pending.join()).isEligible().from(OrderStatus.PAYMENT_DECLINED);
+        assertNotSame(Thread.currentThread(), ran.get());
     }
 
     private static Order orderIn(OrderStatus status) {

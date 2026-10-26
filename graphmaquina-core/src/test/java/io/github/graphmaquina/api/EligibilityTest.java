@@ -115,6 +115,15 @@ class EligibilityTest {
 
     @Test
     void ineligibleRefusesNullComponents() {
+        assertEquals("entity is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> new Eligibility.Ineligible<String, S, T>(null, S.OPEN, T.GO, "needs review",
+                        RejectionKind.NO_TRANSITION, Optional.empty())).getMessage());
+        assertEquals("from is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> new Eligibility.Ineligible<String, S, T>(ENTITY, null, T.GO, "needs review",
+                        RejectionKind.NO_TRANSITION, Optional.empty())).getMessage());
+        assertEquals("transition is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> new Eligibility.Ineligible<String, S, T>(ENTITY, S.OPEN, null, "needs review",
+                        RejectionKind.NO_TRANSITION, Optional.empty())).getMessage());
         assertEquals("reason is marked non-null but is null", assertThrows(NullPointerException.class,
                 () -> new Eligibility.Ineligible<String, S, T>(ENTITY, S.OPEN, T.GO, null,
                         RejectionKind.NO_TRANSITION, Optional.empty())).getMessage());
