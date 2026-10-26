@@ -112,7 +112,7 @@ final class DependencyPeers {
             Path entry, GraphDescriptor descriptor) {
         Optional<MachineHeaders.Enums> enums = MachineHeaders.enumsOf(index, peer);
         Optional<String> staleness = enums.isEmpty()
-                ? Optional.of("describes it over " + descriptor.stateType() + " and " + descriptor.transitionType()
+                ? Optional.of(describedOver(descriptor)
                         + ", but it does not extend Machine over two enums the classpath declares")
                 : staleness(descriptor, enums.get());
         if (staleness.isPresent()) {
@@ -132,11 +132,16 @@ final class DependencyPeers {
         String state = enums.state().canonicalName();
         String transition = enums.transition().canonicalName();
         if (!state.equals(descriptor.stateType()) || !transition.equals(descriptor.transitionType())) {
-            return Optional.of("describes it over " + descriptor.stateType() + " and " + descriptor.transitionType()
-                    + ", but it extends Machine over " + state + " and " + transition);
+            return Optional.of(describedOver(descriptor) + ", but it extends Machine over " + state + " and "
+                    + transition);
         }
         return constants("state", enums.state(), descriptor.states())
                 .or(() -> constants("transition", enums.transition(), descriptor.transitions()));
+    }
+
+    /** What an index says of the enums it describes the machine of {@code descriptor} over. */
+    private static String describedOver(GraphDescriptor descriptor) {
+        return "describes it over " + descriptor.stateType() + " and " + descriptor.transitionType();
     }
 
     /** What an index that gives {@code type}, the {@code role} enum, the constants {@code claimed} contradicts. */
