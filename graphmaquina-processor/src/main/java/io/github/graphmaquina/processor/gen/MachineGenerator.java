@@ -290,23 +290,16 @@ public final class MachineGenerator {
     private static void operation(MachineModel model, Names names, Variables variables, String objects,
                                   OperationModel operation, SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
-        Set<String> declared = new LinkedHashSet<>(variables.reserved());
-        String target = unique(operation.entityParameter(), declared);
-        Optional<String> input = operation.inputParameter().map((String name) -> unique(name, declared));
-        String declaration = operation.inputType()
-                .map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input.orElseThrow()).orElse("");
-        String argument = input.map((String name) -> ", " + name).orElse("");
+        Parameters parameters = Parameters.of(variables, operation.entityParameter(), operation.inputParameter(),
+                operation.inputType());
         out.blank();
         out.line("@" + names.of(OVERRIDE));
         out.open("public " + names.of(OUTCOME) + typeArguments(model.types(), names) + " " + operation.name() + "("
-                + e + " " + target + declaration + ")");
-        out.line(objects + ".requireNonNull(" + target + ", " + quote(operation.entityParameter()) + ");");
-        if (operation.inputType().filter((TypeMirror type) -> !type.getKind().isPrimitive()).isPresent()) {
-            out.line(objects + ".requireNonNull(" + input.orElseThrow() + ", "
-                    + quote(operation.inputParameter().orElseThrow()) + ");");
-        }
-        out.line("return " + variables.machine() + ".execute(" + target + ", "
-                + constant(names, model.types().transitionsElement(), operation.transitionId()) + argument + ");");
+                + e + " " + parameters.entity() + parameters.declaration() + ")");
+        parameters.refuseNull(objects, out);
+        out.line("return " + variables.machine() + ".execute(" + parameters.entity() + ", "
+                + constant(names, model.types().transitionsElement(), operation.transitionId())
+                + parameters.argument() + ");");
         out.close();
     }
 
@@ -319,16 +312,13 @@ public final class MachineGenerator {
     private static void check(MachineModel model, Names names, Variables variables, String objects, CheckModel check,
                               SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
-        Set<String> declared = new LinkedHashSet<>(variables.reserved());
-        String target = unique(check.entityParameter(), declared);
-        Optional<String> input = check.inputParameter().map((String name) -> unique(name, declared));
-        String declaration = check.inputType()
-                .map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input.orElseThrow()).orElse("");
-        String argument = input.map((String name) -> ", " + name).orElse("");
+        Parameters parameters = Parameters.of(variables, check.entityParameter(), check.inputParameter(),
+                check.inputType());
+        String target = parameters.entity();
         String transition = constant(names, model.types().transitionsElement(), check.transitionId());
         List<String> tags = new ArrayList<>();
         tags.add("@param " + target + " the entity to check");
-        input.ifPresent((String name) -> tags.add("@param " + name + " the input of the operation"));
+        parameters.input().ifPresent((String name) -> tags.add("@param " + name + " the input of the operation"));
         tags.add("@return the answer: eligible, or ineligible with the reason");
         out.blank();
         out.javadoc("Asks whether {@code " + transition + "} would be admitted for {@code " + target + "} in the state"
@@ -337,14 +327,57 @@ public final class MachineGenerator {
                 + " {@code NullPointerException} that names the parameter.", tags);
         out.line("@" + names.of(OVERRIDE));
         out.open("public " + names.of(ELIGIBILITY) + typeArguments(model.types(), names) + " " + check.name() + "("
-                + e + " " + target + declaration + ")");
-        out.line(objects + ".requireNonNull(" + target + ", " + quote(check.entityParameter()) + ");");
-        if (check.inputType().filter((TypeMirror type) -> !type.getKind().isPrimitive()).isPresent()) {
-            out.line(objects + ".requireNonNull(" + input.orElseThrow() + ", "
-                    + quote(check.inputParameter().orElseThrow()) + ");");
-        }
-        out.line("return " + variables.machine() + ".eligibility(" + target + ", " + transition + argument + ");");
+                + e + " " + target + parameters.declaration() + ")");
+        parameters.refuseNull(objects, out);
+        out.line("return " + variables.machine() + ".eligibility(" + target + ", " + transition
+                + parameters.argument() + ");");
         out.close();
+    }
+
+    /**
+     * The parameters of a method that implements an operation or a check, as the companion declares them: the entity
+     * under {@code entity}, and the input, when the method has one, under {@code input}, each taken from the name the
+     * facade's method declares it with, {@code declaredEntity} and {@code declaredInput}, by the smallest numeric
+     * suffix from {@code 2} that frees it should the companion use the name already. {@code inputType} is the type
+     * javac resolved for the input.
+     */
+    private record Parameters(String declaredEntity, String entity, Optional<String> declaredInput,
+                              Optional<String> input, Optional<TypeMirror> inputType) {
+
+        /**
+         * The parameters for the names {@code entityParameter} and {@code inputParameter} the facade declares, which
+         * take a name no other variable of the companion has: the entity first, then the input.
+         */
+        static Parameters of(Variables variables, String entityParameter, Optional<String> inputParameter,
+                             Optional<TypeMirror> inputType) {
+            Set<String> declared = new LinkedHashSet<>(variables.reserved());
+            String entity = unique(entityParameter, declared);
+            Optional<String> input = inputParameter.map((String name) -> unique(name, declared));
+            return new Parameters(entityParameter, entity, inputParameter, input, inputType);
+        }
+
+        /** {@code , Type input}, to follow the entity in the declaration of the method; nothing without an input. */
+        String declaration() {
+            return inputType.map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input.orElseThrow())
+                    .orElse("");
+        }
+
+        /** {@code , input}, to follow the entity in a call; nothing without an input. */
+        String argument() {
+            return input.map((String name) -> ", " + name).orElse("");
+        }
+
+        /**
+         * Writes the refusal of a null entity, and of a null input of a reference type, through {@code objects}, with
+         * the names the facade declares; a primitive input cannot be null.
+         */
+        void refuseNull(String objects, SourceWriter out) {
+            out.line(objects + ".requireNonNull(" + entity + ", " + quote(declaredEntity) + ");");
+            if (inputType.filter((TypeMirror type) -> !type.getKind().isPrimitive()).isPresent()) {
+                out.line(objects + ".requireNonNull(" + input.orElseThrow() + ", "
+                        + quote(declaredInput.orElseThrow()) + ");");
+            }
+        }
     }
 
     /**
