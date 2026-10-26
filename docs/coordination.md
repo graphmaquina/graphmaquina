@@ -347,10 +347,12 @@ rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-ma
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
-Cross-JAR watches and sub-machines are not supported yet. The owner and peer APIs must be generated in the same
-compilation.
-A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
-[issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
+The peer of a watch or a sub-machine can come from a dependency, a jar or a directory of classes whose artifact
+carries the export index its build published, as
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes: the pair
+vocabulary is generated from what that index says of the peer, and the owner's `@StateGraphs` set must hold the peer
+machine too. A peer that is neither a machine of the same compilation nor one the export index of a dependency
+describes is rejected with `SG608`.
 
 ---
 

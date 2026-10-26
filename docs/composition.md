@@ -423,10 +423,12 @@ of the original states covers the parent. A call that moves a child to a state t
 out of the commit, so serialize the calls of a parent and its sub-machines as those of one aggregate, as
 [initialize and protect state](commit-and-persistence.md#initialize-and-protect-state) explains.
 
-A parent and its child must be generated in the same compilation and held by the same `@StateGraphs` set:
-a child outside the compilation is `SG608`, and a set that holds the parent but not its child is `SG806`. A
-standalone machine built with `StateMachines.Builder.build()` refuses any sub-machine binding, since its registry
-holds no other machine.
+A parent and its child must be held by the same `@StateGraphs` set: a set that holds the parent but not its child
+is `SG806`. The child can be a machine of the same compilation, or of a dependency, a jar or a directory of classes
+whose artifact carries the export index its build published, as
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes; a child that is
+neither is `SG608`. A standalone machine built with `StateMachines.Builder.build()` refuses any sub-machine binding,
+since its registry holds no other machine.
 
 Assert bindings, starts and both refusals with the typed views of the testing guide's
 [sub-machines](testing-advanced.md#sub-machines) section. The

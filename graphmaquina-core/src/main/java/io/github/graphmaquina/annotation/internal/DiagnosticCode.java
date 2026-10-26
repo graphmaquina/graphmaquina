@@ -110,7 +110,7 @@ public enum DiagnosticCode {
 
     /**
      * A manifest, an inventory or an export index is missing, incompatible, stale or malformed, or the export indexes
-     * of two classpath entries describe one machine.
+     * of two classpath entries describe one machine, or one describes a machine of this compilation.
      */
     SG602,
 
@@ -129,7 +129,10 @@ public enum DiagnosticCode {
     /** Too many values in an optional singleton element. */
     SG607,
 
-    /** Invalid, duplicated, unused or undeclared peer, a peer outside this compilation or one its owner cannot name. */
+    /**
+     * Invalid, duplicated, unused or undeclared peer, a peer that is no machine of this compilation or of a dependency
+     * export index, or one its owner cannot name.
+     */
     SG608,
 
     /** A non-terminal state declares no rejection policy. */

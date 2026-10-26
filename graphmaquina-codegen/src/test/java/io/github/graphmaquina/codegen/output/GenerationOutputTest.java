@@ -831,7 +831,7 @@ class GenerationOutputTest {
         List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
         ExportIndex dependency = new ExportIndex(2, ToolVersion.current(), "other:lib:main",
                 new GenerationModel(List.of(), List.of()), List.of("lib.Orders\ud800.Transition"));
-        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of(dependency));
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, List.of(), emitted, List.of(dependency));
 
         assertThrows(IOException.class, () -> GenerationOutput.publish(request, emitted, manifest));
 
@@ -854,7 +854,7 @@ class GenerationOutputTest {
         GenerationRequest request = request();
         GenerationModel model = Bootstrap.inspect(request);
         List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
-        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of());
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, List.of(), emitted, List.of());
         SourceFiles.write(sources(), Map.of("fx.Unresolved", """
             package fx;
             import io.github.graphmaquina.annotation.GenerateGraphApi;

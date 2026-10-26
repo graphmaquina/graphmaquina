@@ -1056,7 +1056,7 @@ class UnnamedPackageClassTest {
                         () -> generate("peer-" + layout, layoutSources, List.of()), layout);
                 assertEquals("SG608", refused.code(), layout);
                 assertEquals("the peer machine shop.Docs declared by shop.Orders is not a @GenerateGraphApi machine of"
-                        + " this compilation", refused.getMessage(), layout);
+                        + " this compilation or of a dependency export index", refused.getMessage(), layout);
                 assertEquals("sources/shop/Orders.java", refused.location().orElseThrow().path(), layout);
             });
         }

@@ -29,7 +29,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Verifies the vocabulary emitted for ordered pairs of local machines: the owner's enums and the peer's enum
  * are used where the specification places them, a rule executes a transition of the owner, the watch repeats
  * through its container, every optional array may be omitted, a machine has such a vocabulary over each peer it
- * declares and over no other machine, an unknown peer is refused, and an empty model still carries its compilation.
+ * declares and over no other machine, a peer a dependency describes is typed from its descriptor, an unknown peer
+ * is refused, and an empty model still carries its compilation.
  */
 class WatchVocabularyTest {
 
@@ -217,7 +218,30 @@ class WatchVocabularyTest {
 
         assertEquals("SG608", failure.code());
         assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
-        assertTrue(failure.getMessage().contains("other.Bills"), failure.getMessage());
+        assertEquals("the peer machine other.Bills declared by fx.Docs is not a @GenerateGraphApi machine of this"
+                + " compilation or of a dependency export index", failure.getMessage());
+    }
+
+    /**
+     * A peer that a dependency export index describes is typed from that descriptor: the pair vocabulary is emitted in
+     * the owner's package over the peer's own state enum, and the peer's own vocabulary, which its producer
+     * published, is not emitted again.
+     */
+    @Test
+    void emitsThePairVocabularyOverAPeerOfADependency() {
+        GraphDescriptor owner = graph("Docs", List.of("other.Bills"));
+        GraphDescriptor bills = new GraphDescriptor("other.Bills", "other", "other.Bill", "other.BillStatus",
+                List.of("OPEN", "PAID"), "other.BillTransition", List.of("PAY"), List.of(),
+                new SourceLocation("src/main/java/other/Bills.java", 3L, 1L));
+        GenerationModel model = new GenerationModel(List.of(owner), List.of());
+
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, List.of(bills), "io.github.graphmaquina:test:main");
+
+        assertEquals(List.of("fx.DocsGraph", "fx.DocsBills"), emitted.stream().map(GeneratedSource::qualifiedName)
+                .filter((String name) -> !name.startsWith("io.github.graphmaquina.generated.")).toList());
+        assertTrue(content(emitted, "fx.DocsBills").contains("other.BillStatus[] allIn() default {};"),
+                content(emitted, "fx.DocsBills"));
+        assertTrue(ApiEmitter.annotationTypes(model, List.of(bills)).contains("fx.DocsBills.Watch"));
     }
 
     @Test

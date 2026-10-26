@@ -9,14 +9,12 @@ import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
+import io.github.graphmaquina.codegen.source.ProducerJars;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,9 +33,9 @@ class DependencyExportsTest {
 
     @Test
     void readsThePublishedIndexOfADirectoryAndOfAnArchiveInCompilationOrder() throws IOException {
-        Path classes = published(directory.resolve("classes"), "exports.json",
+        Path classes = ProducerJars.published(directory.resolve("classes"), "exports.json",
                 index(ToolVersion.current(), "io.github.graphmaquina:beta:main"));
-        Path archive = archived(directory.resolve("alpha.jar"), "META-INF/graphmaquina/exports.json",
+        Path archive = ProducerJars.archived(directory.resolve("alpha.jar"), "META-INF/graphmaquina/exports.json",
                 index(ToolVersion.current(), "io.github.graphmaquina:alpha:main"));
 
         List<PublishedIndex> indexes = DependencyExports.read(List.of(classes, archive,
@@ -51,9 +49,9 @@ class DependencyExportsTest {
     /** The entry is the one the classpath named, made absolute and normalized: it is what a message can point at. */
     @Test
     void keepsTheEntryOfEachIndex() throws IOException {
-        Path classes = published(directory.resolve("classes"), "exports.json",
+        Path classes = ProducerJars.published(directory.resolve("classes"), "exports.json",
                 index(ToolVersion.current(), "io.github.graphmaquina:beta:main"));
-        Path archive = archived(directory.resolve("alpha.jar"), "META-INF/graphmaquina/exports.json",
+        Path archive = ProducerJars.archived(directory.resolve("alpha.jar"), "META-INF/graphmaquina/exports.json",
                 index(ToolVersion.current(), "io.github.graphmaquina:alpha:main"));
 
         List<PublishedIndex> indexes =
@@ -65,9 +63,9 @@ class DependencyExportsTest {
 
     @Test
     void refusesAMachineTwoEntriesDescribe() throws IOException {
-        Path first = archived(directory.resolve("a/docs.jar"), "META-INF/graphmaquina/exports.json",
+        Path first = ProducerJars.archived(directory.resolve("a/docs.jar"), "META-INF/graphmaquina/exports.json",
                 describing("io.github.graphmaquina:a:main", "fx.Docs"));
-        Path second = archived(directory.resolve("b/docs.jar"), "META-INF/graphmaquina/exports.json",
+        Path second = ProducerJars.archived(directory.resolve("b/docs.jar"), "META-INF/graphmaquina/exports.json",
                 describing("io.github.graphmaquina:b:main", "fx.Docs"));
 
         CodegenException failure =
@@ -84,9 +82,9 @@ class DependencyExportsTest {
 
     @Test
     void acceptsTwoEntriesThatDescribeDifferentMachines() throws IOException {
-        Path docs = archived(directory.resolve("a/docs.jar"), "META-INF/graphmaquina/exports.json",
+        Path docs = ProducerJars.archived(directory.resolve("a/docs.jar"), "META-INF/graphmaquina/exports.json",
                 describing("io.github.graphmaquina:a:main", "fx.Docs"));
-        Path orders = archived(directory.resolve("b/orders.jar"), "META-INF/graphmaquina/exports.json",
+        Path orders = ProducerJars.archived(directory.resolve("b/orders.jar"), "META-INF/graphmaquina/exports.json",
                 describing("io.github.graphmaquina:b:main", "fx.Orders"));
 
         assertEquals(List.of(docs, orders),
@@ -100,7 +98,8 @@ class DependencyExportsTest {
         GraphDescriptor graph = once.model().graphs().get(0);
         ExportIndex twice = new ExportIndex(2, ToolVersion.current(), "io.github.graphmaquina:a:main",
                 new GenerationModel(List.of(graph, graph), List.of()), once.annotationTypes());
-        Path archive = archived(directory.resolve("docs.jar"), "META-INF/graphmaquina/exports.json", twice);
+        Path archive =
+                ProducerJars.archived(directory.resolve("docs.jar"), "META-INF/graphmaquina/exports.json", twice);
 
         assertEquals(List.of(archive),
                 DependencyExports.read(List.of(archive)).stream().map(PublishedIndex::entry).toList());
@@ -109,7 +108,7 @@ class DependencyExportsTest {
     /** An entry that a classpath lists twice, spelled in two ways, is one dependency and not two copies of it. */
     @Test
     void readsAnEntryListedTwiceOnce() throws IOException {
-        Path archive = archived(directory.resolve("docs.jar"), "META-INF/graphmaquina/exports.json",
+        Path archive = ProducerJars.archived(directory.resolve("docs.jar"), "META-INF/graphmaquina/exports.json",
                 describing("io.github.graphmaquina:a:main", "fx.Docs"));
 
         List<PublishedIndex> indexes =
@@ -120,7 +119,7 @@ class DependencyExportsTest {
 
     @Test
     void ignoresTheIndexAProcessorHasNotPromotedYet() throws IOException {
-        Path classes = published(directory.resolve("classes"), "pending-exports.json",
+        Path classes = ProducerJars.published(directory.resolve("classes"), "pending-exports.json",
                 index(ToolVersion.current(), "io.github.graphmaquina:pending:main"));
 
         assertEquals(List.of(), DependencyExports.read(List.of(classes)));
@@ -128,7 +127,7 @@ class DependencyExportsTest {
 
     @Test
     void refusesAnIndexWrittenByAnotherToolVersion() throws IOException {
-        Path classes = published(directory.resolve("classes"), "exports.json",
+        Path classes = ProducerJars.published(directory.resolve("classes"), "exports.json",
                 index("0.0.1-OTHER", "io.github.graphmaquina:old:main"));
 
         CodegenException failure =
@@ -213,25 +212,5 @@ class DependencyExportsTest {
 
     private static ExportIndex index(String toolVersion, String compilationId) {
         return new ExportIndex(2, toolVersion, compilationId, EMPTY, List.of("fx.OrdersGraph.Transition"));
-    }
-
-    /** Writes {@code index} under {@code root} as the named file of the published metadata directory. */
-    private static Path published(Path root, String name, ExportIndex index) throws IOException {
-        Path metadata = Files.createDirectories(root.resolve("META-INF/graphmaquina"));
-        ManifestCodec.writeExports(metadata.resolve(name), index);
-        return root;
-    }
-
-    /** Packs {@code index} into a jar at {@code jar}, under the entry {@code name}. */
-    private static Path archived(Path jar, String name, ExportIndex index) throws IOException {
-        Path staged = Files.createDirectories(jar.getParent().resolve("staged")).resolve("exports.json");
-        ManifestCodec.writeExports(staged, index);
-        try (OutputStream target = Files.newOutputStream(jar);
-                JarOutputStream out = new JarOutputStream(target)) {
-            out.putNextEntry(new JarEntry(name));
-            out.write(Files.readAllBytes(staged));
-            out.closeEntry();
-        }
-        return jar;
     }
 }

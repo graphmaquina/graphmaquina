@@ -4,6 +4,7 @@ import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import java.util.ArrayList;
@@ -113,9 +114,10 @@ public final class MachineHeaders {
      * pair is generated in the owner's package and names the peer machine and the peer's state enum, so both must
      * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
      * of a qualified name it writes. A peer is the type its class literal names. A declared peer that is none of
-     * {@code machines} is left to the emitter, which reports it as {@code SG608} too, unless one of them shares its
-     * canonical name: the emitter, which matches peers by name, would take that machine for it, so it is refused
-     * here.
+     * {@code machines} is left to {@link DependencyPeers#resolve}, which resolves it against the export indexes of
+     * the dependencies or refuses it with {@code SG608}, unless one of {@code machines} shares its canonical name: the
+     * emitter, which matches peers by name, would take that machine for it, so it is refused here, in the words of
+     * {@link ApiEmitter#unknownPeer}.
      *
      * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access or the
      *     peer that no machine of this compilation is though one shares its name; {@code SG603} naming a type of the
@@ -131,10 +133,7 @@ public final class MachineHeaders {
                         .findFirst();
                 if (watched.isEmpty()) {
                     if (machines.stream().anyMatch((Resolved machine) -> machine.graph().facade().equals(peer))) {
-                        throw new CodegenException(DiagnosticCode.SG608.name(),
-                                "the peer machine " + peer + " declared by "
-                                + graph.facade() + " is not a @GenerateGraphApi machine of this compilation",
-                                graph.origin());
+                        throw ApiEmitter.unknownPeer(peer, graph);
                     }
                     continue;
                 }

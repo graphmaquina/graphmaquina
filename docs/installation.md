@@ -389,9 +389,10 @@ For a multi-module build:
    classpath both describe, as two versions of one producer do: the error names both entries, and keeping one
    artifact of that producer on the classpath fixes it.
 
-Support for published symbols and sets does not imply support for a watch whose pair spans separate
-compilations. Keep watched owner and peer declarations in the same compilation until
-[issue #1](https://github.com/graphmaquina/graphmaquina/issues/1) is implemented.
+A consumer can also declare a machine of a dependency as the peer of one of its own machines, with `@GraphPeers`,
+and watch it or bind it as a sub-machine. The pair vocabulary is generated from what the dependency's export index
+says of that machine, so its artifact must carry the index its build published, and the consumer's `@StateGraphs` set
+must hold both machines.
 
 ---
 

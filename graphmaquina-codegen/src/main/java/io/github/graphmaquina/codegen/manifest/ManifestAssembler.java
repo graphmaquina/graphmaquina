@@ -6,6 +6,7 @@ import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
+import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.util.List;
 import lombok.NonNull;
 
@@ -14,7 +15,8 @@ import lombok.NonNull;
  * where the annotation processor writes its own inventory and which source files this generation owns.
  *
  * <p>The local index is what this compilation will publish once javac has verified it, so it carries the model
- * and the canonical names of every generated annotation. The paths of the manifest are the ones the build needs
+ * and the canonical names of every generated annotation, the pair vocabularies over the peers the dependencies
+ * describe included. The paths of the manifest are the ones the build needs
  * to execute: {@code processorInventory} is the absolute path of the file the processor writes, while
  * {@code ownedSources} are relative to the generated source root, since only that root's contents are owned.</p>
  */
@@ -25,12 +27,16 @@ public final class ManifestAssembler {
     private ManifestAssembler() {
     }
 
-    /** The manifest of {@code request}, describing {@code model}, {@code sources} and {@code dependencies}. */
+    /**
+     * The manifest of {@code request}, describing {@code model}, whose machines may declare peers of
+     * {@code dependencyPeers}, {@code sources} and {@code dependencies}.
+     */
     public static CompileManifest assemble(@NonNull GenerationRequest request, @NonNull GenerationModel model,
-            @NonNull List<GeneratedSource> sources, @NonNull List<ExportIndex> dependencies) {
+            @NonNull List<GraphDescriptor> dependencyPeers, @NonNull List<GeneratedSource> sources,
+            @NonNull List<ExportIndex> dependencies) {
         String toolVersion = ToolVersion.current();
         ExportIndex local = new ExportIndex(GenerationFiles.SCHEMA_VERSION, toolVersion, request.compilationId(), model,
-            ApiEmitter.annotationTypes(model));
+            ApiEmitter.annotationTypes(model, dependencyPeers));
         String processorInventory =
             request.workDirectory().resolve(PROCESSOR_INVENTORY).toAbsolutePath().toString();
         return new CompileManifest(GenerationFiles.SCHEMA_VERSION, toolVersion, local, dependencies, processorInventory,

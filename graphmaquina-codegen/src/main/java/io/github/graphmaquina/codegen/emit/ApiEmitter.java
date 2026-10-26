@@ -15,12 +15,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import lombok.NonNull;
 
 /**
  * Turns one resolved model into the compilation units of a generation: the vocabulary of every machine, the pair
  * vocabulary of every machine over each peer it declares, the references container of every host and the carrier
- * of the compilation itself.
+ * of the compilation itself. A peer is a machine of the model or one of the dependency peers given beside it: the
+ * descriptors that the export indexes of the dependencies give the peers this compilation does not generate. The
+ * vocabulary of such a peer is its producer's and is not emitted here.
  *
  * <p>The units are produced in the order the model is given: the bootstrap sorts the machines and the symbols, and
  * a machine's peers keep the order its declaration gives them, so two runs over the same sources emit the same
@@ -35,21 +38,31 @@ public final class ApiEmitter {
     }
 
     /**
-     * The compilation units of {@code model}, ending with the carrier of {@code compilationId}, which is emitted
-     * even when the model declares no machine and no symbol.
-     *
-     * @throws CodegenException {@code SG608} if a declared peer is not a machine of this compilation,
-     *     {@code SG603} if two declarations claim one generated type, a machine's name does not normalize to a
-     *     valid type name or a generated unit cannot name a type it must name
+     * The compilation units of {@code model} without dependency peers, as
+     * {@link #emit(GenerationModel, List, String)} emits them: every declared peer must be a machine of the model.
      */
     public static List<GeneratedSource> emit(@NonNull GenerationModel model, @NonNull String compilationId) {
-        Map<String, Set<String>> generated = generatedTypes(model);
+        return emit(model, List.of(), compilationId);
+    }
+
+    /**
+     * The compilation units of {@code model}, whose machines may declare peers of {@code dependencyPeers}, ending with
+     * the carrier of {@code compilationId}, which is emitted even when the model declares no machine and no symbol.
+     *
+     * @throws CodegenException {@code SG608} if a declared peer is neither a machine of the model nor one of
+     *     {@code dependencyPeers}, as {@link #unknownPeer} words it; {@code SG603} if two declarations claim one
+     *     generated type, a machine's name does not normalize to a valid type name or a generated unit cannot name a
+     *     type it must name
+     */
+    public static List<GeneratedSource> emit(@NonNull GenerationModel model,
+            @NonNull List<GraphDescriptor> dependencyPeers, @NonNull String compilationId) {
+        Map<String, Set<String>> generated = generatedTypes(model, dependencyPeers);
         Map<String, Claim> claims = new LinkedHashMap<>();
         List<GeneratedSource> sources = new ArrayList<>();
         for (GraphDescriptor graph : model.graphs()) {
             sources.add(claim(claims, MachineVocabularyEmitter.emit(graph, generated),
                 new Claim("the machine " + graph.facade(), Optional.of(graph.origin()))));
-            for (GraphDescriptor peer : peers(model, graph)) {
+            for (GraphDescriptor peer : peers(model, dependencyPeers, graph)) {
                 sources.add(claim(claims, WatchVocabularyEmitter.emit(graph, peer, generated),
                     new Claim("the peer " + peer.facade() + " declared by " + graph.facade(),
                         Optional.of(graph.origin()))));
@@ -64,15 +77,27 @@ public final class ApiEmitter {
     }
 
     /**
-     * The canonical names of every annotation {@code model} generates, nested types and repeatable containers
-     * alike, in the order the files declare them. Symbol types and the compilation carrier are not annotations
-     * and are not listed.
+     * The annotations {@code model} generates without dependency peers, as
+     * {@link #annotationTypes(GenerationModel, List)} lists them.
      */
     public static List<String> annotationTypes(@NonNull GenerationModel model) {
+        return annotationTypes(model, List.of());
+    }
+
+    /**
+     * The canonical names of every annotation {@code model} generates, its machines' peers resolved among its own
+     * machines and {@code dependencyPeers}, nested types and repeatable containers alike, in the order the files
+     * declare them. Symbol types and the compilation carrier are not annotations and are not listed.
+     *
+     * @throws CodegenException {@code SG608} if a declared peer is neither a machine of the model nor one of
+     *     {@code dependencyPeers}
+     */
+    public static List<String> annotationTypes(@NonNull GenerationModel model,
+            @NonNull List<GraphDescriptor> dependencyPeers) {
         List<String> types = new ArrayList<>();
         for (GraphDescriptor graph : model.graphs()) {
             types.addAll(MachineVocabularyEmitter.annotationTypes(graph));
-            for (GraphDescriptor peer : peers(model, graph)) {
+            for (GraphDescriptor peer : peers(model, dependencyPeers, graph)) {
                 types.addAll(WatchVocabularyEmitter.annotationTypes(graph, peer));
             }
         }
@@ -84,11 +109,12 @@ public final class ApiEmitter {
      * vocabulary of every machine, the pair vocabulary of every machine over each peer it declares and the
      * references container of every host. Each of them is in scope inside every unit generated in its package.
      */
-    private static Map<String, Set<String>> generatedTypes(GenerationModel model) {
+    private static Map<String, Set<String>> generatedTypes(GenerationModel model,
+            List<GraphDescriptor> dependencyPeers) {
         Map<String, Set<String>> generated = new LinkedHashMap<>();
         for (GraphDescriptor graph : model.graphs()) {
             addGenerated(generated, MachineVocabularyEmitter.vocabularyName(graph));
-            for (GraphDescriptor peer : peers(model, graph)) {
+            for (GraphDescriptor peer : peers(model, dependencyPeers, graph)) {
                 addGenerated(generated, WatchVocabularyEmitter.vocabularyName(graph, peer));
             }
         }
@@ -109,19 +135,31 @@ public final class ApiEmitter {
     }
 
     /**
-     * The machines {@code graph} declares as peers, resolved against this compilation. The vocabulary of a pair
-     * needs the peer's own state enum, so a peer that is not generated here cannot be typed at all.
+     * The refusal of the peer {@code peer} that {@code owner} declares when no descriptor of it is known: it is
+     * neither a {@code @GenerateGraphApi} machine of this compilation nor a machine the export index of a dependency
+     * describes. The vocabulary of a pair needs the peer's own state enum, so such a peer cannot be typed at all.
      *
-     * @throws CodegenException {@code SG608} anchored at the owner, naming the peer it cannot resolve
+     * @return {@code SG608} anchored at the owner, naming the peer
      */
-    private static List<GraphDescriptor> peers(GenerationModel model, GraphDescriptor graph) {
+    public static CodegenException unknownPeer(@NonNull String peer, @NonNull GraphDescriptor owner) {
+        return new CodegenException(DiagnosticCode.SG608.name(), "the peer machine " + peer + " declared by "
+            + owner.facade() + " is not a @GenerateGraphApi machine of this compilation or of a dependency export"
+            + " index", owner.origin());
+    }
+
+    /**
+     * The machines {@code graph} declares as peers, each one found by its facade among the machines of
+     * {@code model} first and among {@code dependencyPeers} then.
+     *
+     * @throws CodegenException {@link #unknownPeer} for a peer found in neither
+     */
+    private static List<GraphDescriptor> peers(GenerationModel model, List<GraphDescriptor> dependencyPeers,
+            GraphDescriptor graph) {
         List<GraphDescriptor> peers = new ArrayList<>();
         for (String peer : graph.peers()) {
-            peers.add(model.graphs().stream().filter(candidate -> candidate.facade().equals(peer))
-                    .findFirst().orElseThrow(() -> new CodegenException(DiagnosticCode.SG608.name(),
-                        "the peer machine " + peer
-                        + " declared by " + graph.facade()
-                        + " is not a @GenerateGraphApi machine of this compilation", graph.origin())));
+            peers.add(Stream.concat(model.graphs().stream(), dependencyPeers.stream())
+                    .filter((GraphDescriptor candidate) -> candidate.facade().equals(peer))
+                    .findFirst().orElseThrow(() -> unknownPeer(peer, graph)));
         }
         return peers;
     }
