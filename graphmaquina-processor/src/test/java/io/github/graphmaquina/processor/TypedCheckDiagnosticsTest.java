@@ -71,6 +71,30 @@ class TypedCheckDiagnosticsTest {
         assertEquals(List.of("[SG512] canArchive checks ARCHIVE" + NO_OPERATION), result.errors(), result.describe());
     }
 
+    /** The operation is refused for its signature, and only that refusal is reported: its check adds no SG512. */
+    @Test
+    void checkOfAnOperationRefusedForItsSignatureReportsThatRefusalAlone() {
+        Compilation.Result result = Compilation.compileTyped(minimal("Doc doc, String first, String second",
+                check("PUBLISH", "canPublish(Doc doc)")));
+
+        assertEquals(List.of("[SG504] an operation is declared as Outcome<Doc, DocStatus, DocTransition> publish(Doc)"
+                + " or publish(Doc, I), without varargs or method type parameters on input operations"),
+                result.errors(), result.describe());
+    }
+
+    /** The operation is refused for an error of its edge, and only that error is reported: its check adds no SG512. */
+    @Test
+    void checkOfAnOperationRefusedForItsEdgeReportsThatErrorAlone() {
+        Map<String, String> sources = minimal("Doc doc", check("PUBLISH", "canPublish(Doc doc)"));
+        sources.put("fx.Docs", sources.get("fx.Docs").replace("action = DocActionsRefs.Publish.class)",
+                "action = DocActionsRefs.Publish.class, failsOn = Exception.class)"));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.hasError("SG302"), result.describe());
+        assertEquals(1, result.errors().size(), result.describe());
+    }
+
     @Test
     void checkWithoutTheOperationsInputIsSG513() {
         Compilation.Result result = Compilation.compileTyped(minimal("Doc doc, String reason",

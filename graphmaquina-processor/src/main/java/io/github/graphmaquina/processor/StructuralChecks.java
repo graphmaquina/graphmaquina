@@ -388,9 +388,9 @@ final class StructuralChecks {
      * the static {@code graph(...)} of its companion would clash with, as {@link Signatures#clashing} finds it: one
      * named {@code graph} taking what that {@code graph(...)} takes, the definition of each machine it binds as a
      * sub-machine, then one parameter per class with instance members the machine binds. javac would refuse the
-     * companion. A method the facade declares is reported where it is declared, as an operation when it is abstract,
-     * and one it only inherits at the facade, with the interface that declares it. This is the facade's counterpart
-     * of the refusal of a set's {@code builder} method by {@link SetModelBuilder}.
+     * companion. A method the facade declares, an operation, a check or a default method, is reported where it is
+     * declared, and one it only inherits at the facade, with the interface that declares it. This is the facade's
+     * counterpart of the refusal of a set's {@code builder} method by {@link SetModelBuilder}.
      */
     void checkGraphFactory(MachineModel model) {
         TypeElement facade = model.types().facade();
@@ -421,8 +421,7 @@ final class StructuralChecks {
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(facade)) {
                 diagnostics.error("SG504", graph + " is the static " + graph + " " + companion
-                        + " declares, which takes " + takes + ": give the "
-                        + (method.isDefault() ? "method" : "operation") + " another name", method);
+                        + " declares, which takes " + takes + ": give the method another name", method);
                 return;
             }
         }

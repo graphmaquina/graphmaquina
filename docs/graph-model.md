@@ -371,7 +371,7 @@ exports are checked for collisions; do not manually create classes in generated 
 A facade method that carries the generated `Check` has a signature of its own, `I` being the input type of the
 operation it checks:
 
-| Declaration | Supported signature |
+| Declaration | Accepted signature |
 | --- | --- |
 | `Check` on an abstract facade method | `Eligibility<E, S, T> method(E entity)` or `Eligibility<E, S, T> method(E entity, I input)` |
 

@@ -17,6 +17,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 
 /**
  * Reads the checks a facade declares: its abstract methods that carry the {@code Check} generated for that very
@@ -26,9 +27,11 @@ import javax.lang.model.type.TypeMirror;
  * <p>A check is no operation. It owns no identifier, so it never takes part in {@code SG703}, and opens no edge, so
  * it never takes part in {@code SG804} either. Its {@code id} names the identifier one of the facade's operations
  * executes, never a route the facade only declares on itself, the exit of a sub-machine or an identifier without an
- * edge ({@code SG512}). It repeats the parameters of that operation, the same entity and the same input, present
- * exactly when the operation takes one, under the result {@code Eligibility<E, S, T>} of the machine's own types and
- * without varargs or type parameters of its own ({@code SG513}). An operation has one check at most, and a method that
+ * edge ({@code SG512}). A check of an identifier that a method of the facade declares a {@code Transition} for, but
+ * that no operation executes because that method was refused for a reason already reported, is left out without a
+ * word. A check repeats the parameters of its operation, the same entity and the same input, present exactly when
+ * the operation takes one, under the result {@code Eligibility<E, S, T>} of the machine's own types and without
+ * varargs or type parameters of its own ({@code SG513}). An operation has one check at most, and a method that
  * carries a {@code Transition} and a {@code Check} is refused, since a check is declared on a method of its own
  * ({@code SG514}).</p>
  *
@@ -59,14 +62,16 @@ final class TypedChecks {
      * The checks of {@code facade}, in the order {@code declared} holds them. {@code declared} are the abstract
      * methods the facade declares that carry a {@code Check} of its own vocabulary and no {@code Transition}, and
      * {@code operations} the operations read from the same facade. A check with a problem is reported and left out;
-     * one whose {@code id} javac could not read is left out, since javac has refused it already.
+     * one whose {@code id} javac could not read is left out, since javac has refused it already, and so is one whose
+     * operation was refused: a method of the facade declares a {@code Transition} of that identifier, and the error
+     * that refused it was reported already.
      */
     List<CheckModel> read(TypeElement facade, MachineTypes types, List<ExecutableElement> declared,
             List<OperationModel> operations) {
         List<CheckModel> checks = new ArrayList<>();
         Map<String, ExecutableElement> checked = new LinkedHashMap<>();
         for (ExecutableElement method : declared) {
-            Optional<AnnotationMirror> check = own(method, facade);
+            Optional<AnnotationMirror> check = own(method, VocabularyKind.CHECK, facade).stream().findFirst();
             Optional<AnnotationValue> id = check.flatMap((AnnotationMirror mirror) -> annotations.find(mirror, "id"));
             Optional<String> identifier = id.flatMap((AnnotationValue value) ->
                     TypedValues.constantName(value, types.transitionsElement()));
@@ -78,10 +83,13 @@ final class TypedChecks {
                     .filter((OperationModel candidate) -> candidate.transitionId().equals(identifier.get()))
                     .findFirst();
             if (operation.isEmpty()) {
-                DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, NO_OPERATION,
-                        method.getSimpleName() + " checks " + identifier.get() + ", which no operation of "
-                                + facade.getSimpleName() + " executes: a Check names the identifier of one of the"
-                                + " facade's operations");
+                // Silent when a method declares the identifier: its refusal as an operation was reported already.
+                if (!declaredOnAMethod(facade, identifier.get(), types)) {
+                    DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, NO_OPERATION,
+                            method.getSimpleName() + " checks " + identifier.get() + ", which no operation of "
+                                    + facade.getSimpleName() + " executes: a Check names the identifier of one of"
+                                    + " the facade's operations");
+                }
                 continue;
             }
             if (claims(method, check.get(), identifier.get(), checked) && repeats(method, operation.get(), types)) {
@@ -101,17 +109,36 @@ final class TypedChecks {
                 + " checks");
     }
 
-    /** The {@code Check} of {@code method} generated for {@code facade}, if it carries one. Reports nothing. */
-    private Optional<AnnotationMirror> own(ExecutableElement method, TypeElement facade) {
-        for (AnnotationMirror mirror : vocabulary.findAll(method, VocabularyKind.CHECK)) {
+    /**
+     * Whether a method of {@code facade}, whatever its modifiers, carries a {@code Transition} of the facade's own
+     * vocabulary that names {@code identifier}. When no operation executes that identifier, the operation the method
+     * declares was refused, as {@code SG504}, {@code SG703} or an error of one of its edges, which was reported.
+     */
+    private boolean declaredOnAMethod(TypeElement facade, String identifier, MachineTypes types) {
+        for (ExecutableElement method : ElementFilter.methodsIn(facade.getEnclosedElements())) {
+            for (AnnotationMirror transition : own(method, VocabularyKind.TRANSITION, facade)) {
+                Optional<String> named = annotations.find(transition, "id").flatMap((AnnotationValue value) ->
+                        TypedValues.constantName(value, types.transitionsElement()));
+                if (named.isPresent() && named.get().equals(identifier)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Every vocabulary of {@code kind} on {@code method} that was generated for {@code facade}. Reports nothing. */
+    private List<AnnotationMirror> own(ExecutableElement method, VocabularyKind kind, TypeElement facade) {
+        List<AnnotationMirror> own = new ArrayList<>();
+        for (AnnotationMirror mirror : vocabulary.findAll(method, kind)) {
             TypeElement declaration = (TypeElement) mirror.getAnnotationType().asElement();
             AnnotationMirror metadata = annotations.find(declaration, GeneratedVocabulary.class).orElseThrow();
             TypeMirror machine = TypedValues.classLiteral(annotations.value(metadata, "machine"));
             if (machine instanceof DeclaredType declared && declared.asElement().equals(facade)) {
-                return Optional.of(mirror);
+                own.add(mirror);
             }
         }
-        return Optional.empty();
+        return own;
     }
 
     /** SG514 at {@code check} unless {@code identifier} is still unchecked: an operation has one check at most. */
