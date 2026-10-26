@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
@@ -106,7 +107,7 @@ final class RuntimeNameCheck {
             return Optional.of(SymbolNames.qualified(environment.getElementUtils().getPackageOf(type)
                     .getQualifiedName().toString(), SymbolNames.runtimeName(type.getSimpleName().toString())));
         } catch (IllegalArgumentException failure) {
-            diagnostics.error("SG603", failure.getMessage(), type);
+            diagnostics.error(DiagnosticCode.SG603, failure.getMessage(), type);
             refused.add(type.getQualifiedName().toString());
             return Optional.empty();
         }
@@ -123,7 +124,7 @@ final class RuntimeNameCheck {
         TypeElement previous = runtimeOrigins.putIfAbsent(name, type);
         if (previous != null) {
             if (!previous.getQualifiedName().contentEquals(type.getQualifiedName())) {
-                diagnostics.error("SG603", "the generated runtime " + name + " is claimed by both "
+                diagnostics.error(DiagnosticCode.SG603, "the generated runtime " + name + " is claimed by both "
                         + previous.getQualifiedName() + " and " + type.getQualifiedName(), type);
                 refused.add(declared);
             }
@@ -132,7 +133,7 @@ final class RuntimeNameCheck {
         String twin = runtimeCases.putIfAbsent(CaseFolding.key(name), name);
         Optional<String> volume = twin == null ? Optional.empty() : caseBlindVolume();
         if (volume.isPresent()) {
-            diagnostics.error("SG603", "the generated runtimes " + twin + " of "
+            diagnostics.error(DiagnosticCode.SG603, "the generated runtimes " + twin + " of "
                     + runtimeOrigins.get(twin).getQualifiedName() + " and " + name + " of "
                     + type.getQualifiedName() + " differ only in case, and the volume of " + volume.get()
                     + " does not tell their files apart", type);
@@ -158,12 +159,12 @@ final class RuntimeNameCheck {
         }
         refused.add(declared);
         if (isStaleOutput(existing, round)) {
-            diagnostics.error("SG602", "the generated runtime " + name + " of " + type.getQualifiedName()
+            diagnostics.error(DiagnosticCode.SG602, "the generated runtime " + name + " of " + type.getQualifiedName()
                     + " is still compiled from a previous compilation that nothing retired: run the generation"
                     + " lifecycle, whose prepare-compile step retires it, or clean the build, then compile again",
                     type);
         } else {
-            diagnostics.error("SG603", "the generated runtime " + name + " for " + type.getQualifiedName()
+            diagnostics.error(DiagnosticCode.SG603, "the generated runtime " + name + " for " + type.getQualifiedName()
                     + " conflicts with existing type " + existing.getQualifiedName(), type);
         }
     }

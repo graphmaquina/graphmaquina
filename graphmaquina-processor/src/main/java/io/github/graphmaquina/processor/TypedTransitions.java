@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -44,8 +45,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class TypedTransitions {
-
-    private static final String DUPLICATE_GUARD = "SG105";
 
     private final StructuralChecks structure;
     private final SymbolResolver symbols;
@@ -154,7 +153,7 @@ final class TypedTransitions {
                 continue;
             }
             if (!seen.add(symbol.toString())) {
-                DiagnosticAnchor.of(element, mirror, value).report(diagnostics, DUPLICATE_GUARD,
+                DiagnosticAnchor.of(element, mirror, value).report(diagnostics, DiagnosticCode.SG105,
                         "the guard " + symbol + " is declared twice");
                 continue;
             }
@@ -164,7 +163,7 @@ final class TypedTransitions {
             }
             TypeMirror earlier = named.putIfAbsent(guard.get().methodName(), symbol);
             if (earlier != null) {
-                DiagnosticAnchor.of(element, mirror, value).report(diagnostics, DUPLICATE_GUARD,
+                DiagnosticAnchor.of(element, mirror, value).report(diagnostics, DiagnosticCode.SG105,
                         "the guards " + earlier + " and " + symbol + " share the name " + guard.get().methodName()
                                 + ", which a rejection reports: the guards of one edge need members of distinct names");
                 continue;

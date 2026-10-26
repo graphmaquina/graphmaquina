@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.processor.model.Binding;
@@ -49,11 +50,6 @@ import javax.lang.model.type.TypeMirror;
  * {@code SG509} when one of those types is not accessible from the package the companion is generated in.</p>
  */
 final class TypedSubmachineReader {
-
-    private static final String WAYS = "SG806";
-    private static final String NOT_A_MACHINE = "SG509";
-    private static final String CLAIMED_EXIT = "SG804";
-    private static final String CYCLE = "SG805";
 
     private final VocabularyRegistry vocabulary;
     private final TypedPairs pairs;
@@ -164,7 +160,8 @@ final class TypedSubmachineReader {
         if (inaccessible.isEmpty()) {
             return true;
         }
-        DiagnosticAnchor.of(facade, submachine).report(diagnostics, NOT_A_MACHINE, child.facade().getQualifiedName()
+        DiagnosticAnchor.of(facade, submachine).report(diagnostics, DiagnosticCode.SG509,
+                child.facade().getQualifiedName()
                 + " is bound as a sub-machine with " + String.join(" and ", inaccessible) + ", which "
                 + Accessibility.describe(packageName) + ", where the companion of " + facade.getSimpleName()
                 + " is generated, cannot access: make " + (inaccessible.size() == 1 ? "it" : "them") + " public");
@@ -197,14 +194,15 @@ final class TypedSubmachineReader {
             if (childValue.isEmpty() && parentValue.isEmpty() && lookupValue.isEmpty()) {
                 return true;
             }
-            DiagnosticAnchor.of(facade, submachine).report(diagnostics, WAYS, governs + machine.entityName()
+            DiagnosticAnchor.of(facade, submachine).report(diagnostics, DiagnosticCode.SG806,
+                    governs + machine.entityName()
                     + " itself, so child, parent and parentLookup must be empty");
             return false;
         }
         if (childValue.isPresent() && parentValue.isPresent() != lookupValue.isPresent()) {
             return true;
         }
-        DiagnosticAnchor.of(facade, submachine).report(diagnostics, WAYS, governs + child.entityName()
+        DiagnosticAnchor.of(facade, submachine).report(diagnostics, DiagnosticCode.SG806, governs + child.entityName()
                 + ", so the sub-machine needs child and one of parent or parentLookup");
         return false;
     }
@@ -231,9 +229,10 @@ final class TypedSubmachineReader {
             }
             for (OperationModel operation : operations) {
                 if (operation.transitionId().equals(transition.get())) {
-                    DiagnosticAnchor.of(facade, exit, declaredTransition.get()).report(diagnostics, CLAIMED_EXIT,
-                            facade.getSimpleName() + "." + state + ": " + transition.get() + " is an exit of its"
-                                    + " sub-machine and cannot be the operation " + operation.name());
+                    DiagnosticAnchor.of(facade, exit, declaredTransition.get()).report(diagnostics,
+                            DiagnosticCode.SG804, facade.getSimpleName() + "." + state + ": " + transition.get()
+                                    + " is an exit of its sub-machine and cannot be the operation "
+                                    + operation.name());
                 }
             }
             exits.add(new SubmachineModel.Exit(on.get(), transition.get()));
@@ -279,7 +278,8 @@ final class TypedSubmachineReader {
         while (!queue.isEmpty()) {
             Visit visit = queue.removeFirst();
             if (visit.machine().equals(facade)) {
-                DiagnosticAnchor.of(facade, visit.first()).report(diagnostics, CYCLE, "the sub-machines of " + name
+                DiagnosticAnchor.of(facade, visit.first()).report(diagnostics, DiagnosticCode.SG805,
+                        "the sub-machines of " + name
                         + " contain " + name + " again: " + visit.path() + " -> " + name);
                 return;
             }

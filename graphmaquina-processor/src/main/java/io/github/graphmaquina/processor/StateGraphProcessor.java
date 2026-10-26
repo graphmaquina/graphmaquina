@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
@@ -230,7 +231,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             return;
         }
         reportedManifest = true;
-        manifests.failure().ifPresent((String reason) -> diagnostics.error("SG602", reason));
+        manifests.failure().ifPresent((String reason) -> diagnostics.error(DiagnosticCode.SG602, reason));
     }
 
     /**
@@ -268,14 +269,16 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Optional<MachineModel> held(TypeElement machine, TypeElement set, RoundEnvironment round) {
         String name = machine.getQualifiedName().toString();
         if (!models.containsKey(name) && !failed.contains(name) && manifests.isLocal(name)) {
-            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", which this compilation never"
+            diagnostics.error(DiagnosticCode.SG602,
+                    set.getQualifiedName() + " holds " + name + ", which this compilation never"
                     + " processed, so neither gets a companion: javac does not process a source it compiles"
                     + " implicitly, from the source path, so pass every source of the compilation to javac", set);
             return Optional.empty();
         }
         Optional<String> unlisted = manifests.isListed(name) ? Optional.empty() : missingIndex.unlisted(machine);
         if (unlisted.isPresent()) {
-            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", but " + name + unlisted.get(),
+            diagnostics.error(DiagnosticCode.SG602,
+                    set.getQualifiedName() + " holds " + name + ", but " + name + unlisted.get(),
                     set);
             return Optional.empty();
         }
@@ -381,7 +384,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         try (Writer writer = processingEnv.getFiler().createSourceFile(qualifiedName, origin).openWriter()) {
             writer.write(companion.source());
         } catch (IOException e) {
-            diagnostics.error("SG599", "could not write " + qualifiedName + ": " + e.getMessage(), origin);
+            diagnostics.error(DiagnosticCode.SG599, "could not write " + qualifiedName + ": " + e.getMessage(), origin);
             return;
         }
         scope.wrote(qualifiedName, origin, companion.written());

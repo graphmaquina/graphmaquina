@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -85,7 +86,8 @@ final class TypedValues {
             DiagnosticAnchor anchor, Diagnostics diagnostics) {
         List<AnnotationValue> values = annotations.array(mirror, name);
         if (values.size() > 1) {
-            anchor.report(diagnostics, "SG607", name + " declares " + values.size() + " values but holds one at most");
+            anchor.report(diagnostics, DiagnosticCode.SG607,
+                    name + " declares " + values.size() + " values but holds one at most");
             return Optional.empty();
         }
         return values.isEmpty() ? Optional.empty() : Optional.of(values.get(0));

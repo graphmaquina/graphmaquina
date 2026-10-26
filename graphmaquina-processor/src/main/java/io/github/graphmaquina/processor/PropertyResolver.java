@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GraphProperty;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.model.PropertyDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
@@ -32,9 +33,6 @@ import javax.lang.model.type.TypeMirror;
  * order the members are found in.</p>
  */
 final class PropertyResolver {
-
-    private static final String WRONG_HOST = "SG605";
-    private static final String NO_ACCESSOR = "SG503";
 
     private final Map<String, SymbolDescriptor> symbols;
     private final MissingExportIndex missingIndex;
@@ -123,12 +121,13 @@ final class PropertyResolver {
         }
         SymbolDescriptor descriptor = reference.get().descriptor();
         if (!signatures.same(reference.get().host(), host.entity())) {
-            anchor.report(diagnostics, WRONG_HOST, descriptor.qualifiedName() + " is a property of "
+            anchor.report(diagnostics, DiagnosticCode.SG605, descriptor.qualifiedName() + " is a property of "
                     + descriptor.host() + ", not of " + host.entityName());
             return Optional.empty();
         }
         if (descriptor.property().isEmpty()) {
-            anchor.report(diagnostics, WRONG_HOST, descriptor.qualifiedName() + " names no property declaration");
+            anchor.report(diagnostics, DiagnosticCode.SG605,
+                    descriptor.qualifiedName() + " names no property declaration");
         }
         return descriptor.property();
     }
@@ -145,7 +144,7 @@ final class PropertyResolver {
                 return Optional.of(candidate);
             }
         }
-        anchor.report(diagnostics, NO_ACCESSOR, host.entityName() + " has no public reader for property '"
+        anchor.report(diagnostics, DiagnosticCode.SG503, host.entityName() + " has no public reader for property '"
                 + property.logicalName() + "' returning " + expectation + describe(property));
         return Optional.empty();
     }
@@ -186,13 +185,14 @@ final class PropertyResolver {
             }
             Optional<Property> selected = mostSpecific(fitting);
             if (selected.isEmpty()) {
-                anchor.report(diagnostics, NO_ACCESSOR, host.entityName() + '.' + name + " is ambiguous for property '"
+                anchor.report(diagnostics, DiagnosticCode.SG503,
+                        host.entityName() + '.' + name + " is ambiguous for property '"
                         + property.logicalName() + "': " + parameters(fitting) + " all accept " + value
                         + " and none is more specific than the others");
             }
             return selected;
         }
-        anchor.report(diagnostics, NO_ACCESSOR, host.entityName() + " has no public writer for property '"
+        anchor.report(diagnostics, DiagnosticCode.SG503, host.entityName() + " has no public writer for property '"
                 + property.logicalName() + "': expected set" + Accessors.capitalize(property.logicalName())
                 + '(' + value + ") or " + property.logicalName() + '(' + value + ')');
         return Optional.empty();

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -34,11 +35,6 @@ import javax.lang.model.type.TypeMirror;
  * package the companion is generated in.</p>
  */
 final class TypedWatchReader {
-
-    private static final String NOT_A_MACHINE = "SG509";
-    private static final String TWO_WATCHES = "SG403";
-    private static final String NO_RULES = "SG404";
-    private static final String ALTERNATIVE = "SG508";
 
     /** The four elements of a rule, exactly one of which a {@code When} declares. */
     private static final List<String> ALTERNATIVES = List.of("condition", "allIn", "anyIn", "noneIn");
@@ -107,7 +103,7 @@ final class TypedWatchReader {
             return Optional.empty();
         }
         if (!states.add(state.get())) {
-            DiagnosticAnchor.of(facade, watch, declaredState.get()).report(diagnostics, TWO_WATCHES,
+            DiagnosticAnchor.of(facade, watch, declaredState.get()).report(diagnostics, DiagnosticCode.SG403,
                     "the state " + state.get() + " declares two watches");
         }
         Optional<Property> peersOf = symbol(declaredPeers.get()).flatMap((TypeMirror property) -> properties.peers(
@@ -116,7 +112,7 @@ final class TypedWatchReader {
                 property, machine, peer, DiagnosticAnchor.of(facade, watch, declaredOwner.get())));
         List<AnnotationMirror> declared = annotations.annotations(watch, "rules");
         if (declared.isEmpty()) {
-            DiagnosticAnchor.of(facade, watch, declaredRules.get()).report(diagnostics, NO_RULES,
+            DiagnosticAnchor.of(facade, watch, declaredRules.get()).report(diagnostics, DiagnosticCode.SG404,
                     "the watch of " + state.get() + " declares no rule");
         }
         List<RuleModel> rules = new ArrayList<>();
@@ -145,7 +141,7 @@ final class TypedWatchReader {
         if (inaccessible.isEmpty()) {
             return true;
         }
-        DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peer.facade().getQualifiedName()
+        DiagnosticAnchor.of(facade, watch).report(diagnostics, DiagnosticCode.SG509, peer.facade().getQualifiedName()
                 + " is watched with " + String.join(" and ", inaccessible) + ", which "
                 + Accessibility.describe(packageName) + ", where the companion of " + facade.getSimpleName()
                 + " is generated, cannot access: make " + (inaccessible.size() == 1 ? "it" : "them") + " public");
@@ -172,7 +168,7 @@ final class TypedWatchReader {
             }
         }
         if (given.size() != 1) {
-            DiagnosticAnchor.of(facade, rule).report(diagnostics, ALTERNATIVE, "a rule declares exactly one of"
+            DiagnosticAnchor.of(facade, rule).report(diagnostics, DiagnosticCode.SG508, "a rule declares exactly one of"
                     + " condition, allIn, anyIn or noneIn; this one declares " + (given.isEmpty() ? "none" : given));
             return Optional.empty();
         }

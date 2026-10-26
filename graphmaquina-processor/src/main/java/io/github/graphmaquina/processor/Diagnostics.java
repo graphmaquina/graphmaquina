@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import com.sun.source.util.Trees;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Optional;
 import java.util.OptionalLong;
 import javax.annotation.processing.Messager;
@@ -59,25 +60,25 @@ final class Diagnostics {
     }
 
     /** Reported without an anchor, for a failure of the compilation itself rather than of a declaration. */
-    void error(String code, String message) {
+    void error(DiagnosticCode code, String message) {
         errors++;
-        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message);
+        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code.name() + "] " + message);
     }
 
-    void error(String code, String message, Element element) {
+    void error(DiagnosticCode code, String message, Element element) {
         errors++;
-        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message, element);
+        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code.name() + "] " + message, element);
     }
 
-    void error(String code, String message, Element element, AnnotationMirror mirror) {
+    void error(DiagnosticCode code, String message, Element element, AnnotationMirror mirror) {
         errors++;
-        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message, element, mirror);
+        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code.name() + "] " + message, element, mirror);
     }
 
     /** Reports once at the exact expression when bound, otherwise at Messager's best available anchor. */
-    void error(String code, String message, Element element, AnnotationMirror mirror, AnnotationValue value) {
+    void error(DiagnosticCode code, String message, Element element, AnnotationMirror mirror, AnnotationValue value) {
         errors++;
-        String formatted = "[" + code + "] " + message;
+        String formatted = "[" + code.name() + "] " + message;
         Optional<AnnotationSources.Location> location = sources.find(element, mirror, value);
         if (location.isPresent()) {
             AnnotationSources.Location source = location.get();

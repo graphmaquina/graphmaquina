@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
@@ -142,7 +143,7 @@ final class StructuralChecks {
         if (type.getNestingKind() == NestingKind.TOP_LEVEL) {
             return true;
         }
-        anchor.report(diagnostics, "SG502", type.getSimpleName()
+        anchor.report(diagnostics, DiagnosticCode.SG502, type.getSimpleName()
                 + " must be a top-level interface: the generated companion lives next to it in the package");
         return false;
     }
@@ -171,13 +172,14 @@ final class StructuralChecks {
             if (builtIn.isPresent()) {
                 String owner = ((TypeElement) builtIn.get().getEnclosingElement()).getSimpleName() + "."
                         + builtIn.get().getSimpleName();
-                diagnostics.error("SG504", facade.getSimpleName() + " inherits " + method.getSimpleName() + " from "
+                diagnostics.error(DiagnosticCode.SG504,
+                        facade.getSimpleName() + " inherits " + method.getSimpleName() + " from "
                         + from + ", which redeclares " + owner + " with a result the generated companion's "
                         + method.getSimpleName() + " cannot return: declare it in " + from + " with the result " + owner
                         + " has, or leave the redeclaration out", facade);
                 continue;
             }
-            diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method "
+            diagnostics.error(DiagnosticCode.SG504, facade.getSimpleName() + " inherits the abstract method "
                     + method.getSimpleName() + " from " + from
                     + ", which the generated companion would not implement: declare every operation and check on "
                     + facade.getSimpleName() + " itself", facade);
@@ -195,10 +197,11 @@ final class StructuralChecks {
                              boolean declared) {
         String owner = ((TypeElement) builtIn.getEnclosingElement()).getSimpleName() + "." + builtIn.getSimpleName();
         if (declared) {
-            diagnostics.error("SG504", method.getSimpleName() + " overrides " + owner
+            diagnostics.error(DiagnosticCode.SG504, method.getSimpleName() + " overrides " + owner
                     + ", which the generated companion implements already: give the method another name", method);
         } else if (!signatures.implementedBy(method, builtIn, facade)) {
-            diagnostics.error("SG504", method.getSimpleName() + " redeclares " + owner + " with a result the generated"
+            diagnostics.error(DiagnosticCode.SG504,
+                    method.getSimpleName() + " redeclares " + owner + " with a result the generated"
                     + " companion's " + builtIn.getSimpleName() + " cannot return: declare it with the result "
                     + owner + " has, or leave the redeclaration out", method);
         }
@@ -219,7 +222,8 @@ final class StructuralChecks {
      */
     boolean checkOperationDeclared(ExecutableElement method, boolean declared) {
         if (!declared) {
-            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition, or one Check,"
+            diagnostics.error(DiagnosticCode.SG504,
+                    method.getSimpleName() + " must carry at least one Transition, or one Check,"
                     + " of its own graph vocabulary", method);
             return false;
         }
@@ -243,7 +247,7 @@ final class StructuralChecks {
                 && signatures.same(method.getReturnType(), outcome)) {
             return true;
         }
-        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", "
+        diagnostics.error(DiagnosticCode.SG504, "an operation is declared as Outcome<" + types.entityName() + ", "
                 + types.statesName() + ", " + types.transitionsName() + "> " + method.getSimpleName() + "("
                 + types.entityName() + ") or " + method.getSimpleName() + "(" + types.entityName()
                 + ", I), without varargs or method type parameters on input operations", method);
@@ -253,7 +257,7 @@ final class StructuralChecks {
     /** SG507 unless the edge names at least one state to leave. */
     void checkFrom(boolean declared, DiagnosticAnchor anchor) {
         if (!declared) {
-            anchor.report(diagnostics, "SG507", "from must name at least one state");
+            anchor.report(diagnostics, DiagnosticCode.SG507, "from must name at least one state");
         }
     }
 
@@ -267,7 +271,7 @@ final class StructuralChecks {
                       AnnotationMirror mirror) {
         for (int i = 0; i < failsOn.size(); i++) {
             if (isForbiddenFailsOn(failsOn.get(i))) {
-                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i)
+                diagnostics.error(DiagnosticCode.SG302, "failsOn does not allow " + failsOn.get(i)
                         + "; only throwable types foreign to the library, and never Throwable, Exception,"
                         + " RuntimeException, an Error or a CancellationException, which are never domain failures,"
                         + " nor CompletionException or ExecutionException, which are unwrapped before matching:"
@@ -284,7 +288,7 @@ final class StructuralChecks {
     void checkActionRequired(boolean action, Optional<String> onFailure, List<TypeMirror> failsOn,
             Optional<Duration> timeout, String remedy, DiagnosticAnchor anchor) {
         if (!action && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
-            anchor.report(diagnostics, "SG507", "onFailure, failsOn and timeout need an action" + remedy);
+            anchor.report(diagnostics, DiagnosticCode.SG507, "onFailure, failsOn and timeout need an action" + remedy);
         }
     }
 
@@ -295,7 +299,7 @@ final class StructuralChecks {
     void checkRecoveriesNeedAction(boolean action, List<RecoveryModel> recoveries, String remedy,
             DiagnosticAnchor anchor) {
         if (!action && !recoveries.isEmpty()) {
-            anchor.report(diagnostics, "SG507", "recoveries need an action" + remedy);
+            anchor.report(diagnostics, DiagnosticCode.SG507, "recoveries need an action" + remedy);
         }
     }
 
@@ -331,7 +335,7 @@ final class StructuralChecks {
             String kind = binaryName(recovery.kind());
             DiagnosticAnchor kindAnchor = DiagnosticAnchor.of(element, recovery.annotation(), recovery.kindValue());
             if (!contains(kinds, recovery.kind()) && !isFailureKind(recovery.kind())) {
-                kindAnchor.report(diagnostics, "SG303", kind + FailureTypes.INVALID_KIND_SUFFIX);
+                kindAnchor.report(diagnostics, DiagnosticCode.SG303, kind + FailureTypes.INVALID_KIND_SUFFIX);
             }
             repeated(recovery.kind(), kinds, repeatedKinds, kindAnchor,
                     "failure kind " + kind + " is declared by more than one recover");
@@ -340,7 +344,7 @@ final class StructuralChecks {
                 DiagnosticAnchor anchor = DiagnosticAnchor.of(element, recovery.annotation(),
                         recovery.failsOnValues().get(at));
                 if (isForbiddenFailsOn(type)) {
-                    anchor.report(diagnostics, "SG302", "recover(" + kind + ", " + recovery.transition()
+                    anchor.report(diagnostics, DiagnosticCode.SG302, "recover(" + kind + ", " + recovery.transition()
                             + ") does not allow " + binaryName(type) + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
                 }
                 occurrences.add(new ThrowableOccurrence(type, anchor, diagnostics.sourceStart(anchor)));
@@ -372,14 +376,14 @@ final class StructuralChecks {
     /** SG507 when a timeout is declared on an action that does not run asynchronously. */
     void checkAsyncTimeout(Optional<Duration> timeout, Optional<Binding> action, DiagnosticAnchor anchor) {
         if (timeout.isPresent() && action.isPresent() && !action.get().async()) {
-            anchor.report(diagnostics, "SG507", "timeout is only allowed on an asynchronous action");
+            anchor.report(diagnostics, DiagnosticCode.SG507, "timeout is only allowed on an asynchronous action");
         }
     }
 
     /** Every problem the full outline of {@code model} has, reported where its graph is declared. */
     void checkOutline(MachineModel model, DiagnosticAnchor anchor) {
         for (InvalidGraphException.Problem problem : MachineOutlineValidator.validate(Outlines.of(model))) {
-            anchor.report(diagnostics, problem.code(), problem.message());
+            anchor.report(diagnostics, DiagnosticCode.valueOf(problem.code()), problem.message());
         }
     }
 
@@ -420,12 +424,12 @@ final class StructuralChecks {
         String companion = companion(model.facadeName());
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(facade)) {
-                diagnostics.error("SG504", graph + " is the static " + graph + " " + companion
+                diagnostics.error(DiagnosticCode.SG504, graph + " is the static " + graph + " " + companion
                         + " declares, which takes " + takes + ": give the method another name", method);
                 return;
             }
         }
-        diagnostics.error("SG504", facade.getSimpleName() + " inherits " + graph + " from "
+        diagnostics.error(DiagnosticCode.SG504, facade.getSimpleName() + " inherits " + graph + " from "
                 + ((TypeElement) clashing.get(0).getEnclosingElement()).getQualifiedName() + ", but " + companion
                 + " declares a static " + graph + ", which takes " + takes + ": give that method another name", facade);
     }
@@ -491,7 +495,7 @@ final class StructuralChecks {
             String message) {
         if (contains(seen, type) && !contains(reported, type)) {
             reported.add(type);
-            anchor.report(diagnostics, "SG304", message);
+            anchor.report(diagnostics, DiagnosticCode.SG304, message);
         }
         seen.add(type);
     }

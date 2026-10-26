@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.CheckModel;
@@ -41,9 +42,6 @@ import javax.lang.model.util.ElementFilter;
  */
 final class TypedChecks {
 
-    private static final String NO_OPERATION = "SG512";
-    private static final String SIGNATURE = "SG513";
-    private static final String DUPLICATE = "SG514";
     private static final String ELIGIBILITY = "io.github.graphmaquina.api.Eligibility";
 
     private final VocabularyRegistry vocabulary;
@@ -85,7 +83,7 @@ final class TypedChecks {
             if (operation.isEmpty()) {
                 // Silent when a method declares the identifier: its refusal as an operation was reported already.
                 if (!declaredOnAMethod(facade, identifier.get(), types)) {
-                    DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, NO_OPERATION,
+                    DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, DiagnosticCode.SG512,
                             method.getSimpleName() + " checks " + identifier.get() + ", which no operation of "
                                     + facade.getSimpleName() + " executes: a Check names the identifier of one of"
                                     + " the facade's operations");
@@ -104,7 +102,8 @@ final class TypedChecks {
      * an operation, and a check is declared on a method of its own.
      */
     void checkNotOnOperation(ExecutableElement method, AnnotationMirror check) {
-        DiagnosticAnchor.of(method, check).report(diagnostics, DUPLICATE, method.getSimpleName() + " carries a"
+        DiagnosticAnchor.of(method, check).report(diagnostics, DiagnosticCode.SG514,
+                method.getSimpleName() + " carries a"
                 + " Transition and a Check: a Check is declared on a method of its own, apart from the operation it"
                 + " checks");
     }
@@ -148,7 +147,7 @@ final class TypedChecks {
             checked.put(identifier, method);
             return true;
         }
-        DiagnosticAnchor.of(method, check).report(diagnostics, DUPLICATE, method.getSimpleName() + " checks "
+        DiagnosticAnchor.of(method, check).report(diagnostics, DiagnosticCode.SG514, method.getSimpleName() + " checks "
                 + identifier + ", which " + checked.get(identifier).getSimpleName() + " checks already: an operation"
                 + " has one Check at most");
         return false;
@@ -172,7 +171,7 @@ final class TypedChecks {
             return true;
         }
         String name = method.getSimpleName().toString();
-        diagnostics.error(SIGNATURE, name + " must be declared as Eligibility<" + types.entityName() + ", "
+        diagnostics.error(DiagnosticCode.SG513, name + " must be declared as Eligibility<" + types.entityName() + ", "
                 + types.statesName() + ", " + types.transitionsName() + "> " + name + "(" + types.entityName()
                 + operation.inputType().map((TypeMirror input) -> ", " + input).orElse("") + "), the parameters of "
                 + operation.name(), method);

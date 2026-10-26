@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
@@ -38,10 +39,6 @@ import javax.lang.model.type.TypeMirror;
  * because the alternative is to depend on the order {@code getAllMembers} happens to return.</p>
  */
 final class SymbolResolver {
-
-    private static final String UNKNOWN_SYMBOL = "SG605";
-    private static final String NO_BINDING = "SG505";
-    private static final String MISSING_INDEX = "SG602";
 
     private final Map<String, SymbolDescriptor> symbols;
     private final MissingExportIndex missingIndex;
@@ -120,7 +117,8 @@ final class SymbolResolver {
             }
         }
         if (fitting.isEmpty() && genericInstance) {
-            anchor.report(diagnostics, NO_BINDING, "the exported " + role.name().toLowerCase(Locale.ROOT) + " "
+            anchor.report(diagnostics, DiagnosticCode.SG505,
+                    "the exported " + role.name().toLowerCase(Locale.ROOT) + " "
                     + descriptor.member() + " is an instance member of " + descriptor.host() + ", " + (hostElement
                             .getTypeParameters().isEmpty() ? "an inner class of a generic class" : "a generic class")
                     + ", which generated code could only declare and call raw: export it from a non-generic subclass"
@@ -128,7 +126,7 @@ final class SymbolResolver {
             return Optional.empty();
         }
         if (fitting.size() != 1) {
-            anchor.report(diagnostics, NO_BINDING, describe(descriptor, role, fitting.size())
+            anchor.report(diagnostics, DiagnosticCode.SG505, describe(descriptor, role, fitting.size())
                     + "; expected " + Bindings.expected(descriptor.member(), role, machine, peer));
             return Optional.empty();
         }
@@ -154,7 +152,7 @@ final class SymbolResolver {
         if (inaccessible.isEmpty()) {
             return true;
         }
-        anchor.report(diagnostics, NO_BINDING, descriptor.qualifiedName() + " makes the companion of "
+        anchor.report(diagnostics, DiagnosticCode.SG505, descriptor.qualifiedName() + " makes the companion of "
                 + machine.facade().getSimpleName() + " name " + String.join(" and ", inaccessible) + ", which "
                 + Accessibility.describe(packageName) + ", where that companion is generated, cannot access: make "
                 + (inaccessible.size() == 1 ? "it" : "them") + " public");
@@ -172,7 +170,7 @@ final class SymbolResolver {
             Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Annotations annotations,
             Diagnostics diagnostics) {
         if (!(symbol instanceof DeclaredType declared) || !(declared.asElement() instanceof TypeElement element)) {
-            anchor.report(diagnostics, UNKNOWN_SYMBOL, symbol + " is not a generated symbol");
+            anchor.report(diagnostics, DiagnosticCode.SG605, symbol + " is not a generated symbol");
             return Optional.empty();
         }
         String name = element.getQualifiedName().toString();
@@ -181,20 +179,21 @@ final class SymbolResolver {
         if (metadata.isEmpty() || descriptor == null) {
             Optional<String> unlisted = metadata.isEmpty() ? Optional.empty() : missingIndex.unlisted(element);
             if (unlisted.isPresent()) {
-                anchor.report(diagnostics, MISSING_INDEX, name + unlisted.get());
+                anchor.report(diagnostics, DiagnosticCode.SG602, name + unlisted.get());
             } else {
-                anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " is not a symbol this compilation exports"
+                anchor.report(diagnostics, DiagnosticCode.SG605, name + " is not a symbol this compilation exports"
                         + " or depends on; use one of the generated <Host>Refs types");
             }
             return Optional.empty();
         }
         if (!descriptor.kinds().contains(kind)) {
-            anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " exports " + kinds(descriptor)
+            anchor.report(diagnostics, DiagnosticCode.SG605, name + " exports " + kinds(descriptor)
                     + ", not a " + kind.name().toLowerCase(Locale.ROOT));
             return Optional.empty();
         }
         if (!(TypedValues.classLiteral(annotations.value(metadata.get(), "host")) instanceof DeclaredType host)) {
-            anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " names no host to call " + descriptor.member() + " on");
+            anchor.report(diagnostics, DiagnosticCode.SG605,
+                    name + " names no host to call " + descriptor.member() + " on");
             return Optional.empty();
         }
         return Optional.of(new Reference(descriptor, host));

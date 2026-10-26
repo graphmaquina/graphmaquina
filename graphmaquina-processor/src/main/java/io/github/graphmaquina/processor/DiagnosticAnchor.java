@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -36,7 +37,7 @@ record DiagnosticAnchor(@NonNull Element element, @NonNull Optional<AnnotationMi
     }
 
     /** Reports {@code message} at the narrowest position this anchor knows. */
-    void report(Diagnostics diagnostics, String code, String message) {
+    void report(Diagnostics diagnostics, DiagnosticCode code, String message) {
         if (annotation.isEmpty()) {
             diagnostics.error(code, message, element);
         } else if (value.isEmpty()) {

@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.SetGenerator;
 import io.github.graphmaquina.processor.model.MachineAccessor;
@@ -85,7 +86,7 @@ final class SetModelBuilder {
         }
         if (!anyAccessor) {
             // An accessor that was declared and refused has said why already; only a set without one says this.
-            diagnostics.error("SG510", type.getSimpleName() + " declares no machine: add one accessor per"
+            diagnostics.error(DiagnosticCode.SG510, type.getSimpleName() + " declares no machine: add one accessor per"
                     + " @GenerateGraphApi interface", type, set);
         }
         checkPeersInSet(type, set, declared.accessors(), seen);
@@ -138,12 +139,14 @@ final class SetModelBuilder {
      */
     private boolean isTopLevelMachines(TypeElement type, AnnotationMirror set) {
         if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
-            diagnostics.error("SG502", type.getSimpleName() + " must be a top-level interface extending Machines:"
+            diagnostics.error(DiagnosticCode.SG502,
+                    type.getSimpleName() + " must be a top-level interface extending Machines:"
                     + " the generated companion lives next to it in the package", type, set);
             return false;
         }
         if (type.getKind() != ElementKind.INTERFACE || !signatures.subtype(type.asType(), MACHINES)) {
-            diagnostics.error("SG502", type.getSimpleName() + " must be an interface extending Machines", type, set);
+            diagnostics.error(DiagnosticCode.SG502,
+                    type.getSimpleName() + " must be an interface extending Machines", type, set);
             return false;
         }
         return true;
@@ -178,12 +181,13 @@ final class SetModelBuilder {
             machineType = Optional.of((TypeElement) declared.asElement());
         }
         if (!method.getParameters().isEmpty() || machineType.isEmpty()) {
-            diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a"
+            diagnostics.error(DiagnosticCode.SG510,
+                    method.getSimpleName() + " must be a no-argument accessor returning a"
                     + " @GenerateGraphApi interface", method);
             return Optional.empty();
         }
         if (!seen.add(machineType.get().getQualifiedName().toString())) {
-            diagnostics.error("SG510", machineType.get().getSimpleName() + " appears twice in "
+            diagnostics.error(DiagnosticCode.SG510, machineType.get().getSimpleName() + " appears twice in "
                     + type.getSimpleName(), method);
             return Optional.empty();
         }
@@ -199,7 +203,7 @@ final class SetModelBuilder {
         boolean any = false;
         for (ExecutableElement inherited : signatures.inheritedAbstract(type, BUILT_IN)) {
             any = true;
-            diagnostics.error("SG510", type.getSimpleName() + " inherits the abstract method "
+            diagnostics.error(DiagnosticCode.SG510, type.getSimpleName() + " inherits the abstract method "
                     + inherited.getSimpleName() + " from "
                     + ((TypeElement) inherited.getEnclosingElement()).getQualifiedName() + ", which the"
                     + " generated companion would not implement: declare every accessor on " + type.getSimpleName()
@@ -223,14 +227,16 @@ final class SetModelBuilder {
             for (WatchModel watch : accessor.machine().watches()) {
                 String peer = watch.peer().facade().getQualifiedName().toString();
                 if (!seen.contains(peer)) {
-                    diagnostics.error("SG510", "the watch of " + accessor.machine().facadeName() + "." + watch.state()
+                    diagnostics.error(DiagnosticCode.SG510,
+                            "the watch of " + accessor.machine().facadeName() + "." + watch.state()
                             + " points to " + watch.peer().facade().getSimpleName() + ", which is not in "
                             + type.getSimpleName(), type, set);
                 }
             }
             for (SubmachineModel submachine : accessor.machine().submachines()) {
                 if (!seen.contains(submachine.child().facade().getQualifiedName().toString())) {
-                    diagnostics.error("SG806", "the sub-machine of " + accessor.machine().facadeName() + "."
+                    diagnostics.error(DiagnosticCode.SG806,
+                            "the sub-machine of " + accessor.machine().facadeName() + "."
                             + submachine.state() + " is " + submachine.child().facade().getSimpleName()
                             + ", which is not in " + type.getSimpleName(), type, set);
                 }
@@ -252,7 +258,7 @@ final class SetModelBuilder {
         if (previous == null) {
             return true;
         }
-        diagnostics.error("SG510", method.getSimpleName() + " holds " + machine.facadeName()
+        diagnostics.error(DiagnosticCode.SG510, method.getSimpleName() + " holds " + machine.facadeName()
                 + ", which writes the state of " + machine.types().entityName() + " with "
                 + machine.types().statesName() + " as "
                 + previous.getSimpleName() + " already does: a registry holds one machine per entity and state enum,"
@@ -282,7 +288,8 @@ final class SetModelBuilder {
         if (inaccessible.isEmpty()) {
             return true;
         }
-        diagnostics.error("SG510", method.getSimpleName() + " holds " + machine.types().facade().getQualifiedName()
+        diagnostics.error(DiagnosticCode.SG510,
+                method.getSimpleName() + " holds " + machine.types().facade().getQualifiedName()
                 + ", which the companion of " + set.getSimpleName() + " builds with "
                 + String.join(" and ", inaccessible) + ", which " + Accessibility.describe(packageName)
                 + ", where that companion is generated, cannot access: make "
@@ -332,13 +339,14 @@ final class SetModelBuilder {
         String companion = StructuralChecks.companion(model.setName());
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(type)) {
-                diagnostics.error("SG510", builder + " is the static " + builder + " " + companion + " declares, which"
+                diagnostics.error(DiagnosticCode.SG510,
+                        builder + " is the static " + builder + " " + companion + " declares, which"
                         + " takes " + takes + ": give the " + (method.isDefault() ? "method" : "accessor")
                         + " another name", method);
                 return;
             }
         }
-        diagnostics.error("SG510", type.getSimpleName() + " inherits " + builder + " from "
+        diagnostics.error(DiagnosticCode.SG510, type.getSimpleName() + " inherits " + builder + " from "
                 + ((TypeElement) clashing.get(0).getEnclosingElement()).getQualifiedName() + ", but " + companion
                 + " declares a static " + builder + ", which takes " + takes + ": give that method another name",
                 type, set);

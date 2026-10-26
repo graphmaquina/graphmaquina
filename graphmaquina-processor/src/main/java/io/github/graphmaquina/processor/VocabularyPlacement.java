@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
@@ -42,9 +43,6 @@ import javax.lang.model.type.TypeMirror;
  * never generated.</p>
  */
 final class VocabularyPlacement {
-
-    private static final String OPERATION = "SG504";
-    private static final String FOREIGN = "SG606";
 
     private final Set<String> vocabulary;
     private final Annotations annotations;
@@ -161,11 +159,13 @@ final class VocabularyPlacement {
             String read = isCheck(annotation)
                     ? "a Check is declared on an abstract method of " + facade
                     : "an edge is declared on an abstract operation of " + facade + ", or on " + facade + " itself";
-            DiagnosticAnchor.of(element, mirror).report(diagnostics, OPERATION, method.getSimpleName() + " is a "
+            DiagnosticAnchor.of(element, mirror).report(diagnostics, DiagnosticCode.SG504,
+                    method.getSimpleName() + " is a "
                     + kind(method) + " method, so its " + name + " is never read: " + read);
             return;
         }
-        DiagnosticAnchor.of(element, mirror).report(diagnostics, FOREIGN, name + " is read on a @GenerateGraphApi"
+        DiagnosticAnchor.of(element, mirror).report(diagnostics, DiagnosticCode.SG606,
+                name + " is read on a @GenerateGraphApi"
                 + " interface and its abstract methods only, so it is never read on " + describe(element) + ": "
                 + machine.map((String facade) -> "declare it on " + facade + ", whose vocabulary it is")
                         .orElse("declare it on the facade whose vocabulary it is"));

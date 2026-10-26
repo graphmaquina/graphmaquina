@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GraphProperty;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.model.MemberDescriptor;
@@ -44,8 +45,6 @@ import javax.lang.model.util.ElementFilter;
  */
 final class ExportValidator {
 
-    private static final String INVALID = "SG604";
-
     private final Signatures signatures;
     private final EffectiveMethods effective;
     private final Diagnostics diagnostics;
@@ -72,7 +71,7 @@ final class ExportValidator {
             TypeElement host = CanonicalNames.type(signatures.members(), symbol.host(),
                     CanonicalNames.packageOfMemberType(symbol.qualifiedName()));
             if (host == null) {
-                diagnostics.error(INVALID, symbol.qualifiedName() + " exports members of " + symbol.host()
+                diagnostics.error(DiagnosticCode.SG604, symbol.qualifiedName() + " exports members of " + symbol.host()
                         + ", which this compilation does not declare");
                 invalid.add(symbol.qualifiedName());
                 continue;
@@ -98,13 +97,15 @@ final class ExportValidator {
                 candidate.name(), (Element member) -> marks(member, candidate)
                         && effective.marker((ExecutableElement) member).orElseThrow().role() == candidate.role());
         if (declaring == null) {
-            diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
+            diagnostics.error(DiagnosticCode.SG604,
+                    symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
                     + candidate.name() + ", whose declaring type this compilation does not declare");
             return false;
         }
         List<ExecutableElement> marked = marked(declaring, candidate);
         if (marked.isEmpty()) {
-            diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
+            diagnostics.error(DiagnosticCode.SG604,
+                    symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
                     + candidate.name() + " with " + candidate.parameterTypes().size()
                     + " parameters, which that type no longer declares as a graph member", declaring);
             return false;
@@ -117,7 +118,7 @@ final class ExportValidator {
             Optional<String> uninherited = notInherited(method, declaring, host);
             if (uninherited.isPresent()) {
                 DiagnosticAnchor.of(method, effective.marker(method).orElseThrow().mirror()).report(diagnostics,
-                        INVALID, symbol.qualifiedName() + " exports " + declaring.getQualifiedName() + '.'
+                        DiagnosticCode.SG604, symbol.qualifiedName() + " exports " + declaring.getQualifiedName() + '.'
                         + method.getSimpleName() + " through " + host.getQualifiedName()
                         + ", which does not inherit it: " + uninherited.get());
                 holds = false;
@@ -128,7 +129,8 @@ final class ExportValidator {
             holds &= validated.get(method);
         }
         if (!declared) {
-            diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
+            diagnostics.error(DiagnosticCode.SG604,
+                    symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
                     + candidate.name() + " as " + name(candidate.role()) + ", which it no longer declares",
                     declaring);
             return false;
@@ -166,17 +168,18 @@ final class ExportValidator {
         DiagnosticAnchor anchor = DiagnosticAnchor.of(method, effective.marker(method).orElseThrow().mirror());
         String name = declaring.getQualifiedName() + "." + method.getSimpleName();
         if (!method.getModifiers().contains(Modifier.PUBLIC)) {
-            anchor.report(diagnostics, INVALID, name + " is exported as " + name(role)
+            anchor.report(diagnostics, DiagnosticCode.SG604, name + " is exported as " + name(role)
                     + ", so it must be public: generated code calls it from another package");
         }
         if (!structure(method, role)) {
-            anchor.report(diagnostics, INVALID, name + " does not have the signature of " + name(role)
+            anchor.report(diagnostics, DiagnosticCode.SG604, name + " does not have the signature of " + name(role)
                     + ": expected " + shape(role));
         }
         for (ExecutableElement contract : effective.overridden(method, declaring)) {
             SymbolKind inherited = effective.marker(contract).orElseThrow().role();
             if (inherited != role) {
-                anchor.report(diagnostics, INVALID, name + " is exported as " + name(role) + ", but it overrides "
+                anchor.report(diagnostics, DiagnosticCode.SG604,
+                        name + " is exported as " + name(role) + ", but it overrides "
                         + ((TypeElement) contract.getEnclosingElement()).getQualifiedName() + '.'
                         + contract.getSimpleName() + ", whose contract is " + name(inherited));
             }
@@ -190,7 +193,8 @@ final class ExportValidator {
                 property.declarationName(), (Element member) -> reads(member, property)
                         && annotations.find(member, GraphProperty.class).isPresent());
         if (declaring == null) {
-            diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
+            diagnostics.error(DiagnosticCode.SG604,
+                    symbol.qualifiedName() + " exports the property " + property.logicalName()
                     + " of " + property.declaringType() + ", which this compilation does not declare", host);
             return;
         }
@@ -202,7 +206,8 @@ final class ExportValidator {
                 return;
             }
         }
-        diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
+        diagnostics.error(DiagnosticCode.SG604,
+                symbol.qualifiedName() + " exports the property " + property.logicalName()
                 + " of " + property.declaringType() + ", which no longer declares "
                 + (property.directGetter() ? "a getter " : "a field ") + property.declarationName(), declaring);
     }
@@ -219,7 +224,7 @@ final class ExportValidator {
         DiagnosticAnchor anchor = annotations.find(getter, GraphProperty.class)
                 .map((AnnotationMirror marker) -> DiagnosticAnchor.of(getter, marker))
                 .orElseGet(() -> DiagnosticAnchor.of(getter));
-        anchor.report(diagnostics, INVALID, declaring.getQualifiedName() + "." + getter.getSimpleName()
+        anchor.report(diagnostics, DiagnosticCode.SG604, declaring.getQualifiedName() + "." + getter.getSimpleName()
                 + " exports the property " + property.logicalName()
                 + ", so it must be a public instance method: generated code calls it on the entity");
     }

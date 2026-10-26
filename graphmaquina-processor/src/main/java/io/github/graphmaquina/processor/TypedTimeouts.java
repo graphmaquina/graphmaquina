@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.time.Duration;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
@@ -23,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class TypedTimeouts {
 
-    private static final String INVALID = "SG511";
     private static final int MAX_NANOS = 999_999_999;
 
     private final Annotations annotations;
@@ -40,7 +40,7 @@ final class TypedTimeouts {
             return Optional.empty();
         }
         if (seconds < 0 || nanos < 0 || nanos > MAX_NANOS || (seconds == 0 && nanos == 0)) {
-            anchor.report(diagnostics, INVALID, "timeout must be a positive duration: seconds " + seconds
+            anchor.report(diagnostics, DiagnosticCode.SG511, "timeout must be a positive duration: seconds " + seconds
                     + " and nanos " + nanos + " must not be negative, nanos must be at most " + MAX_NANOS
                     + ", and the two must not both be zero");
             return Optional.empty();

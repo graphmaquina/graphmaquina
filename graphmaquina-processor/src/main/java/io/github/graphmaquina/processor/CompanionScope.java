@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.processor.gen.Written;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -65,8 +66,6 @@ import javax.lang.model.util.Elements;
  * </ul>
  */
 final class CompanionScope {
-
-    private static final String COLLISION = "SG603";
 
     private final Elements elements;
     private final Diagnostics diagnostics;
@@ -138,7 +137,7 @@ final class CompanionScope {
             Optional<String> taken = earlier.takenBy(simple);
             if (taken.isPresent()) {
                 boolean root = earlier.written().roots().containsKey(simple);
-                diagnostics.error(COLLISION, earlier.described() + ", written in an earlier round, writes "
+                diagnostics.error(DiagnosticCode.SG603, earlier.described() + ", written in an earlier round, writes "
                         + taken.get() + ", but in its scope " + simple + " would name the companion " + name + " of "
                         + declaration.getQualifiedName() + ", which this round reserves" + (root
                         ? ", not a package: rename " + declaration.getQualifiedName() + " or the package " + simple
@@ -177,7 +176,8 @@ final class CompanionScope {
                         continue;
                     }
                     boolean root = earlier.written().roots().containsKey(simple);
-                    diagnostics.error(COLLISION, earlier.described() + ", written in an earlier round, writes "
+                    diagnostics.error(DiagnosticCode.SG603,
+                            earlier.described() + ", written in an earlier round, writes "
                             + taken.get() + ", but in its scope " + simple + " now names the type "
                             + type.getQualifiedName() + ", new in a later round" + (root
                             ? ", not a package: rename that type or the package " + simple : ": rename that type"),
@@ -225,11 +225,13 @@ final class CompanionScope {
                 taker = new Taker("the type java.lang." + name, "");
             }
             if (taker != null) {
-                diagnostics.error(COLLISION, prefix + root.getValue() + ", but in its scope " + name + " names "
+                diagnostics.error(DiagnosticCode.SG603,
+                        prefix + root.getValue() + ", but in its scope " + name + " names "
                         + taker.what() + ", not a package: " + remedy(taker, "the package " + name), declaration);
                 admitted = false;
             } else if (written.expressions().containsKey(name) && variables.containsKey(name)) {
-                diagnostics.error(COLLISION, prefix + written.expressions().get(name) + ", but in its expressions "
+                diagnostics.error(DiagnosticCode.SG603,
+                        prefix + written.expressions().get(name) + ", but in its expressions "
                         + name + " names " + variables.get(name).what() + ", not a package: "
                         + remedy(variables.get(name), "the package " + name), declaration);
                 admitted = false;
@@ -249,12 +251,14 @@ final class CompanionScope {
         for (Map.Entry<String, String> root : written.typeRoots().entrySet()) {
             String name = root.getKey();
             if (types.containsKey(name)) {
-                diagnostics.error(COLLISION, prefix + root.getValue() + ", but in its scope " + name + " names "
+                diagnostics.error(DiagnosticCode.SG603,
+                        prefix + root.getValue() + ", but in its scope " + name + " names "
                         + types.get(name).what() + ", not the type " + name + " of the unnamed package: "
                         + remedy(types.get(name), "the type " + name), declaration);
                 admitted = false;
             } else if (written.expressions().containsKey(name) && variables.containsKey(name)) {
-                diagnostics.error(COLLISION, prefix + written.expressions().get(name) + ", but in its expressions "
+                diagnostics.error(DiagnosticCode.SG603,
+                        prefix + written.expressions().get(name) + ", but in its expressions "
                         + name + " names " + variables.get(name).what() + ", not the type " + name
                         + " of the unnamed package: " + remedy(variables.get(name), "the type " + name), declaration);
                 admitted = false;
@@ -274,7 +278,8 @@ final class CompanionScope {
         for (Map.Entry<String, String> simple : written.simpleNames().entrySet()) {
             Taker taker = variables.get(simple.getKey());
             if (taker != null && written.expressions().containsKey(simple.getKey())) {
-                diagnostics.error(COLLISION, prefix + "the type " + simple.getValue() + " as " + simple.getKey()
+                diagnostics.error(DiagnosticCode.SG603,
+                        prefix + "the type " + simple.getValue() + " as " + simple.getKey()
                         + ", but in its expressions " + simple.getKey() + " names " + taker.what() + ": "
                         + (taker.remedy().isEmpty() ? "rename the type " + simple.getValue() : taker.remedy()),
                         declaration);

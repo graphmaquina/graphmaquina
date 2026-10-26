@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
@@ -45,8 +46,6 @@ import javax.tools.StandardLocation;
 final class ExportIndexWriter {
 
     private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
-    private static final String FAILED = "SG599";
-    private static final String UNPROCESSED = "SG602";
 
     private final ProcessingEnvironment environment;
     private final Diagnostics diagnostics;
@@ -71,7 +70,8 @@ final class ExportIndexWriter {
         Set<String> unprocessed = new LinkedHashSet<>(unverified);
         unprocessed.removeAll(handedMachines);
         if (!unprocessed.isEmpty()) {
-            diagnostics.error(UNPROCESSED, "the index of this compilation names " + String.join(", ", unprocessed)
+            diagnostics.error(DiagnosticCode.SG602,
+                    "the index of this compilation names " + String.join(", ", unprocessed)
                     + ", which this compilation never processed: javac does not process a source it compiles"
                     + " implicitly, from the source path, so pass every source of the compilation to javac");
             return;
@@ -112,7 +112,7 @@ final class ExportIndexWriter {
             }
             return true;
         } catch (IOException | CodegenException failure) {
-            diagnostics.error(FAILED, "could not write " + PENDING + ": " + failure.getMessage());
+            diagnostics.error(DiagnosticCode.SG599, "could not write " + PENDING + ": " + failure.getMessage());
             return false;
         }
     }
@@ -142,7 +142,7 @@ final class ExportIndexWriter {
             }
             ManifestCodec.writeProcessorInventory(file, List.copyOf(generatedQualifiedNames));
         } catch (IOException | InvalidPathException failure) {
-            diagnostics.error(FAILED, "could not write the processor inventory " + inventory + ": "
+            diagnostics.error(DiagnosticCode.SG599, "could not write the processor inventory " + inventory + ": "
                     + failure.getMessage());
         }
     }

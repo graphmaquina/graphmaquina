@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.Binding;
@@ -65,13 +66,6 @@ import javax.lang.model.type.TypeMirror;
  */
 final class TypedMachineModelBuilder {
 
-    private static final String FOREIGN = "SG606";
-    private static final String HEADER = "SG502";
-    private static final String DUPLICATE = "SG102";
-    private static final String BLANK_REASON = "SG103";
-    private static final String GENERICS = "SG601";
-    private static final String IDENTITY = "SG703";
-
     private final VocabularyRegistry vocabulary;
     private final StructuralChecks structure;
     private final PropertyResolver properties;
@@ -119,7 +113,8 @@ final class TypedMachineModelBuilder {
             return Optional.empty();
         }
         if (definitions.isEmpty()) {
-            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
+            diagnostics.error(DiagnosticCode.SG502,
+                    type.getSimpleName() + " declares no graph: apply the Definition generated for it"
                     + ", which is the vocabulary its own name, states and transitions belong to", type);
             return Optional.empty();
         }
@@ -147,10 +142,12 @@ final class TypedMachineModelBuilder {
         if (resolved.isEmpty()) {
             // An invalid declaration is SG502; a declaration whose E, S and T do not resolve is SG601.
             if (type.getKind() != ElementKind.INTERFACE) {
-                header.report(diagnostics, HEADER, type.getSimpleName() + " must be an interface extending"
+                header.report(diagnostics, DiagnosticCode.SG502,
+                        type.getSimpleName() + " must be an interface extending"
                         + " Machine<E, S, T>");
             } else {
-                header.report(diagnostics, GENERICS, type.getSimpleName() + " does not resolve Machine<E, S, T>"
+                header.report(diagnostics, DiagnosticCode.SG601,
+                        type.getSimpleName() + " does not resolve Machine<E, S, T>"
                         + " to a concrete entity type and two distinct enum types for its states and its"
                         + " transition identifiers");
             }
@@ -158,7 +155,8 @@ final class TypedMachineModelBuilder {
         }
         MachineTypes types = resolved.get();
         if (StructuralChecks.hasParameterizedEntity(types)) {
-            header.report(diagnostics, GENERICS, type.getSimpleName() + " declares its entity as " + types.entity()
+            header.report(diagnostics, DiagnosticCode.SG601,
+                    type.getSimpleName() + " declares its entity as " + types.entity()
                     + ", a parameterized type: generated code names the entity by its class, so the entity type must"
                     + " not be parameterized");
             return Optional.empty();
@@ -231,12 +229,12 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             if (!declared.add(state.get())) {
-                DiagnosticAnchor.of(type, policy, declaredState.get()).report(diagnostics, DUPLICATE,
+                DiagnosticAnchor.of(type, policy, declaredState.get()).report(diagnostics, DiagnosticCode.SG102,
                         "the state " + state.get() + " declares two policies");
                 continue;
             }
             if (reason.isBlank()) {
-                DiagnosticAnchor.of(type, policy, declaredReason.get()).report(diagnostics, BLANK_REASON,
+                DiagnosticAnchor.of(type, policy, declaredReason.get()).report(diagnostics, DiagnosticCode.SG103,
                         "the policy of " + state.get() + " has a blank reason");
                 continue;
             }
@@ -263,12 +261,12 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             if (!declared.add(from.get() + "/" + transition.get())) {
-                DiagnosticAnchor.of(type, reject, declaredTransition.get()).report(diagnostics, DUPLICATE,
+                DiagnosticAnchor.of(type, reject, declaredTransition.get()).report(diagnostics, DiagnosticCode.SG102,
                         "the state " + from.get() + " rejects " + transition.get() + " twice");
                 continue;
             }
             if (reason.isBlank()) {
-                DiagnosticAnchor.of(type, reject, declaredReason.get()).report(diagnostics, BLANK_REASON,
+                DiagnosticAnchor.of(type, reject, declaredReason.get()).report(diagnostics, DiagnosticCode.SG103,
                         "the rejection of " + transition.get() + " in " + from.get() + " has a blank reason");
                 continue;
             }
@@ -379,7 +377,7 @@ final class TypedMachineModelBuilder {
             return Optional.empty();
         }
         if (identifiers.size() > 1) {
-            diagnostics.error(IDENTITY, method.getSimpleName() + " declares the transitions " + identifiers
+            diagnostics.error(DiagnosticCode.SG703, method.getSimpleName() + " declares the transitions " + identifiers
                     + ": every annotation of one operation names the same identifier", method);
             return Optional.empty();
         }
@@ -392,7 +390,7 @@ final class TypedMachineModelBuilder {
         if (previous == null) {
             return true;
         }
-        diagnostics.error(IDENTITY, "the transition " + identifier + " is already executed by "
+        diagnostics.error(DiagnosticCode.SG703, "the transition " + identifier + " is already executed by "
                 + previous.getSimpleName() + ": one identifier belongs to one operation", method);
         return false;
     }
@@ -407,7 +405,7 @@ final class TypedMachineModelBuilder {
         for (TransitionModel transition : all) {
             for (String from : transition.from()) {
                 if (!seen.add(from + "/" + transition.transitionId())) {
-                    diagnostics.error(DUPLICATE, "the transition " + transition.transitionId() + " leaves "
+                    diagnostics.error(DiagnosticCode.SG102, "the transition " + transition.transitionId() + " leaves "
                             + from + " twice", type);
                 }
             }
@@ -437,7 +435,7 @@ final class TypedMachineModelBuilder {
         if (machine instanceof DeclaredType declared && declared.asElement().equals(facade)) {
             return true;
         }
-        DiagnosticAnchor.of(element, mirror).report(diagnostics, FOREIGN, declaration.getQualifiedName()
+        DiagnosticAnchor.of(element, mirror).report(diagnostics, DiagnosticCode.SG606, declaration.getQualifiedName()
                 + " is the vocabulary of " + machine + ", not of " + facade.getQualifiedName());
         return false;
     }

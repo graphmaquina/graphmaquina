@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.GraphPeers;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import java.util.Collections;
@@ -32,10 +33,6 @@ import javax.lang.model.type.TypeMirror;
  * that code, so the processor meets it only in a declaration edited since the generation ran.</p>
  */
 final class TypedPairs {
-
-    private static final String FOREIGN = "SG606";
-    private static final String PAIR = "SG608";
-    private static final String NOT_A_MACHINE = "SG509";
 
     private final StructuralChecks structure;
     private final Diagnostics diagnostics;
@@ -77,12 +74,14 @@ final class TypedPairs {
             String name = peer.get().getQualifiedName().toString();
             DiagnosticAnchor anchor = DiagnosticAnchor.of(facade, mirror.get(), value);
             if (declared.containsKey(name)) {
-                anchor.report(diagnostics, PAIR, name + " is declared twice as a peer of " + facade.getSimpleName());
+                anchor.report(diagnostics, DiagnosticCode.SG608,
+                        name + " is declared twice as a peer of " + facade.getSimpleName());
                 continue;
             }
             declared.put(name, peer.get());
             if (annotations.find(peer.get(), GenerateGraphApi.class).isEmpty()) {
-                anchor.report(diagnostics, PAIR, name + " is not a @GenerateGraphApi machine: the vocabulary of a pair"
+                anchor.report(diagnostics, DiagnosticCode.SG608,
+                        name + " is not a @GenerateGraphApi machine: the vocabulary of a pair"
                         + " is typed with the peer's own states, which only a generated API declares");
             } else {
                 usable.add(name);
@@ -99,19 +98,22 @@ final class TypedPairs {
     Optional<String> peer(TypeElement facade, AnnotationMirror declared, Peers peers, String uses) {
         TypeElement declaration = (TypeElement) declared.getAnnotationType().asElement();
         if (!generatedFor(declared, facade)) {
-            DiagnosticAnchor.of(facade, declared).report(diagnostics, FOREIGN, declaration.getQualifiedName()
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, DiagnosticCode.SG606,
+                    declaration.getQualifiedName()
                     + " is the vocabulary of a pair of " + machine(declared) + ", not of " + facade.getQualifiedName());
             return Optional.empty();
         }
         Optional<TypeElement> peer = peerOf(declared);
         if (peer.isEmpty()) {
-            DiagnosticAnchor.of(facade, declared).report(diagnostics, FOREIGN, declaration.getQualifiedName()
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, DiagnosticCode.SG606,
+                    declaration.getQualifiedName()
                     + " names no single peer machine, so it is not the vocabulary of a pair");
             return Optional.empty();
         }
         String name = peer.get().getQualifiedName().toString();
         if (!peers.declared().containsKey(name)) {
-            DiagnosticAnchor.of(facade, declared).report(diagnostics, PAIR, facade.getSimpleName() + " " + uses + " "
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, DiagnosticCode.SG608,
+                    facade.getSimpleName() + " " + uses + " "
                     + name + ", which it does not declare with @GraphPeers");
             return Optional.empty();
         }
@@ -122,7 +124,8 @@ final class TypedPairs {
     void checkUsed(TypeElement facade, Peers peers, Set<String> used) {
         for (String declared : peers.declared().keySet()) {
             if (!used.contains(declared)) {
-                DiagnosticAnchor.of(facade, peers.mirror().orElseThrow()).report(diagnostics, PAIR, declared
+                DiagnosticAnchor.of(facade, peers.mirror().orElseThrow()).report(diagnostics, DiagnosticCode.SG608,
+                        declared
                         + " is declared as a peer of " + facade.getSimpleName() + " but no watch or sub-machine of it"
                         + " uses that pair; declare the peers this machine watches or binds, and only those");
             }
@@ -137,13 +140,13 @@ final class TypedPairs {
     Optional<MachineTypes> peerTypes(TypeElement facade, AnnotationMirror declared, TypeElement peer, String what) {
         Optional<MachineTypes> resolved = structure.machineTypes(peer);
         if (resolved.isEmpty()) {
-            DiagnosticAnchor.of(facade, declared).report(diagnostics, NOT_A_MACHINE, peer.getQualifiedName()
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, DiagnosticCode.SG509, peer.getQualifiedName()
                     + " must be an interface extending Machine<E, S, T> with a concrete entity type and two"
                     + " distinct enum types for its states and its transition identifiers");
             return Optional.empty();
         }
         if (StructuralChecks.hasParameterizedEntity(resolved.get())) {
-            DiagnosticAnchor.of(facade, declared).report(diagnostics, NOT_A_MACHINE, peer.getQualifiedName()
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, DiagnosticCode.SG509, peer.getQualifiedName()
                     + " declares its entity as " + resolved.get().entity() + ", a parameterized type, which " + what);
             return Optional.empty();
         }

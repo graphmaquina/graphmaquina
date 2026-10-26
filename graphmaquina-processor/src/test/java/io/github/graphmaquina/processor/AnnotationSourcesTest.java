@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.source.util.Trees;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.processor.model.RecoveryModel;
 import java.io.File;
 import java.io.IOException;
@@ -160,7 +161,7 @@ class AnnotationSourcesTest {
                     AnnotationValue value = annotations.value(annotation, "value");
                     DiagnosticAnchor anchor = DiagnosticAnchor.of(element, annotation, value);
                     assertEquals(element.equals(sample), diagnostics.sourceStart(anchor).isPresent());
-                    anchor.report(diagnostics, "SGTEST", element.getSimpleName().toString());
+                    anchor.report(diagnostics, DiagnosticCode.SG102, element.getSimpleName().toString());
                 }
             });
             assertEquals(2, diagnostics.errors());
