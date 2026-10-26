@@ -67,7 +67,8 @@ import org.junit.jupiter.api.Test;
  * until it is listed. A JVM of its own, logging class initialisation, shows that no class of the library initialises
  * once a registry is assembled, through the calls it runs; another shows that a cascade deeper than its thread's
  * stack, as the first failure of a fresh JVM, leaves the failures of later calls intact. The annotation package is
- * outside the inventory: its enums describe generated sources to the build tools, and no call reads them.
+ * outside the inventory: its enums describe generated sources to the build tools or name the diagnostics that the
+ * DSL and the build tools report, and no call reads them.
  */
 class RuntimeInitializationTest {
 
