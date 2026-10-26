@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -30,7 +31,6 @@ import java.util.Locale;
  */
 final class CompilationMarkerEmitter {
 
-    private static final String PACKAGE = "io.github.graphmaquina.generated.bootstrap";
     private static final int NAME_LENGTH = 16;
 
     private CompilationMarkerEmitter() {
@@ -38,7 +38,7 @@ final class CompilationMarkerEmitter {
 
     /** The canonical name of the carrier of {@code compilationId}. */
     static String carrierName(String compilationId) {
-        return PACKAGE + ".GraphCompilation" + digest(compilationId);
+        return GenerationFiles.CARRIER_PACKAGE + ".GraphCompilation" + digest(compilationId);
     }
 
     /** The compilation unit carrying {@code compilationId}. */
@@ -47,7 +47,8 @@ final class CompilationMarkerEmitter {
         String simpleName = carrier.substring(carrier.lastIndexOf('.') + 1);
 
         JavaSource source = new JavaSource();
-        source.header(PACKAGE, List.of("io.github.graphmaquina.annotation.internal.GraphCompilation"));
+        source.header(GenerationFiles.CARRIER_PACKAGE,
+            List.of("io.github.graphmaquina.annotation.internal.GraphCompilation"));
         source.javadoc("Carries the identity of one compilation for the StateGraph annotation processor.",
             "",
             "<p>Tool-internal: this type is not API and must not be referenced by an application. The completion of",

@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.output;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
@@ -63,7 +64,6 @@ import lombok.NonNull;
  */
 public final class GenerationOutput {
 
-    private static final String MANIFEST = "annotation-manifest.json";
     private static final String PENDING = "annotation-manifest.pending.json";
     private static final String STAGING = "generated-staging";
 
@@ -157,7 +157,7 @@ public final class GenerationOutput {
      * know the generator ran for this very compilation before javac did.
      */
     static Path manifestPath(GenerationRequest request) {
-        return request.workDirectory().toAbsolutePath().resolve(MANIFEST);
+        return request.workDirectory().toAbsolutePath().resolve(GenerationFiles.MANIFEST);
     }
 
     /** The sources the manifests at {@code manifests} own, sorted; a manifest that is not a regular file owns none. */

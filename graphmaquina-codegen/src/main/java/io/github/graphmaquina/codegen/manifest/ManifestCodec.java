@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -375,7 +376,7 @@ public final class ManifestCodec {
         StringWriter document = new StringWriter();
         try (JsonWriter writer = JsonSupport.newWriter(document)) {
             writer.beginObject();
-            writer.name("schemaVersion").value(JsonSupport.SCHEMA_VERSION);
+            writer.name("schemaVersion").value(GenerationFiles.SCHEMA_VERSION);
             writer.name("generatedTypes");
             JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(generatedTypes));
             writer.endObject();

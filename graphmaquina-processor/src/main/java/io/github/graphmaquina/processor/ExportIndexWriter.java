@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -44,8 +45,6 @@ import javax.tools.StandardLocation;
  * refuses that value itself once processing is over.</p>
  */
 final class ExportIndexWriter {
-
-    private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
 
     private final ProcessingEnvironment environment;
     private final Diagnostics diagnostics;
@@ -106,13 +105,14 @@ final class ExportIndexWriter {
         try {
             byte[] encoded = encode(index);
             FileObject resource = environment.getFiler()
-                    .createResource(StandardLocation.CLASS_OUTPUT, "", PENDING);
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", GenerationFiles.PENDING_INDEX);
             try (OutputStream out = resource.openOutputStream()) {
                 out.write(encoded);
             }
             return true;
         } catch (IOException | CodegenException failure) {
-            diagnostics.error(DiagnosticCode.SG599, "could not write " + PENDING + ": " + failure.getMessage());
+            diagnostics.error(DiagnosticCode.SG599, "could not write " + GenerationFiles.PENDING_INDEX + ": "
+                    + failure.getMessage());
             return false;
         }
     }
