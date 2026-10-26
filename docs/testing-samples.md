@@ -22,10 +22,15 @@ assertThat(orders.definition())
         .hasInitial(OrderStatus.NEW)
         .hasTerminalsExactly(OrderStatus.SHIPPED, OrderStatus.CANCELLED)
         .hasAsync()
-        .hasTransitionsExactly(OrderStatus.NEW,
-                OrderTransition.PAYMENT_DECLINED, OrderTransition.PAY, OrderTransition.CANCEL)
-        .hasTransitionsExactly(OrderStatus.PAYMENT_DECLINED,
-                OrderTransition.RETRY, OrderTransition.CANCEL)
+        .hasTransitionsExactly(
+            OrderStatus.NEW,
+            OrderTransition.PAYMENT_DECLINED,
+            OrderTransition.PAY,
+            OrderTransition.CANCEL)
+        .hasTransitionsExactly(
+            OrderStatus.PAYMENT_DECLINED,
+            OrderTransition.RETRY,
+            OrderTransition.CANCEL)
         .watch(OrderStatus.PAID)
         .hasPeer(ItemsRuntime.KEY)
         .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderTransition.SHIP)));
@@ -181,10 +186,26 @@ outcome carries it too. From
 ```java
 recorder.assertRecorded()
         .hasSize(9)
-        .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
-                ItemsRuntime.KEY)
-        .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
+        .hasKeysExactly(
+            OrdersRuntime.KEY,
+            OrdersRuntime.KEY,
+            ItemsRuntime.KEY,
+            OrdersRuntime.KEY,
+            ItemsRuntime.KEY,
+            OrdersRuntime.KEY,
+            ItemsRuntime.KEY,
+            OrdersRuntime.KEY,
+            ItemsRuntime.KEY)
+        .hasStatusesExactly(
+            APPLIED,
+            IGNORED,
+            APPLIED,
+            IGNORED,
+            APPLIED,
+            IGNORED,
+            APPLIED,
+            APPLIED,
+            APPLIED);
 ```
 
 A registry accepts any number of observers, so a test adds its own beside the recorder. An entity keeps
@@ -269,11 +290,13 @@ IllegalStateException boom = new IllegalStateException("setter down");
 StateWriteProbe<Entity, State> writes =
         StateWriteProbe.<Entity, State>wrapping(Entity::setState).failOnCall(2, boom);
 writes.accept(entity, State.READY);
-assertSame(boom,
-        assertThrows(IllegalStateException.class, () -> writes.accept(entity, State.DONE)));
+assertSame(
+    boom,
+    assertThrows(IllegalStateException.class, () -> writes.accept(entity, State.DONE)));
 assertEquals(State.READY, entity.state());
-assertEquals(List.of(WriteStatus.RETURNED, WriteStatus.THREW),
-        writes.writes().stream().map(StateWrite::status).toList());
+assertEquals(
+    List.of(WriteStatus.RETURNED, WriteStatus.THREW),
+    writes.writes().stream().map(StateWrite::status).toList());
 ```
 
 Finish configuring a probe before a machine uses it; after that, it is safe to call from several threads, each served

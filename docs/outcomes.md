@@ -112,13 +112,26 @@ does. The HTTP mapping below is one application's policy, not the library's; ano
 answer `409` for every rejection and every handled failure:
 
 ```java
-record TransitionResponse(String id, OutcomeStatus status, OutcomeCode code, TicketState from,
-                          TicketState state, TicketTransition transition, String explanation) {
+record TransitionResponse(
+        String id,
+        OutcomeStatus status,
+        OutcomeCode code,
+        TicketState from,
+        TicketState state,
+        TicketTransition transition,
+        String explanation) {
 
-    static TransitionResponse of(String id, Outcome<Ticket, TicketState, TicketTransition> outcome) {
-        return new TransitionResponse(id, outcome.status(), outcome.code(), outcome.from(),
-                outcome.recordedState(), outcome.requestedTransition().orElse(null),
-                outcome.explanation().orElse(null));
+    static TransitionResponse of(
+            String id,
+            Outcome<Ticket, TicketState, TicketTransition> outcome) {
+        return new TransitionResponse(
+            id,
+            outcome.status(),
+            outcome.code(),
+            outcome.from(),
+            outcome.recordedState(),
+            outcome.requestedTransition().orElse(null),
+            outcome.explanation().orElse(null));
     }
 }
 
@@ -156,9 +169,11 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
         case Outcome.Applied<Ticket, TicketState, TicketTransition> applied ->
                 applied.transition() + " moved to " + applied.to();
         case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
-                "Refused " + rejected.transition() + " by " + rejected.guard().orElse("the state's policy");
+                "Refused " + rejected.transition() + " by "
+                        + rejected.guard().orElse("the state's policy");
         case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
-                failed.failureTransition() + " moved to " + failed.movedTo() + ": " + failed.reason();
+                failed.failureTransition() + " moved to " + failed.movedTo() + ": "
+                        + failed.reason();
         case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
                 "Unchanged at " + ignored.recordedState() + " (" + ignored.reason() + ")";
     };
@@ -269,7 +284,10 @@ static String describe(CallFailedException failure) {
         case PARTIAL -> "some states were written";
         case ALL -> "every state was written";
     };
-    String actions = failure.journal().isEmpty() ? "no action ran" : failure.journal().size() + " action(s) ran";
+    // actions may have run even when no state was written
+    String actions = failure.journal().isEmpty()
+            ? "no action ran"
+            : failure.journal().size() + " action(s) ran";
     return failure.call() + " failed in " + failure.phase() + ": " + written + ", " + actions;
 }
 ```

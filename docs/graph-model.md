@@ -135,9 +135,11 @@ Rejections are answers a node gives, not edges. Every state carries a `StatePoli
 `otherwise` reason, and optionally a non-blank reason per identifier:
 
 ```java
-@TicketsGraph.StatePolicy(state=TicketState.OPEN, otherwise="submit the ticket first")
-@TicketsGraph.Reject(from=TicketState.OPEN, transition=TicketTransition.APPROVE,
-    reason="approval requires review")
+@TicketsGraph.StatePolicy(state = TicketState.OPEN, otherwise = "submit the ticket first")
+@TicketsGraph.Reject(
+    from = TicketState.OPEN,
+    transition = TicketTransition.APPROVE,
+    reason = "approval requires review")
 ```
 
 `Reject` overrides `otherwise` for one identifier from one state. Declaring both an edge and a rejection for
@@ -214,8 +216,12 @@ vocabulary rather than the ticket one; adapt the graph annotation and the `Refs`
 naming rule under [Generated names](#generated-names) — and the states and identifiers to your own machine:
 
 ```java
-@ScreeningGraph.Transition(id = Change.SCREEN, from = NEW, to = SCREENED,
-        guards = RulesRefs.Eligible.class)
+// the Eligible guard reads the Verdict through ctx.input(Verdict.class)
+@ScreeningGraph.Transition(
+    id = Change.SCREEN,
+    from = NEW,
+    to = SCREENED,
+    guards = RulesRefs.Eligible.class)
 Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict);
 ```
 
@@ -223,7 +229,9 @@ Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict);
 @GraphGuard
 public static GuardResult eligible(GuardContext<Entity, Status, Change> ctx) {
     return ctx.input(Verdict.class)
-            .map(verdict -> verdict.eligible() ? GuardResult.pass() : GuardResult.reject("ineligible"))
+            .map(verdict -> verdict.eligible()
+                    ? GuardResult.pass()
+                    : GuardResult.reject("ineligible"))
             .orElseGet(() -> GuardResult.reject("missing verdict"));
 }
 ```

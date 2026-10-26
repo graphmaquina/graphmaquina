@@ -50,6 +50,7 @@ public final class ProgrammaticTickets {
                 .transition(TicketTransition.APPROVE, TicketState.REVIEW, TicketState.DONE)
                     .action("approve", ctx -> ctx.entity().isAccepted()
                             ? ActionOutcome.ok() : ActionOutcome.failed("approval declined"))
+                    // a failed approval takes DECLINE, from REVIEW to FAILED
                     .onFailure(TicketTransition.DECLINE)
                     .endTransition()
                 .transition(TicketTransition.DECLINE, TicketState.REVIEW, TicketState.FAILED)

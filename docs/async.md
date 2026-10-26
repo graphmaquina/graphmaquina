@@ -118,7 +118,8 @@ public final class AsyncTicketActions {
     }
 
     @GraphGuard
-    public CompletionStage<GuardResult> canStart(GuardContext<Ticket, TicketState, TicketTransition> ctx) {
+    public CompletionStage<GuardResult> canStart(
+            GuardContext<Ticket, TicketState, TicketTransition> ctx) {
         String ticketId = ctx.entity().getId();
         return reviews.canStart(ticketId).thenApply(allowed -> allowed
                 ? GuardResult.pass()
@@ -126,7 +127,8 @@ public final class AsyncTicketActions {
     }
 
     @GraphAction
-    public CompletionStage<ActionOutcome> approve(TransitionContext<Ticket, TicketState, TicketTransition> ctx) {
+    public CompletionStage<ActionOutcome> approve(
+            TransitionContext<Ticket, TicketState, TicketTransition> ctx) {
         String ticketId = ctx.entity().getId();
         return reviews.approved(ticketId).thenApply(approved -> approved
                 ? ActionOutcome.ok()
@@ -156,21 +158,31 @@ import io.github.graphmaquina.api.Outcome;
 import java.io.IOException;
 
 @GenerateGraphApi
-@AsyncTicketsGraph.Definition(initial = OPEN, terminals = {DONE, FAILED},
-        state = TicketRefs.State.class, id = TicketRefs.Id.class)
+@AsyncTicketsGraph.Definition(
+    initial = OPEN,
+    terminals = {DONE, FAILED},
+    state = TicketRefs.State.class,
+    id = TicketRefs.Id.class)
 @AsyncTicketsGraph.StatePolicy(state = OPEN, otherwise = "submit the ticket first")
 @AsyncTicketsGraph.StatePolicy(state = REVIEW, otherwise = "approve or decline the ticket")
 @AsyncTicketsGraph.Transition(id = TicketTransition.DECLINE, from = REVIEW, to = FAILED)
 public interface AsyncTickets extends Machine<Ticket, TicketState, TicketTransition> {
-    @AsyncTicketsGraph.Transition(id = TicketTransition.SUBMIT, from = OPEN, to = REVIEW,
-            guards = AsyncTicketActionsRefs.CanStart.class)
+    @AsyncTicketsGraph.Transition(
+        id = TicketTransition.SUBMIT,
+        from = OPEN,
+        to = REVIEW,
+        guards = AsyncTicketActionsRefs.CanStart.class)
     Outcome<Ticket, TicketState, TicketTransition> submit(Ticket ticket);
 
-    @AsyncTicketsGraph.Transition(id = TicketTransition.APPROVE, from = REVIEW, to = DONE,
-            action = AsyncTicketActionsRefs.Approve.class,
-            onFailure = TicketTransition.DECLINE,
-            failsOn = IOException.class,
-            timeout = @Timeout(seconds = 2))
+    // a declined review or IOException takes DECLINE; an action timeout aborts the call
+    @AsyncTicketsGraph.Transition(
+        id = TicketTransition.APPROVE,
+        from = REVIEW,
+        to = DONE,
+        action = AsyncTicketActionsRefs.Approve.class,
+        onFailure = TicketTransition.DECLINE,
+        failsOn = IOException.class,
+        timeout = @Timeout(seconds = 2))
     Outcome<Ticket, TicketState, TicketTransition> approve(Ticket ticket);
 }
 ```
@@ -222,8 +234,9 @@ public final class AsyncApp {
             }
         };
 
-        try (AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
-                Duration.ofSeconds(5), new AsyncTicketActions(reviews)).build()) {
+        try (AsyncTicketMachines machines = AsyncTicketMachinesRuntime
+                .builder(Duration.ofSeconds(5), new AsyncTicketActions(reviews))
+                .build()) {
             AsyncTickets tickets = machines.tickets();
             Ticket ticket = new Ticket("T-ASYNC", "Review the documentation", true);
 
@@ -286,16 +299,19 @@ With the `tickets` and `ticket` from the example, this fragment reacts to comple
 CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =
         tickets.async(() -> tickets.approve(ticket));
 
-CompletableFuture<Void> handled = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
-    switch (outcome.status()) {
-        case APPLIED -> System.out.println("Committed: " + outcome.requestedTransition().orElseThrow()
-                + " -> " + outcome.recordedState());
-        case FAILED -> System.out.println("Handled decline at " + outcome.recordedState()
-                + outcome.explanation().map((String text) -> ": " + text).orElse(""));
-        case REJECTED -> System.out.println("Not allowed: " + outcome.explanation().orElseThrow());
-        case IGNORED -> System.out.println("Unchanged: " + outcome.recordedState());
-    }
-});
+CompletableFuture<Void> handled = pending.thenAccept(
+    (Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
+        switch (outcome.status()) {
+            case APPLIED -> System.out.println("Committed: "
+                    + outcome.requestedTransition().orElseThrow()
+                    + " -> " + outcome.recordedState());
+            case FAILED -> System.out.println("Handled decline at " + outcome.recordedState()
+                    + outcome.explanation().map((String text) -> ": " + text).orElse(""));
+            case REJECTED -> System.out.println("Not allowed: "
+                    + outcome.explanation().orElseThrow());
+            case IGNORED -> System.out.println("Unchanged: " + outcome.recordedState());
+        }
+    });
 
 handled.whenComplete((Void unused, Throwable error) -> {
     if (error != null) {

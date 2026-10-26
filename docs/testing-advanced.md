@@ -25,11 +25,11 @@ without a kind, which the fallback takes:
 
 ```java
 ServiceUnavailableException down = new ServiceUnavailableException("provider down");
-ActionProbe<Publication, PublicationState, PublicationChange> publish =
-        ActionProbe.<Publication, PublicationState, PublicationChange>create("publish", CallTrace.create())
-                .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
-                .thenThrow(down)
-                .thenReturn(ActionOutcome.failed("invalid response"));
+ActionProbe<Publication, PublicationState, PublicationChange> publish = ActionProbe
+        .<Publication, PublicationState, PublicationChange>create("publish", CallTrace.create())
+        .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
+        .thenThrow(down)
+        .thenReturn(ActionOutcome.failed("invalid response"));
 StateMachine<Publication, PublicationState, PublicationChange> machine = machine(graph(publish));
 
 assertThat(machine.execute(new Publication("p1"), PublicationChange.PUBLISH)).isFailed()
@@ -60,10 +60,14 @@ The rules belong to the edge's declaration. `recoversExactly` compares them in d
 assertThat(machine.definition())
         .transition(PublicationState.READY, PublicationChange.PUBLISH)
         .recoversExactly(List.of(
-                new RecoveryRule<>(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
-                        List.of(ServiceUnavailableException.class)),
-                new RecoveryRule<>(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
-                        List.of(ProviderRejectedException.class))))
+            new RecoveryRule<>(
+                PublicationFailures.Unavailable.class,
+                PublicationChange.SCHEDULE_RETRY,
+                List.of(ServiceUnavailableException.class)),
+            new RecoveryRule<>(
+                PublicationFailures.Rejected.class,
+                PublicationChange.RECORD_REJECTION,
+                List.of(ProviderRejectedException.class))))
         .failsOnExactly(InvalidResponseException.class)
         .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
 ```
@@ -84,9 +88,11 @@ failure or complete it with an exception, and `AsyncAssertions` reads the outcom
 
 ```java
 Duration testBudget = Duration.ofSeconds(10);
-ControlledAsyncAction<Publication, PublicationState, PublicationChange> publish = ControlledAsyncAction.create();
+ControlledAsyncAction<Publication, PublicationState, PublicationChange> publish =
+        ControlledAsyncAction.create();
 try (publish) {
-    StateMachine<Publication, PublicationState, PublicationChange> machine = machine(asyncGraph(publish));
+    StateMachine<Publication, PublicationState, PublicationChange> machine =
+            machine(asyncGraph(publish));
     CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> rejected =
             machine.async().execute(new Publication("p4"), PublicationChange.PUBLISH);
     publish.awaitInvocation(testBudget)
@@ -99,6 +105,7 @@ try (publish) {
     ProviderRejectedException refused = new ProviderRejectedException("content refused");
     CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> thrown =
             machine.async().execute(new Publication("p5"), PublicationChange.PUBLISH);
+    // this time the stage completes with an exception, not a returned failure
     publish.awaitInvocation(testBudget).fail(refused);
     AsyncAssertions.await(thrown, testBudget).isFailed()
             .hasFailureKind(PublicationFailures.Rejected.class)
@@ -129,8 +136,9 @@ compiler accepts only a state of the child as a terminal state and only an ident
 assertThat(orders())
         .hasNoSubmachine(OrderState.CART)
         .submachine(OrderState.PAYING, PAYMENTS)
-        .hasExitsExactly(exit(PaymentState.CAPTURED, OrderChange.PAY),
-                exit(PaymentState.DECLINED, OrderChange.REFUSE))
+        .hasExitsExactly(
+            exit(PaymentState.CAPTURED, OrderChange.PAY),
+            exit(PaymentState.DECLINED, OrderChange.REFUSE))
         .hasExit(PaymentState.DECLINED, OrderChange.REFUSE);
 ```
 
@@ -201,7 +209,8 @@ Invoice invoice = new Invoice("i4", payment);
 try (MachineRegistry registry = registryWithInvoices(orders())) {
     registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
     registry.of(INVOICES).execute(invoice, InvoiceChange.SETTLE);
-    assertThat(captureFailure(() -> registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE))).isAbort()
+    assertThat(captureFailure(() -> registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE)))
+            .isAbort()
             .hasPhase(CallPhase.RESOLVE)
             .hasStatesWritten(StatesWritten.NONE)
             .hasCause(AmbiguousParentException.class);
@@ -222,16 +231,22 @@ of the second:
 
 ```java
 CallTrace trace = CallTrace.create();
-GuardProbe<Order, OrderState, OrderChange> inStock =
-        GuardProbe.<Order, OrderState, OrderChange>create("inStock", trace).otherwiseReturn(GuardResult.pass());
-ActionProbe<Order, OrderState, OrderChange> confirm =
-        ActionProbe.<Order, OrderState, OrderChange>create("confirm", trace).otherwiseReturn(ActionOutcome.ok());
+GuardProbe<Order, OrderState, OrderChange> inStock = GuardProbe
+        .<Order, OrderState, OrderChange>create("inStock", trace)
+        .otherwiseReturn(GuardResult.pass());
+ActionProbe<Order, OrderState, OrderChange> confirm = ActionProbe
+        .<Order, OrderState, OrderChange>create("confirm", trace)
+        .otherwiseReturn(ActionOutcome.ok());
 HookProbe<Order> receipt = HookProbe.<Order>create("receipt", trace).otherwiseSucceed();
 TransitionRecorder recorder = TransitionRecorder.create();
 Payment payment = new Payment("p5");
 Order order = new Order("o5", payment);
-try (MachineRegistry registry = registry(orders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
-        pay.guard("inStock", inStock).action("confirm", confirm).afterCommit("receipt", receipt)), recorder)) {
+try (MachineRegistry registry = registry(
+        orders((TransitionBuilder<Order, OrderState, OrderChange> pay) -> pay
+                .guard("inStock", inStock)
+                .action("confirm", confirm)
+                .afterCommit("receipt", receipt)),
+        recorder)) {
     registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
     registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE);
 }
@@ -342,15 +357,16 @@ receipt, and its trail holds the rejection alone:
 ```java
 FlowKey<String> receipt = FlowKey.of("receipt", String.class);
 StateMachine<Publication, PublicationState, PublicationChange> traced = StateMachines.from(graph(
-                (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
-                    ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
-                    if (ctx.entity().id.startsWith("x")) {
-                        throw new IllegalStateException("the outbox is closed");
-                    }
-                    return ActionOutcome.ok();
-                }))
-        .state((Publication publication) -> publication.state,
-                (Publication publication, PublicationState state) -> publication.state = state)
+    (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
+        ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
+        if (ctx.entity().id.startsWith("x")) {
+            throw new IllegalStateException("the outbox is closed");
+        }
+        return ActionOutcome.ok();
+    }))
+        .state(
+            (Publication publication) -> publication.state,
+            (Publication publication, PublicationState state) -> publication.state = state)
         .recordTrail(InstantSource.fixed(Instant.parse("2026-10-10T09:00:00Z")))
         .build();
 Publication article = new Publication("p6");
@@ -387,7 +403,9 @@ assertThat(captureFailure(() -> traced.execute(refused, PublicationChange.PUBLIS
         .hasHopsExactly(PublicationChange.PUBLISH)
         .endsWithFailure(CallPhase.ACTION)
         .hops().forEntity(KEY, refused).single()
-        .from(PublicationState.READY).hasTransition(PublicationChange.PUBLISH).to(PublicationState.PUBLISHED);
+        .from(PublicationState.READY)
+        .hasTransition(PublicationChange.PUBLISH)
+        .to(PublicationState.PUBLISHED);
 ```
 
 `assertThat` also takes a flow on its own, such as the flow of a `CommitContext` built with its five-argument
@@ -395,14 +413,23 @@ constructor to call a hook by hand. That flow belongs to no call: it holds what 
 trail:
 
 ```java
-HookRef<Publication, PublicationState, PublicationChange> announce = new HookRef<>("announce",
-        (Publication publication, CommitContext<PublicationState, PublicationChange> commit) ->
-                commit.flow().put(receipt, "announced " + publication.id));
-CommitContext<PublicationState, PublicationChange> commit = new CommitContext<>(PublicationState.READY,
-        PublicationChange.PUBLISH, PublicationState.PUBLISHED, TransitionKind.ACTION, true);
+HookRef<Publication, PublicationState, PublicationChange> announce = new HookRef<>(
+    "announce",
+    (Publication publication, CommitContext<PublicationState, PublicationChange> commit) ->
+        commit.flow().put(receipt, "announced " + publication.id));
+CommitContext<PublicationState, PublicationChange> commit = new CommitContext<>(
+    PublicationState.READY,
+    PublicationChange.PUBLISH,
+    PublicationState.PUBLISHED,
+    TransitionKind.ACTION,
+    true);
 announce.run(new Publication("p7"), commit);
 
-assertThat(commit.flow()).hasValue(receipt, "announced p7").hasKeysExactly(receipt).trail().isEmpty();
+assertThat(commit.flow())
+        .hasValue(receipt, "announced p7")
+        .hasKeysExactly(receipt)
+        .trail()
+        .isEmpty();
 ```
 
 A watch reaction is a call of its own: `isDone().outcome().flow()` reads the reaction's flow. A reaction whose
@@ -412,8 +439,12 @@ flow and which `assertThat(cause).isCallFailure().flow()` reads; a reaction whos
 A trail held as a list, such as the one `trail()` of a flow returns, has its own factory:
 
 ```java
-List<FlowEntry> entries = traced.execute(new Publication("p8"), PublicationChange.PUBLISH).flow().trail();
-TrailAssert.assertThat(entries).hasSize(1).hasHopsExactly(PublicationChange.PUBLISH).isInTimeOrder();
+List<FlowEntry> entries =
+        traced.execute(new Publication("p8"), PublicationChange.PUBLISH).flow().trail();
+TrailAssert.assertThat(entries)
+        .hasSize(1)
+        .hasHopsExactly(PublicationChange.PUBLISH)
+        .isInTimeOrder();
 ```
 
 The shop's [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)

@@ -124,8 +124,7 @@ Actions can change peers as part of their own unit of work:
 ```java
 @GraphAction
 public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
-    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL,
-            CascadePolicy.COLLECT);
+    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
     return ActionOutcome.ok();
 }
 ```
@@ -232,11 +231,12 @@ This excerpt belongs on the shop's `Orders` interface, alongside its definition,
 
 ```java
 @GraphPeers(Items.class)
+// a PAID order requests SHIP once all its items are PACKED
 @OrdersItems.Watch(
-        state = PAID,
-        peers = OrderRefs.Items.class,
-        owner = ItemRefs.Order.class,
-        rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = OrderTransition.SHIP))
+    state = PAID,
+    peers = OrderRefs.Items.class,
+    owner = ItemRefs.Order.class,
+    rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = OrderTransition.SHIP))
 ```
 
 `OrdersItems` is generated from the pair. `transition` is an `OrderTransition`, the owner's own catalogue;
@@ -272,8 +272,10 @@ import java.util.Collection;
 
 public final class OrderConditions {
     @GraphCondition
-    public boolean ready(Order owner, Collection<? extends Item> peers,
-                         PeerView<Item, ItemStatus, ItemTransition> view) {
+    public boolean ready(
+            Order owner,
+            Collection<? extends Item> peers,
+            PeerView<Item, ItemStatus, ItemTransition> view) {
         return view.allIn(peers, ItemStatus.PACKED);
     }
 }
@@ -287,8 +289,12 @@ Regenerate and supply the new
 With this replacement in the reference shop, the generated builder becomes:
 
 ```java
-ShopMachines shop = ShopMachinesRuntime.builder(
-        Duration.ofSeconds(10), new OrderConditions(), new OrderActions(gateway, carrier), new ItemActions())
+ShopMachines shop = ShopMachinesRuntime
+        .builder(
+            Duration.ofSeconds(10),
+            new OrderConditions(),
+            new OrderActions(gateway, carrier),
+            new ItemActions())
         .build();
 ```
 
