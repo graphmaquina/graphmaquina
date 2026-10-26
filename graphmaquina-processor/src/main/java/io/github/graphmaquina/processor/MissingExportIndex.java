@@ -3,7 +3,6 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.codegen.manifest.PublishedEntries;
 import java.io.IOException;
 import java.nio.file.FileSystemNotFoundException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import javax.annotation.processing.Filer;
@@ -34,9 +33,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>The generator asks the same question about a declared peer, so the answer lives in
  * {@link PublishedEntries}: which entry the location of a class file names, whether that entry's index lists a name,
- * the words that say so and the remedy. This class adapts it to the processor: it asks javac's {@code Elements} for
- * the class file of a type and leaves out the class output of this compilation, which only the {@code Filer}
- * locates.</p>
+ * the words that say so and the remedy, and how an entry is compared with a class output. This class adapts it to the
+ * processor: it asks javac's {@code Elements} for the class file of a type and leaves out the class output of this
+ * compilation, which only the {@code Filer} locates.</p>
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class MissingExportIndex {
@@ -53,7 +52,8 @@ final class MissingExportIndex {
     Optional<String> unlisted(TypeElement type) {
         Optional<Path> classOutput = classOutput();
         return entry(type)
-                .filter((Path entry) -> classOutput.filter((Path output) -> sameFile(output, entry)).isEmpty())
+                .filter((Path entry) -> classOutput
+                        .filter((Path output) -> PublishedEntries.sameFile(output, entry)).isEmpty())
                 .flatMap((Path entry) -> PublishedEntries.unlisted(entry, type.getQualifiedName().toString()));
     }
 
@@ -63,16 +63,15 @@ final class MissingExportIndex {
      * file system.
      */
     private Optional<Path> entry(TypeElement type) {
-        JavaFileObject file;
+        Optional<JavaFileObject> file;
         try {
-            file = elements.getFileObjectOf(type);
+            file = Optional.ofNullable(elements.getFileObjectOf(type));
         } catch (UnsupportedOperationException unsupported) {
             return Optional.empty();
         }
-        if (file == null || file.getKind() != JavaFileObject.Kind.CLASS) {
-            return Optional.empty();
-        }
-        return PublishedEntries.entry(file.toUri(), elements.getBinaryName(type).toString());
+        return file.filter((JavaFileObject read) -> read.getKind() == JavaFileObject.Kind.CLASS)
+                .flatMap((JavaFileObject read) -> PublishedEntries.entry(read.toUri(),
+                        elements.getBinaryName(type).toString()));
     }
 
     /**
@@ -85,15 +84,6 @@ final class MissingExportIndex {
             return Optional.ofNullable(probe.toAbsolutePath().normalize().getParent());
         } catch (IOException | IllegalArgumentException | FileSystemNotFoundException | SecurityException unknown) {
             return Optional.empty();
-        }
-    }
-
-    /** Whether {@code first} and {@code second} locate one file, which only their paths tell when one is missing. */
-    private static boolean sameFile(Path first, Path second) {
-        try {
-            return Files.isSameFile(first, second);
-        } catch (IOException | SecurityException unreadable) {
-            return first.equals(second);
         }
     }
 }

@@ -115,9 +115,10 @@ public final class MachineHeaders {
      * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
      * of a qualified name it writes. A peer is the type its class literal names. A declared peer that is none of
      * {@code machines} is left to {@link DependencyPeers#resolve}, which resolves it against the export indexes of
-     * the dependencies or refuses it with {@code SG608}, unless one of {@code machines} shares its canonical name: the
-     * emitter, which matches peers by name, would take that machine for it, so it is refused here, in the words of
-     * {@link ApiEmitter#unknownPeer}.
+     * the dependencies or refuses it, with {@code SG602} when it is a {@code @GenerateGraphApi} machine a dependency
+     * carries without an index that lists it and with {@code SG608} otherwise, unless one of {@code machines} shares
+     * its canonical name: the emitter, which matches peers by name, would take that machine for it, so it is refused
+     * here, in the words of {@link ApiEmitter#unknownPeer}.
      *
      * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access or the
      *     peer that no machine of this compilation is though one shares its name; {@code SG603} naming a type of the

@@ -20,10 +20,12 @@ import lombok.RequiredArgsConstructor;
  * <p>A peer is first one of the machines of this compilation, which {@link MachineHeaders#requireWatchablePeers}
  * has already checked. Any other peer read from the classpath is the machine the export index of a dependency
  * describes by its canonical name, the name a manifest knows a machine by; the pair vocabulary is then typed from that
- * descriptor. A peer read from the classpath that no index describes but whose class file carries
+ * descriptor. A peer read from a dependency on the classpath that no index describes but whose class file carries
  * {@code @GenerateGraphApi} is a machine of a dependency whose index is missing or does not list it, and is reported as
- * that index, as {@link PublishedEntries} words it for the processor too. A peer that is a type of the sources and no
- * machine of this compilation is no machine of a dependency either, whatever an index describes under its name. No
+ * that index, as {@link PublishedEntries} words it for the processor too. A peer read from the class output of this
+ * compilation, as a previous run left it, is no dependency's, just as the processor never reports that output as one,
+ * and neither is a peer that is a type of the sources and no machine of this compilation, whatever an index describes
+ * under its name: both are refused as types that are no machine. No
  * two indexes describe one machine, which {@link io.github.graphmaquina.codegen.manifest.DependencyExports#read} has
  * already refused, and a machine of this compilation that an index describes too is refused by
  * {@link #refuseDescribedMachines}, which runs before any machine, and so any peer, is resolved.</p>
@@ -60,13 +62,14 @@ final class DependencyPeers {
      * @param index the declarations the machines were resolved in
      * @param machines the machines this compilation generates, as resolved
      * @param dependencies the export indexes the dependencies publish, each with its classpath entry
+     * @param classesOutput the class output of this compilation, absolute and normalized, which is no dependency
      * @return the descriptors of the dependency peers, without repetition
      * @throws CodegenException anchored at the owner of the first peer that is neither a machine of this compilation
-     *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from the
-     *     classpath, as {@link #unresolved} words it, and {@code SG608} for any other type
+     *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from a
+     *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type
      */
     static List<GraphDescriptor> resolve(DeclarationIndex index, List<MachineHeaders.Resolved> machines,
-            List<PublishedIndex> dependencies) {
+            List<PublishedIndex> dependencies, Path classesOutput) {
         Map<String, GraphDescriptor> peers = new LinkedHashMap<>();
         for (MachineHeaders.Resolved owner : machines) {
             for (TypeHeader peer : owner.peers()) {
@@ -75,7 +78,8 @@ final class DependencyPeers {
                     Optional<GraphDescriptor> descriptor = peer.origin().isEmpty()
                             ? descriptor(dependencies, name)
                             : Optional.empty();
-                    peers.putIfAbsent(name, descriptor.orElseThrow(() -> unresolved(index, peer, owner.graph())));
+                    peers.putIfAbsent(name,
+                            descriptor.orElseThrow(() -> unresolved(index, peer, owner.graph(), classesOutput)));
                 }
             }
         }
@@ -84,22 +88,27 @@ final class DependencyPeers {
 
     /**
      * The refusal of {@code peer}, which {@code owner} declares, when it is neither a machine of this compilation nor
-     * one an index describes. A type read from the classpath whose class file carries {@code @GenerateGraphApi}, which
-     * javac reads there since the annotation is retained in class files, is a machine of a dependency whose export
-     * index is missing or does not list it: {@code SG602}, naming the jar or directory of classes javac read it from
-     * and what its index lacks, as {@link PublishedEntries#unlisted} words it, or, when that entry cannot be told or
-     * its index lists the machine, saying that no index this compilation reads lists it, with the same remedy. Any
-     * other type is {@link ApiEmitter#unknownPeer}.
+     * one an index describes. A type read from a dependency on the classpath, any entry but {@code classesOutput},
+     * whose class file carries {@code @GenerateGraphApi}, which javac reads there since the annotation is retained in
+     * class files, is a machine of a dependency whose export index is missing or does not list it: {@code SG602},
+     * naming the jar or directory of classes javac read it from and what its index lacks, as
+     * {@link PublishedEntries#unlisted} words it, or, when that entry cannot be told or its index lists the machine,
+     * saying that no index this compilation reads lists it, with the same remedy. Any other type, one read from
+     * {@code classesOutput} included, is {@link ApiEmitter#unknownPeer}.
      */
-    private static CodegenException unresolved(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner) {
+    private static CodegenException unresolved(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner,
+            Path classesOutput) {
         String name = peer.canonicalName();
-        boolean machine = peer.origin().isEmpty() && peer.markers().stream().anyMatch(
-                (TypeHeader.Marker marker) -> index.marksInHeader(peer, marker, Bootstrap.GENERATE_GRAPH_API));
-        if (!machine) {
+        Optional<Path> entry = index.classpathEntry(peer);
+        boolean dependencyMachine = peer.origin().isEmpty()
+                && entry.filter((Path read) -> PublishedEntries.sameFile(read, classesOutput)).isEmpty()
+                && peer.markers().stream().anyMatch((TypeHeader.Marker marker) ->
+                        index.marksInHeader(peer, marker, Bootstrap.GENERATE_GRAPH_API));
+        if (!dependencyMachine) {
             return ApiEmitter.unknownPeer(name, owner);
         }
-        String unlisted = index.classpathEntry(peer)
-                .flatMap((Path entry) -> PublishedEntries.unlisted(entry, name))
+        String unlisted = entry
+                .flatMap((Path read) -> PublishedEntries.unlisted(read, name))
                 .orElse(" is a @GenerateGraphApi machine that no export index this compilation reads lists"
                         + PublishedEntries.REMEDY);
         return new CodegenException(DiagnosticCode.SG602.name(),

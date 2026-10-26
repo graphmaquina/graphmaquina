@@ -137,7 +137,10 @@ public final class ApiEmitter {
     /**
      * The refusal of the peer {@code peer} that {@code owner} declares when no descriptor of it is known: it is
      * neither a {@code @GenerateGraphApi} machine of this compilation nor a machine the export index of a dependency
-     * describes. The vocabulary of a pair needs the peer's own state enum, so such a peer cannot be typed at all.
+     * describes. When the generator reads a request against the indexes of its dependencies, a peer that is a
+     * {@code @GenerateGraphApi} machine a dependency carries without an index that lists it never gets here: it is
+     * reported as that index, with {@code SG602}. The vocabulary of a pair needs the peer's own state enum, so such a
+     * peer cannot be typed at all.
      *
      * @return {@code SG608} anchored at the owner, naming the peer
      */

@@ -92,9 +92,10 @@ public final class Bootstrap {
      *     dependency peers
      * @throws CodegenException {@code SG602} for a machine of the request that an index of {@code dependencies}
      *     describes too, before any machine or peer is resolved, and for a declared peer that is a
-     *     {@code @GenerateGraphApi} machine read from the classpath that no index of {@code dependencies} describes,
-     *     naming the jar or directory of classes whose index is missing or does not list it; {@code SG608} for any
-     *     other declared peer that is neither a machine of the request nor a classpath type an index describes
+     *     {@code @GenerateGraphApi} machine read from a dependency on the classpath, not from the class output of the
+     *     request, that no index of {@code dependencies} describes, naming the jar or directory of classes whose index
+     *     is missing or does not list it when that can be told; {@code SG608} for any other declared peer that is
+     *     neither a machine of the request nor a classpath type an index describes
      */
     public static Inspection read(@NonNull GenerationRequest request, @NonNull List<PublishedIndex> dependencies) {
         Parsed parsed = parse(request);
@@ -112,7 +113,8 @@ public final class Bootstrap {
                 graphs.add(machine.graph());
             }
             MachineHeaders.requireWatchablePeers(index, resolved);
-            dependencyPeers = DependencyPeers.resolve(index, resolved, dependencies);
+            dependencyPeers = DependencyPeers.resolve(index, resolved, dependencies,
+                    request.classesOutput().toAbsolutePath().normalize());
             model = new GenerationModel(graphs, ExportDeclarations.collect(index));
         }
         return new Inspection(model, parsed.originals(), dependencies, dependencyPeers);

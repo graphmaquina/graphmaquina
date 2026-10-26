@@ -64,13 +64,30 @@ public final class PublishedEntries {
             if (!file.endsWith(relative)) {
                 return Optional.empty();
             }
-            Path root = file;
-            for (int segment = 0; segment < relative.getNameCount() && root != null; segment++) {
-                root = root.getParent();
+            Optional<Path> root = Optional.of(file);
+            for (int segment = 0; segment < relative.getNameCount(); segment++) {
+                root = root.map(Path::getParent);
             }
-            return Optional.ofNullable(root);
+            return root;
         } catch (IllegalArgumentException | FileSystemNotFoundException | SecurityException unreadable) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Whether {@code first} and {@code second} locate one file, which only their paths tell when one is missing: how a
+     * classpath entry is told apart from the class output of a compilation, whose index no compilation reads as a
+     * dependency's.
+     *
+     * @param first a path, such as a classpath entry
+     * @param second another path, such as a class output
+     * @return whether both locate one file
+     */
+    public static boolean sameFile(@NonNull Path first, @NonNull Path second) {
+        try {
+            return Files.isSameFile(first, second);
+        } catch (IOException | SecurityException unreadable) {
+            return first.equals(second);
         }
     }
 

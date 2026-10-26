@@ -155,12 +155,11 @@ final class ClasspathDeclarations implements AutoCloseable {
      * and read none of them.
      */
     Optional<TypeHeader> named(String canonicalName) {
-        Optional<TypeHeader> cached = namedHeaders.get(canonicalName);
-        if (cached == null) {
-            cached = materialize(namedType(segments(canonicalName)));
-            namedHeaders.put(canonicalName, cached);
+        if (!namedHeaders.containsKey(canonicalName)) {
+            namedHeaders.put(canonicalName,
+                    Optional.ofNullable(namedType(segments(canonicalName))).map(this::materialize));
         }
-        return cached;
+        return namedHeaders.get(canonicalName);
     }
 
     /**
@@ -169,14 +168,14 @@ final class ClasspathDeclarations implements AutoCloseable {
      * on to the last; never the synthetic class this task compiles.
      */
     Optional<TypeHeader> unnamed(String canonicalName) {
-        Optional<TypeHeader> cached = unnamedHeaders.get(canonicalName);
-        if (cached == null) {
+        if (!unnamedHeaders.containsKey(canonicalName)) {
             List<String> segments = segments(canonicalName);
-            cached = materialize(segments.get(0).isEmpty() || segments.get(0).equals(PROBE_NAME) ? null
-                    : members(topLevel(elements.getTypeElement(segments.get(0)), segments, 0), segments, 0));
-            unnamedHeaders.put(canonicalName, cached);
+            unnamedHeaders.put(canonicalName, segments.get(0).isEmpty() || segments.get(0).equals(PROBE_NAME)
+                    ? Optional.empty()
+                    : Optional.ofNullable(members(topLevel(elements.getTypeElement(segments.get(0)), segments, 0),
+                            segments, 0)).map(this::materialize));
         }
-        return cached;
+        return unnamedHeaders.get(canonicalName);
     }
 
     /**
@@ -244,16 +243,13 @@ final class ClasspathDeclarations implements AutoCloseable {
     }
 
     /**
-     * The header of {@code element}, empty for {@code null}, with the package that declares it and the element itself
-     * recorded and, for a type of the unnamed package, whether each type its header names belongs to a named package
-     * or to the unnamed package. Those are the types that its supertypes, its fields, and the parameters and results
-     * of its methods name, with the owners, type arguments, wildcard bounds and array components of those uses, and
-     * the types of the annotations on the type, its fields and its methods.
+     * The header of {@code element}, with the package that declares it and the element itself recorded and, for a
+     * type of the unnamed package, whether each type its header names belongs to a named package or to the unnamed
+     * package. Those are the types that its supertypes, its fields, and the parameters and results of its methods
+     * name, with the owners, type arguments, wildcard bounds and array components of those uses, and the types of the
+     * annotations on the type, its fields and its methods.
      */
-    private Optional<TypeHeader> materialize(TypeElement element) {
-        if (element == null) {
-            return Optional.empty();
-        }
+    private TypeHeader materialize(TypeElement element) {
         Set<TypeElement> referenced = new HashSet<>();
         TypeHeader header = header(element, referenced);
         String packageName = elements.getPackageOf(element).getQualifiedName().toString();
@@ -268,7 +264,7 @@ final class ClasspathDeclarations implements AutoCloseable {
             namedReferences.put(header, named);
             unnamedReferences.put(header, unnamed);
         }
-        return Optional.of(header);
+        return header;
     }
 
     /** The type of a named package that {@code segments} name, as {@link #named} looks it up, or {@code null}. */

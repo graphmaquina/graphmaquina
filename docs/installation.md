@@ -383,12 +383,13 @@ For a multi-module build:
    overwrite `META-INF/graphmaquina` metadata.
 4. Regenerate and recompile consumers after changing a producer's exported API. A stale or missing index is a
    build error: one that is missing, or that does not list a machine or a symbol the classes beside it carry, is
-   reported as `SG602`, naming the jar or directory of classes that carries it. The generator reports it where a
-   machine declares that machine a peer with `@GraphPeers`, before it publishes anything; otherwise it is reported
-   where a set holds that machine or a declaration binds that symbol. Build producers and consumers with the same
-   GraphMaquina version: an index that another version wrote is refused with `SG602` too, and so is a machine that
-   the indexes of two jars or directories on the classpath both describe, as two versions of one producer do: the
-   error names both entries, and keeping one artifact of that producer on the classpath fixes it.
+   reported as `SG602`, naming the jar or directory of classes that carries it whenever that entry can be told.
+   The generator reports it where a machine declares that machine a peer with `@GraphPeers`, before it publishes
+   anything; otherwise it is reported where a set holds that machine or a declaration binds that symbol. Build
+   producers and consumers with the same GraphMaquina version: an index that another version wrote is refused with
+   `SG602` too, and so is a machine that the indexes of two jars or directories on the classpath both describe, as
+   two versions of one producer do: the error names both entries, and keeping one artifact of that producer on the
+   classpath fixes it.
 
 A consumer can also bind a machine of a dependency as the sub-machine of one of its own states, declaring it with
 `@GraphPeers` like any child. The pair vocabulary is generated from what the dependency's export index says of that

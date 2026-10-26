@@ -210,6 +210,26 @@ class DependencyPeersTest {
         assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
     }
 
+    /**
+     * A machine whose class a previous run left in this compilation's own class output, with no source left to declare
+     * it, is no dependency: it is refused as a type that is no machine of this compilation or of a dependency, never
+     * reported as the missing index of that output.
+     */
+    @Test
+    void refusesAMachineOfItsOwnClassOutputAsNoMachine() {
+        Path classes = project.resolve("classes");
+        SourceFiles.Compilation previous =
+                SourceFiles.compileStrict(SourceFiles.write(project.resolve("previous"), producer()), classes);
+        assertTrue(previous.success(), () -> previous.messages().toString());
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), classes));
+
+        assertEquals("SG608", failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings is not a @GenerateGraphApi machine of"
+                + " this compilation or of a dependency export index", failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
     /** Each owner has the pair vocabulary over the peer, while the peer itself is resolved once. */
     @Test
     void twoOwnersShareOnePeerFromAJar() throws IOException {
@@ -233,7 +253,10 @@ class DependencyPeersTest {
         return Bootstrap.read(request, DependencyExports.read(request.classpath()));
     }
 
-    /** A request over {@code sources}, written under {@code src}, on the test classpath and the producer's jar. */
+    /**
+     * A request over {@code sources}, written under {@code src}, on the test classpath and the producer's jar, whose
+     * class output is {@code classes}.
+     */
     private GenerationRequest request(Map<String, String> sources) {
         return request(sources, jar);
     }

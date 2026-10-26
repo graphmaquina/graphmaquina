@@ -78,7 +78,7 @@ companion.
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph vocabulary or the vocabulary of a pair belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract methods. On a default, static or private method of its own facade it is `SG504`. |
 | `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit`, `When.condition`, `When.allIn`, `When.anyIn` or `When.noneIn`, which hold one state each, or the `child`, `parent` or `parentLookup` of a `Submachine`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
-| `SG608` | Invalid or duplicated peer, a peer that no watch or sub-machine of the machine uses, a watch or a sub-machine of a peer the machine does not declare, a peer that is neither a `@GenerateGraphApi` machine of this compilation, nor one the export index of a dependency describes, nor a class of the classpath marked `@GenerateGraphApi` (that one is `SG602`), or a peer whose types the owner's package cannot name. |
+| `SG608` | Invalid or duplicated peer, a peer that no watch or sub-machine of the machine uses, a watch or a sub-machine of a peer the machine does not declare, a peer that is neither a `@GenerateGraphApi` machine of this compilation, nor one the export index of a dependency describes, nor a class marked `@GenerateGraphApi` that a dependency on the classpath carries (that one is `SG602`), or a peer whose types the owner's package cannot name. |
 
 ## Runtime exceptions
 
