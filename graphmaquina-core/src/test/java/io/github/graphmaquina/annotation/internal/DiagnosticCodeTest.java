@@ -35,13 +35,14 @@ class DiagnosticCodeTest {
     private static final Pattern FROM_ENUM = Pattern.compile("(?<![\\p{L}\\p{N}_$])DiagnosticCode\\.SG\\d{3}");
     private static final Pattern ROW = Pattern.compile("^\\| `(SG\\d{3})` \\|", Pattern.MULTILINE);
     /**
-     * A line that is nothing but a comment: after its leading whitespace it begins with {@code //}, or with
-     * {@code /*} or {@code *}, and no end delimiter of a block comment occurs on it with anything but whitespace
-     * after it (the opening of a block comment does not close it). That is Checkstyle's reading of a comment line for
-     * LineLength, but for one case: Checkstyle also ignores a line that begins with {@code *} and goes on as code
-     * after such a delimiter. So a Javadoc line, a line that closes a block comment and a line that opens and closes
-     * one are comments, and a line that goes on after the delimiter, as code or as another comment, is not. No line
-     * inside a text block is read as a comment, whatever it begins with.
+     * A line that is nothing but a comment: after its leading whitespace it begins with {@code //}, and is a comment
+     * whatever it goes on to quote, or it begins with {@code /*} or {@code *}, and is a comment only if no end
+     * delimiter of a block comment occurs on it with anything but whitespace after it (the opening of a block comment
+     * does not close it). That is Checkstyle's reading of a comment line for LineLength, but for one case: Checkstyle
+     * also ignores a line that begins with {@code *} and goes on as code after such a delimiter. So a Javadoc line, a
+     * line that closes a block comment and a line that opens and closes one are comments, and a line that begins
+     * with a block comment and goes on after the delimiter, as code or as another comment, is not. No line inside a
+     * text block is read as a comment, whatever it begins with.
      */
     private static final Pattern COMMENT = Pattern.compile("^\\s*(//|/\\*(?!.*\\*/\\s*\\S)|(?!.*\\*/\\s*\\S)\\*)");
     private static final String TEXT_BLOCK_DELIMITER = "\"\"\"";
