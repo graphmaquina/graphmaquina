@@ -67,6 +67,9 @@ public enum DiagnosticCode {
     /** A watch has no rules. */
     SG404,
 
+    /** A watch declared with annotations does not declare exactly one of {@code owner} and {@code ownerLookup}. */
+    SG405,
+
     /** Invalid machine or set declaration. */
     SG502,
 

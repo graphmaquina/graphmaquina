@@ -65,8 +65,8 @@ class LookupExportTest {
                     }
                 """));
 
-        String expected = " does not have the signature of a lookup: expected Optional of the parent entity from"
-                + " the child entity alone";
+        String expected = " does not have the signature of a lookup: expected Optional of the parent or owner entity"
+                + " from the child or peer entity alone";
         assertEquals(List.of("[" + DiagnosticCode.SG604 + "] fx.OrderLookups.bare" + expected,
                 "[" + DiagnosticCode.SG604 + "] fx.OrderLookups.noChild" + expected,
                 "[" + DiagnosticCode.SG604 + "] fx.OrderLookups.twoChildren" + expected), result.errors(),

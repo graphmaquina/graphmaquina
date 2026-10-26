@@ -22,6 +22,7 @@ import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
+import io.github.graphmaquina.processor.model.WatchOwner;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -457,8 +458,9 @@ public final class MachineGenerator {
 
     /**
      * The types the lambdas of the companion of {@code model} catch, in the order they first appear: one for each
-     * call to a bound method, to a watch's peers or owner reader, or to a sub-machine's child or parent reader that
-     * declares a checked exception, as {@link BoundInvocation#caught} decides; none when no call does.
+     * call to a bound method, an exported lookup included, to a watch's peers or owner reader, or to a sub-machine's
+     * child or parent reader that declares a checked exception, as {@link BoundInvocation#caught} decides; none when
+     * no call does.
      */
     private static Set<String> caught(MachineModel model, BoundInvocation invocations) {
         Set<String> caught = new LinkedHashSet<>();
@@ -467,7 +469,9 @@ public final class MachineGenerator {
         }
         for (WatchModel watch : model.watches()) {
             invocations.caught(watch.peers().accessor()).ifPresent(caught::add);
-            invocations.caught(watch.owner().accessor()).ifPresent(caught::add);
+            if (watch.owner() instanceof WatchOwner.Read read) {
+                invocations.caught(read.property().accessor()).ifPresent(caught::add);
+            }
         }
         for (SubmachineModel submachine : model.submachines()) {
             for (Optional<Property> property : List.of(submachine.childOf(), submachine.parentOf())) {
@@ -478,8 +482,8 @@ public final class MachineGenerator {
     }
 
     /**
-     * Every binding the companion calls: the edges' actions, guards and hooks, the watches' conditions and the
-     * sub-machines' lookups.
+     * Every binding the companion calls: the edges' actions, guards and hooks, the watches' conditions and owner
+     * lookups, and the sub-machines' parent lookups.
      */
     private static List<Binding> bindings(MachineModel model) {
         List<Binding> bindings = new ArrayList<>();
@@ -571,7 +575,7 @@ public final class MachineGenerator {
             }
         }
         for (WatchModel watch : model.watches()) {
-            anyPlainOwner |= !watch.ownerIsOptional();
+            anyPlainOwner |= watch.owner() instanceof WatchOwner.Read read && !read.optional();
             for (RuleModel rule : watch.rules()) {
                 anyBuiltIn |= rule.kind() != RuleKind.CONDITION;
             }

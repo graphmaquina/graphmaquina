@@ -256,7 +256,7 @@ Import these from `io.github.graphmaquina.annotation`:
 | `@GraphGuard` | Guard method | Export a guard binding |
 | `@GraphHook` | Hook method | Export an after-commit binding |
 | `@GraphCondition` | Watch-condition method | Export a custom watch predicate |
-| `@GraphLookup` | Parent-lookup method | Export the lookup that finds the parent of a sub-machine's entity |
+| `@GraphLookup` | Lookup method | Export the lookup that finds the parent of a sub-machine's entity or the owner of a watched peer |
 | `@GraphBindings` | Concrete binding host | Export inherited marked members through this concrete host |
 | `@GraphPeers` | Machine interface that watches or binds other machines | Request typed vocabulary for its declared owner/peer pairs |
 | `@Timeout` | Nested annotation element | Express seconds and nanoseconds for an asynchronous action timeout |
@@ -319,8 +319,9 @@ transitions. Generated companions emit one typed `recover(...)` call per rule in
 facades route failures through those rules just as graphs built directly with the DSL do.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
-`onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, and the `child`, `parent` and
-`parentLookup` of a `Submachine` accept zero or one value. Use the single-value syntax, for example
+`onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and
+`parentLookup` of a `Submachine`, and the `owner` and `ownerLookup` of a `Watch` accept zero or one value; a `Watch`
+declares exactly one of its two (`SG405`). Use the single-value syntax, for example
 `onFailure = TicketTransition.DECLINE`, or omit the element. Multiple values are `SG607`.
 
 ### Properties and accessors
@@ -352,7 +353,8 @@ processor reports the ambiguity instead of choosing based on declaration order.
 ### Method signatures
 
 Public methods must match the role where the graph uses them. `E/S/T` refer to the owner entity, state and
-transition types; `P/Q/U` refer to the peer's: the watched machine's for a condition, the sub-machine's for a lookup.
+transition types; `P/Q/U` refer to the peer's: the watched machine's for a condition or an `ownerLookup`, the
+sub-machine's for a `parentLookup`.
 
 | Marker | Supported signature |
 | --- | --- |
@@ -362,7 +364,7 @@ transition types; `P/Q/U` refer to the peer's: the watched machine's for a condi
 | `@GraphGuard`, async | `CompletionStage<GuardResult> method(GuardContext<E, S, T> ctx)` |
 | `@GraphHook` | `void method(E entity)` or `void method(E entity, CommitContext<S, T> context)` |
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q, U> view)` |
-| `@GraphLookup` | `Optional<E> method(P child)` |
+| `@GraphLookup` | `Optional<E> method(P peer)` |
 
 An asynchronous binding may declare a subtype of the stage, such as `CompletableFuture<ActionOutcome>`. A raw
 `CompletionStage` is no asynchronous result: an action or a guard that returns one is refused where it is

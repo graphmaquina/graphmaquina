@@ -8,6 +8,7 @@ import io.github.graphmaquina.processor.model.Property;
 import io.github.graphmaquina.processor.model.RuleKind;
 import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.WatchModel;
+import io.github.graphmaquina.processor.model.WatchOwner;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,8 +28,9 @@ import javax.lang.model.type.TypeMirror;
  * the exact value, and is never wrapped in a diagnostic of this tool.</p>
  *
  * <p>Everything else is resolved through the same resolvers the rest of the typed frontend uses: the peers of
- * the entity and the owner of a peer are properties, and a condition is a symbol resolved against the machine
- * and its peer together, so the method the generated code calls is the one the author marked.</p>
+ * the entity are a property, the owner of a peer is a property of the peer or an exported lookup, which
+ * {@link WatchOwnerReader} reads, and a condition is a symbol resolved against the machine and its peer together, so
+ * the method the generated code calls is the one the author marked.</p>
  *
  * <p>The companion of the watching machine names the peer's entity and enums, so a peer is refused as
  * {@code SG509} when its entity is a parameterized type, or when one of those types is not accessible from the
@@ -43,9 +45,9 @@ final class TypedWatchReader {
     private final TypedPairs pairs;
     private final PropertyResolver properties;
     private final SymbolResolver symbols;
-    private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
+    private final WatchOwnerReader owners;
 
     TypedWatchReader(VocabularyRegistry vocabulary, TypedPairs pairs, PropertyResolver properties,
             SymbolResolver symbols, Signatures signatures, Diagnostics diagnostics) {
@@ -53,9 +55,9 @@ final class TypedWatchReader {
         this.pairs = pairs;
         this.properties = properties;
         this.symbols = symbols;
-        this.signatures = signatures;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
+        this.owners = new WatchOwnerReader(properties, symbols, signatures, diagnostics, annotations);
     }
 
     /**
@@ -84,9 +86,8 @@ final class TypedWatchReader {
         int before = diagnostics.errors();
         Optional<AnnotationValue> declaredState = annotations.find(watch, "state");
         Optional<AnnotationValue> declaredPeers = annotations.find(watch, "peers");
-        Optional<AnnotationValue> declaredOwner = annotations.find(watch, "owner");
         Optional<AnnotationValue> declaredRules = annotations.find(watch, "rules");
-        if (declaredState.isEmpty() || declaredPeers.isEmpty() || declaredOwner.isEmpty() || declaredRules.isEmpty()) {
+        if (declaredState.isEmpty() || declaredPeers.isEmpty() || declaredRules.isEmpty()) {
             // javac refuses a Watch that omits an element it requires, and leaves that element out.
             return Optional.empty();
         }
@@ -108,8 +109,7 @@ final class TypedWatchReader {
         }
         Optional<Property> peersOf = symbol(declaredPeers.get()).flatMap((TypeMirror property) -> properties.peers(
                 property, machine, peer, DiagnosticAnchor.of(facade, watch, declaredPeers.get())));
-        Optional<Property> ownerOf = symbol(declaredOwner.get()).flatMap((TypeMirror property) -> properties.owner(
-                property, machine, peer, DiagnosticAnchor.of(facade, watch, declaredOwner.get())));
+        Optional<WatchOwner> owner = owners.read(facade, watch, state.get(), machine, peer);
         List<AnnotationMirror> declared = annotations.annotations(watch, "rules");
         if (declared.isEmpty()) {
             DiagnosticAnchor.of(facade, watch, declaredRules.get()).report(diagnostics, DiagnosticCode.SG404,
@@ -119,12 +119,11 @@ final class TypedWatchReader {
         for (AnnotationMirror rule : declared) {
             rule(facade, rule, machine, peer).ifPresent(rules::add);
         }
-        if (peersOf.isEmpty() || ownerOf.isEmpty() || rules.size() != declared.size()
+        if (peersOf.isEmpty() || owner.isEmpty() || rules.size() != declared.size()
                 || diagnostics.errors() > before) {
             return Optional.empty();
         }
-        return Optional.of(new WatchModel(state.get(), peer, peersOf.get(), ownerOf.get(),
-                isOptional(ownerOf.get(), machine), rules));
+        return Optional.of(new WatchModel(state.get(), peer, peersOf.get(), owner.get(), rules));
     }
 
     /**
@@ -198,12 +197,6 @@ final class TypedWatchReader {
     private Optional<RuleModel> filter(AnnotationValue value, String executed, String alternative, MachineTypes peer) {
         return TypedValues.constantName(value, peer.statesElement())
                 .map((String argument) -> new RuleModel(kind(alternative), argument, Optional.empty(), executed));
-    }
-
-    /** Whether the owner accessor answers with an {@code Optional}, which decides how the peer is followed back. */
-    private boolean isOptional(Property owner, MachineTypes machine) {
-        return signatures.same(owner.accessor().effectiveType().getReturnType(),
-                signatures.declared(Signatures.OPTIONAL, machine.entity()));
     }
 
     /** The values of an array element, and none when this annotation does not declare that element at all. */

@@ -147,8 +147,10 @@ machine again (`SG805`). [Structural rules](graph-model.md#structural-rules) and
 A call to a payment has to know whether a parent holds it, so each binding needs the way back from the child.
 `@GraphLookup` marks a method of signature `Optional<E> name(P child)`, static or instance, on any class. The
 generator exports it as a symbol of that class's `Refs`, such as `BillingLookupsRefs.BookingOf`, which `parentLookup`
-names. These are the two lookups of `BillingLookups`, which keeps the bookings and subscriptions it registered in two
-maps by payment id, where an application would ask its repository:
+names; the `ownerLookup` of a watch names one the same way, to
+[find the owner of a peer](coordination.md#find-the-owner-with-a-lookup). These are the two lookups of
+`BillingLookups`, which keeps the bookings and subscriptions it registered in two maps by payment id, where an
+application would ask its repository:
 
 ```java
 @GraphLookup
