@@ -11,14 +11,10 @@ import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
-import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,9 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,7 +37,7 @@ import org.junit.jupiter.api.io.TempDir;
 class PublishedGraphsTest {
 
     private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
-    private static final String PUBLISHED = "META-INF/graphmaquina/exports.json";
+    private static final String PUBLISHED = PublishedJars.PUBLISHED;
 
     @TempDir
     Path directory;
@@ -151,7 +144,7 @@ class PublishedGraphsTest {
 
     @Test
     void linksAgainstThePublishedIndexOfAProducerAndPublishesOnlyItsOwn() throws IOException {
-        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
         ManifestProcessors.Recording.reset();
 
         Compilation.Prepared prepared = Compilation.prepare(consumer(), List.of(jar));
@@ -207,7 +200,7 @@ class PublishedGraphsTest {
                         + "AsyncCapable {"));
         producer.put("prod.Ledger", producer.get("prod.Ledger").replace(
                 "public interface Ledger extends Machines {", "public interface Ledger extends Machines, Lifecycle {"));
-        Path jar = publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
+        Path jar = PublishedJars.publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
@@ -222,7 +215,7 @@ class PublishedGraphsTest {
      */
     @Test
     void aConsumerSetBindsTheSubmachinesOfAPublishedParent() throws Exception {
-        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("billing.jar"),
+        Path jar = PublishedJars.publish(SubmachineGenerationTest.billing(), directory.resolve("billing.jar"),
                 UnaryOperator.identity());
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("cons.Shop", """
@@ -277,7 +270,7 @@ class PublishedGraphsTest {
     /** The same set without the child is refused, as a set of the producer's own compilation would be. */
     @Test
     void aConsumerSetWithoutTheChildOfAPublishedParentIsRefused() throws IOException {
-        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("parent.jar"),
+        Path jar = PublishedJars.publish(SubmachineGenerationTest.billing(), directory.resolve("parent.jar"),
                 UnaryOperator.identity());
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("cons.Shop", """
@@ -308,10 +301,8 @@ class PublishedGraphsTest {
      */
     @Test
     void reportsAProducerJarWithoutItsExportIndexWhereTheConsumerUsesIt() throws IOException {
-        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
-        try (FileSystem archive = FileSystems.newFileSystem(jar)) {
-            Files.delete(archive.getPath(PUBLISHED));
-        }
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        PublishedJars.stripIndex(jar);
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
@@ -360,8 +351,8 @@ class PublishedGraphsTest {
      */
     @Test
     void reportsAProducerJarWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
-        String older = publishedIndex(olderProducer());
-        Path jar = publish(producer(), directory.resolve("producer.jar"), (String current) -> older);
+        String older = PublishedJars.publishedIndex(olderProducer());
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), (String current) -> older);
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
@@ -376,7 +367,7 @@ class PublishedGraphsTest {
     /** The same producer compiled into a directory of classes, whose export index an older build's replaced. */
     @Test
     void reportsAProducerDirectoryWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
-        String older = publishedIndex(olderProducer());
+        String older = PublishedJars.publishedIndex(olderProducer());
         Compilation.Prepared producer = Compilation.prepare(producer());
         Compilation.Result produced = Compilation.compilePrepared(producer);
         assertTrue(produced.success(), produced.describe());
@@ -398,17 +389,9 @@ class PublishedGraphsTest {
                 + " classes, or rebuild the producer through the complete lifecycle";
     }
 
-    /** The export index a compilation of {@code sources} publishes. */
-    private static String publishedIndex(Map<String, String> sources) throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-        assertTrue(result.success(), result.describe());
-        return Files.readString(prepared.request().classesOutput().resolve(PUBLISHED), StandardCharsets.UTF_8);
-    }
-
     @Test
     void refusesAProducerWhosePublishedIndexCannotBeRead() throws IOException {
-        Path jar = publish(producer(), directory.resolve("corrupt.jar"),
+        Path jar = PublishedJars.publish(producer(), directory.resolve("corrupt.jar"),
                 (String index) -> index.replace("\"compilationId\"", "\"compilationIdentifier\""));
 
         CodegenException failure = assertThrows(CodegenException.class,
@@ -416,33 +399,6 @@ class PublishedGraphsTest {
 
         assertEquals("SG602", failure.code());
         assertTrue(failure.getMessage().contains("compilationId"), failure.getMessage());
-    }
-
-    /** A producer compiled on its own, packaged with the index its completion step published. */
-    private static Path publish(Map<String, String> sources, Path jar, UnaryOperator<String> index)
-            throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-        assertTrue(result.success(), result.describe());
-        Path classes = prepared.request().classesOutput();
-        String published = Files.readString(classes.resolve(PUBLISHED), StandardCharsets.UTF_8);
-        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-            for (Path file : files(classes)) {
-                String name = classes.relativize(file).toString().replace(File.separatorChar, '/');
-                // The completion step already removed the carrier, whose binaries belong to no jar.
-                assertFalse(name.startsWith("io/github/graphmaquina/generated/bootstrap/"), name);
-                if (name.equals(PUBLISHED)) {
-                    continue;
-                }
-                out.putNextEntry(new JarEntry(name));
-                out.write(Files.readAllBytes(file));
-                out.closeEntry();
-            }
-            out.putNextEntry(new JarEntry(PUBLISHED));
-            out.write(index.apply(published).getBytes(StandardCharsets.UTF_8));
-            out.closeEntry();
-        }
-        return jar;
     }
 
     /** A machine, its entity, two exported actions and a set holding the machine, in a package of their own. */
@@ -582,14 +538,5 @@ class PublishedGraphsTest {
             symbols.add(symbol.qualifiedName());
         }
         return symbols;
-    }
-
-    /** Every file under {@code root}, in a stable order. */
-    private static List<Path> files(Path root) {
-        try (Stream<Path> walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile).sorted().toList();
-        } catch (IOException failure) {
-            throw new UncheckedIOException(failure);
-        }
     }
 }
