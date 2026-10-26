@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
@@ -29,9 +30,6 @@ import lombok.NonNull;
  * or any top-level type generated in the unit's package, the unit included.</p>
  */
 public final class ApiEmitter {
-
-    private static final String COLLISION = "SG603";
-    private static final String UNUSABLE_PEER = "SG608";
 
     private ApiEmitter() {
     }
@@ -120,7 +118,8 @@ public final class ApiEmitter {
         List<GraphDescriptor> peers = new ArrayList<>();
         for (String peer : graph.peers()) {
             peers.add(model.graphs().stream().filter(candidate -> candidate.facade().equals(peer))
-                    .findFirst().orElseThrow(() -> new CodegenException(UNUSABLE_PEER, "the peer machine " + peer
+                    .findFirst().orElseThrow(() -> new CodegenException(DiagnosticCode.SG608.name(),
+                        "the peer machine " + peer
                         + " declared by " + graph.facade()
                         + " is not a @GenerateGraphApi machine of this compilation", graph.origin())));
         }
@@ -141,8 +140,8 @@ public final class ApiEmitter {
         String message = "the generated type " + source.qualifiedName() + " is claimed by " + previous.declaration()
             + " and by " + claim.declaration();
         Optional<SourceLocation> origin = previous.origin().or(claim::origin);
-        throw origin.map(location -> new CodegenException(COLLISION, message, location))
-                .orElseGet(() -> new CodegenException(COLLISION, message));
+        throw origin.map(location -> new CodegenException(DiagnosticCode.SG603.name(), message, location))
+                .orElseGet(() -> new CodegenException(DiagnosticCode.SG603.name(), message));
     }
 
     /**
@@ -186,7 +185,8 @@ public final class ApiEmitter {
         String first = firstSegment(name);
         String meaning = meanings.get(first);
         if (meaning != null) {
-            throw new CodegenException(COLLISION, unit + " cannot name " + described + ": inside it, " + first
+            throw new CodegenException(DiagnosticCode.SG603.name(),
+                unit + " cannot name " + described + ": inside it, " + first
                 + " means " + meaning, origin);
         }
     }

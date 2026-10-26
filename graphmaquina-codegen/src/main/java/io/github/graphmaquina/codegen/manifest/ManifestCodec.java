@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.manifest;
 
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
@@ -203,7 +204,7 @@ public final class ManifestCodec {
         try {
             return Charset.forName(name);
         } catch (IllegalCharsetNameException | UnsupportedCharsetException unknown) {
-            throw new CodegenException(JsonSupport.ERROR_CODE,
+            throw new CodegenException(DiagnosticCode.SG602.name(),
                 "member 'encoding' names no charset this JVM supports in " + file + ": " + name);
         }
     }

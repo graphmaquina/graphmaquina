@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GenerationModel;
@@ -42,8 +43,6 @@ public final class Bootstrap {
 
     private static final String GENERATE_GRAPH_API = "io.github.graphmaquina.annotation.GenerateGraphApi";
     private static final String STATE_GRAPHS = "io.github.graphmaquina.annotation.StateGraphs";
-    private static final String COLLISION = "SG603";
-    private static final String HEADER = "SG502";
 
     /**
      * The names the default excludes of Ant 1.10 name outright: the files and directories of version control systems,
@@ -133,7 +132,8 @@ public final class Bootstrap {
             for (TypeHeader.LocalMarker local : declaration.localMarkers()) {
                 if (index.marksInLocalClass(declaration, local, GENERATE_GRAPH_API)
                         || index.marksInLocalClass(declaration, local, STATE_GRAPHS)) {
-                    throw new CodegenException(HEADER, "the marker @" + local.marker().name() + " is written on a"
+                    throw new CodegenException(DiagnosticCode.SG502.name(),
+                            "the marker @" + local.marker().name() + " is written on a"
                             + " local or anonymous class of " + declaration.canonicalName() + ", but a machine or a set"
                             + " must be a top-level interface: the generated companion lives next to it in the package",
                             local.marker().origin().orElseThrow());
@@ -154,7 +154,8 @@ public final class Bootstrap {
             TypeHeader first = facades.get(at - 1);
             TypeHeader second = facades.get(at);
             if (first.canonicalName().equals(second.canonicalName())) {
-                throw new CodegenException(COLLISION, "the machines " + index.describe(first) + " and "
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                        "the machines " + index.describe(first) + " and "
                         + index.describe(second) + " share one canonical name, which is all a manifest names a machine"
                         + " by; rename one of them", first.origin().orElseThrow());
             }

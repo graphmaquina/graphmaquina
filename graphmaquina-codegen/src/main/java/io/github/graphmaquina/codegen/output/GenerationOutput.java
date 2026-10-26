@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.output;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.GenerationResult;
@@ -65,7 +66,6 @@ public final class GenerationOutput {
     private static final String MANIFEST = "annotation-manifest.json";
     private static final String PENDING = "annotation-manifest.pending.json";
     private static final String STAGING = "generated-staging";
-    private static final String COLLISION = "SG603";
 
     private GenerationOutput() {
     }
@@ -226,12 +226,12 @@ public final class GenerationOutput {
                     request.classesOutput());
             Path target = request.sourcesOutput().resolve(relative);
             if (!writesUnder(request.sourcesOutput(), target)) {
-                throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
+                throw new CodegenException(DiagnosticCode.SG603.name(), "the generated type " + source.qualifiedName()
                     + " would be written through a symbolic link that leads out of " + request.sourcesOutput()
                     + ": " + target);
             }
             if (Files.exists(target) && !ownedBefore(request.sourcesOutput(), target, relative, previouslyOwned)) {
-                throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
+                throw new CodegenException(DiagnosticCode.SG603.name(), "the generated type " + source.qualifiedName()
                     + " would overwrite the unowned file " + target + (recorded ? ""
                     : ": nothing in the work directory " + request.workDirectory() + " records a file a previous"
                     + " generation wrote, as when that directory was deleted; if one wrote this file, run clean, or"
@@ -347,12 +347,14 @@ public final class GenerationOutput {
         for (Path directory : directories) {
             Path original = directory.resolve(relative);
             if (Files.isRegularFile(original)) {
-                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.toString()));
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                        sharedPath(qualifiedName, relative, original.toString()));
             }
         }
         for (Bootstrap.OriginalSource original : standing) {
             if (original.path().equals(relative)) {
-                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.file().toString()));
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                        sharedPath(qualifiedName, relative, original.file().toString()));
             }
         }
         String fileName = relative.substring(relative.lastIndexOf('/') + 1);
@@ -364,19 +366,20 @@ public final class GenerationOutput {
             }
             Path underGeneratedName = original.file().resolveSibling(fileName);
             if (Files.exists(underGeneratedName) && Files.isSameFile(underGeneratedName, original.file())) {
-                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative,
+                throw new CodegenException(DiagnosticCode.SG603.name(), sharedPath(qualifiedName, relative,
                     original.file().toRealPath().toString()) + " on a volume that does not tell names apart by case");
             }
         }
         for (Declared declared : declaring) {
             if (declared.type().equals(qualifiedName)) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
+                throw new CodegenException(DiagnosticCode.SG603.name(), "the generated type " + qualifiedName
                     + " is already declared by the original source " + declared.origin());
             }
         }
         if (!declaring.isEmpty() && CaseFolding.folds(classesOutput)) {
             Declared declared = declaring.get(0);
-            throw new CodegenException(COLLISION, "the generated type " + qualifiedName + " differs only in case"
+            throw new CodegenException(DiagnosticCode.SG603.name(),
+                "the generated type " + qualifiedName + " differs only in case"
                 + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
                 + " and the volume of the class output " + classesOutput + " does not tell their class files apart");
         }
@@ -419,7 +422,7 @@ public final class GenerationOutput {
             volumes.put("the class output ", request.classesOutput());
             for (Map.Entry<String, Path> volume : volumes.entrySet()) {
                 if (CaseFolding.folds(volume.getValue())) {
-                    throw new CodegenException(COLLISION, "the generated types " + previous + " and "
+                    throw new CodegenException(DiagnosticCode.SG603.name(), "the generated types " + previous + " and "
                         + source.qualifiedName() + " differ only in case, and the volume of " + volume.getKey()
                         + volume.getValue() + " does not tell their files apart");
                 }
@@ -430,7 +433,8 @@ public final class GenerationOutput {
             SymbolDescriptor previous = nested.putIfAbsent(CaseFolding.key(symbol.qualifiedName()), symbol);
             if (previous != null && !previous.qualifiedName().equals(symbol.qualifiedName())
                     && CaseFolding.folds(request.classesOutput())) {
-                throw new CodegenException(COLLISION, "the generated symbols " + previous.qualifiedName() + ", of "
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                    "the generated symbols " + previous.qualifiedName() + ", of "
                     + member(previous) + ", and " + symbol.qualifiedName() + ", of " + member(symbol)
                     + ", differ only in case, and the volume of the class output " + request.classesOutput()
                     + " does not tell their class files apart", symbol.origin());
@@ -492,7 +496,7 @@ public final class GenerationOutput {
     }
 
     private static CodegenException classpathCollision(GeneratedSource source, Path entry) {
-        return new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
+        return new CodegenException(DiagnosticCode.SG603.name(), "the generated type " + source.qualifiedName()
                 + " would shadow a class from " + entry);
     }
 

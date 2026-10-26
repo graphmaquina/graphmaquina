@@ -6,6 +6,7 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.SourceLocation;
@@ -39,8 +40,6 @@ import lombok.NonNull;
  * them with: a source may use the syntax of that release anywhere, and characters of that encoding.
  */
 public final class SourceDeclarations {
-
-    private static final String UNRESOLVED = "SG601";
 
     private SourceDeclarations() {
     }
@@ -144,8 +143,8 @@ public final class SourceDeclarations {
                     .append(errors.size() == 2 ? "" : "s").append(')');
         }
         String reported = message.toString();
-        throw location.map(anchor -> new CodegenException(UNRESOLVED, reported, anchor))
-                .orElseGet(() -> new CodegenException(UNRESOLVED, reported));
+        throw location.map(anchor -> new CodegenException(DiagnosticCode.SG601.name(), reported, anchor))
+                .orElseGet(() -> new CodegenException(DiagnosticCode.SG601.name(), reported));
     }
 
     private static Optional<SourceLocation> location(Diagnostic<? extends JavaFileObject> diagnostic,

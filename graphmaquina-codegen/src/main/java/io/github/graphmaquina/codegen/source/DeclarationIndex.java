@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.SourceLocation;
@@ -43,9 +44,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class DeclarationIndex implements AutoCloseable {
-
-    private static final String UNRESOLVED = "SG601";
-    private static final String COLLISION = "SG603";
 
     /** The source declarations of named packages, by canonical name. */
     private final Map<String, TypeHeader> sources;
@@ -443,8 +441,8 @@ public final class DeclarationIndex implements AutoCloseable {
             String message = "the marker @" + marker.name() + " in " + context.canonicalName()
                     + " cannot be recognized: " + annotationType + " is not on the generator classpath";
             throw marker.origin().or(context::origin)
-                    .map((SourceLocation origin) -> new CodegenException(UNRESOLVED, message, origin))
-                    .orElseGet(() -> new CodegenException(UNRESOLVED, message));
+                    .map((SourceLocation origin) -> new CodegenException(DiagnosticCode.SG601.name(), message, origin))
+                    .orElseGet(() -> new CodegenException(DiagnosticCode.SG601.name(), message));
         }
         return resolved.map((TypeHeader type) -> type.canonicalName().equals(annotationType)
                 && !packageOf(type).isEmpty()).orElse(Boolean.FALSE);
@@ -472,7 +470,7 @@ public final class DeclarationIndex implements AutoCloseable {
         }
         boolean binary = context.origin().isEmpty();
         if (binary && classpath.namesBothTypes(context, spelledName)) {
-            throw new CodegenException(COLLISION, "the class file of " + context.canonicalName()
+            throw new CodegenException(DiagnosticCode.SG603.name(), "the class file of " + context.canonicalName()
                     + " of the unnamed package names both "
                     + declared(spelledName, false).map(this::describe).orElse(spelledName) + " and "
                     + declared(spelledName, true).map(this::describe).orElse(spelledName)
@@ -602,7 +600,7 @@ public final class DeclarationIndex implements AutoCloseable {
                     .or(() -> declared("java.lang." + segment, false)
                             .filter((TypeHeader type) -> importable(type, packageName)));
             if (obscurer.isPresent()) {
-                throw new CodegenException(COLLISION, unit + " cannot name " + name + ": the type "
+                throw new CodegenException(DiagnosticCode.SG603.name(), unit + " cannot name " + name + ": the type "
                         + obscurer.get().canonicalName() + " obscures the package " + segment + " there", origin);
             }
         }
@@ -658,8 +656,8 @@ public final class DeclarationIndex implements AutoCloseable {
         if (found.size() > 1) {
             String message = "the type " + name + " is ambiguous between " + String.join(" and ", found);
             throw context.origin()
-                    .map(origin -> new CodegenException(UNRESOLVED, message, origin))
-                    .orElseGet(() -> new CodegenException(UNRESOLVED, message));
+                    .map(origin -> new CodegenException(DiagnosticCode.SG601.name(), message, origin))
+                    .orElseGet(() -> new CodegenException(DiagnosticCode.SG601.name(), message));
         }
         return Optional.ofNullable(first);
     }

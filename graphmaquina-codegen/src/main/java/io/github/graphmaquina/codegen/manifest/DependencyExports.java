@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.manifest;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.ToolVersion;
 import java.io.IOException;
@@ -26,7 +27,6 @@ import lombok.NonNull;
 public final class DependencyExports {
 
     private static final String ENTRY = "META-INF/graphmaquina/exports.json";
-    private static final String INCOMPATIBLE = "SG602";
 
     private DependencyExports() {
     }
@@ -82,14 +82,14 @@ public final class DependencyExports {
         try {
             return ManifestCodec.readExports(published);
         } catch (CodegenException failure) {
-            throw new CodegenException(INCOMPATIBLE,
+            throw new CodegenException(DiagnosticCode.SG602.name(),
                 "the StateGraph export index published by " + entry + " cannot be read: " + failure.getMessage());
         }
     }
 
     private static ExportIndex compatible(ExportIndex index, Path entry, String toolVersion) {
         if (!index.toolVersion().equals(toolVersion)) {
-            throw new CodegenException(INCOMPATIBLE, "the StateGraph export index published by " + entry
+            throw new CodegenException(DiagnosticCode.SG602.name(), "the StateGraph export index published by " + entry
                 + " was written by tool version " + index.toolVersion() + "; this tool is " + toolVersion);
         }
         return index;

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.output;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
@@ -64,8 +65,6 @@ public final class CompilationOutputs {
     private static final String PUBLISHED_INDEX = "META-INF/graphmaquina/exports.json";
     private static final String PENDING_INDEX = "META-INF/graphmaquina/pending-exports.json";
     private static final String CARRIER_PACKAGE = "io.github.graphmaquina.generated.bootstrap";
-    private static final String UNUSABLE = "SG602";
-    private static final String COLLISION = "SG603";
     private static final int SCHEMA_VERSION = 2;
     private static final String JAVA_SOURCE = ".java";
     private static final String CLASS_FILE = ".class";
@@ -261,12 +260,12 @@ public final class CompilationOutputs {
     private static void requirePrepared(GenerationRequest request, CompileManifest manifest, Path work,
             Path pendingInventory) throws IOException {
         if (!Files.isRegularFile(pendingInventory)) {
-            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
                 + request.compilationId() + ": there is no " + PENDING_INVENTORY + " in " + work
                 + ", so this compilation was never prepared");
         }
         if (!ManifestCodec.readOwned(pendingInventory).sources().containsAll(manifest.ownedSources())) {
-            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
                 + request.compilationId() + ": " + pendingInventory
                 + " was written for another generation than the one " + manifestPath(request) + " describes");
         }
@@ -280,7 +279,7 @@ public final class CompilationOutputs {
      */
     private static void requireProvisionalIndex(GenerationRequest request, Path pendingIndex) {
         if (!Files.isRegularFile(pendingIndex)) {
-            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
                 + request.compilationId() + ": " + pendingIndex + " does not exist, so the annotation"
                 + " processor published nothing for javac to promote");
         }
@@ -297,7 +296,7 @@ public final class CompilationOutputs {
             throws IOException {
         Path processorInventory = Path.of(manifest.processorInventory());
         if (!Files.isRegularFile(processorInventory)) {
-            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
                 + request.compilationId() + ": the annotation processor wrote no inventory at "
                 + processorInventory);
         }
@@ -323,7 +322,7 @@ public final class CompilationOutputs {
         }
         List<Path> carrierBinaries = OwnedClassFiles.enumerate(classes, carrier);
         if (carrierBinaries.isEmpty()) {
-            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
                 + request.compilationId() + ": no class file in " + classes + " belongs to the carrier "
                 + String.join(", ", carrier) + ", which every compilation of this generator produces."
                 + " StateGraph links a binary to the unit that declared it through the SourceFile attribute"
@@ -353,7 +352,7 @@ public final class CompilationOutputs {
     private static CompileManifest manifest(GenerationRequest request, String step) throws IOException {
         Path path = manifestPath(request);
         if (!Files.isRegularFile(path)) {
-            throw new CodegenException(UNUSABLE, "cannot " + step + " the compilation of "
+            throw new CodegenException(DiagnosticCode.SG602.name(), "cannot " + step + " the compilation of "
                 + request.compilationId() + ": there is no manifest at " + path
                 + "; run the generator before the compiler");
         }
@@ -400,7 +399,8 @@ public final class CompilationOutputs {
         for (String entry : entries) {
             String fileName = entry.substring(entry.lastIndexOf('/') + 1);
             if (!fileName.endsWith(suffix) || fileName.length() == suffix.length()) {
-                throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                    "the inventory " + inventory + " claims '" + entry
                     + "', which is not a " + kind + " under " + root);
             }
         }
@@ -427,7 +427,8 @@ public final class CompilationOutputs {
                 inside = false;
             }
             if (!inside) {
-                throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                    "the inventory " + inventory + " claims '" + entry
                     + "', which is not a file under " + root);
             }
         }
@@ -446,7 +447,8 @@ public final class CompilationOutputs {
         for (String entry : entries) {
             Path file = resolve(root, entry);
             if (Files.isDirectory(file.getParent()) && !standsUnder(file, root)) {
-                throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
+                throw new CodegenException(DiagnosticCode.SG603.name(),
+                    "the inventory " + inventory + " claims '" + entry
                     + "', which a symbolic link takes out of " + root);
             }
         }

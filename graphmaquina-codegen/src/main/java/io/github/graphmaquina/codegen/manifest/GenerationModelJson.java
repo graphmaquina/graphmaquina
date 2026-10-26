@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.manifest;
 
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GenerationModel;
@@ -202,7 +203,7 @@ final class GenerationModelJson {
         try {
             return SymbolKind.valueOf(value);
         } catch (IllegalArgumentException cause) {
-            throw new CodegenException(JsonSupport.ERROR_CODE, "unknown symbol kind '" + value + "' in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(), "unknown symbol kind '" + value + "' in " + file);
         }
     }
 

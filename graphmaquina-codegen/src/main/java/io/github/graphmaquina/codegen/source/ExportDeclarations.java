@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
@@ -41,8 +42,6 @@ import lombok.NonNull;
  */
 public final class ExportDeclarations {
 
-    private static final String COLLISION = "SG603";
-    private static final String INVALID_ROLE = "SG604";
     private static final String BINDINGS = "io.github.graphmaquina.annotation.GraphBindings";
     /** The package of the StateGraph types every references container writes by qualified name. */
     private static final String STATEGRAPH_PACKAGE = "io.github.graphmaquina";
@@ -78,7 +77,7 @@ public final class ExportDeclarations {
             String packageName = host.scope().packageName();
             Optional<String> inaccessible = index.inaccessibility(host, packageName);
             if (inaccessible.isPresent()) {
-                throw new CodegenException(INVALID_ROLE, "the host " + host.canonicalName()
+                throw new CodegenException(DiagnosticCode.SG604.name(), "the host " + host.canonicalName()
                     + " is not accessible to its references container " + container + ": " + inaccessible.get(),
                     origin(host));
             }
@@ -110,7 +109,8 @@ public final class ExportDeclarations {
             TypeHeader.Marker marker = local.marker();
             for (String annotationType : markers) {
                 if (index.marksInLocalClass(declaration, local, annotationType)) {
-                    throw new CodegenException(INVALID_ROLE, "the marker @" + marker.name() + " is written in a local"
+                    throw new CodegenException(DiagnosticCode.SG604.name(),
+                        "the marker @" + marker.name() + " is written in a local"
                         + " or anonymous class of " + declaration.canonicalName() + ", which no references container"
                         + " can name, so it exports nothing: mark a member of a top-level or member class instead",
                         marker.origin().orElseGet(() -> origin(declaration)));
@@ -165,14 +165,14 @@ public final class ExportDeclarations {
         for (SymbolDescriptor symbol : exported) {
             String simpleName = symbol.qualifiedName().substring(symbol.qualifiedName().lastIndexOf('.') + 1);
             if (simpleName.equals(simpleContainer)) {
-                throw new CodegenException(COLLISION, "the member " + symbol.member() + " of "
+                throw new CodegenException(DiagnosticCode.SG603.name(), "the member " + symbol.member() + " of "
                     + host.canonicalName() + " at " + at(symbol.origin()) + " normalizes to its own references "
                     + "container " + container + " generated for " + host.canonicalName() + " at "
                     + at(origin(host)), symbol.origin());
             }
             SymbolDescriptor previous = names.putIfAbsent(symbol.qualifiedName(), symbol);
             if (previous != null) {
-                throw new CodegenException(COLLISION, "the generated symbol " + symbol.qualifiedName()
+                throw new CodegenException(DiagnosticCode.SG603.name(), "the generated symbol " + symbol.qualifiedName()
                     + " is claimed by " + previous.host() + '#' + previous.member() + " at "
                     + at(previous.origin()) + " and " + symbol.host() + '#' + symbol.member() + " at "
                     + at(symbol.origin()), symbol.origin());
@@ -227,7 +227,7 @@ public final class ExportDeclarations {
             }
         }
         if (declared.size() > 1) {
-            throw new CodegenException(INVALID_ROLE, "the member " + member.name() + " of "
+            throw new CodegenException(DiagnosticCode.SG604.name(), "the member " + member.name() + " of "
                     + declaring.canonicalName() + " declares more than one graph role: "
                     + String.join(" and ", declared.stream().map(SymbolKind::name).sorted().toList()),
                     member.origin().orElseGet(() -> origin(host)));
@@ -406,7 +406,8 @@ public final class ExportDeclarations {
         try {
             return container + '.' + SymbolNames.typeName(SymbolNames.hostName(hostName(host)), member);
         } catch (IllegalArgumentException invalid) {
-            throw new CodegenException(COLLISION, "the member " + member + " of " + host.canonicalName()
+            throw new CodegenException(DiagnosticCode.SG603.name(),
+                "the member " + member + " of " + host.canonicalName()
                 + ": " + invalid.getMessage(), memberOrigin);
         }
     }
@@ -418,7 +419,7 @@ public final class ExportDeclarations {
             String container = SymbolNames.containerName(hostName(host));
             return SymbolNames.qualified(packageName, container);
         } catch (IllegalArgumentException invalid) {
-            throw new CodegenException(COLLISION, "the host " + host.canonicalName() + ": "
+            throw new CodegenException(DiagnosticCode.SG603.name(), "the host " + host.canonicalName() + ": "
                 + invalid.getMessage(), origin(host));
         }
     }
@@ -454,14 +455,15 @@ public final class ExportDeclarations {
     }
 
     private static CodegenException sharedContainer(String container, TypeHeader first, TypeHeader second) {
-        return new CodegenException(COLLISION, "the references container " + container
+        return new CodegenException(DiagnosticCode.SG603.name(), "the references container " + container
                 + " is generated for both " + first.canonicalName() + " at " + at(origin(first)) + " and "
                 + second.canonicalName() + " at " + at(origin(second)), origin(first));
     }
 
     private static CodegenException duplicateProperty(TypeHeader host, String logicalName, Declaration first,
             Declaration second) {
-        return new CodegenException(COLLISION, "the property " + logicalName + " of " + host.canonicalName()
+        return new CodegenException(DiagnosticCode.SG603.name(),
+                "the property " + logicalName + " of " + host.canonicalName()
                 + " is declared twice, by " + describe(first) + " and by " + describe(second),
                 second.member().origin().orElseGet(() -> origin(host)));
     }
@@ -472,7 +474,7 @@ public final class ExportDeclarations {
     }
 
     private static CodegenException sharedSymbol(TypeHeader host, String member) {
-        return new CodegenException(COLLISION, "the symbol " + member + " of " + host.canonicalName()
+        return new CodegenException(DiagnosticCode.SG603.name(), "the symbol " + member + " of " + host.canonicalName()
                 + " is exported as both a method and a property", origin(host));
     }
 

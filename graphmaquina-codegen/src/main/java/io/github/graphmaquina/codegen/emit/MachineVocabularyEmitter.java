@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -60,7 +61,7 @@ final class MachineVocabularyEmitter {
         try {
             return SymbolNames.hostName(SymbolNames.nameWithin(graph.packageName(), graph.facade()));
         } catch (IllegalArgumentException invalid) {
-            throw new CodegenException("SG603", "the machine " + graph.facade() + ": "
+            throw new CodegenException(DiagnosticCode.SG603.name(), "the machine " + graph.facade() + ": "
                 + invalid.getMessage(), graph.origin());
         }
     }

@@ -10,6 +10,7 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import com.google.gson.stream.MalformedJsonException;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import java.io.EOFException;
 import java.io.IOException;
@@ -31,7 +32,7 @@ import java.util.function.Supplier;
 /**
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
  * into a {@link JsonObject} tree while rejecting duplicate keys, and typed, null-checked member access that
- * reports every violation as a {@link CodegenException} with code {@value #ERROR_CODE}. A document that is not
+ * reports every violation as a {@link CodegenException} with code SG602. A document that is not
  * well-formed strict JSON, holds bytes that are not UTF-8 text, escapes a surrogate that is not half of a pair in a
  * string or a name, carries content after its end or holds a number whose exponent lies beyond the range a
  * {@link BigDecimal} holds is reported the same way, naming its file.
@@ -40,7 +41,6 @@ import java.util.function.Supplier;
  */
 final class JsonSupport {
 
-    static final String ERROR_CODE = "SG602";
     static final int SCHEMA_VERSION = 2;
     /** What a strict reader says about syntax only its lenient mode accepts. */
     private static final String LENIENT_ADVICE =
@@ -68,7 +68,7 @@ final class JsonSupport {
     /**
      * Reads {@code path} as a single strict JSON object, rejecting duplicate keys anywhere in the document.
      *
-     * @throws CodegenException {@value #ERROR_CODE} naming {@code path} if the document is not well-formed
+     * @throws CodegenException SG602 naming {@code path} if the document is not well-formed
      *     strict JSON, for example because a write was interrupted, holds bytes that are not UTF-8 text, as a
      *     write cut off inside a multi-byte character leaves, escapes in a string or a name a surrogate that is not
      *     half of a pair, which no UTF-8 file can hold, carries content after its end, or holds a number,
@@ -84,10 +84,12 @@ final class JsonSupport {
                 element = parseStrict(reader, path);
                 requireEndOfDocument(reader, path);
             } catch (MalformedJsonException | EOFException malformed) {
-                throw new CodegenException(ERROR_CODE, "malformed JSON in " + path + ": " + describe(malformed));
+                throw new CodegenException(DiagnosticCode.SG602.name(),
+                        "malformed JSON in " + path + ": " + describe(malformed));
             } catch (CharacterCodingException undecodable) {
                 // The reader decodes a whole buffer ahead of the token it reads, so no position would be exact.
-                throw new CodegenException(ERROR_CODE, "malformed JSON in " + path + ": bytes that are not UTF-8 text");
+                throw new CodegenException(DiagnosticCode.SG602.name(),
+                        "malformed JSON in " + path + ": bytes that are not UTF-8 text");
             }
             return asObject(element, path);
         }
@@ -105,7 +107,7 @@ final class JsonSupport {
             ended = false;
         }
         if (!ended) {
-            throw new CodegenException(ERROR_CODE, "unexpected trailing content in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(), "unexpected trailing content in " + file);
         }
     }
 
@@ -130,7 +132,8 @@ final class JsonSupport {
                 while (reader.hasNext()) {
                     String name = paired(reader.nextName(), reader::getPath, file);
                     if (object.has(name)) {
-                        throw new CodegenException(ERROR_CODE, "duplicate key '" + name + "' in " + file);
+                        throw new CodegenException(DiagnosticCode.SG602.name(),
+                                "duplicate key '" + name + "' in " + file);
                     }
                     object.add(name, parseStrict(reader, file));
                 }
@@ -153,7 +156,8 @@ final class JsonSupport {
                     yield new JsonPrimitive(new BigDecimal(text));
                 } catch (NumberFormatException outOfRange) {
                     // Well-formed JSON all the same, such as 1e99999999999: no BigDecimal holds that exponent.
-                    throw new CodegenException(ERROR_CODE, "number with an exponent out of range in " + file + ": "
+                    throw new CodegenException(DiagnosticCode.SG602.name(),
+                        "number with an exponent out of range in " + file + ": "
                         + text + " at path " + reader.getPreviousPath());
                 }
             }
@@ -162,7 +166,8 @@ final class JsonSupport {
                 reader.nextNull();
                 yield JsonNull.INSTANCE;
             }
-            default -> throw new CodegenException(ERROR_CODE, "unexpected token " + token + " in " + file);
+            default -> throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "unexpected token " + token + " in " + file);
         };
     }
 
@@ -177,7 +182,8 @@ final class JsonSupport {
         while (index < text.length()) {
             int codePoint = text.codePointAt(index);
             if (Character.charCount(codePoint) == 1 && Character.isSurrogate((char) codePoint)) {
-                throw new CodegenException(ERROR_CODE, "malformed JSON in " + file + ": an unpaired surrogate "
+                throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "malformed JSON in " + file + ": an unpaired surrogate "
                     + escaped(Character.toString(codePoint)) + " at path " + escaped(path.get()));
             }
             index += Character.charCount(codePoint);
@@ -198,7 +204,7 @@ final class JsonSupport {
     private static JsonElement requireMember(JsonObject object, String name, Path file) {
         JsonElement element = object.get(name);
         if (element == null || element.isJsonNull()) {
-            throw new CodegenException(ERROR_CODE, "missing member '" + name + "' in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(), "missing member '" + name + "' in " + file);
         }
         return element;
     }
@@ -206,7 +212,8 @@ final class JsonSupport {
     static String requireString(JsonObject object, String name, Path file) {
         JsonElement element = requireMember(object, name, file);
         if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
-            throw new CodegenException(ERROR_CODE, "member '" + name + "' must be a string in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "member '" + name + "' must be a string in " + file);
         }
         return element.getAsString();
     }
@@ -217,7 +224,7 @@ final class JsonSupport {
         try {
             return value.intValueExact();
         } catch (ArithmeticException inexact) {
-            throw new CodegenException(ERROR_CODE,
+            throw new CodegenException(DiagnosticCode.SG602.name(),
                 "member '" + name + "' must be a 32-bit integer in " + file + ", but is " + value);
         }
     }
@@ -228,7 +235,7 @@ final class JsonSupport {
         try {
             return value.longValueExact();
         } catch (ArithmeticException inexact) {
-            throw new CodegenException(ERROR_CODE,
+            throw new CodegenException(DiagnosticCode.SG602.name(),
                 "member '" + name + "' must be a 64-bit integer in " + file + ", but is " + value);
         }
     }
@@ -236,7 +243,8 @@ final class JsonSupport {
     private static BigDecimal requireNumber(JsonObject object, String name, Path file) {
         JsonElement element = requireMember(object, name, file);
         if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
-            throw new CodegenException(ERROR_CODE, "member '" + name + "' must be a number in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "member '" + name + "' must be a number in " + file);
         }
         return element.getAsBigDecimal();
     }
@@ -244,7 +252,8 @@ final class JsonSupport {
     static boolean requireBoolean(JsonObject object, String name, Path file) {
         JsonElement element = requireMember(object, name, file);
         if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isBoolean()) {
-            throw new CodegenException(ERROR_CODE, "member '" + name + "' must be a boolean in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "member '" + name + "' must be a boolean in " + file);
         }
         return element.getAsBoolean();
     }
@@ -255,7 +264,7 @@ final class JsonSupport {
 
     static JsonObject asObject(JsonElement element, Path file) {
         if (!element.isJsonObject()) {
-            throw new CodegenException(ERROR_CODE, "expected a JSON object in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(), "expected a JSON object in " + file);
         }
         return element.getAsJsonObject();
     }
@@ -263,7 +272,8 @@ final class JsonSupport {
     static JsonArray requireArray(JsonObject object, String name, Path file) {
         JsonElement element = requireMember(object, name, file);
         if (!element.isJsonArray()) {
-            throw new CodegenException(ERROR_CODE, "member '" + name + "' must be an array in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "member '" + name + "' must be an array in " + file);
         }
         return element.getAsJsonArray();
     }
@@ -273,7 +283,8 @@ final class JsonSupport {
         List<String> values = new ArrayList<>(array.size());
         for (JsonElement element : array) {
             if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
-                throw new CodegenException(ERROR_CODE, "member '" + name + "' must contain only strings in " + file);
+                throw new CodegenException(DiagnosticCode.SG602.name(),
+                        "member '" + name + "' must contain only strings in " + file);
             }
             values.add(element.getAsString());
         }
@@ -310,7 +321,7 @@ final class JsonSupport {
      */
     static void requireSupportedSchema(int schemaVersion, Path file) {
         if (schemaVersion != SCHEMA_VERSION) {
-            throw new CodegenException(ERROR_CODE,
+            throw new CodegenException(DiagnosticCode.SG602.name(),
                 "unsupported schemaVersion " + schemaVersion + " in " + file + "; expected " + SCHEMA_VERSION);
         }
     }
@@ -323,7 +334,8 @@ final class JsonSupport {
         try {
             Path.of(value);
         } catch (InvalidPathException unspellable) {
-            throw new CodegenException(ERROR_CODE, "processor inventory '" + value + "' is not a path in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "processor inventory '" + value + "' is not a path in " + file);
         }
     }
 
@@ -338,18 +350,22 @@ final class JsonSupport {
         try {
             candidate = Path.of(value);
         } catch (InvalidPathException unspellable) {
-            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' is not a path in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "inventory path '" + value + "' is not a path in " + file);
         }
         if (candidate.isAbsolute() || candidate.getRoot() != null) {
-            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' must be relative in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "inventory path '" + value + "' must be relative in " + file);
         }
         for (Path segment : candidate) {
             if ("..".equals(segment.toString())) {
-                throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' escapes its root in " + file);
+                throw new CodegenException(DiagnosticCode.SG602.name(),
+                        "inventory path '" + value + "' escapes its root in " + file);
             }
         }
         if (candidate.normalize().toString().isEmpty()) {
-            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no file in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "inventory path '" + value + "' names no file in " + file);
         }
     }
 
@@ -360,7 +376,8 @@ final class JsonSupport {
     static void requireJavaSource(String value, Path file) {
         String fileName = value.substring(value.lastIndexOf('/') + 1);
         if (!fileName.endsWith(".java") || fileName.length() == ".java".length()) {
-            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no Java source in " + file);
+            throw new CodegenException(DiagnosticCode.SG602.name(),
+                    "inventory path '" + value + "' names no Java source in " + file);
         }
     }
 

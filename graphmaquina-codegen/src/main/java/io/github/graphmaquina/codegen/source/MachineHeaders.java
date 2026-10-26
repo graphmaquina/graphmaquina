@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
@@ -26,8 +27,6 @@ public final class MachineHeaders {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
     private static final String GRAPH_PEERS = "io.github.graphmaquina.annotation.GraphPeers";
-    private static final String UNRESOLVED = "SG601";
-    private static final String UNUSABLE_PEER = "SG608";
     /** The packages of the StateGraph and JDK types every vocabulary writes by qualified name. */
     private static final List<String> VOCABULARY_PACKAGES = List.of("io.github.graphmaquina", "java.lang");
 
@@ -44,8 +43,8 @@ public final class MachineHeaders {
      * {@link DeclarationIndex#find(String)} finds by it.
      */
     public static GraphDescriptor resolve(@NonNull DeclarationIndex index, @NonNull String facade) {
-        return resolveDeclaration(index, index.find(facade).orElseThrow(() -> new CodegenException(UNRESOLVED,
-                "the machine interface " + facade + " is not declared"))).graph();
+        return resolveDeclaration(index, index.find(facade).orElseThrow(() -> new CodegenException(
+                DiagnosticCode.SG601.name(), "the machine interface " + facade + " is not declared"))).graph();
     }
 
     /**
@@ -57,12 +56,13 @@ public final class MachineHeaders {
      */
     static Resolved resolveDeclaration(DeclarationIndex index, TypeHeader header) {
         String facade = header.canonicalName();
-        SourceLocation origin = header.origin().orElseThrow(() -> new CodegenException(UNRESOLVED,
+        SourceLocation origin = header.origin().orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
                 "the machine interface " + facade + " is not an original source declaration"));
         if (!header.typeParameters().isEmpty()) {
             // The vocabulary names its machine by a class literal, and a raw literal of a generic type is not a
             // Class<? extends Machine<?, ?, ?>>, so nothing generated for such a facade could compile.
-            throw new CodegenException(UNRESOLVED, "the machine " + facade + " declares the type parameters <"
+            throw new CodegenException(DiagnosticCode.SG601.name(),
+                    "the machine " + facade + " declares the type parameters <"
                     + String.join(", ", header.typeParameters()) + ">; a @GenerateGraphApi machine cannot be generic",
                     origin);
         }
@@ -71,7 +71,8 @@ public final class MachineHeaders {
 
         Binding binding = specialization(index, header, new Binding(Map.of(), Map.of()),
                         Collections.newSetFromMap(new IdentityHashMap<>()))
-                .orElseThrow(() -> new CodegenException(UNRESOLVED, facade + " does not extend " + MACHINE, origin));
+                .orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
+                        facade + " does not extend " + MACHINE, origin));
         Map<TypeParameterKey, TypeUse> arguments = binding.arguments();
         TypeUse.Declared entity = declared(arguments.get(new TypeParameterKey(MACHINE, 0)),
                 "entity", facade, origin);
@@ -79,7 +80,7 @@ public final class MachineHeaders {
                 "state", facade, origin);
 
         if (binding.type(new TypeParameterKey(MACHINE, 0)).isEmpty()) {
-            throw new CodegenException(UNRESOLVED,
+            throw new CodegenException(DiagnosticCode.SG601.name(),
                     "the entity type " + entity.render() + " of " + facade + " is unresolved", origin);
         }
         TypeHeader stateHeader = enumType(binding, 1, "state", state, facade, origin);
@@ -87,7 +88,8 @@ public final class MachineHeaders {
             "transition", facade, origin);
         TypeHeader transitionHeader = enumType(binding, 2, "transition", transition, facade, origin);
         if (transitionHeader == stateHeader) {
-            throw new CodegenException(UNRESOLVED, "the machine " + facade + " uses " + stateHeader.canonicalName()
+            throw new CodegenException(DiagnosticCode.SG601.name(),
+                    "the machine " + facade + " uses " + stateHeader.canonicalName()
                     + " as both its state type and its transition type; states and transitions require distinct"
                     + " enum types", origin);
         }
@@ -127,7 +129,8 @@ public final class MachineHeaders {
                         .findFirst();
                 if (watched.isEmpty()) {
                     if (machines.stream().anyMatch((Resolved machine) -> machine.graph().facade().equals(peer))) {
-                        throw new CodegenException(UNUSABLE_PEER, "the peer machine " + peer + " declared by "
+                        throw new CodegenException(DiagnosticCode.SG608.name(),
+                                "the peer machine " + peer + " declared by "
                                 + graph.facade() + " is not a @GenerateGraphApi machine of this compilation",
                                 graph.origin());
                     }
@@ -137,7 +140,8 @@ public final class MachineHeaders {
                 for (TypeHeader named : List.of(peerMachine.facade(), peerMachine.state())) {
                     Optional<String> reason = index.inaccessibility(named, graph.packageName());
                     if (reason.isPresent()) {
-                        throw new CodegenException(UNUSABLE_PEER, "the peer machine " + peer + " declared by "
+                        throw new CodegenException(DiagnosticCode.SG608.name(),
+                                "the peer machine " + peer + " declared by "
                                 + graph.facade() + " cannot be named from " + where(graph.packageName())
                                 + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
                     }
@@ -171,7 +175,8 @@ public final class MachineHeaders {
             String packageName, SourceLocation origin) {
         Optional<String> reason = index.inaccessibility(type, packageName);
         if (reason.isPresent()) {
-            throw new CodegenException(UNRESOLVED, described + " is not accessible to the vocabulary generated in "
+            throw new CodegenException(DiagnosticCode.SG601.name(),
+                    described + " is not accessible to the vocabulary generated in "
                     + where(packageName) + ": " + reason.get(), origin);
         }
     }
@@ -254,11 +259,13 @@ public final class MachineHeaders {
             }
             for (String literal : marker.classLiterals()) {
                 TypeHeader peer = index.resolveInHeader(header, literal)
-                        .orElseThrow(() -> new CodegenException(UNRESOLVED, "the peer machine " + literal
+                        .orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
+                                "the peer machine " + literal
                                 + " declared by " + header.canonicalName() + " is unresolved",
                                 marker.origin().orElse(origin)));
                 if (peers.stream().anyMatch((TypeHeader declared) -> declared == peer)) {
-                    throw new CodegenException(UNUSABLE_PEER, peer.canonicalName() + " is declared twice as a peer of "
+                    throw new CodegenException(DiagnosticCode.SG608.name(),
+                            peer.canonicalName() + " is declared twice as a peer of "
                             + header.canonicalName(), marker.origin().orElse(origin));
                 }
                 peers.add(peer);
@@ -271,7 +278,8 @@ public final class MachineHeaders {
         if (use instanceof TypeUse.Declared value) {
             return value;
         }
-        throw new CodegenException(UNRESOLVED, "the " + role + " type of " + facade + " is not a declared type"
+        throw new CodegenException(DiagnosticCode.SG601.name(),
+                "the " + role + " type of " + facade + " is not a declared type"
                 + (use == null ? "" : ": " + use.render()), origin);
     }
 
@@ -284,10 +292,11 @@ public final class MachineHeaders {
     private static TypeHeader enumType(Binding binding, int position, String role, TypeUse.Declared spelled,
             String facade, SourceLocation origin) {
         TypeHeader type = binding.type(new TypeParameterKey(MACHINE, position))
-                .orElseThrow(() -> new CodegenException(UNRESOLVED,
+                .orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
                         "the " + role + " type " + spelled.render() + " of " + facade + " is unresolved", origin));
         if (type.kind() != ElementKind.ENUM) {
-            throw new CodegenException(UNRESOLVED, "the " + role + " type " + type.canonicalName() + " of "
+            throw new CodegenException(DiagnosticCode.SG601.name(),
+                    "the " + role + " type " + type.canonicalName() + " of "
                     + facade + " is not an enum", origin);
         }
         return type;
