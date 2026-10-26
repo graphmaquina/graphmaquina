@@ -347,12 +347,11 @@ rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-ma
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
-The peer of a watch or a sub-machine can come from a dependency, a jar or a directory of classes whose artifact
-carries the export index its build published, as
-[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes: the pair
-vocabulary is generated from what that index says of the peer, and the owner's `@StateGraphs` set must hold the peer
-machine too. A peer that is neither a machine of the same compilation nor one the export index of a dependency
-describes is rejected with `SG608`.
+The child of a sub-machine can come from a dependency, a jar or a directory of classes whose artifact carries the
+export index its build published, as
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A peer that is
+neither a machine of the same compilation nor a machine of a dependency that its export index describes is rejected
+with `SG608`.
 
 ---
 

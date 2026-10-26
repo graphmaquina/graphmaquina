@@ -83,16 +83,16 @@ public final class Bootstrap {
 
     /**
      * The model of {@code request}, as {@link #inspect} reads it, with every original source it was read from, its
-     * declared peers resolved against {@code dependencies} too. A peer that is no machine of the request is the
-     * machine the one index of {@code dependencies} that describes it gives.
+     * declared peers resolved against {@code dependencies} too. A peer that is no machine of the request, read from the
+     * classpath, is the machine the one index of {@code dependencies} that describes it gives.
      *
      * @param request the request to read
      * @param dependencies the export indexes the dependencies of the request publish, each with its classpath entry
      * @return the model, the original sources it was read from, {@code dependencies} and the descriptors of the
      *     dependency peers
      * @throws CodegenException {@code SG602} for a machine of the request that an index of {@code dependencies}
-     *     describes too; {@code SG608} for a declared peer that is neither a machine of the request nor one an index
-     *     describes
+     *     describes too, before any machine or peer is resolved; {@code SG608} for a declared peer that is neither a
+     *     machine of the request nor a classpath type an index describes
      */
     public static Inspection read(@NonNull GenerationRequest request, @NonNull List<PublishedIndex> dependencies) {
         Parsed parsed = parse(request);
@@ -100,9 +100,11 @@ public final class Bootstrap {
         List<GraphDescriptor> dependencyPeers;
         try (DeclarationIndex index = DeclarationIndex.open(parsed.distinctUnits(), request.classpath(),
                 request.release(), request.encoding())) {
+            List<TypeHeader> facades = machines(index);
+            DependencyPeers.refuseDescribedMachines(facades, dependencies);
             List<MachineHeaders.Resolved> resolved = new ArrayList<>();
             List<GraphDescriptor> graphs = new ArrayList<>();
-            for (TypeHeader facade : machines(index)) {
+            for (TypeHeader facade : facades) {
                 MachineHeaders.Resolved machine = MachineHeaders.resolveDeclaration(index, facade);
                 resolved.add(machine);
                 graphs.add(machine.graph());
@@ -340,7 +342,7 @@ public final class Bootstrap {
      *     the request declares that the request does not generate, each once, in the order of their first declaration
      */
     public record Inspection(@NonNull GenerationModel model, List<OriginalSource> sources,
-            List<PublishedIndex> dependencies, List<GraphDescriptor> dependencyPeers) {
+            @NonNull List<PublishedIndex> dependencies, @NonNull List<GraphDescriptor> dependencyPeers) {
 
         /** Copies the lists, so an inspection never reflects a later change of the lists it was built from. */
         public Inspection {
