@@ -80,7 +80,7 @@ final Items items = shop.items();
 One static import, `io.github.graphmaquina.test.GraphAssertions.assertThat`, reaches the views for every
 subject a test holds directly: a definition, an outcome, an action or guard result, a recorded guard or action call,
 a throwable or an `InvalidGraphException`, an entity, the flow
-of a call.
+of a call, an eligibility answer.
 A bare list of transition records, of reactions, of sub-machine starts, of journal entries or of trail entries would
 need overloads with the same erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`,
 `ReactionsAssert.assertThat`, `StartsAssert.assertThat`, `JournalAssert.assertThat` and `TrailAssert.assertThat`;
@@ -119,6 +119,7 @@ constant of another machine's catalogue does not compile inside it.
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
+| Eligibility | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Sub-machine starts | `.starts()`, or `StartsAssert.assertThat(list)` | size, and per child: the state it started at, its state before, the parent and the bound state that started it, and the depth |
