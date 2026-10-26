@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -42,9 +43,6 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class MissingExportIndex {
-
-    /** Where a producer publishes its export index, beside its classes. */
-    private static final String INDEX = "META-INF/graphmaquina/exports.json";
 
     /** What a diagnostic about a missing or stale index asks for. */
     private static final String REMEDY = ": package the index the producer's StateGraph build publishes with its"
@@ -138,13 +136,13 @@ final class MissingExportIndex {
      */
     private static Optional<String> unlisted(Path entry, String name) {
         if (Files.isDirectory(entry)) {
-            return unlisted(entry, entry.resolve(INDEX), name);
+            return unlisted(entry, entry.resolve(GenerationFiles.PUBLISHED_INDEX), name);
         }
         if (!Files.isRegularFile(entry)) {
             return Optional.empty();
         }
         try (FileSystem archive = FileSystems.newFileSystem(entry)) {
-            return unlisted(entry, archive.getPath(INDEX), name);
+            return unlisted(entry, archive.getPath(GenerationFiles.PUBLISHED_INDEX), name);
         } catch (IOException | ProviderNotFoundException unreadable) {
             return Optional.empty();
         }
@@ -156,8 +154,8 @@ final class MissingExportIndex {
      */
     private static Optional<String> unlisted(Path entry, Path index, String name) {
         if (!Files.isRegularFile(index)) {
-            return Optional.of(" comes from " + entry + ", which carries no export index " + INDEX + ", so no index"
-                    + " this compilation reads lists it" + REMEDY);
+            return Optional.of(" comes from " + entry + ", which carries no export index "
+                    + GenerationFiles.PUBLISHED_INDEX + ", so no index this compilation reads lists it" + REMEDY);
         }
         ExportIndex published;
         try {
@@ -169,7 +167,8 @@ final class MissingExportIndex {
                 .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))
                 || published.model().symbols().stream()
                         .anyMatch((SymbolDescriptor symbol) -> symbol.qualifiedName().equals(name));
-        return listed ? Optional.empty() : Optional.of(" comes from " + entry + ", whose export index " + INDEX
-                + " does not list it, so that index is stale or another build's" + REMEDY);
+        return listed ? Optional.empty() : Optional.of(" comes from " + entry + ", whose export index "
+                + GenerationFiles.PUBLISHED_INDEX + " does not list it, so that index is stale or another build's"
+                + REMEDY);
     }
 }

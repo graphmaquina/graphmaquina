@@ -1,6 +1,12 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.internal.SymbolKind;
+import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CommitContext;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import java.util.List;
 import java.util.Optional;
@@ -23,12 +29,12 @@ final class Bindings {
     /** What the method is used for; it fixes the expected signature. */
     enum Role { ACTION, GUARD, HOOK, CONDITION, LOOKUP }
 
-    static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
-    static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
-    static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
-    static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
-    static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
-    static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
+    static final String TRANSITION_CONTEXT = TransitionContext.class.getName();
+    static final String COMMIT_CONTEXT = CommitContext.class.getName();
+    static final String GUARD_CONTEXT = GuardContext.class.getName();
+    static final String ACTION_OUTCOME = ActionOutcome.class.getName();
+    static final String GUARD_RESULT = GuardResult.class.getName();
+    static final String PEER_VIEW = PeerView.class.getName();
 
     private final Signatures signatures;
 

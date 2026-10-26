@@ -2,10 +2,13 @@
 gson   = "2.13.2"
 junit  = "5.13.4"
 lombok = "1.18.48"
+maven  = "3.9.12"
 
 [libraries]
-gson           = { module = "com.google.code.gson:gson", version.ref = "gson" }
-junit-bom      = { module = "org.junit:junit-bom", version.ref = "junit" }
-junit-jupiter  = { module = "org.junit.jupiter:junit-jupiter" }
-junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
-lombok         = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+gson             = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit-bom        = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter    = { module = "org.junit.jupiter:junit-jupiter" }
+junit-launcher   = { module = "org.junit.platform:junit-platform-launcher" }
+lombok           = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+maven-core       = { module = "org.apache.maven:maven-core", version.ref = "maven" }
+maven-plugin-api = { module = "org.apache.maven:maven-plugin-api", version.ref = "maven" }

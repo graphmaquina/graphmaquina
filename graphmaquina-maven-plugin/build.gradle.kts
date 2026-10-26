@@ -41,8 +41,8 @@ tasks.processResources {
 
 dependencies {
     // Maven supplies its own API and core at execution time; neither may reach the published POM.
-    compileOnly("org.apache.maven:maven-plugin-api:3.9.12")
-    compileOnly("org.apache.maven:maven-core:3.9.12")
+    compileOnly(libs.maven.plugin.api)
+    compileOnly(libs.maven.core)
     // The generator is a dependency of the plugin, never of the project it runs for: it is a separate process
     // started over the plugin's own artifacts, and its classes are never loaded into this plugin's realm.
     runtimeOnly(project(":graphmaquina-codegen"))

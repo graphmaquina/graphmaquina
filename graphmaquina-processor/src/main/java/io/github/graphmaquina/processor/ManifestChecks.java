@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
@@ -51,8 +52,6 @@ import javax.lang.model.util.Elements;
  */
 final class ManifestChecks {
 
-    private static final int SCHEMA_VERSION = 2;
-
     private ManifestChecks() { }
 
     /**
@@ -82,18 +81,18 @@ final class ManifestChecks {
     /** The manifest and every index it carries must be written by this exact tool, for this exact schema. */
     private static Optional<String> versions(CompileManifest manifest) {
         String tool = ToolVersion.current();
-        if (manifest.schemaVersion() != SCHEMA_VERSION) {
+        if (manifest.schemaVersion() != GenerationFiles.SCHEMA_VERSION) {
             return Optional.of("declares schema version " + manifest.schemaVersion()
-                + ", but this processor reads version " + SCHEMA_VERSION);
+                + ", but this processor reads version " + GenerationFiles.SCHEMA_VERSION);
         }
         if (!manifest.toolVersion().equals(tool)) {
             return Optional.of("was written by StateGraph " + manifest.toolVersion()
                 + ", but this processor is StateGraph " + tool);
         }
         for (ExportIndex index : indexes(manifest)) {
-            if (index.schemaVersion() != SCHEMA_VERSION) {
+            if (index.schemaVersion() != GenerationFiles.SCHEMA_VERSION) {
                 return Optional.of("carries the index of " + index.compilationId() + " at schema version "
-                    + index.schemaVersion() + ", but this processor reads version " + SCHEMA_VERSION);
+                    + index.schemaVersion() + ", but this processor reads version " + GenerationFiles.SCHEMA_VERSION);
             }
             if (!index.toolVersion().equals(tool)) {
                 return Optional.of("carries the index of " + index.compilationId() + ", written by StateGraph "

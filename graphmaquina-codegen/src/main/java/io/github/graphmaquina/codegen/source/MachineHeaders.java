@@ -1,6 +1,8 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
@@ -25,8 +27,8 @@ import lombok.NonNull;
  */
 public final class MachineHeaders {
 
-    private static final String MACHINE = "io.github.graphmaquina.api.Machine";
-    private static final String GRAPH_PEERS = "io.github.graphmaquina.annotation.GraphPeers";
+    private static final String MACHINE = Machine.class.getName();
+    private static final String GRAPH_PEERS = GraphPeers.class.getName();
     /** The packages of the StateGraph and JDK types every vocabulary writes by qualified name. */
     private static final List<String> VOCABULARY_PACKAGES = List.of("io.github.graphmaquina", "java.lang");
 

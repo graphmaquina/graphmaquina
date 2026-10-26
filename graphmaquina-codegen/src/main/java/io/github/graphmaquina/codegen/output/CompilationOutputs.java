@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.output;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -60,12 +61,6 @@ import lombok.NonNull;
  */
 public final class CompilationOutputs {
 
-    private static final String INVENTORY = "owned-outputs.json";
-    private static final String PENDING_INVENTORY = "owned-outputs.pending.json";
-    private static final String PUBLISHED_INDEX = "META-INF/graphmaquina/exports.json";
-    private static final String PENDING_INDEX = "META-INF/graphmaquina/pending-exports.json";
-    private static final String CARRIER_PACKAGE = "io.github.graphmaquina.generated.bootstrap";
-    private static final int SCHEMA_VERSION = 2;
     private static final String JAVA_SOURCE = ".java";
     private static final String CLASS_FILE = ".class";
 
@@ -123,18 +118,18 @@ public final class CompilationOutputs {
         Path classes = root(request.classesOutput());
         Path processorSources = root(request.processorSourcesOutput());
 
-        Path pendingInventory = work.resolve(PENDING_INVENTORY);
+        Path pendingInventory = work.resolve(GenerationFiles.PENDING_INVENTORY);
         boolean interrupted = Files.isRegularFile(pendingInventory);
-        List<OwnedOutputs> sealed = readInventory(work.resolve(INVENTORY), classes, processorSources);
+        List<OwnedOutputs> sealed = readInventory(work.resolve(GenerationFiles.INVENTORY), classes, processorSources);
         for (OwnedOutputs inventory : sealed) {
-            requireStaysInside(inventory.sources(), processorSources, INVENTORY);
+            requireStaysInside(inventory.sources(), processorSources, GenerationFiles.INVENTORY);
         }
         List<OwnedOutputs> previous = new ArrayList<>(sealed);
         previous.addAll(readInventory(pendingInventory, classes, processorSources));
         List<String> processorTypes = interrupted
                 ? processorTypes(Path.of(manifest.processorInventory()))
                 : List.of();
-        OwnedOutputs retiring = new OwnedOutputs(SCHEMA_VERSION,
+        OwnedOutputs retiring = new OwnedOutputs(GenerationFiles.SCHEMA_VERSION,
             union(previous.stream().map(OwnedOutputs::sources).toList(), manifest.ownedSources()),
             union(previous.stream().map(OwnedOutputs::binaries).toList(), List.of()),
             union(previous.stream().map(OwnedOutputs::resources).toList(), List.of()),
@@ -154,8 +149,8 @@ public final class CompilationOutputs {
 
     /** Whether {@code work}, a work directory, holds a sealed or a pending inventory of the outputs a cycle owned. */
     static boolean holdsInventory(Path work) {
-        return Files.exists(work.resolve(INVENTORY), LinkOption.NOFOLLOW_LINKS)
-                || Files.exists(work.resolve(PENDING_INVENTORY), LinkOption.NOFOLLOW_LINKS);
+        return Files.exists(work.resolve(GenerationFiles.INVENTORY), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(work.resolve(GenerationFiles.PENDING_INVENTORY), LinkOption.NOFOLLOW_LINKS);
     }
 
     /**
@@ -174,9 +169,9 @@ public final class CompilationOutputs {
         Path classes = root(request.classesOutput());
         Path processorSources = root(request.processorSourcesOutput());
 
-        Path pendingInventory = work.resolve(PENDING_INVENTORY);
+        Path pendingInventory = work.resolve(GenerationFiles.PENDING_INVENTORY);
         requirePrepared(request, manifest, work, pendingInventory);
-        Path pendingIndex = resolve(classes, PENDING_INDEX);
+        Path pendingIndex = resolve(classes, GenerationFiles.PENDING_INDEX);
         requireProvisionalIndex(request, pendingIndex);
         List<String> generatedTypes = requireGeneratedTypes(request, manifest);
 
@@ -188,18 +183,18 @@ public final class CompilationOutputs {
         List<Path> binaries = new ArrayList<>(OwnedClassFiles.enumerate(classes, owned));
         binaries.removeAll(carrierBinaries);
 
-        OwnedOutputs sealed = new OwnedOutputs(SCHEMA_VERSION,
-            sourceFiles(generatedTypes), relative(classes, binaries), List.of(PUBLISHED_INDEX),
+        OwnedOutputs sealed = new OwnedOutputs(GenerationFiles.SCHEMA_VERSION,
+            sourceFiles(generatedTypes), relative(classes, binaries), List.of(GenerationFiles.PUBLISHED_INDEX),
             relative(classes, carrierBinaries));
-        requireInside(sealed.sources(), processorSources, INVENTORY);
+        requireInside(sealed.sources(), processorSources, GenerationFiles.INVENTORY);
         for (List<String> removed : List.of(sealed.binaries(), sealed.resources(), sealed.excludedBinaries())) {
-            requireInside(removed, classes, INVENTORY);
-            requireStaysInside(removed, classes, INVENTORY);
+            requireInside(removed, classes, GenerationFiles.INVENTORY);
+            requireStaysInside(removed, classes, GenerationFiles.INVENTORY);
         }
 
         delete(carrierBinaries, List.of(classes));
         promote(pendingIndex, classes);
-        replace(work.resolve(INVENTORY), sealed);
+        replace(work.resolve(GenerationFiles.INVENTORY), sealed);
         Files.delete(pendingInventory);
     }
 
@@ -245,8 +240,8 @@ public final class CompilationOutputs {
         for (String excluded : retiring.excludedBinaries()) {
             retired.add(resolve(classes, excluded));
         }
-        retired.add(resolve(classes, PUBLISHED_INDEX));
-        retired.add(resolve(classes, PENDING_INDEX));
+        retired.add(resolve(classes, GenerationFiles.PUBLISHED_INDEX));
+        retired.add(resolve(classes, GenerationFiles.PENDING_INDEX));
         return retired;
     }
 
@@ -261,7 +256,7 @@ public final class CompilationOutputs {
             Path pendingInventory) throws IOException {
         if (!Files.isRegularFile(pendingInventory)) {
             throw new CodegenException(DiagnosticCode.SG602.name(), "cannot complete the compilation of "
-                + request.compilationId() + ": there is no " + PENDING_INVENTORY + " in " + work
+                + request.compilationId() + ": there is no " + GenerationFiles.PENDING_INVENTORY + " in " + work
                 + ", so this compilation was never prepared");
         }
         if (!ManifestCodec.readOwned(pendingInventory).sources().containsAll(manifest.ownedSources())) {
@@ -316,7 +311,7 @@ public final class CompilationOutputs {
             throws IOException {
         Set<String> carrier = new TreeSet<>();
         for (String name : owned) {
-            if (CARRIER_PACKAGE.equals(packageOf(name))) {
+            if (GenerationFiles.CARRIER_PACKAGE.equals(packageOf(name))) {
                 carrier.add(name);
             }
         }
@@ -337,7 +332,7 @@ public final class CompilationOutputs {
      * Copies the provisional index {@code pendingIndex} to the published one under {@code classes}, then removes it.
      */
     private static void promote(Path pendingIndex, Path classes) throws IOException {
-        Path published = resolve(classes, PUBLISHED_INDEX);
+        Path published = resolve(classes, GenerationFiles.PUBLISHED_INDEX);
         Files.createDirectories(published.getParent());
         Files.copy(pendingIndex, published, StandardCopyOption.REPLACE_EXISTING);
         Files.delete(pendingIndex);

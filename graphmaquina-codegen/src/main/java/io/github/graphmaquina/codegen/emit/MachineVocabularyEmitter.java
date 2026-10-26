@@ -1,9 +1,17 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.Timeout;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
+import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
+import io.github.graphmaquina.symbol.ActionSymbol;
+import io.github.graphmaquina.symbol.GuardSymbol;
+import io.github.graphmaquina.symbol.HookSymbol;
+import io.github.graphmaquina.symbol.PropertySymbol;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -145,13 +153,14 @@ final class MachineVocabularyEmitter {
             "the terminal states, which no edge leaves; none by default");
         element(source, state + "[] allowsCycle() default {};",
             "the states that allow a cycle, one of which every cycle must pass through; none by default");
-        element(source, symbolClass("PropertySymbol") + " state();",
+        element(source, symbolClass(PropertySymbol.class) + " state();",
             "the property that reads and writes the state of the entity");
-        element(source, symbolClass("PropertySymbol") + " id();", "the property that reads the identity of the entity");
+        element(source, symbolClass(PropertySymbol.class) + " id();",
+            "the property that reads the identity of the entity");
         source.javadoc("Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge.",
             "",
             "@return the default hook, at most one; none by default");
-        source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
+        source.line(symbolClass(HookSymbol.class) + "[] afterCommit() default {};");
         close(source);
     }
 
@@ -183,9 +192,9 @@ final class MachineVocabularyEmitter {
         element(source, transition + " id();", "the identifier of the edge");
         element(source, state + "[] from();", "the states the edge leaves, at least one");
         element(source, state + " to();", "the state the edge enters");
-        element(source, symbolClass("ActionSymbol") + "[] action() default {};",
+        element(source, symbolClass(ActionSymbol.class) + "[] action() default {};",
             "the action of the edge, at most one; none makes the edge a move");
-        element(source, symbolClass("GuardSymbol") + "[] guards() default {};",
+        element(source, symbolClass(GuardSymbol.class) + "[] guards() default {};",
             "the guards of the edge, run in declaration order; none by default");
         element(source, transition + "[] onFailure() default {};",
             "the fallback transition of a failure no recovery rule takes, at most one; none by default");
@@ -200,9 +209,9 @@ final class MachineVocabularyEmitter {
             "",
             "@return the recovery rules, none by default");
         source.line(vocabulary + ".Recovery[] recoveries() default {};");
-        element(source, "io.github.graphmaquina.annotation.Timeout[] timeout() default {};",
+        element(source, Timeout.class.getName() + "[] timeout() default {};",
             "the timeout of the asynchronous action, at most one; none by default");
-        element(source, symbolClass("HookSymbol") + "[] afterCommit() default {};",
+        element(source, symbolClass(HookSymbol.class) + "[] afterCommit() default {};",
             "the hook run after the edge commits, at most one; none inherits the default hook of the"
                 + " {@code Definition}");
         close(source);
@@ -231,7 +240,7 @@ final class MachineVocabularyEmitter {
             "origin of the declaring edge. Entered as a recovery, that edge runs without its guards and",
             "applies no rule or fallback of its own: a recovery never chains.</p>");
         annotation(source, machine, "RECOVERY", "{}", Optional.empty(), "Recovery");
-        element(source, "java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();",
+        element(source, "java.lang.Class<? extends " + FailureKind.class.getName() + "> kind();",
             "the failure kind the rule takes");
         element(source, transition + " transition();",
             "the transition the rule takes, resolved from the origin the entity is in");
@@ -279,8 +288,8 @@ final class MachineVocabularyEmitter {
      */
     private static void annotation(JavaSource source, String machine, String kind, String target,
             Optional<String> container, String name) {
-        source.line("@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = " + machine
-            + ".class, value = io.github.graphmaquina.annotation.internal.VocabularyKind." + kind + ")");
+        source.line("@" + GeneratedVocabulary.class.getName() + "(machine = " + machine + ".class, value = "
+            + VocabularyKind.class.getName() + "." + kind + ")");
         source.line("@java.lang.annotation.Target(" + target + ")");
         source.line("@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)");
         if (container.isPresent()) {
@@ -301,8 +310,8 @@ final class MachineVocabularyEmitter {
     }
 
     /** The type of an element naming a generated symbol of {@code category}, a StateGraph symbol interface. */
-    static String symbolClass(String category) {
-        return "java.lang.Class<? extends io.github.graphmaquina.symbol." + category + ">";
+    static String symbolClass(Class<?> category) {
+        return "java.lang.Class<? extends " + category.getName() + ">";
     }
 
     private static void close(JavaSource source) {

@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.manifest;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.ToolVersion;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -25,8 +26,6 @@ import lombok.NonNull;
  * version is refused rather than interpreted with the wrong rules.</p>
  */
 public final class DependencyExports {
-
-    private static final String ENTRY = "META-INF/graphmaquina/exports.json";
 
     private DependencyExports() {
     }
@@ -61,14 +60,14 @@ public final class DependencyExports {
 
     private static Optional<ExportIndex> read(Path entry) throws IOException {
         if (Files.isDirectory(entry)) {
-            Path published = entry.resolve(ENTRY);
+            Path published = entry.resolve(GenerationFiles.PUBLISHED_INDEX);
             return Files.isRegularFile(published) ? Optional.of(readIndex(published, entry)) : Optional.empty();
         }
         if (!Files.isRegularFile(entry)) {
             return Optional.empty();
         }
         try (FileSystem archive = FileSystems.newFileSystem(entry)) {
-            Path published = archive.getPath(ENTRY);
+            Path published = archive.getPath(GenerationFiles.PUBLISHED_INDEX);
             return Files.isRegularFile(published)
                 ? Optional.of(readIndex(published, entry))
                 : Optional.empty();

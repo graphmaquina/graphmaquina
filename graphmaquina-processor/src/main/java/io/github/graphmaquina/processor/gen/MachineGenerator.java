@@ -1,6 +1,15 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+import io.github.graphmaquina.api.Eligibility;
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
+import io.github.graphmaquina.dsl.GraphBuilder;
+import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CheckModel;
 import io.github.graphmaquina.processor.model.MachineModel;
@@ -114,14 +123,14 @@ import javax.lang.model.util.Elements;
  */
 public final class MachineGenerator {
 
-    static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
-    static final String MACHINE_KEY = "io.github.graphmaquina.api.MachineKey";
-    private static final String OUTCOME = "io.github.graphmaquina.api.Outcome";
-    private static final String ELIGIBILITY = "io.github.graphmaquina.api.Eligibility";
-    private static final String STATE_MACHINE = "io.github.graphmaquina.api.StateMachine";
-    static final String WATCH_CONDITION = "io.github.graphmaquina.api.WatchCondition";
-    static final String STATE_GRAPH = "io.github.graphmaquina.dsl.StateGraph";
-    static final String GRAPH_BUILDER = "io.github.graphmaquina.dsl.GraphBuilder";
+    static final String GRAPH_DEFINITION = GraphDefinition.class.getName();
+    static final String MACHINE_KEY = MachineKey.class.getName();
+    private static final String OUTCOME = Outcome.class.getName();
+    private static final String ELIGIBILITY = Eligibility.class.getName();
+    private static final String STATE_MACHINE = StateMachine.class.getName();
+    static final String WATCH_CONDITION = WatchCondition.class.getName();
+    static final String STATE_GRAPH = StateGraph.class.getName();
+    static final String GRAPH_BUILDER = GraphBuilder.class.getName();
     static final String DURATION = "java.time.Duration";
     static final String LIST = "java.util.List";
     static final String OBJECTS = "java.util.Objects";
@@ -129,7 +138,7 @@ public final class MachineGenerator {
     private static final String SET = "java.util.Set";
     private static final String COMPLETABLE_FUTURE = "java.util.concurrent.CompletableFuture";
     private static final String SUPPLIER = "java.util.function.Supplier";
-    static final String GENERATED = "io.github.graphmaquina.annotation.internal.GeneratedCompanion";
+    static final String GENERATED = GeneratedCompanion.class.getName();
     static final String SUPPRESS_WARNINGS = "java.lang.SuppressWarnings";
 
     static final String OVERRIDE = "java.lang.Override";

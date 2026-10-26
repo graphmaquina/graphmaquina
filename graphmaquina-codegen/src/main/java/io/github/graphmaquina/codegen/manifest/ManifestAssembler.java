@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.manifest;
 
+import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.emit.ApiEmitter;
@@ -19,7 +20,6 @@ import lombok.NonNull;
  */
 public final class ManifestAssembler {
 
-    private static final int SCHEMA_VERSION = 2;
     private static final String PROCESSOR_INVENTORY = "processor-inventory.json";
 
     private ManifestAssembler() {
@@ -29,11 +29,11 @@ public final class ManifestAssembler {
     public static CompileManifest assemble(@NonNull GenerationRequest request, @NonNull GenerationModel model,
             @NonNull List<GeneratedSource> sources, @NonNull List<ExportIndex> dependencies) {
         String toolVersion = ToolVersion.current();
-        ExportIndex local = new ExportIndex(SCHEMA_VERSION, toolVersion, request.compilationId(), model,
+        ExportIndex local = new ExportIndex(GenerationFiles.SCHEMA_VERSION, toolVersion, request.compilationId(), model,
             ApiEmitter.annotationTypes(model));
         String processorInventory =
             request.workDirectory().resolve(PROCESSOR_INVENTORY).toAbsolutePath().toString();
-        return new CompileManifest(SCHEMA_VERSION, toolVersion, local, dependencies, processorInventory,
+        return new CompileManifest(GenerationFiles.SCHEMA_VERSION, toolVersion, local, dependencies, processorInventory,
             ownedSources(sources));
     }
 

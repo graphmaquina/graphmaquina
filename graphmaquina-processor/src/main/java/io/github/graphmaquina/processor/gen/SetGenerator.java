@@ -1,5 +1,7 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.api.Machine;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineAccessor;
@@ -7,6 +9,8 @@ import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.Property;
 import io.github.graphmaquina.processor.model.SetModel;
+import io.github.graphmaquina.runtime.MachineRegistry;
+import io.github.graphmaquina.runtime.StateMachines;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,10 +51,10 @@ import javax.lang.model.type.TypeMirror;
  */
 public final class SetGenerator {
 
-    private static final String MACHINE = "io.github.graphmaquina.api.Machine";
-    private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
-    private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
-    private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
+    private static final String MACHINE = Machine.class.getName();
+    private static final String MACHINE_OBSERVER = MachineObserver.class.getName();
+    private static final String MACHINE_REGISTRY = MachineRegistry.class.getName();
+    private static final String STATE_MACHINES = StateMachines.class.getName();
     private static final String EXECUTOR = "java.util.concurrent.Executor";
     private static final String INSTANT_SOURCE = "java.time.InstantSource";
     private static final String CLASS = "java.lang.Class";

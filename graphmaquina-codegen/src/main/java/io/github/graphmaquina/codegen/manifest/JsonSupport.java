@@ -12,6 +12,7 @@ import com.google.gson.stream.JsonWriter;
 import com.google.gson.stream.MalformedJsonException;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationFiles;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.Writer;
@@ -41,7 +42,6 @@ import java.util.function.Supplier;
  */
 final class JsonSupport {
 
-    static final int SCHEMA_VERSION = 2;
     /** What a strict reader says about syntax only its lenient mode accepts. */
     private static final String LENIENT_ADVICE =
         "Use JsonReader.setStrictness(Strictness.LENIENT) to accept malformed JSON";
@@ -320,9 +320,10 @@ final class JsonSupport {
      * its model or owned paths can be used.
      */
     static void requireSupportedSchema(int schemaVersion, Path file) {
-        if (schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion != GenerationFiles.SCHEMA_VERSION) {
             throw new CodegenException(DiagnosticCode.SG602.name(),
-                "unsupported schemaVersion " + schemaVersion + " in " + file + "; expected " + SCHEMA_VERSION);
+                "unsupported schemaVersion " + schemaVersion + " in " + file + "; expected "
+                    + GenerationFiles.SCHEMA_VERSION);
         }
     }
 
