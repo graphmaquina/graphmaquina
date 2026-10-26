@@ -263,7 +263,8 @@ state, or while leaving it, a call to the child aborts with an `AmbiguousParentE
 leaves one bound state for another that binds the same child holds it only in the state it enters, whose entry has just
 restarted the child, so the action of that edge can cascade into the child.
 
-`StateMachine.eligibility(entity, id)` asks the same questions without running the edge: where `execute` would reject a
+[`StateMachine.eligibility(entity, id)`](eligibility.md#sub-machines) asks the same questions without running the
+edge: where `execute` would reject a
 request as `DETACHED` or `RESERVED_EXIT`, it answers `Ineligible` with that kind and that reason, and it starts no
 child and runs no exit. Where a call to the child would abort with an `AmbiguousParentException`, it throws an
 `EligibilityCheckException` with that cause.
@@ -377,8 +378,8 @@ holds no other machine.
 Assert bindings, starts and both refusals with the typed views of the testing guide's
 [sub-machines](testing-advanced.md#sub-machines) section. The
 [billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) run the flows of this
-section: the starts and exits of a booking, the detached deposit of a cancelled booking, the `NO_ROOM` route, a renewal
-that restarts its payment, the stay and the asynchronous exit.
+section: the starts and exits of a booking, the detached deposit of a cancelled booking, which a check of `capture`
+also finds, the `NO_ROOM` route, a renewal that restarts its payment, the stay and the asynchronous exit.
 
 ---
 

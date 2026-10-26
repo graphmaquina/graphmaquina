@@ -190,7 +190,8 @@ cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and 
 shop are exactly that. Omitting `action` makes the edge a `MOVE`.
 
 A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
-checks you declared for them, which ask whether an operation would be admitted without running it, plus what every
+[checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
+admitted without running it, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
 `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the structural
 `definition()` and `transitionsFrom(state)`.
@@ -229,7 +230,8 @@ public static GuardResult eligible(GuardContext<Entity, Status, Change> ctx) {
 
 `transitionsFrom(state)` returns the identifiers declared from a state. It is structural inspection: it runs
 no guard and promises nothing about a particular entity. To see where those identifiers lead, read
-`definition().outgoingFrom(state)`, and for one edge, `definition().findTransition(from, id)`.
+`definition().outgoingFrom(state)`, and for one edge, `definition().findTransition(from, id)`. To ask whether one
+entity would be admitted now, its guards included, [check the operation](eligibility.md).
 
 ## Annotation and binding reference
 
@@ -258,7 +260,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, `.Check` |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade) |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
@@ -297,7 +299,7 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit` |
 | `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
-| `Check` | method | `id: T` | None |
+| [`Check`](eligibility.md#check-through-the-facade) | method | `id: T` | None |
 
 `StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
 `Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
@@ -369,8 +371,8 @@ the interface's own symbol, and a static method that the host or a superclass be
 name and parameter types not at all, the hiding method being exported in its place when it is marked. Generated output and JAR
 exports are checked for collisions; do not manually create classes in generated namespaces or edit symbols.
 
-A facade method that carries the generated `Check` has a signature of its own, `I` being the input type of the
-operation it checks:
+A facade method that carries the generated [`Check`](eligibility.md#check-through-the-facade) has a signature of its
+own, `I` being the input type of the operation it checks:
 
 | Declaration | Supported signature |
 | --- | --- |

@@ -189,8 +189,8 @@ backend's, voids for that call the promise of one `onStarted` and exactly one en
 `StackOverflowError` or another `VirtualMachineError` that strikes again while the call tells its observers, as it
 can when the call ended in one: telling them can need the stack or the memory that ran out, so they are told best
 effort, and that `Error` propagates. That warning is the only record
-logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
-`io.github.graphmaquina.runtime`, as [debug a call](logs.md) describes. An observer cannot
+logged on `io.github.graphmaquina` itself: the lines of each call, and of each eligibility check, go to its child
+logger `io.github.graphmaquina.runtime`, as [debug a call](logs.md) describes. An observer cannot
 start a transition on its own thread either: an operation or an eligibility check called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread
 as a call of its own, unless it runs on the observer's own thread, through an executor that runs tasks inline or a

@@ -52,7 +52,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      */
     Outcome<E, S, T> reevaluate(E entity);
 
-    /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */
+    /**
+     * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; {@link #eligibility}
+     * asks whether one entity would be admitted now, its guards included.
+     */
     Set<T> transitionsFrom(S state);
 
     /**

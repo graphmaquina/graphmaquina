@@ -25,8 +25,10 @@ import org.junit.jupiter.api.io.TempDir;
  * plus the async completion callback of its "Asynchronous work and timeouts" page and the observer example of its
  * "Commit, hooks, observers and persistence" page, against the published core jar. A second test compiles every
  * fragment of the "Recover by failure kind and exception type" section of its "Actions, guards and failure routes"
- * page the same way, as a compilation unit of its own, a third one every fragment of its "Compose machines" page, and
- * a fourth one every fragment of its "The call's flow" page. This test runs no generator, so the annotated declarations of the recovery and
+ * page the same way, as a compilation unit of its own, a third one every fragment of its "Compose machines" page, a
+ * fourth one every fragment of its "The call's flow" page, and a fifth one every fragment of its "Check an operation
+ * before you call it" page that quotes no file of the example, over stand-ins for the shop's order, its enums
+ * included. This test runs no generator, so the annotated declarations of the recovery and
  * composition sections compile against stand-ins shaped like what the generator and the processor emit: the
  * {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing example's graph and
  * pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for the composition
@@ -44,6 +46,12 @@ class GuideOutcomeFragmentsTest {
     private static final String RECOVERY_HEADING = "## Recover by failure kind and exception type";
     private static final String COMPOSITION_HEADING = "# Compose machines";
     private static final String FLOW_HEADING = "# The call's flow";
+    private static final String ELIGIBILITY_DSL_HEADING = "## Check through the DSL";
+    private static final String ELIGIBILITY_ANSWER_HEADING = "## Read the answer";
+    private static final String ELIGIBILITY_FAILURE_HEADING = "## When a check cannot answer";
+    private static final String ELIGIBILITY_ASYNC_HEADING = "## Asynchronous guards and the deadline";
+    /** The Java blocks of the eligibility page: the four this test compiles, and the eight GuideCopiesTest reads. */
+    private static final int ELIGIBILITY_BLOCKS = 12;
     private static final String FUTURE_PREFIX =
             "CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =";
     private static final String OBSERVER_PREFIX =
@@ -514,6 +522,27 @@ class GuideOutcomeFragmentsTest {
                 // --- "The call's flow", block 1 (the keys)
             """;
 
+    private static final String ELIGIBILITY_HEADER = """
+            import io.github.graphmaquina.api.Eligibility;
+            import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.error.EligibilityCheckException;
+            import java.util.concurrent.CompletableFuture;
+
+            /** Every fragment of docs/eligibility.md that GuideCopiesTest does not read, compiled against core. */
+            public final class GuideEligibilityFragments {
+                private GuideEligibilityFragments() { }
+
+                /** States of an order. */
+                enum OrderStatus { NEW, PAID, PAYMENT_DECLINED, SHIPPED, CANCELLED }
+                /** Identifiers of an order. */
+                enum OrderTransition { PAY, PAYMENT_DECLINED, RETRY, SHIP, CANCEL }
+                /** Order entity stand-in. */
+                static final class Order { }
+
+                // --- "Check through the DSL", block 1 (both checks), wrapped in a method
+                static void ask(StateMachine<Order, OrderStatus, OrderTransition> machine, Order order) {
+            """;
+
     @Test
     void everyOutcomeFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
         List<String> guide = page("outcomes.md");
@@ -657,6 +686,42 @@ class GuideOutcomeFragmentsTest {
         List<String> diagnostics = compile(workDir, "GuideFlowFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's flow fragments must compile against the published core:\n"
                 + String.join("\n", diagnostics) + "\n--- generated GuideFlowFragments.java ---\n" + source);
+    }
+
+    /**
+     * Compiles the four Java blocks of the eligibility page that quote no file of the example, one in each of the
+     * sections on the DSL, on reading the answer, on a check that cannot answer and on asynchronous guards, against
+     * the staged core jar. The page's other blocks quote the example, as GuideCopiesTest checks, so the page holds no
+     * Java block that neither test reads.
+     */
+    @Test
+    void everyEligibilityFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir)
+            throws IOException {
+        List<String> guide = page("eligibility.md");
+        Path coreJar = publishedCoreJar();
+
+        assertEquals(ELIGIBILITY_BLOCKS, MarkdownPage.allBlocks(guide, "java").size(), "the eligibility page's"
+                + " Java blocks are the ones this test and GuideCopiesTest read: update both to match the page");
+        assertJavaBlockCount(guide, ELIGIBILITY_DSL_HEADING, 1);
+        assertJavaBlockCount(guide, ELIGIBILITY_ANSWER_HEADING, 1);
+        assertJavaBlockCount(guide, ELIGIBILITY_FAILURE_HEADING, 1);
+        assertJavaBlockCount(guide, ELIGIBILITY_ASYNC_HEADING, 1);
+
+        StringBuilder source = new StringBuilder(ELIGIBILITY_HEADER);
+        source.append(blockAfter(guide, ELIGIBILITY_DSL_HEADING, 1)).append("    }\n\n");
+        source.append("    // --- \"Read the answer\", block 1 (the button)\n");
+        source.append(blockAfter(guide, ELIGIBILITY_ANSWER_HEADING, 1)).append('\n');
+        source.append("    // --- \"When a check cannot answer\", block 1 (a check that fails)\n");
+        source.append(blockAfter(guide, ELIGIBILITY_FAILURE_HEADING, 1)).append('\n');
+        source.append("    // --- \"Asynchronous guards and the deadline\", block 1, wrapped in a method\n");
+        source.append("    static void later(StateMachine<Order, OrderStatus, OrderTransition> machine,\n");
+        source.append("            Order order) {\n");
+        source.append(blockAfter(guide, ELIGIBILITY_ASYNC_HEADING, 1)).append("    }\n}\n");
+
+        List<String> diagnostics = compile(workDir, "GuideEligibilityFragments", source.toString(), coreJar);
+        assertTrue(diagnostics.isEmpty(), "the guide's eligibility fragments must compile against the published"
+                + " core:\n" + String.join("\n", diagnostics) + "\n--- generated GuideEligibilityFragments.java ---\n"
+                + source);
     }
 
     /**

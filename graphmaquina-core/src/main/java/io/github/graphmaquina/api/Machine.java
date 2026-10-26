@@ -16,7 +16,10 @@ public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
     /** Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. */
     Outcome<E, S, T> reevaluate(E entity);
 
-    /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */
+    /**
+     * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; a check the facade
+     * declares asks whether one entity would be admitted now for the operation it checks, its guards included.
+     */
     Set<T> transitionsFrom(S state);
 
     /**

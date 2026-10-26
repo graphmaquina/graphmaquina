@@ -281,4 +281,4 @@ actions make idempotent, and reconcile the rest.
 
 ---
 
-Next: [Programmatic DSL](dsl.md). Back to the [documentation index](README.md).
+Next: [Check an operation before you call it](eligibility.md). Back to the [documentation index](README.md).

@@ -67,8 +67,9 @@ on that future blocks the caller again; at an asynchronous application boundary,
 future instead of joining it on an event-loop thread.
 
 Guards execute in order. Each async guard is awaited before the next guard or action runs. A guard rejection
-stops the edge. The action method itself runs on the operation thread up to the point where it returns its
-stage. Any blocking I/O performed before that return still blocks the operation thread. Use a service API
+stops the edge. An [eligibility check](eligibility.md#asynchronous-guards-and-the-deadline) awaits asynchronous
+guards the same way, and runs no action. The action method itself runs on the operation thread up to the point where
+it returns its stage. Any blocking I/O performed before that return still blocks the operation thread. Use a service API
 that returns promptly, or an application-managed executor for genuinely blocking service code.
 
 ## Runnable async ticket example
