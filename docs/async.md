@@ -74,7 +74,8 @@ that returns promptly, or an application-managed executor for genuinely blocking
 
 ## Runnable async ticket example
 
-This example adds an asynchronous eligibility check and approval service to the ticket domain. Reuse
+This example adds a review service, which the asynchronous guard `canStart` and the asynchronous action `approve`
+call, to the ticket domain. Reuse
 `Ticket.java`, `TicketState.java` and `TicketTransition.java` from the
 [quickstart](quickstart.md), with the same Gradle or Maven configuration and
 dependencies. Add the following five files under `src/main/java/com/example/tickets/`. They can coexist with

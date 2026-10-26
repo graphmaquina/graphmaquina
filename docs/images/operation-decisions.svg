@@ -16,7 +16,7 @@ and returns that execution's outcome. Technical errors throw instead of producin
 check runs the same admission in the same order: the binding check, the edge lookup, the refusal of a reserved exit
 and the guards, up to the first that rejects. At a refusal it answers Ineligible with the kind, reason and guard that
 execute would reject with; once every guard passed it answers Eligible. It stops before the action: it writes no
-state and runs no action, commit, exit, hook or watch, and it adds no step to execute.</desc>
+state and runs no action, commit, exit, hook or watch.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>

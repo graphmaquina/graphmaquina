@@ -35,8 +35,10 @@ An answer promises no more than that:
 - `Eligible` says what held when the check ran, and reserves nothing. The entity, the states its guards read and the
   parent of a sub-machine can change before the call, and `execute` checks everything again.
 - `Eligible` says nothing about what follows the guards. A check runs no action, so it cannot tell whether the action
-  would succeed, fail into a failure route or abort, whether a cascade of the action would be refused, or whether the
-  commit or an after-commit hook would fail.
+  would succeed, fail into a failure route or abort, or whether a cascade of the action would be refused. It starts no
+  sub-machine and runs no exit, so it cannot tell whether entering a bound state starts its child, or whether the exit
+  that ending a child triggers in its parent passes its guards and runs. Nor can it tell whether the commit or an
+  after-commit hook would fail.
 - Neither answer names a destination. `Rejected` names none, and an `Eligible` that named one would read as a
   promise the check does not make.
 
@@ -135,7 +137,8 @@ Eligibility<Order, OrderStatus, OrderTransition> cancel =
 The first asks whether `execute(order, OrderTransition.RETRY)` would be admitted, and its guards read an empty
 `input()`. The second asks about `execute(order, OrderTransition.CANCEL, "c-1")`, and its guards read `"c-1"`. A
 `StateMachine` knows nothing of the operations a facade declares, so it answers for any identifier of its catalogue,
-as `execute` does, the exit of a sub-machine included, which no facade can check, as
+as `execute` does: an identifier that only a failure route, a cascade or a watch takes is answered by the edge it
+keys from the current state, and the exit of a sub-machine, which no facade can check, is answered as
 [sub-machines](#sub-machines) shows. A null argument throws `NullPointerException`, and an identifier of another
 catalogue, which only raw types let through, `IllegalArgumentException`, before the check starts. On a
 `StateMachine` of your own, the interface's two `eligibility` methods are defaults that throw
@@ -190,13 +193,15 @@ build instead of falling through.
 
 A check that cannot reach an answer throws an `EligibilityCheckException`, never an `Ineligible` answer: a technical
 failure is no refusal. It throws one when reading the entity's identity or state fails, when the binding check of a
-sub-machine fails, as when a `parentOf` or a `childOf` throws or returns null or when two parents hold the child,
-and when a guard throws, returns null, or returns a stage that is null, that fails or that answers null. A wait for an
-asynchronous guard that times out or is interrupted throws one too, as
-[the deadline](#asynchronous-guards-and-the-deadline) shows. Its cause is what your code threw, unwrapped from
-`CompletionException` and `ExecutionException`, or the engine's own exception, such as an
-`UninitializedStateException` for a null state or an `AmbiguousParentException` for two parents; it has none when
-your code returned null where the engine needed a guard's verdict or stage, or a `parentOf` or `childOf` answer.
+sub-machine fails, as when a `parentOf` or a `childOf` throws or returns null, when two parents hold the child or
+when a `childOf` answers another instance with the child's identity, and when a guard throws, returns null, or returns
+a stage that is null, that fails or that answers null. A wait for an asynchronous guard that times out or is
+interrupted, as [the deadline](#asynchronous-guards-and-the-deadline) shows, or that the thread's `ForkJoinPool`
+refuses to let block, throws one too. Its cause is what your code threw, unwrapped from `CompletionException` and
+`ExecutionException`, or the engine's own exception, such as an `UninitializedStateException` for a null state, an
+`AmbiguousParentException` for two parents, an `AmbiguousIdentityException` for another instance with the child's
+identity or a `RejectedExecutionException` for the pool's refusal; it has none when your code returned null where the
+engine needed a guard's verdict or stage, or a `parentOf` or `childOf` answer.
 
 `key()`, `entity()` and `transition()` name the machine, the entity and the identifier the check asked about, and the
 `Optional`s `from()` and `guard()` the state it read and the guard it was running, when it knew them. Its message
@@ -320,8 +325,10 @@ sub-machine, an identifier that one of its exits names, such as `DEPOSIT_PAID` f
 execute an exit, which `SG804` refuses as an operation, nor check one, which `SG512` refuses.
 
 A check starts no child and runs no exit. Asked about an edge that enters a bound state, it answers without starting
-the child. Asked about the capture that would end a held child, it answers `Eligible`, and the parent stays in the
-bound state, where the call would run its exit. When two parents hold the child, the check throws an
+the child or calling that binding's `childOf`: when the start fails, the call aborts although the check answered
+`Eligible`. Asked about the capture that would end a held child, it answers `Eligible`, and the parent stays in the
+bound state, where the call would run its exit; the check evaluates none of that exit's guards, and when one of them
+refuses, the call aborts although the check answered `Eligible`. When two parents hold the child, the check throws an
 `EligibilityCheckException` whose cause is the `AmbiguousParentException` a call would abort with.
 [Interrupt, detach and reserve](composition.md#interrupt-detach-and-reserve) describes both refusals.
 

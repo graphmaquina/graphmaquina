@@ -202,11 +202,12 @@ loses the line and changes nothing in the call, except that an `InterruptedExcep
 `failed` line ends the call with that `Error`, which the [observers](commit-and-persistence.md#observers) receive as the call's end event, in the
 phase the call reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that
 ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows
-them. A check treats its backend alike: a line lost to anything
-but an `Error` changes neither its verdict nor its `EligibilityCheckException`, except that an `InterruptedException`
-interrupts the thread again, as for a call, and a later wait of the check, for an asynchronous guard, then fails as
-interrupted with an `EligibilityCheckException`. An `Error` on any line of a check propagates as itself in place of the
-verdict or of that exception, with no `failed` line.
+them. A check treats its backend alike: when the backend throws anything but an `Error`, while the check reads the two
+levels, which then count as off, or on a line, which is lost, that changes neither the verdict of the check nor its
+`EligibilityCheckException`, except that an `InterruptedException` interrupts the thread again, as for a call, and a
+later wait of the check, for an asynchronous guard, then fails as interrupted with an `EligibilityCheckException`. An
+`Error` on any line of a check, or while it reads the levels, propagates as itself in place of the verdict or of that
+exception, with no `failed` line.
 
 ---
 
