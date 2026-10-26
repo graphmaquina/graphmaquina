@@ -11,6 +11,7 @@ import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.manifest.DependencyExports;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
+import io.github.graphmaquina.codegen.manifest.PublishedEntries;
 import io.github.graphmaquina.codegen.manifest.PublishedIndex;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -27,9 +28,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Verifies how a declared peer that this compilation does not generate is resolved against the export indexes of the
- * dependencies: the one index that describes it gives its descriptor, once however many owners declare it; any other
- * type, a type of the sources among them, is refused with {@code SG608}; and a machine this compilation generates
- * that an index also describes is refused with {@code SG602} before any peer is resolved.
+ * dependencies: the one index that describes it gives its descriptor, once however many owners declare it; a
+ * {@code @GenerateGraphApi} machine of a jar or a directory of classes whose index is missing or does not list it is
+ * reported with {@code SG602}, naming that entry; any other type, a type of the sources among them, is refused with
+ * {@code SG608}; and a machine this compilation generates that an index also describes is refused with {@code SG602}
+ * before any peer is resolved.
  *
  * <p>The producer {@code pay.Payments} is compiled by javac alone and packed with an index written from a descriptor
  * that matches its class files, so nothing but the generator under test reads it.</p>
@@ -47,10 +50,7 @@ class DependencyPeersTest {
 
     @BeforeEach
     void publishTheProducer() throws IOException {
-        GenerationModel model = new GenerationModel(List.of(PAYMENTS), List.of());
-        ExportIndex index = new ExportIndex(GenerationFiles.SCHEMA_VERSION, ToolVersion.current(), "pay:payments:main",
-                model, ApiEmitter.annotationTypes(model));
-        jar = ProducerJars.producer(project.resolve("producer"), producer(), index,
+        jar = ProducerJars.producer(project.resolve("producer"), producer(), index(PAYMENTS),
                 project.resolve("libs/payments.jar")).toAbsolutePath().normalize();
     }
 
@@ -152,6 +152,64 @@ class DependencyPeersTest {
         assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
     }
 
+    /**
+     * A machine of a jar that carries no export index is reported as that missing index, at the machine that declares
+     * it a peer, naming the jar.
+     */
+    @Test
+    void reportsAMachinePeerFromAJarWithoutIndex() {
+        Path bare = SourceFiles.compileToJar(project.resolve("bare"), producer(), project.resolve("libs/bare.jar"))
+                .toAbsolutePath().normalize();
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), bare));
+
+        assertUnlisted(failure, bare, ", which carries no export index " + GenerationFiles.PUBLISHED_INDEX);
+    }
+
+    /** A machine of a jar whose index lists only another machine is reported as that stale index. */
+    @Test
+    void reportsAMachinePeerTheIndexOfItsJarDoesNotList() throws IOException {
+        GraphDescriptor refunds = new GraphDescriptor("pay.Refunds", "pay", "pay.Payment", "pay.PaymentStatus",
+                List.of("PENDING", "CAPTURED", "DECLINED"), "pay.PaymentTransition", List.of("CAPTURE", "DECLINE"),
+                List.of(), new SourceLocation("src/main/java/pay/Refunds.java", 5L, 1L));
+        Path stale = ProducerJars.producer(project.resolve("stale"), producer(), index(refunds),
+                project.resolve("libs/stale.jar")).toAbsolutePath().normalize();
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
+
+        assertUnlisted(failure, stale, ", whose export index " + GenerationFiles.PUBLISHED_INDEX
+                + " does not list it, so that index is stale or another build's");
+    }
+
+    /** A producer that is a directory of classes is such an entry too, and the report names that directory. */
+    @Test
+    void reportsAMachinePeerFromADirectoryWithoutIndex() throws IOException {
+        SourceFiles.compileToJar(project.resolve("directory"), producer(), project.resolve("libs/unused.jar"));
+        Path classes = project.resolve("directory/jar-classes").toRealPath();
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), classes));
+
+        assertUnlisted(failure, classes, ", which carries no export index " + GenerationFiles.PUBLISHED_INDEX);
+    }
+
+    /**
+     * A machine whose jar carries an index that lists it, read without the indexes of the dependencies, is a machine
+     * that no index this compilation reads lists.
+     */
+    @Test
+    void reportsAMachinePeerThatNoIndexItReadsLists() {
+        GenerationRequest request = request(bookings());
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> Bootstrap.read(request, List.of()));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings is a @GenerateGraphApi machine that no"
+                + " export index this compilation reads lists: package the index the producer's StateGraph build"
+                + " publishes with its classes, or rebuild the producer through the complete lifecycle",
+                failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
     /** Each owner has the pair vocabulary over the peer, while the peer itself is resolved once. */
     @Test
     void twoOwnersShareOnePeerFromAJar() throws IOException {
@@ -166,19 +224,53 @@ class DependencyPeersTest {
 
     /** Reads {@code sources} as {@link #request} gives them, with the indexes its classpath publishes. */
     private Bootstrap.Inspection read(Map<String, String> sources) throws IOException {
-        GenerationRequest request = request(sources);
+        return read(sources, jar);
+    }
+
+    /** The same, with {@code producer} on the classpath in place of the producer's jar. */
+    private Bootstrap.Inspection read(Map<String, String> sources, Path producer) throws IOException {
+        GenerationRequest request = request(sources, producer);
         return Bootstrap.read(request, DependencyExports.read(request.classpath()));
     }
 
     /** A request over {@code sources}, written under {@code src}, on the test classpath and the producer's jar. */
     private GenerationRequest request(Map<String, String> sources) {
+        return request(sources, jar);
+    }
+
+    /** The same, with {@code producer} on the classpath in place of the producer's jar. */
+    private GenerationRequest request(Map<String, String> sources, Path producer) {
         Path root = project.resolve("src");
         SourceFiles.write(root, sources);
         List<Path> classpath = new ArrayList<>(SourceFiles.classpath());
-        classpath.add(jar);
+        classpath.add(producer);
         return new GenerationRequest(project, List.of(root), classpath, project.resolve("generated"),
                 project.resolve("processor-generated"), project.resolve("classes"), project.resolve("work"),
                 "book:test:main");
+    }
+
+    /**
+     * Asserts that {@code failure} reports the peer {@code pay.Payments} of {@code book.Bookings} at that owner as the
+     * export index of {@code entry}, which is missing or does not list it, in the words that {@code variant} tells.
+     */
+    private static void assertUnlisted(CodegenException failure, Path entry, String variant) {
+        assertEquals("SG602", failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings"
+                + PublishedEntries.unlisted(entry, "pay.Payments").orElseThrow(), failure.getMessage());
+        assertTrue(failure.getMessage().contains(" comes from " + entry + variant), failure::getMessage);
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
+    /** The export index of a producer that describes {@code graph} alone. */
+    private static ExportIndex index(GraphDescriptor graph) {
+        GenerationModel model = new GenerationModel(List.of(graph), List.of());
+        return new ExportIndex(GenerationFiles.SCHEMA_VERSION, ToolVersion.current(), "pay:payments:main", model,
+                ApiEmitter.annotationTypes(model));
+    }
+
+    /** The machine {@code book.Bookings}, which declares {@code pay.Payments} its peer. */
+    private static Map<String, String> bookings() {
+        return Map.of("book.Bookings", owner("book", "Bookings", "pay.Payments"));
     }
 
     /**

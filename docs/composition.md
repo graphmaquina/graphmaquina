@@ -426,9 +426,10 @@ out of the commit, so serialize the calls of a parent and its sub-machines as th
 A parent and its child must be held by the same `@StateGraphs` set: a set that holds the parent but not its child
 is `SG806`. The child can be a machine of the same compilation, or of a dependency, a jar or a directory of classes
 whose artifact carries the export index its build published, as
-[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes; a child that is
-neither is `SG608`. A standalone machine built with `StateMachines.Builder.build()` refuses any sub-machine binding,
-since its registry holds no other machine.
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A child that
+is a machine of a dependency whose artifact carries no export index, or one that does not list it, is `SG602`, naming
+that jar or directory; any other child that is neither is `SG608`. A standalone machine built with
+`StateMachines.Builder.build()` refuses any sub-machine binding, since its registry holds no other machine.
 
 Assert bindings, starts and both refusals with the typed views of the testing guide's
 [sub-machines](testing-advanced.md#sub-machines) section. The

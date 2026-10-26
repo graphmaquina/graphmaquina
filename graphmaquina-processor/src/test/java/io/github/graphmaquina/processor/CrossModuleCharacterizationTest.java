@@ -25,16 +25,15 @@ import org.junit.jupiter.api.io.TempDir;
  * declares it a peer with {@code @GraphPeers} and binds it as the sub-machine of its state {@code DEPOSIT}, in the set
  * {@code book.Shop}, and {@code cons.Shelf} holds it in a set. The generator reads and checks the indexes the
  * dependencies published before it resolves a peer or emits anything, and resolves a peer it does not generate
- * against those indexes. A peer whose jar carries no index is therefore refused as a type that is no machine, and one
- * whose index is stale reaches the processor, which checks the manifest that carries the indexes as a whole.</p>
+ * against those indexes. A peer whose jar carries no index is therefore reported by the generator as that missing
+ * index, naming the jar, and one whose index is stale reaches the processor, which checks the manifest that carries
+ * the indexes as a whole.</p>
  */
 class CrossModuleCharacterizationTest {
 
     private static final String RESOURCES = "/cross-module-characterization";
     private static final UnaryOperator<String> RENAMES_A_STATE =
             (String index) -> index.replace("\"DECLINED\"", "\"REFUSED\"");
-    private static final String PAYMENTS_ARE_NO_MACHINE = "the peer machine pay.Payments declared by book.Bookings"
-            + " is not a @GenerateGraphApi machine of this compilation or of a dependency export index";
 
     @TempDir
     Path directory;
@@ -50,13 +49,19 @@ class CrossModuleCharacterizationTest {
         assertEquals("CONFIRMED CAPTURED", compileAndRun(tree("consumer"), jar));
     }
 
-    /** The jar that lost its index is refused as a peer that is no machine, in words that say nothing of the index. */
+    /**
+     * The jar that lost its index is reported by the generator as that missing index, at the machine that declares the
+     * peer, in words that name the jar.
+     */
     @Test
-    void aPeerFromAJarWithoutIndexIsRefusedToday() throws Exception {
+    void aPeerFromAJarWithoutIndexIsReportedAtThatJar() throws Exception {
         Path jar = publishedProducer("payments.jar", UnaryOperator.identity());
         PublishedJars.stripIndex(jar);
 
-        assertRefused("SG608", PAYMENTS_ARE_NO_MACHINE, tree("consumer"), List.of(jar));
+        assertRefused("SG602", "the peer machine pay.Payments declared by book.Bookings comes from " + jar
+                + ", which carries no export index META-INF/graphmaquina/exports.json, so no index this compilation"
+                + " reads lists it: package the index the producer's StateGraph build publishes with its classes, or"
+                + " rebuild the producer through the complete lifecycle", tree("consumer"), List.of(jar));
     }
 
     /**

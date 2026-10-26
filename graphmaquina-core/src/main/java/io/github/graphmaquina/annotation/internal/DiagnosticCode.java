@@ -130,8 +130,9 @@ public enum DiagnosticCode {
     SG607,
 
     /**
-     * Invalid, duplicated, unused or undeclared peer, a peer that is no machine of this compilation or of a dependency
-     * export index, or one its owner cannot name.
+     * Invalid, duplicated, unused or undeclared peer, a peer that is no machine of this compilation or of a dependency,
+     * or one its owner cannot name. A {@code @GenerateGraphApi} machine of a dependency whose export index is missing
+     * or does not list it is {@link #SG602}.
      */
     SG608,
 
