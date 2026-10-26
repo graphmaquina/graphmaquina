@@ -51,18 +51,17 @@ import javax.lang.model.type.TypeMirror;
  * edges claim, a state given two policies, a rejection declared twice and a blank reason are reported here instead,
  * as {@code SG102} and {@code SG103}, the codes the outline check gives a duplicate and a blank reason.</p>
  *
- * <p>Only what the companion can implement is accepted. The operations are read from the abstract methods the
- * facade declares itself, so an abstract method it inherits from another interface than {@code Machine} is refused as
- * {@code SG504}, except a redeclaration of a method of {@code Machine} or a public method of {@code Object} that
- * the method the companion writes or inherits for it implements; one whose result that method cannot return is
- * refused with that reason. A method the facade declares that overrides one of those is no operation, and is
- * refused as {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return.
- * So is an instance method the facade declares or inherits that has the signature of the companion's static
- * {@code graph(...)}, which only a model whose bindings all resolved tells, and only when no vocabulary of the machine
- * is missing from it. An abstract method the facade declares that carries a {@code Check} of its own vocabulary and
- * no {@code Transition} is no operation either, but a check, which {@link TypedChecks} reads against the operations
- * once they are all known. An entity of a parameterized type, which generated code can only name by its class, is
- * refused as {@code SG601}.</p>
+ * <p>Only what the companion can implement is accepted. The operations and the checks are read from the abstract
+ * methods the facade declares itself, so an abstract method it inherits from another interface than {@code Machine} is
+ * refused as {@code SG504}, except a redeclaration of a method of {@code Machine} or a public method of {@code Object}
+ * that the method the companion writes or inherits for it implements; one whose result that method cannot return is
+ * refused with that reason. A method the facade declares that overrides one of those is no operation, and is refused as
+ * {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return. So is an instance
+ * method the facade declares or inherits that has the signature of the companion's static {@code graph(...)}, which
+ * only a model whose bindings all resolved tells, and only when no vocabulary of the machine is missing from it. An
+ * abstract method the facade declares that carries a {@code Check} of its own vocabulary and no {@code Transition} is
+ * no operation either, but a check, which {@link TypedChecks} reads against the operations once they are all known. An
+ * entity of a parameterized type, which generated code can only name by its class, is refused as {@code SG601}.</p>
  */
 final class TypedMachineModelBuilder {
 

@@ -189,8 +189,9 @@ A `Transition` on the interface itself declares an edge with no facade method. I
 cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and `PAYMENT_DECLINED` in the
 shop are exactly that. Omitting `action` makes the edge a `MOVE`.
 
-A typed facade exposes no generic selector: the application's entry points are the operations you declared,
-plus what every facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
+A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
+checks you declared for them, which ask whether an operation would be admitted without running it, plus what every
+facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
 `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the structural
 `definition()` and `transitionsFrom(state)`.
 
@@ -261,7 +262,7 @@ symbol from the graph declaration.
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
-| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)`, and refuses a null machine with `NullPointerException` |
+| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)` and each check its `eligibility(...)`, and refuses a null machine with `NullPointerException` |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
 `KEY` is a `MachineKey<E, S, T>`: entity class, state enum and transition enum. `MachineKey.of(entity, states,
@@ -371,7 +372,7 @@ exports are checked for collisions; do not manually create classes in generated 
 A facade method that carries the generated `Check` has a signature of its own, `I` being the input type of the
 operation it checks:
 
-| Declaration | Accepted signature |
+| Declaration | Supported signature |
 | --- | --- |
 | `Check` on an abstract facade method | `Eligibility<E, S, T> method(E entity)` or `Eligibility<E, S, T> method(E entity, I input)` |
 

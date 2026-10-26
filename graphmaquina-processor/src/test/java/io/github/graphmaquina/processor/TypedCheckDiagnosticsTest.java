@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Test;
  * on a method of its own ({@code SG514}). Like any vocabulary, it is read on an abstract method of its own facade
  * only.
  *
- * <p>Every case is an error: the companion does not implement a valid check yet, so a facade that declares one does
- * not compile. Each fixture is otherwise valid, so the error a test expects is the only one the compilation reports.
- * The result is named in full, so no fixture has to import it.</p>
+ * <p>Every case is an error. Each fixture is otherwise valid, so the error a test expects is the only one the
+ * compilation reports; {@link TypedCheckGenerationTest} compiles the checks that are valid. The result is named in
+ * full, so no fixture has to import it.</p>
  */
 class TypedCheckDiagnosticsTest {
 

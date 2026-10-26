@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +38,27 @@ class InheritedMembersTest {
         assertTrue(result.errors().get(0).contains("shelve") && result.errors().get(0).contains("fx.Archivable"),
                 result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /** The advice names the checks as well as the operations, since the companion implements both from the facade. */
+    @Test
+    void sg504AMethodTheFacadeInheritsFromAnotherInterfaceIsToBeDeclaredOnTheFacade() {
+        Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
+        sources.put("fx.Checkable", """
+                package fx;
+                import io.github.graphmaquina.api.Eligibility;
+                public interface Checkable {
+                    Eligibility<Doc, DocStatus, DocTransition> canShelve(Doc doc);
+                }
+                """);
+        sources.put("fx.Docs", sources.get("fx.Docs").replace(EXTENDS,
+                "public interface Docs extends Machine<Doc, DocStatus, DocTransition>, Checkable {"));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[SG504] Docs inherits the abstract method canShelve from fx.Checkable, which the"
+                + " generated companion would not implement: declare every operation and check on Docs itself"),
+                result.errors(), result.describe());
     }
 
     /**

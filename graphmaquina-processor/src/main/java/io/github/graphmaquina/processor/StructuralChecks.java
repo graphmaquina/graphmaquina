@@ -159,8 +159,8 @@ final class StructuralChecks {
     /**
      * SG504 for every abstract method {@code facade} inherits from a super-interface other than {@code Machine},
      * except one that the method the companion writes or inherits for a method of {@code Machine} or a public
-     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations are read
-     * from the facade's own declarations, so the companion would not implement any other inherited method. A
+     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations and checks
+     * are read from the facade's own declarations, so the companion would not implement any other inherited method. A
      * redeclaration of one of those methods whose result the companion's method cannot return is told apart, since
      * declaring it on the facade would be refused as well.
      */
@@ -179,7 +179,7 @@ final class StructuralChecks {
             }
             diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method "
                     + method.getSimpleName() + " from " + from
-                    + ", which the generated companion would not implement: declare every operation on "
+                    + ", which the generated companion would not implement: declare every operation and check on "
                     + facade.getSimpleName() + " itself", facade);
         }
     }
