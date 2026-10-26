@@ -37,7 +37,7 @@ public final class CodegenMain {
     private static final List<String> OPERATIONS = List.of(GENERATE, PREPARE, COMPLETE);
     private static final String REQUEST = "--request";
     private static final String USAGE =
-        "usage: io.github.graphmaquina.codegen.CodegenMain <" + GENERATE + '|' + PREPARE + '|' + COMPLETE + "> "
+        "usage: " + CodegenMain.class.getName() + " <" + GENERATE + '|' + PREPARE + '|' + COMPLETE + "> "
             + REQUEST + " <file>";
     private static final int FAILED = 1;
     private static final int MISUSED = 2;

@@ -1,5 +1,7 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.GenerateGraphApi;
+import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -41,8 +43,8 @@ import lombok.NonNull;
  */
 public final class Bootstrap {
 
-    private static final String GENERATE_GRAPH_API = "io.github.graphmaquina.annotation.GenerateGraphApi";
-    private static final String STATE_GRAPHS = "io.github.graphmaquina.annotation.StateGraphs";
+    private static final String GENERATE_GRAPH_API = GenerateGraphApi.class.getName();
+    private static final String STATE_GRAPHS = StateGraphs.class.getName();
 
     /**
      * The names the default excludes of Ant 1.10 name outright: the files and directories of version control systems,

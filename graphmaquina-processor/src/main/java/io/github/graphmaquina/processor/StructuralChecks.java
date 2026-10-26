@@ -1,9 +1,14 @@
 package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.FailureKind;
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.Machine;
+import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
+import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.internal.FailureTypes;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
@@ -45,14 +50,14 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 final class StructuralChecks {
 
-    static final String MACHINE = "io.github.graphmaquina.api.Machine";
+    static final String MACHINE = Machine.class.getName();
 
     /** The types whose methods a machine's companion implements whatever the facade declares. */
     private static final List<String> BUILT_IN = List.of(MACHINE, "java.lang.Object");
 
-    private static final String FAILURE_KIND = "io.github.graphmaquina.api.FailureKind";
+    private static final String FAILURE_KIND = FailureKind.class.getName();
 
-    private static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
+    private static final String GRAPH_DEFINITION = GraphDefinition.class.getName();
 
     /** What SG304 says after the binary name of a throwable type one edge declares twice. */
     private static final String REPEATED_TYPE = " is declared more than once across recover and failsOn; a throwable"
@@ -238,7 +243,7 @@ final class StructuralChecks {
      * facade could declare.
      */
     boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
-        DeclaredType outcome = signatures.declared("io.github.graphmaquina.api.Outcome", types.entity(),
+        DeclaredType outcome = signatures.declared(Outcome.class.getName(), types.entity(),
                 types.states(), types.transitions());
         int arity = method.getParameters().size();
         boolean supported = arity == 1 || (arity == 2 && !method.isVarArgs()
@@ -465,7 +470,7 @@ final class StructuralChecks {
         return signatures.erasureIs(type, "java.lang.Throwable") || signatures.erasureIs(type, "java.lang.Exception")
                 || signatures.erasureIs(type, "java.lang.RuntimeException")
                 || signatures.subtype(type, "java.lang.Error")
-                || signatures.subtype(type, "io.github.graphmaquina.error.StateMachineException")
+                || signatures.subtype(type, StateMachineException.class.getName())
                 || signatures.subtype(type, "java.util.concurrent.CancellationException")
                 || signatures.erasureIs(type, "java.util.concurrent.CompletionException")
                 || signatures.erasureIs(type, "java.util.concurrent.ExecutionException");

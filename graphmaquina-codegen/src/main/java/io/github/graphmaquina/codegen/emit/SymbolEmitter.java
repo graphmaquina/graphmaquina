@@ -1,10 +1,17 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.PropertyDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
+import io.github.graphmaquina.symbol.ActionSymbol;
+import io.github.graphmaquina.symbol.ConditionSymbol;
+import io.github.graphmaquina.symbol.GuardSymbol;
+import io.github.graphmaquina.symbol.HookSymbol;
+import io.github.graphmaquina.symbol.LookupSymbol;
+import io.github.graphmaquina.symbol.PropertySymbol;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,12 +44,12 @@ final class SymbolEmitter {
 
     private static Map<SymbolKind, String> categories() {
         Map<SymbolKind, String> categories = new LinkedHashMap<>();
-        categories.put(SymbolKind.ACTION, "io.github.graphmaquina.symbol.ActionSymbol");
-        categories.put(SymbolKind.GUARD, "io.github.graphmaquina.symbol.GuardSymbol");
-        categories.put(SymbolKind.HOOK, "io.github.graphmaquina.symbol.HookSymbol");
-        categories.put(SymbolKind.CONDITION, "io.github.graphmaquina.symbol.ConditionSymbol");
-        categories.put(SymbolKind.PROPERTY, "io.github.graphmaquina.symbol.PropertySymbol");
-        categories.put(SymbolKind.LOOKUP, "io.github.graphmaquina.symbol.LookupSymbol");
+        categories.put(SymbolKind.ACTION, ActionSymbol.class.getName());
+        categories.put(SymbolKind.GUARD, GuardSymbol.class.getName());
+        categories.put(SymbolKind.HOOK, HookSymbol.class.getName());
+        categories.put(SymbolKind.CONDITION, ConditionSymbol.class.getName());
+        categories.put(SymbolKind.PROPERTY, PropertySymbol.class.getName());
+        categories.put(SymbolKind.LOOKUP, LookupSymbol.class.getName());
         return Map.copyOf(categories);
     }
 
@@ -120,7 +127,7 @@ final class SymbolEmitter {
         String name = simpleName(symbol);
         source.line("");
         source.javadoc(documentation(symbol));
-        source.line("@io.github.graphmaquina.annotation.internal.GeneratedSymbol(host = " + symbol.host()
+        source.line("@" + GeneratedSymbol.class.getName() + "(host = " + symbol.host()
             + ".class, member = \"" + symbol.member() + "\", kinds = " + kinds(symbol) + ")");
         source.line("public static final class " + name + " implements " + implemented(symbol) + " {");
         source.indent();
@@ -151,7 +158,7 @@ final class SymbolEmitter {
     /** The roles as an annotation value: one constant on its own, several inside braces. */
     private static String kinds(SymbolDescriptor symbol) {
         List<String> constants = symbol.kinds().stream()
-                .map(kind -> "io.github.graphmaquina.annotation.internal.SymbolKind." + kind.name()).toList();
+                .map(kind -> SymbolKind.class.getName() + "." + kind.name()).toList();
         return constants.size() == 1 ? constants.get(0) : "{" + String.join(", ", constants) + "}";
     }
 }

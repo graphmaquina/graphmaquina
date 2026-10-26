@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.processor.model.CheckModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
@@ -42,7 +43,7 @@ import javax.lang.model.util.ElementFilter;
  */
 final class TypedChecks {
 
-    private static final String ELIGIBILITY = "io.github.graphmaquina.api.Eligibility";
+    private static final String ELIGIBILITY = Eligibility.class.getName();
 
     private final VocabularyRegistry vocabulary;
     private final Signatures signatures;

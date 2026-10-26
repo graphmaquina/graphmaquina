@@ -1,7 +1,12 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
+import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
+import io.github.graphmaquina.symbol.ConditionSymbol;
+import io.github.graphmaquina.symbol.LookupSymbol;
+import io.github.graphmaquina.symbol.PropertySymbol;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,7 +123,7 @@ final class WatchVocabularyEmitter {
             "executes the transition of the first rule that holds.");
         annotation(source, pair, "WATCH", "java.lang.annotation.ElementType.TYPE", Optional.of(vocabulary + ".Watches"),
             "Watch");
-        String property = MachineVocabularyEmitter.symbolClass("PropertySymbol");
+        String property = MachineVocabularyEmitter.symbolClass(PropertySymbol.class);
         element(source, owner.stateType() + " state();", "the state of the owner in which its peers are watched");
         element(source, property + " peers();", "the property of the owner that reads its peers");
         element(source, property + " owner();", "the property of a peer that reads its owner, as an {@code Optional},"
@@ -140,7 +145,7 @@ final class WatchVocabularyEmitter {
         describe(source, "One watch rule: the condition or the filter over the peers' states that must hold,",
             "and the transition of {@link " + owner.facade() + "} the entity executes.");
         annotation(source, pair, "WHEN", "{}", Optional.empty(), "When");
-        element(source, MachineVocabularyEmitter.symbolClass("ConditionSymbol") + "[] condition() default {};",
+        element(source, MachineVocabularyEmitter.symbolClass(ConditionSymbol.class) + "[] condition() default {};",
             "the condition that must hold, at most one; none by default");
         element(source, peer.stateType() + "[] allIn() default {};",
             "the state all the peers, at least one, must be in; none by default");
@@ -161,13 +166,13 @@ final class WatchVocabularyEmitter {
             "each terminal state of the child selects.");
         annotation(source, pair, "SUBMACHINE", "java.lang.annotation.ElementType.TYPE",
             Optional.of(vocabulary + ".Submachines"), "Submachine");
-        String property = MachineVocabularyEmitter.symbolClass("PropertySymbol");
+        String property = MachineVocabularyEmitter.symbolClass(PropertySymbol.class);
         element(source, owner.stateType() + " state();", "the state of the parent that holds the child");
         element(source, property + "[] child() default {};",
             "the property of the parent that reads the child, at most one; none by default");
         element(source, property + "[] parent() default {};",
             "the property of the child that reads the parent, at most one; none by default");
-        element(source, MachineVocabularyEmitter.symbolClass("LookupSymbol") + "[] parentLookup() default {};",
+        element(source, MachineVocabularyEmitter.symbolClass(LookupSymbol.class) + "[] parentLookup() default {};",
             "the lookup that finds the parent of a child, at most one; none by default");
         element(source, vocabulary + ".Exit[] exits();", "the exits, one per terminal state of the child");
         close(source);
@@ -208,8 +213,8 @@ final class WatchVocabularyEmitter {
     /** Writes the metadata, target, retention and repeatability of one nested annotation and opens its body. */
     private static void annotation(JavaSource source, String pair, String kind, String target,
             Optional<String> container, String name) {
-        source.line("@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(" + pair
-            + ", value = io.github.graphmaquina.annotation.internal.VocabularyKind." + kind + ")");
+        source.line("@" + GeneratedVocabulary.class.getName() + "(" + pair + ", value = "
+            + VocabularyKind.class.getName() + "." + kind + ")");
         source.line("@java.lang.annotation.Target(" + target + ")");
         source.line("@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)");
         container.ifPresent((String repeated) ->

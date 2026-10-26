@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.annotation.internal.GraphCompilation;
 import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import java.nio.charset.StandardCharsets;
@@ -47,8 +48,7 @@ final class CompilationMarkerEmitter {
         String simpleName = carrier.substring(carrier.lastIndexOf('.') + 1);
 
         JavaSource source = new JavaSource();
-        source.header(GenerationFiles.CARRIER_PACKAGE,
-            List.of("io.github.graphmaquina.annotation.internal.GraphCompilation"));
+        source.header(GenerationFiles.CARRIER_PACKAGE, List.of(GraphCompilation.class.getName()));
         source.javadoc("Carries the identity of one compilation for the StateGraph annotation processor.",
             "",
             "<p>Tool-internal: this type is not API and must not be referenced by an application. The completion of",

@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.Machines;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.SetGenerator;
 import io.github.graphmaquina.processor.model.MachineAccessor;
@@ -50,7 +51,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 final class SetModelBuilder {
 
-    static final String MACHINES = "io.github.graphmaquina.api.Machines";
+    static final String MACHINES = Machines.class.getName();
 
     /** The types whose methods a set's companion implements whatever the set declares. */
     private static final List<String> BUILT_IN = List.of(MACHINES, "java.lang.AutoCloseable", "java.lang.Object");

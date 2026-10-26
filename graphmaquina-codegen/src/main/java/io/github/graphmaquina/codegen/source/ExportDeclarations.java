@@ -1,5 +1,12 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.annotation.GraphAction;
+import io.github.graphmaquina.annotation.GraphBindings;
+import io.github.graphmaquina.annotation.GraphCondition;
+import io.github.graphmaquina.annotation.GraphGuard;
+import io.github.graphmaquina.annotation.GraphHook;
+import io.github.graphmaquina.annotation.GraphLookup;
+import io.github.graphmaquina.annotation.GraphProperty;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
@@ -42,7 +49,7 @@ import lombok.NonNull;
  */
 public final class ExportDeclarations {
 
-    private static final String BINDINGS = "io.github.graphmaquina.annotation.GraphBindings";
+    private static final String BINDINGS = GraphBindings.class.getName();
     /** The package of the StateGraph types every references container writes by qualified name. */
     private static final String STATEGRAPH_PACKAGE = "io.github.graphmaquina";
     /** The annotation every references container carries, written by qualified name. */
@@ -484,12 +491,12 @@ public final class ExportDeclarations {
 
     private static Map<String, SymbolKind> roles() {
         Map<String, SymbolKind> roles = new LinkedHashMap<>();
-        roles.put("io.github.graphmaquina.annotation.GraphAction", SymbolKind.ACTION);
-        roles.put("io.github.graphmaquina.annotation.GraphGuard", SymbolKind.GUARD);
-        roles.put("io.github.graphmaquina.annotation.GraphHook", SymbolKind.HOOK);
-        roles.put("io.github.graphmaquina.annotation.GraphCondition", SymbolKind.CONDITION);
-        roles.put("io.github.graphmaquina.annotation.GraphProperty", SymbolKind.PROPERTY);
-        roles.put("io.github.graphmaquina.annotation.GraphLookup", SymbolKind.LOOKUP);
+        roles.put(GraphAction.class.getName(), SymbolKind.ACTION);
+        roles.put(GraphGuard.class.getName(), SymbolKind.GUARD);
+        roles.put(GraphHook.class.getName(), SymbolKind.HOOK);
+        roles.put(GraphCondition.class.getName(), SymbolKind.CONDITION);
+        roles.put(GraphProperty.class.getName(), SymbolKind.PROPERTY);
+        roles.put(GraphLookup.class.getName(), SymbolKind.LOOKUP);
         return Collections.unmodifiableMap(roles);
     }
 
