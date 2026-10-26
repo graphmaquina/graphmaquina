@@ -27,13 +27,16 @@ import org.junit.jupiter.api.io.TempDir;
  * against those indexes, checking the descriptor it takes from one against the class files. A peer whose jar carries
  * no index, or an index that is stale about it, is therefore reported by the generator, naming the jar, while a set
  * that holds a machine whose index is stale reaches the processor, which checks the manifest that carries the indexes
- * as a whole.</p>
+ * as a whole. That manifest carries the index of every dependency on the classpath, so a stale one is refused even
+ * when nothing in the consumer, {@code other.Note} alone, uses its machine.</p>
  */
 class CrossModuleCharacterizationTest {
 
     private static final String RESOURCES = "/cross-module-characterization";
     private static final UnaryOperator<String> RENAMES_A_STATE =
             (String index) -> index.replace("\"DECLINED\"", "\"REFUSED\"");
+    private static final UnaryOperator<String> NAMES_AN_UNDECLARED_STATE_ENUM = (String index) ->
+            index.replaceAll("(\"stateType\"\\s*:\\s*)\"pay\\.PaymentStatus\"", "$1\"pay.Gone\"");
 
     @TempDir
     Path directory;
@@ -131,6 +134,21 @@ class CrossModuleCharacterizationTest {
                 + " [PENDING, CAPTURED, DECLINED]"), result.errors(), result.describe());
     }
 
+    /**
+     * A jar whose index is stale is refused by the processor even when the consumer uses no machine and no symbol of
+     * it: the index renames a state, or names a state enum the classes do not declare. The control is the same consumer
+     * over the jar whose index is current.
+     */
+    @Test
+    void aStaleIndexIsRefusedEvenWhenNothingUsesItsMachine() throws Exception {
+        assertCompiles(tree("unused"), List.of(publishedProducer("current.jar", UnaryOperator.identity())));
+
+        assertManifestRefused(publishedProducer("renamed.jar", RENAMES_A_STATE), "gives pay.PaymentStatus the states"
+                + " [PENDING, CAPTURED, REFUSED], but that enum now declares [PENDING, CAPTURED, DECLINED]");
+        assertManifestRefused(publishedProducer("undeclared.jar", NAMES_AN_UNDECLARED_STATE_ENUM), "describes the"
+                + " machine pay.Payments over the state enum pay.Gone, which this compilation does not declare");
+    }
+
     /** A peer literal that names no class is a different refusal from a peer that names a machine of a jar. */
     @Test
     void anUnresolvablePeerLiteralToday() throws Exception {
@@ -171,6 +189,18 @@ class CrossModuleCharacterizationTest {
                 new URLClassLoader(classes, CrossModuleCharacterizationTest.class.getClassLoader())) {
             return loader.loadClass("book.Scenario").getMethod("run").invoke(null);
         }
+    }
+
+    /**
+     * The consumer that uses nothing of {@code jar} is refused by the processor with the one problem it finds in the
+     * annotation manifest, which carries the index of {@code jar}.
+     */
+    private static void assertManifestRefused(Path jar, String problem) {
+        Compilation.Prepared prepared = Compilation.prepare(tree("unused"), List.of(jar));
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+
+        assertEquals(List.of("[" + DiagnosticCode.SG602 + "] the annotation manifest "
+                + prepared.generation().annotationManifest() + " " + problem), result.errors(), result.describe());
     }
 
     /** The control of a refusal: the same sources compile over the one jar that carries no fault. */
