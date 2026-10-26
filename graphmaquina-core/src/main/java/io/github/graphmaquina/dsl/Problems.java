@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.error.InvalidGraphException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,15 +13,15 @@ final class Problems {
      * One recorded problem, before sorting: a code, the declaration index of the origin state and of the
      * transition identifier it concerns (-1 for either when the problem is not about that part), and a message.
      */
-    private record Entry(String code, int from, int to, String message) { }
+    private record Entry(DiagnosticCode code, int from, int to, String message) { }
 
     private final List<Entry> entries = new ArrayList<>();
 
-    void add(String code, int from, int to, String message) {
+    void add(DiagnosticCode code, int from, int to, String message) {
         entries.add(new Entry(code, from, to, message));
     }
 
-    void add(String code, String message) {
+    void add(DiagnosticCode code, String message) {
         add(code, -1, -1, message);
     }
 
@@ -30,10 +31,11 @@ final class Problems {
 
     List<InvalidGraphException.Problem> sorted() {
         List<Entry> copy = new ArrayList<>(entries);
-        copy.sort(Comparator.comparing(Entry::code).thenComparingInt(Entry::from).thenComparingInt(Entry::to));
+        copy.sort(Comparator.comparing((Entry entry) -> entry.code().name()).thenComparingInt(Entry::from)
+                .thenComparingInt(Entry::to));
         List<InvalidGraphException.Problem> result = new ArrayList<>();
         for (Entry entry : copy) {
-            result.add(new InvalidGraphException.Problem(entry.code(), entry.message()));
+            result.add(new InvalidGraphException.Problem(entry.code().name(), entry.message()));
         }
         return List.copyOf(result);
     }

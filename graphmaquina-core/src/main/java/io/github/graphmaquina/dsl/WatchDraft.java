@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.NamedCondition;
 import io.github.graphmaquina.api.WatchCondition;
@@ -43,7 +44,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
                                                    @NonNull WatchCondition<E, P, Q, U> condition) {
         requireUnbuilt();
         if (name.isBlank()) {
-            graph.problems().add("SG107", state.ordinal(), -1,
+            graph.problems().add(DiagnosticCode.SG107, state.ordinal(), -1,
                     "a condition of the watch of " + state.name() + " has a blank name");
             return pend(new NamedCondition<>("(unnamed)", condition));
         }
@@ -62,7 +63,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         requireUnbuilt();
         graph.requireTransition(transition);
         if (pending.isEmpty()) {
-            graph.problems().add("SG404", state.ordinal(), transition.ordinal(),
+            graph.problems().add(DiagnosticCode.SG404, state.ordinal(), transition.ordinal(),
                     "the watch of " + state.name() + " declares execute(" + transition.name() + ") without when(...)");
             return this;
         }
@@ -83,7 +84,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
 
     private void reportPending(Problems problems) {
         if (pending.isPresent()) {
-            problems.add("SG404", state.ordinal(), -1, "the watch of " + state.name() + " declares when("
+            problems.add(DiagnosticCode.SG404, state.ordinal(), -1, "the watch of " + state.name() + " declares when("
                     + pending.get().name() + ") without execute(...)");
         }
     }
@@ -91,7 +92,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
     Optional<WatchSpec<E, S, T, P, Q, U>> toSpec(Problems problems) {
         reportPending(problems);
         if (rules.isEmpty()) {
-            problems.add("SG404", state.ordinal(), -1,
+            problems.add(DiagnosticCode.SG404, state.ordinal(), -1,
                     "the watch of " + state.name() + " declares no when(...).execute(...) rule");
             return Optional.empty();
         }

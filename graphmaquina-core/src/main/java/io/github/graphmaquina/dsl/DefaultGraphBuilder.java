@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.RecoveryRule;
@@ -123,7 +124,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireUnbuilt();
         requireState(state);
         if (statePolicies.putIfAbsent(state, otherwise) != null) {
-            problems.add("SG102", state.ordinal(), -1, "the state " + state.name() + " declares two policies");
+            problems.add(DiagnosticCode.SG102,
+                    state.ordinal(), -1, "the state " + state.name() + " declares two policies");
         }
         return this;
     }
@@ -135,7 +137,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireTransition(transition);
         Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new LinkedHashMap<>());
         if (forState.putIfAbsent(transition, reason) != null) {
-            problems.add("SG102", state.ordinal(), transition.ordinal(),
+            problems.add(DiagnosticCode.SG102, state.ordinal(), transition.ordinal(),
                     "the state " + state.name() + " rejects " + transition.name() + " twice");
         }
         return this;
@@ -161,7 +163,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireState(state);
         WatchDraft<E, S, T, P, Q, U> draft = new WatchDraft<>(this, state, peer, peersOf, ownerOf);
         if (watches.putIfAbsent(state, draft) != null) {
-            problems.add("SG403", state.ordinal(), -1, "the state " + state.name() + " declares two watches");
+            problems.add(DiagnosticCode.SG403,
+                    state.ordinal(), -1, "the state " + state.name() + " declares two watches");
         }
         return draft;
     }
@@ -193,9 +196,9 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireUnbuilt();
         built = true;
         if (initialDeclarations == 0) {
-            problems.add("SG201", "the graph " + key + " does not declare initial(...)");
+            problems.add(DiagnosticCode.SG201, "the graph " + key + " does not declare initial(...)");
         } else if (initialDeclarations > 1) {
-            problems.add("SG201", "initial(...) was declared " + initialDeclarations + " times in " + key);
+            problems.add(DiagnosticCode.SG201, "initial(...) was declared " + initialDeclarations + " times in " + key);
         }
         for (TransitionDraft<E, S, T> draft : drafts) {
             draft.checkClosed(problems);
@@ -203,7 +206,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index = new LinkedHashMap<>();
         for (TransitionSpec<E, S, T> transition : declared) {
             if (index.containsKey(transition.key())) {
-                problems.add("SG102", transition.from().ordinal(), transition.transition().ordinal(),
+                problems.add(DiagnosticCode.SG102, transition.from().ordinal(), transition.transition().ordinal(),
                         "duplicate transition " + transition.key());
             } else {
                 index.put(transition.key(), transition);

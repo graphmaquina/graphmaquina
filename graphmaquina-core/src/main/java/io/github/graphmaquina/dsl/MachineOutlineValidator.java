@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.graph.Graph;
@@ -54,7 +55,8 @@ public final class MachineOutlineValidator {
         Map<EdgeKey, TransitionOutline> byKey = new HashMap<>();
         for (TransitionOutline edge : outline.transitions()) {
             if (byKey.putIfAbsent(new EdgeKey(edge.from(), edge.transition()), edge) != null) {
-                problems.add("SG102", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                problems.add(DiagnosticCode.SG102,
+                        index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                         "duplicate transition " + edge.key());
             }
         }
@@ -66,28 +68,31 @@ public final class MachineOutlineValidator {
         Set<String> declared = new HashSet<>();
         for (PolicyOutline policy : outline.policies()) {
             if (!declared.add(policy.state())) {
-                problems.add("SG102", index.stateIndex(policy.state()), -1,
+                problems.add(DiagnosticCode.SG102, index.stateIndex(policy.state()), -1,
                         "the state " + policy.state() + " declares two policies");
                 continue;
             }
             if (policy.otherwise().isBlank()) {
-                problems.add("SG103", index.stateIndex(policy.state()), -1,
+                problems.add(DiagnosticCode.SG103, index.stateIndex(policy.state()), -1,
                         "the policy of " + policy.state() + " has a blank reason");
             }
             for (Map.Entry<String, String> rejection : policy.rejections().entrySet()) {
                 if (rejection.getValue().isBlank()) {
-                    problems.add("SG103", index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
+                    problems.add(DiagnosticCode.SG103,
+                            index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
                             "the rejection of " + rejection.getKey() + " in " + policy.state() + " has a blank reason");
                 }
                 if (byKey.containsKey(new EdgeKey(policy.state(), rejection.getKey()))) {
-                    problems.add("SG702", index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
+                    problems.add(DiagnosticCode.SG702,
+                            index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
                             policy.state() + " both declares and rejects " + rejection.getKey());
                 }
             }
         }
         for (String state : outline.states()) {
             if (!declared.contains(state)) {
-                problems.add("SG701", index.stateIndex(state), -1, state + " declares no rejection policy");
+                problems.add(DiagnosticCode.SG701,
+                        index.stateIndex(state), -1, state + " declares no rejection policy");
             }
         }
     }
@@ -100,11 +105,12 @@ public final class MachineOutlineValidator {
             }
             boolean terminal = outline.terminals().contains(state);
             if (exits.isEmpty() && !terminal) {
-                problems.add("SG202", index.stateIndex(state), -1,
+                problems.add(DiagnosticCode.SG202, index.stateIndex(state), -1,
                         state + " declares no outgoing transition: declare it as a terminal state");
             }
             if (!exits.isEmpty() && terminal) {
-                problems.add("SG202", index.stateIndex(state), -1, state + " is terminal but declares " + exits);
+                problems.add(DiagnosticCode.SG202,
+                        index.stateIndex(state), -1, state + " is terminal but declares " + exits);
             }
         }
     }
@@ -113,7 +119,8 @@ public final class MachineOutlineValidator {
         Set<String> reachable = index.topology().reachableFrom(outline.initial());
         for (String state : outline.states()) {
             if (!state.equals(outline.initial()) && !reachable.contains(state)) {
-                problems.add("SG203", index.stateIndex(state), -1, state + " is unreachable from " + outline.initial());
+                problems.add(DiagnosticCode.SG203,
+                        index.stateIndex(state), -1, state + " is unreachable from " + outline.initial());
             }
         }
     }
@@ -132,12 +139,13 @@ public final class MachineOutlineValidator {
             if (cyclic(component, full)) participating.addAll(component);
         for (String allowed : outline.cycleAllowed())
             if (!participating.contains(allowed))
-                problems.add("SG205", index.stateIndex(allowed), -1, "unused cycle permission " + allowed);
+                problems.add(DiagnosticCode.SG205, index.stateIndex(allowed), -1, "unused cycle permission " + allowed);
         Graph<String> restricted = full.inducedSubgraph(
             full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
         for (Set<String> component : StrongComponents.find(restricted))
             if (cyclic(component, restricted))
-                problems.add("SG204", "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
+                problems.add(DiagnosticCode.SG204,
+                        "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
     }
 
     /** More than one node, or a single node that reaches itself. */
@@ -161,7 +169,8 @@ public final class MachineOutlineValidator {
             boolean action = edge.kind() == TransitionKind.ACTION;
             if (!edge.recoveryTransitions().isEmpty()) {
                 if (!action) {
-                    problems.add("SG507", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                    problems.add(DiagnosticCode.SG507,
+                            index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                             edge.describe() + " declares recover without an action");
                 } else {
                     for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
@@ -172,7 +181,8 @@ public final class MachineOutlineValidator {
             if (edge.onFailure().isPresent()) {
                 String recovery = edge.onFailure().get();
                 if (!action) {
-                    problems.add("SG507", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                    problems.add(DiagnosticCode.SG507,
+                            index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                             edge.describe() + " declares onFailure without an action");
                 } else {
                     requireRoute(edge, recovery, "onFailure = " + recovery, index, byKey, problems);
@@ -188,10 +198,10 @@ public final class MachineOutlineValidator {
     private static void requireRoute(TransitionOutline edge, String recovery, String declared, OutlineIndex index,
             Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         if (recovery.equals(edge.transition())) {
-            problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+            problems.add(DiagnosticCode.SG301, index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                     edge.describe() + " declares " + declared + ", which is its own key");
         } else if (!byKey.containsKey(new EdgeKey(edge.from(), recovery))) {
-            problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+            problems.add(DiagnosticCode.SG301, index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                     edge.describe() + " declares " + declared + ", but no transition " + recovery + " leaves "
                             + edge.from());
         }
@@ -202,13 +212,14 @@ public final class MachineOutlineValidator {
         for (WatchOutline watch : outline.watches()) {
             for (String transition : watch.transitions()) {
                 if (!byKey.containsKey(new EdgeKey(watch.state(), transition))) {
-                    problems.add("SG401", index.stateIndex(watch.state()), index.transitionIndex(transition),
+                    problems.add(DiagnosticCode.SG401,
+                            index.stateIndex(watch.state()), index.transitionIndex(transition),
                             "the watch of " + watch.state() + " executes " + transition
                                     + ", but no such transition leaves " + watch.state());
                 }
             }
             if (outline.terminals().contains(watch.state())) {
-                problems.add("SG402", index.stateIndex(watch.state()), -1,
+                problems.add(DiagnosticCode.SG402, index.stateIndex(watch.state()), -1,
                         watch.state() + " is terminal and cannot watch anything");
             }
         }
@@ -231,11 +242,12 @@ public final class MachineOutlineValidator {
         for (Map.Entry<String, Integer> bound : bindings.entrySet()) {
             String where = outline.name() + "." + bound.getKey();
             if (outline.terminals().contains(bound.getKey())) {
-                problems.add("SG803", index.stateIndex(bound.getKey()), -1,
+                problems.add(DiagnosticCode.SG803, index.stateIndex(bound.getKey()), -1,
                         where + " is terminal and cannot hold a sub-machine");
             }
             if (bound.getValue() > 1) {
-                problems.add("SG803", index.stateIndex(bound.getKey()), -1, where + " holds more than one sub-machine");
+                problems.add(DiagnosticCode.SG803,
+                        index.stateIndex(bound.getKey()), -1, where + " holds more than one sub-machine");
             }
         }
         for (SubmachineOutline submachine : outline.submachines()) {
@@ -259,10 +271,10 @@ public final class MachineOutlineValidator {
         for (String terminal : submachine.childTerminals()) {
             int count = declared.getOrDefault(terminal, 0);
             if (count == 0) {
-                problems.add("SG801", node, -1,
+                problems.add(DiagnosticCode.SG801, node, -1,
                         where + "the terminal " + terminal + " of " + submachine.child() + " has no exit");
             } else if (count > 1) {
-                problems.add("SG801", node, -1,
+                problems.add(DiagnosticCode.SG801, node, -1,
                         where + "the terminal " + terminal + " of " + submachine.child() + " has more than one exit");
             }
         }
@@ -270,11 +282,12 @@ public final class MachineOutlineValidator {
         for (ExitOutline exit : submachine.exits()) {
             int identifier = index.transitionIndex(exit.transition());
             if (!terminals.contains(exit.terminal())) {
-                problems.add("SG801", node, identifier, where + "the exit on " + exit.terminal()
+                problems.add(DiagnosticCode.SG801, node, identifier, where + "the exit on " + exit.terminal()
                         + " names no terminal of " + submachine.child());
             }
             if (!byKey.containsKey(new EdgeKey(submachine.state(), exit.transition()))) {
-                problems.add("SG802", node, identifier, where + "the exit on " + exit.terminal() + " names "
+                problems.add(DiagnosticCode.SG802,
+                        node, identifier, where + "the exit on " + exit.terminal() + " names "
                         + exit.transition() + ", which has no edge from " + submachine.state());
             }
         }
@@ -297,13 +310,13 @@ public final class MachineOutlineValidator {
         for (TransitionOutline edge : index.outgoing(state)) {
             for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
                 if (reserved.contains(recovery)) {
-                    problems.add("SG804", node, index.transitionIndex(recovery), where + recovery
+                    problems.add(DiagnosticCode.SG804, node, index.transitionIndex(recovery), where + recovery
                             + " is an exit of its sub-machine and cannot be a recovery of " + edge.transition());
                 }
             }
             if (edge.onFailure().isPresent() && reserved.contains(edge.onFailure().get())) {
                 String claimed = edge.onFailure().get();
-                problems.add("SG804", node, index.transitionIndex(claimed), where + claimed
+                problems.add(DiagnosticCode.SG804, node, index.transitionIndex(claimed), where + claimed
                         + " is an exit of its sub-machine and cannot be the onFailure of " + edge.transition());
             }
         }
@@ -313,7 +326,7 @@ public final class MachineOutlineValidator {
             }
             for (String executed : new LinkedHashSet<>(watch.transitions())) {
                 if (reserved.contains(executed)) {
-                    problems.add("SG804", node, index.transitionIndex(executed), where + executed
+                    problems.add(DiagnosticCode.SG804, node, index.transitionIndex(executed), where + executed
                             + " is an exit of its sub-machine and cannot be executed by a watch rule");
                 }
             }

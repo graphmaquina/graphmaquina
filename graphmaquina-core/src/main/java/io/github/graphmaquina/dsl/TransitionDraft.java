@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.AsyncTransitionGuard;
@@ -216,7 +217,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     /** Records SG507 for a draft never closed: only {@code endTransition()} turns a draft into an edge. */
     void checkClosed(Problems problems) {
         if (!closed) {
-            problems.add("SG507", from.ordinal(), transition.ordinal(),
+            problems.add(DiagnosticCode.SG507, from.ordinal(), transition.ordinal(),
                     where() + " was never closed with endTransition()");
         }
     }
@@ -233,7 +234,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         Optional<ActionRef<E, S, T>> actionRef = Optional.empty();
         if (actions > 1) {
             // Names are resolved for a single action only: with more, the edge is refused whatever they are called.
-            problems.add("SG507", fromIndex, idIndex, syncAction.isPresent() && asyncAction.isPresent()
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex, syncAction.isPresent() && asyncAction.isPresent()
                     ? where + " declares both a synchronous and an asynchronous action"
                     : where + " declares " + actions + " actions, but an edge runs at most one");
             valid = false;
@@ -269,7 +270,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         boolean valid = true;
         for (Class<? extends Throwable> type : failsOn) {
             if (FailureTypes.isForbiddenThrowable(type)) {
-                problems.add("SG302", fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
+                problems.add(DiagnosticCode.SG302,
+                        fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
                         + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
                 valid = false;
             }
@@ -310,15 +312,17 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     private boolean checkWithoutAction(String where, int fromIndex, int idIndex, Problems problems) {
         boolean valid = true;
         if (onFailure.isPresent() || !failsOn.isEmpty()) {
-            problems.add("SG507", fromIndex, idIndex, where + " declares onFailure or failsOn without an action");
+            problems.add(DiagnosticCode.SG507,
+                    fromIndex, idIndex, where + " declares onFailure or failsOn without an action");
             valid = false;
         }
         if (!recoveries.isEmpty()) {
-            problems.add("SG507", fromIndex, idIndex, where + " declares recover without an action");
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex, where + " declares recover without an action");
             valid = false;
         }
         if (timeout.isPresent()) {
-            problems.add("SG507", fromIndex, idIndex, where + " declares a timeout without an asynchronous action");
+            problems.add(DiagnosticCode.SG507,
+                    fromIndex, idIndex, where + " declares a timeout without an asynchronous action");
             valid = false;
         }
         return valid;
@@ -331,21 +335,22 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     private boolean checkTimeoutAndOnFailure(String where, int fromIndex, int idIndex, Problems problems) {
         boolean valid = true;
         if (timeout.isPresent() && syncAction.isPresent()) {
-            problems.add("SG507", fromIndex, idIndex, where + " declares a timeout on a synchronous action");
+            problems.add(DiagnosticCode.SG507,
+                    fromIndex, idIndex, where + " declares a timeout on a synchronous action");
             valid = false;
         }
         if (onFailures > 1) {
-            problems.add("SG507", fromIndex, idIndex,
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
                     where + " declares " + onFailures + " onFailure routes, but an edge has at most one");
             valid = false;
         }
         if (timeouts > 1) {
-            problems.add("SG507", fromIndex, idIndex,
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
                     where + " declares " + timeouts + " timeouts, but an edge has at most one");
             valid = false;
         }
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {
-            problems.add("SG511", fromIndex, idIndex, where + " declares a timeout that is not positive");
+            problems.add(DiagnosticCode.SG511, fromIndex, idIndex, where + " declares a timeout that is not positive");
             valid = false;
         }
         return valid;
@@ -364,7 +369,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         Set<String> named = new HashSet<>();
         for (GuardDraft<E, S, T> guard : guards) {
             if (!seen.add(guard.instance())) {
-                problems.add("SG105", fromIndex, idIndex, where + " declares the same guard twice");
+                problems.add(DiagnosticCode.SG105, fromIndex, idIndex, where + " declares the same guard twice");
                 valid = false;
                 continue;
             }
@@ -375,7 +380,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
                 continue;
             }
             if (!named.add(name.get())) {
-                problems.add("SG105", fromIndex, idIndex, where + " declares two guards named " + name.get());
+                problems.add(DiagnosticCode.SG105,
+                        fromIndex, idIndex, where + " declares two guards named " + name.get());
                 valid = false;
                 continue;
             }
@@ -404,23 +410,24 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             Class<? extends FailureKind> kind = recovery.kind();
             if (kinds.add(kind)) {
                 if (!FailureTypes.isValidKind(kind)) {
-                    problems.add("SG303", fromIndex, idIndex, where + ": " + FailureTypes.invalidKindMessage(kind));
+                    problems.add(DiagnosticCode.SG303,
+                            fromIndex, idIndex, where + ": " + FailureTypes.invalidKindMessage(kind));
                     valid = false;
                 }
             } else if (repeatedKinds.add(kind)) {
-                problems.add("SG304", fromIndex, idIndex,
+                problems.add(DiagnosticCode.SG304, fromIndex, idIndex,
                         where + ": failure kind " + kind.getName() + " is declared by more than one recover");
                 valid = false;
             }
             for (Class<? extends Throwable> type : recovery.failsOn()) {
                 if (FailureTypes.isForbiddenThrowable(type)) {
-                    problems.add("SG302", fromIndex, idIndex, where + ": recover(" + kind.getName() + ", "
+                    problems.add(DiagnosticCode.SG302, fromIndex, idIndex, where + ": recover(" + kind.getName() + ", "
                             + recovery.transition().name() + ") does not allow " + type.getName() + "; "
                             + FailureTypes.FORBIDDEN_THROWABLE_RULE);
                     valid = false;
                 }
                 if ((!declared.add(type) || failsOnTypes.contains(type)) && repeatedTypes.add(type)) {
-                    problems.add("SG304", fromIndex, idIndex, where + ": " + type.getName()
+                    problems.add(DiagnosticCode.SG304, fromIndex, idIndex, where + ": " + type.getName()
                             + " is declared more than once across recover and failsOn; a throwable type selects a"
                             + " single route");
                     valid = false;

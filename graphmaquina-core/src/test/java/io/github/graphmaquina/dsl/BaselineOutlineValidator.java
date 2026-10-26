@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.graph.Graph;
@@ -20,9 +21,10 @@ import java.util.Set;
  * {@code @NonNull} on the public entry point is dropped with its import because Lombok is not on the test
  * compile classpath, this comment replaces the original's own, and {@code failureRoutes} first runs
  * {@code recoveryRoutes}, which checks the recovery transitions {@link TransitionOutline} gained after that
- * commit the way this copy checks onFailure, once per distinct identifier. The one change since is structural: the
+ * commit the way this copy checks onFailure, once per distinct identifier. The two changes since are structural: the
  * longer methods are cut into helpers that make the same calls in the same order, to meet the size checks of the
- * test sources. Nothing else was touched, nothing here may be copied back into production, and nothing here may be
+ * test sources, and each code is the {@code DiagnosticCode} constant of the same name, which {@code Problems} takes
+ * in place of a string since the codes were declared in one place. Nothing else was touched, nothing here may be copied back into production, and nothing here may be
  * optimised: its whole value is that it computes the problems the way the base did, and for an outline without
  * recovery transitions it answers exactly what the base answered. The graph code it calls is not frozen: it builds
  * and queries the live {@code Graph} and runs the live {@code StrongComponents.find} and {@code cycleWitness}, so
@@ -57,7 +59,8 @@ final class BaselineOutlineValidator {
         Map<String, TransitionOutline> byKey = new HashMap<>();
         for (TransitionOutline edge : outline.transitions()) {
             if (byKey.putIfAbsent(edge.key(), edge) != null) {
-                problems.add("SG102", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                problems.add(DiagnosticCode.SG102,
+                        outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                         "duplicate transition " + edge.key());
             }
         }
@@ -68,7 +71,7 @@ final class BaselineOutlineValidator {
         Set<String> declared = new HashSet<>();
         for (PolicyOutline policy : outline.policies()) {
             if (!declared.add(policy.state())) {
-                problems.add("SG102", outline.indexOf(policy.state()), -1,
+                problems.add(DiagnosticCode.SG102, outline.indexOf(policy.state()), -1,
                         "the state " + policy.state() + " declares two policies");
                 continue;
             }
@@ -76,7 +79,7 @@ final class BaselineOutlineValidator {
         }
         for (String state : outline.states()) {
             if (!declared.contains(state)) {
-                problems.add("SG701", outline.indexOf(state), -1, state + " declares no rejection policy");
+                problems.add(DiagnosticCode.SG701, outline.indexOf(state), -1, state + " declares no rejection policy");
             }
         }
     }
@@ -84,7 +87,7 @@ final class BaselineOutlineValidator {
     private static void policyReasons(MachineOutline outline, Map<String, TransitionOutline> byKey,
             PolicyOutline policy, Problems problems) {
         if (policy.otherwise().isBlank()) {
-            problems.add("SG103", outline.indexOf(policy.state()), -1,
+            problems.add(DiagnosticCode.SG103, outline.indexOf(policy.state()), -1,
                     "the policy of " + policy.state() + " has a blank reason");
         }
         for (Map.Entry<String, String> rejection : policy.rejections().entrySet()) {
@@ -95,12 +98,14 @@ final class BaselineOutlineValidator {
     private static void rejectionFindings(MachineOutline outline, Map<String, TransitionOutline> byKey,
             PolicyOutline policy, Map.Entry<String, String> rejection, Problems problems) {
         if (rejection.getValue().isBlank()) {
-            problems.add("SG103", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
+            problems.add(DiagnosticCode.SG103,
+                    outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
                     "the rejection of " + rejection.getKey() + " in " + policy.state()
                             + " has a blank reason");
         }
         if (byKey.containsKey(policy.state() + "/" + rejection.getKey())) {
-            problems.add("SG702", outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
+            problems.add(DiagnosticCode.SG702,
+                    outline.indexOf(policy.state()), outline.indexOfTransition(rejection.getKey()),
                     policy.state() + " both declares and rejects " + rejection.getKey());
         }
     }
@@ -123,11 +128,12 @@ final class BaselineOutlineValidator {
         List<String> exits = transitionsLeaving(outline, state);
         boolean terminal = outline.terminals().contains(state);
         if (exits.isEmpty() && !terminal) {
-            problems.add("SG202", outline.indexOf(state), -1,
+            problems.add(DiagnosticCode.SG202, outline.indexOf(state), -1,
                     state + " declares no outgoing transition: declare it as a terminal state");
         }
         if (!exits.isEmpty() && terminal) {
-            problems.add("SG202", outline.indexOf(state), -1, state + " is terminal but declares " + exits);
+            problems.add(DiagnosticCode.SG202,
+                    outline.indexOf(state), -1, state + " is terminal but declares " + exits);
         }
     }
 
@@ -135,7 +141,8 @@ final class BaselineOutlineValidator {
         Set<String> reachable = topology(outline).reachableFrom(outline.initial());
         for (String state : outline.states()) {
             if (!state.equals(outline.initial()) && !reachable.contains(state)) {
-                problems.add("SG203", outline.indexOf(state), -1, state + " is unreachable from " + outline.initial());
+                problems.add(DiagnosticCode.SG203,
+                        outline.indexOf(state), -1, state + " is unreachable from " + outline.initial());
             }
         }
     }
@@ -160,7 +167,7 @@ final class BaselineOutlineValidator {
             Problems problems) {
         for (String allowed : outline.cycleAllowed())
             if (!participating.contains(allowed))
-                problems.add("SG205", outline.indexOf(allowed), -1, "unused cycle permission " + allowed);
+                problems.add(DiagnosticCode.SG205, outline.indexOf(allowed), -1, "unused cycle permission " + allowed);
     }
 
     private static void unauthorizedCycles(MachineOutline outline, Graph<String> full, Problems problems) {
@@ -168,7 +175,8 @@ final class BaselineOutlineValidator {
             full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
         for (Set<String> component : StrongComponents.find(restricted))
             if (cyclic(component, restricted))
-                problems.add("SG204", "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
+                problems.add(DiagnosticCode.SG204,
+                        "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
     }
 
     /** More than one node, or a single node that reaches itself. */
@@ -195,17 +203,20 @@ final class BaselineOutlineValidator {
         String recovery = edge.onFailure().get();
         String where = edge.describe();
         if (edge.kind() != TransitionKind.ACTION) {
-            problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG507,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares onFailure without an action");
             return;
         }
         if (recovery.equals(edge.transition())) {
-            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG301,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares onFailure = " + recovery + ", which is its own key");
             return;
         }
         if (!byKey.containsKey(edge.from() + "/" + recovery)) {
-            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG301,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares onFailure = " + recovery + ", but no transition " + recovery
                             + " leaves " + edge.from());
         }
@@ -222,7 +233,8 @@ final class BaselineOutlineValidator {
         }
         String where = edge.describe();
         if (edge.kind() != TransitionKind.ACTION) {
-            problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG507,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares recover without an action");
             return;
         }
@@ -234,12 +246,14 @@ final class BaselineOutlineValidator {
     private static void recoveryRoute(MachineOutline outline, TransitionOutline edge, String recovery, String where,
             Map<String, TransitionOutline> byKey, Problems problems) {
         if (recovery.equals(edge.transition())) {
-            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG301,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares recovery " + recovery + ", which is its own key");
             return;
         }
         if (!byKey.containsKey(edge.from() + "/" + recovery)) {
-            problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+            problems.add(DiagnosticCode.SG301,
+                    outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                     where + " declares recovery " + recovery + ", but no transition " + recovery
                             + " leaves " + edge.from());
         }
@@ -249,13 +263,14 @@ final class BaselineOutlineValidator {
         for (WatchOutline watch : outline.watches()) {
             for (String transition : watch.transitions()) {
                 if (!byKey.containsKey(watch.state() + "/" + transition)) {
-                    problems.add("SG401", outline.indexOf(watch.state()), outline.indexOfTransition(transition),
+                    problems.add(DiagnosticCode.SG401,
+                            outline.indexOf(watch.state()), outline.indexOfTransition(transition),
                             "the watch of " + watch.state() + " executes " + transition
                                     + ", but no such transition leaves " + watch.state());
                 }
             }
             if (outline.terminals().contains(watch.state())) {
-                problems.add("SG402", outline.indexOf(watch.state()), -1,
+                problems.add(DiagnosticCode.SG402, outline.indexOf(watch.state()), -1,
                         watch.state() + " is terminal and cannot watch anything");
             }
         }

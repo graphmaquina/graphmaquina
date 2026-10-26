@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Optional;
 
 /** Resolves the name used in diagnostics and rendering for an action or guard instance. */
@@ -21,14 +22,14 @@ final class Names {
                                     int fromOrdinal, int toOrdinal, Problems problems) {
         if (explicit.isPresent()) {
             if (explicit.get().isBlank()) {
-                problems.add("SG107", fromOrdinal, toOrdinal, what + " of " + where + " has a blank name");
+                problems.add(DiagnosticCode.SG107, fromOrdinal, toOrdinal, what + " of " + where + " has a blank name");
                 return Optional.empty();
             }
             return explicit;
         }
         Optional<String> derived = defaultName(instance);
         if (derived.isEmpty()) {
-            problems.add("SG106", fromOrdinal, toOrdinal,
+            problems.add(DiagnosticCode.SG106, fromOrdinal, toOrdinal,
                     what + " of " + where + " is a lambda or anonymous class and has no name: use the named overload");
         }
         return derived;

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineSpec;
@@ -55,7 +56,8 @@ final class CompositionCycles {
             Visit visit = queue.removeFirst();
             MachineKey<?, ?, ?> reached = visit.definition().key();
             if (reached.equals(key)) {
-                problems.add("SG805", "the sub-machines of " + key + " contain " + key + " again: " + visit.path()
+                problems.add(DiagnosticCode.SG805,
+                        "the sub-machines of " + key + " contain " + key + " again: " + visit.path()
                         + " -> " + key);
                 return;
             }
