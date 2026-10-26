@@ -6,6 +6,7 @@ import static io.github.graphmaquina.example.billing.PaymentStatus.DECLINED;
 import static io.github.graphmaquina.example.billing.PaymentStatus.VOIDED;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 
@@ -21,6 +22,9 @@ public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransit
 
     @PaymentsGraph.Transition(id = PaymentTransition.CAPTURE, from = AUTHORIZING, to = CAPTURED)
     Outcome<Payment, PaymentStatus, PaymentTransition> capture(Payment payment);
+
+    @PaymentsGraph.Check(id = PaymentTransition.CAPTURE)
+    Eligibility<Payment, PaymentStatus, PaymentTransition> canCapture(Payment payment);
 
     @PaymentsGraph.Transition(id = PaymentTransition.DECLINE, from = AUTHORIZING, to = DECLINED)
     Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);

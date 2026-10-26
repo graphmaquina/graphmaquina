@@ -9,6 +9,7 @@ import static io.github.graphmaquina.example.order.OrderStatus.SHIPPED;
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.Timeout;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.example.item.ItemRefs;
@@ -43,9 +44,15 @@ public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
         timeout = @Timeout(seconds = 5))
     Outcome<Order, OrderStatus, OrderTransition> pay(Order order);
 
+    @OrdersGraph.Check(id = OrderTransition.PAY)
+    Eligibility<Order, OrderStatus, OrderTransition> canPay(Order order);
+
     @OrdersGraph.Transition(id = OrderTransition.RETRY, from = PAYMENT_DECLINED, to = NEW,
             guards = OrderActionsRefs.RetryBudgetLeft.class)
     Outcome<Order, OrderStatus, OrderTransition> retry(Order order);
+
+    @OrdersGraph.Check(id = OrderTransition.RETRY)
+    Eligibility<Order, OrderStatus, OrderTransition> canRetry(Order order);
 
     @OrdersGraph.Transition(id = OrderTransition.SHIP, from = PAID, to = SHIPPED,
             action = OrderActionsRefs.Ship.class,
@@ -55,4 +62,7 @@ public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
     @OrdersGraph.Transition(id = OrderTransition.CANCEL, from = {NEW, PAYMENT_DECLINED}, to = CANCELLED,
             action = OrderActionsRefs.Cancel.class)
     Outcome<Order, OrderStatus, OrderTransition> cancel(Order order, String cancellationId);
+
+    @OrdersGraph.Check(id = OrderTransition.CANCEL)
+    Eligibility<Order, OrderStatus, OrderTransition> canCancel(Order order, String cancellationId);
 }
