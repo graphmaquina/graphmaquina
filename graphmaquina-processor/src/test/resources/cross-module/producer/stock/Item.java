@@ -1,6 +1,7 @@
 package stock;
 
 import io.github.graphmaquina.annotation.GraphProperty;
+import java.util.Objects;
 
 /** An item, the entity of {@link Items}. It names no order, nor anything else a consumer groups it in. */
 public final class Item {
@@ -12,7 +13,7 @@ public final class Item {
 
     /** An open item identified by {@code id}. */
     public Item(String id) {
-        this.id = id;
+        this.id = Objects.requireNonNull(id);
     }
 
     @GraphProperty
@@ -25,6 +26,6 @@ public final class Item {
     }
 
     public void status(ItemStatus value) {
-        status = value;
+        status = Objects.requireNonNull(value);
     }
 }

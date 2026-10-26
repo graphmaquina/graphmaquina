@@ -399,7 +399,8 @@ declaring it with `@GraphPeers` like any child or peer. The pair vocabulary is g
 export index says of that machine, so its artifact must carry the index its build published, and the consumer's
 `@StateGraphs` set must hold both machines. A producer that does not know the consumer's entity cannot give its own
 entity a property that returns it, so the way back is a lookup of the consumer: `parentLookup` for a sub-machine,
-`ownerLookup` for a watch. A watch can still use `owner` when the producer also publishes the owner's entity.
+`ownerLookup` for a watch. A watch can still use `owner` when the producer also publishes the owner's entity and
+the peer's entity has a property that returns the owner.
 [Compose machines across modules and JARs](cross-module-composition.md) walks through both.
 
 ---

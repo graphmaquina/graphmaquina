@@ -272,13 +272,15 @@ one problem:
 [SG801] Booking/BookingStatus.DEPOSIT: the terminal VOIDED of Payment/PaymentStatus has no exit
 ```
 
-Run with the producer's artifact the consumer was compiled against, or rebuild the consumer against the new one.
+Run with the producer's artifact the consumer was compiled against, or rebuild the consumer against the new one and
+give its binding an exit for the new terminal state: until it declares one, that build refuses the binding with
+`SG801`, which names the terminal state that has no exit.
 
 ## Diagnostics
 
 | Code | Across modules it means | Remedy |
 | --- | --- | --- |
-| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one that does not list the peer, one that describes it otherwise than its classes, or one another version wrote; or two artifacts on the classpath describe the same machine. The message names the jar or directory whenever the generator can tell it | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists every message |
+| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one the generator cannot read, one another version wrote, or one that does not list the peer or describes it otherwise than its classes; or two artifacts on the classpath describe the same machine. The message names the jar or directory whenever the generator can tell it | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists every message |
 | [`SG608`](diagnostics.md#generation-and-typed-binding-diagnostics) | The peer is no machine of this compilation or of a dependency's export index, or the owner's package cannot name its types, as when its state enum is not public | Name a `@GenerateGraphApi` machine whose types the owner's package can reach |
 | [`SG405`](diagnostics.md#graph-and-declaration-diagnostics) | A watch declares neither or both of `owner` and `ownerLookup` | Declare `ownerLookup` when the peer's entity cannot name the owner, `owner` when it can |
 

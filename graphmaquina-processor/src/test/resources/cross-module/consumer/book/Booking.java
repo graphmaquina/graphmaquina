@@ -1,6 +1,7 @@
 package book;
 
 import io.github.graphmaquina.annotation.GraphProperty;
+import java.util.Objects;
 import java.util.Optional;
 import pay.Payment;
 
@@ -15,8 +16,8 @@ public final class Booking {
 
     /** A requested booking identified by {@code id}, whose deposit is paid by {@code deposit}. */
     public Booking(String id, Payment deposit) {
-        this.id = id;
-        this.deposit = deposit;
+        this.id = Objects.requireNonNull(id);
+        this.deposit = Objects.requireNonNull(deposit);
     }
 
     @GraphProperty
@@ -29,7 +30,7 @@ public final class Booking {
     }
 
     public void status(BookingStatus value) {
-        status = value;
+        status = Objects.requireNonNull(value);
     }
 
     /** The payment of the deposit: the sub-machine that {@code DEPOSIT} holds. */

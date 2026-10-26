@@ -3,6 +3,7 @@ package shop;
 import io.github.graphmaquina.annotation.GraphProperty;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import stock.Item;
 
 /** An order, the entity of {@link Orders}, and its items, entities of the producer. */
@@ -16,7 +17,7 @@ public final class Order {
 
     /** A new order identified by {@code id}, of {@code items}. */
     public Order(String id, List<Item> items) {
-        this.id = id;
+        this.id = Objects.requireNonNull(id);
         this.items = List.copyOf(items);
     }
 
@@ -30,7 +31,7 @@ public final class Order {
     }
 
     public void status(OrderStatus value) {
-        status = value;
+        status = Objects.requireNonNull(value);
     }
 
     /** The items of the order: the peers its watch follows. */

@@ -8,6 +8,8 @@ import pay.Payments;
 /** A set of a third module: the bookings of book.jar and the payments of pay.jar, their child. */
 @StateGraphs
 public interface Desk extends Machines {
+
     Bookings bookings();
+
     Payments payments();
 }

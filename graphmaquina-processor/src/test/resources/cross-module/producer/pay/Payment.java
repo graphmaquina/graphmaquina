@@ -1,6 +1,7 @@
 package pay;
 
 import io.github.graphmaquina.annotation.GraphProperty;
+import java.util.Objects;
 
 /** A payment, the entity of {@link Payments}. It names no booking, nor anything else a consumer binds it to. */
 public final class Payment {
@@ -12,7 +13,7 @@ public final class Payment {
 
     /** A pending payment identified by {@code id}. */
     public Payment(String id) {
-        this.id = id;
+        this.id = Objects.requireNonNull(id);
     }
 
     @GraphProperty
@@ -25,6 +26,6 @@ public final class Payment {
     }
 
     public void status(PaymentStatus value) {
-        status = value;
+        status = Objects.requireNonNull(value);
     }
 }

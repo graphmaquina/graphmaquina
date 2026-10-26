@@ -46,6 +46,27 @@ class CrossModuleCompositionTest {
     private static final String DECLINED_EXIT =
             "@BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DEPOSIT_DECLINED)";
 
+    /** What the build reports for an exit on {@code PENDING} in place of the one on {@code DECLINED}. */
+    static final List<String> EXITS_BESIDE_THE_TERMINALS = List.of(
+            "[" + DiagnosticCode.SG801 + "] Bookings.DEPOSIT: the terminal DECLINED of Payments has no exit",
+            "[" + DiagnosticCode.SG801 + "] Bookings.DEPOSIT: the exit on PENDING names no terminal of Payments");
+
+    /** What the build reports for an exit whose identifier has no edge from {@code DEPOSIT}. */
+    static final List<String> EXIT_WITHOUT_AN_EDGE = List.of("[" + DiagnosticCode.SG802
+            + "] Bookings.DEPOSIT: the exit on DECLINED names DEPOSIT_DECLINED, which has no edge from DEPOSIT");
+
+    /** What the build reports for the third module's set without the payments. */
+    static final List<String> SET_WITHOUT_THE_CHILD = List.of("[" + DiagnosticCode.SG806
+            + "] the sub-machine of Bookings.DEPOSIT is Payments, which is not in Desk");
+
+    /** The problems of the graph the set's builder refuses when the payments have a terminal state more at run time. */
+    static final List<String> CHILD_WITH_ANOTHER_TERMINAL = List.of("[" + DiagnosticCode.SG801
+            + "] Booking/BookingStatus.DEPOSIT: the terminal VOIDED of Payment/PaymentStatus has no exit");
+
+    /** The messages the page on composing machines across modules shows, one text block each, in its order. */
+    static final List<List<String>> PAGE_MESSAGES = List.of(EXITS_BESIDE_THE_TERMINALS, EXIT_WITHOUT_AN_EDGE,
+            SET_WITHOUT_THE_CHILD, CHILD_WITH_ANOTHER_TERMINAL);
+
     @TempDir
     Path directory;
 
@@ -79,13 +100,11 @@ class CrossModuleCompositionTest {
     @Test
     void aThirdModuleSetWithoutTheChildIsRefused() throws Exception {
         String set = FixtureSources.resource(THIRD_MODULE).get("desk.Desk");
-        Map<String, String> sources = Map.of("desk.Desk", replaced(set, "    Payments payments();\n", ""));
+        Map<String, String> sources = Map.of("desk.Desk", replaced(set, "\n\n    Payments payments();\n", "\n"));
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources, bookAndPayJars()));
 
-        assertEquals(List.of("[" + DiagnosticCode.SG806
-                + "] the sub-machine of Bookings.DEPOSIT is Payments, which is not in Desk"), result.errors(),
-                result.describe());
+        assertEquals(SET_WITHOUT_THE_CHILD, result.errors(), result.describe());
     }
 
     /** The consumer's set without the producer's items, which its orders watch; the scenario is left out. */
@@ -120,9 +139,9 @@ class CrossModuleCompositionTest {
             InvocationTargetException failure =
                     assertThrows(InvocationTargetException.class, () -> invoke(loader, SCENARIO));
             InvalidGraphException refused = assertInstanceOf(InvalidGraphException.class, failure.getCause());
-            assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG801.name(),
-                    "Booking/BookingStatus.DEPOSIT: the terminal VOIDED of Payment/PaymentStatus has no exit")),
-                    refused.problems());
+            assertEquals(CHILD_WITH_ANOTHER_TERMINAL, refused.problems().stream()
+                    .map((InvalidGraphException.Problem problem) -> "[" + problem.code() + "] " + problem.message())
+                    .toList());
             assertTrue(Arrays.stream(refused.getStackTrace()).anyMatch((StackTraceElement frame) ->
                     frame.getClassName().equals("app.StoreRuntime") && frame.getMethodName().equals("builder")));
         }
@@ -138,10 +157,22 @@ class CrossModuleCompositionTest {
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
 
-        assertEquals(List.of(
-                "[" + DiagnosticCode.SG801 + "] Bookings.DEPOSIT: the terminal DECLINED of Payments has no exit",
-                "[" + DiagnosticCode.SG801 + "] Bookings.DEPOSIT: the exit on PENDING names no terminal of Payments"),
-                result.errors(), result.describe());
+        assertEquals(EXITS_BESIDE_THE_TERMINALS, result.errors(), result.describe());
+    }
+
+    /**
+     * The consumer rebuilt against the payments with a terminal state more, {@code VOIDED}, is refused until its
+     * binding declares an exit for that state.
+     */
+    @Test
+    void aConsumerRebuiltAgainstAChildWithAnotherTerminalNeedsItsExit() throws Exception {
+        Path rebuilt = published(withVoidedPayments(CrossModuleSources.producer()), "rebuilt.jar");
+
+        Compilation.Result result =
+                Compilation.compilePrepared(Compilation.prepare(CrossModuleSources.consumer(), List.of(rebuilt)));
+
+        assertEquals(List.of("[" + DiagnosticCode.SG801 + "] Bookings.DEPOSIT: the terminal VOIDED of Payments has no"
+                + " exit"), result.errors(), result.describe());
     }
 
     /**
@@ -161,8 +192,7 @@ class CrossModuleCompositionTest {
         Compilation.Result acrossJars = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
         Compilation.Result within = Compilation.compileTyped(together);
 
-        assertEquals(List.of("[" + DiagnosticCode.SG802 + "] Bookings.DEPOSIT: the exit on DECLINED names"
-                + " DEPOSIT_DECLINED, which has no edge from DEPOSIT"), acrossJars.errors(), acrossJars.describe());
+        assertEquals(EXIT_WITHOUT_AN_EDGE, acrossJars.errors(), acrossJars.describe());
         assertEquals(within.errors(), acrossJars.errors(), within.describe());
     }
 
