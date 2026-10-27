@@ -1,5 +1,8 @@
 package io.github.graphmaquina.gradle;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
@@ -83,6 +86,27 @@ class CrossModuleFunctionalTest {
     }
 
     /**
+     * The same build with a producer that applies {@code java-library}, as a library module does: the consumer then
+     * compiles against the producer's directory of classes, where the producer's compilation published its export
+     * index, instead of against its jar. The consumer's generation request lists that directory and nothing else of
+     * the producer, by the real path Gradle reads the build at.
+     */
+    @Test
+    void aMultiProjectBuildWithALibraryProducerRunsBothScenarios() throws IOException {
+        PluginFixture build = PluginFixture.multiProjectWithLibraryProducer(tempDirectory, FIXTURE_REPOSITORY);
+
+        BuildResult result = build.run(":consumer:runScenario", "--refresh-dependencies", "--stacktrace");
+
+        Path producer = build.projectDirectory().resolve("producer").toRealPath();
+        assertEquals(TaskOutcome.SUCCESS, result.task(":producer:compileJava").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":consumer:generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":consumer:compileJava").getOutcome());
+        assertTrue(printsBothScenarios(result), result::getOutput);
+        assertEquals(List.of(producer.resolve("build/classes/java/main").toString()),
+                consumerClasspathUnder(build, producer));
+    }
+
+    /**
      * The producer's jar without its export index still holds the class files of the payments and the items, which
      * javac would read; the generation refuses the machines it cannot trust, naming the jar they come from by its
      * real path, the one Gradle reads the project at, under a directory whose name is not plain ASCII.
@@ -118,6 +142,20 @@ class CrossModuleFunctionalTest {
         consumer.replaceInBuildScript("group = \"fx.build\"", "group = \"cx.build\"");
         consumer.writeFile(PRODUCER_JAR, producerJar);
         return consumer;
+    }
+
+    /**
+     * The entries of the classpath the consumer's generation request of {@code build} lists that lie under
+     * {@code root}, in the request's order.
+     */
+    private static List<String> consumerClasspathUnder(PluginFixture build, Path root) throws IOException {
+        Path request = build.projectDirectory().resolve("consumer/build/graphmaquina/main/request.json");
+        JsonObject parsed = JsonParser.parseString(Files.readString(request, StandardCharsets.UTF_8))
+                .getAsJsonObject();
+        return parsed.getAsJsonArray("classpath").asList().stream()
+                .map(JsonElement::getAsString)
+                .filter((String entry) -> Path.of(entry).startsWith(root))
+                .toList();
     }
 
     /** Whether the build printed the line of both scenarios, as a whole line. */

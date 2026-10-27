@@ -36,12 +36,21 @@ import java.util.zip.ZipOutputStream;
  * Test-only helper that materializes minimal Gradle projects applying the StateGraph plugin and runs them through
  * TestKit. This is test-support code, not a production API.
  *
- * <p>The project directory of every fixture but {@link #applicationOnly} carries a space and a non-ASCII character
- * in its name, so the functional tests that run a generation also exercise the request encoding and the process
- * invocation over a path that is not plain ASCII.</p>
+ * <p>The project directory of every fixture but {@link #applicationOnly} is {@value #FIXTURE_PROJECT}: it carries a
+ * space and a non-ASCII character in its name, so the functional tests that run a generation also exercise the request
+ * encoding and the process invocation over a path that is not plain ASCII.</p>
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PluginFixture {
+
+    /** The directory every fixture but {@link #applicationOnly} writes its build into, under the given directory. */
+    private static final String FIXTURE_PROJECT = "fixture project ñ";
+
+    /** The Kotlin DSL accessor of the {@code java} plugin, which every fixture but a library producer declares. */
+    private static final String JAVA = "java";
+
+    /** The Kotlin DSL accessor of the {@code java-library} plugin, which a library module applies. */
+    private static final String JAVA_LIBRARY = "`java-library`";
 
     /** The version every StateGraph artifact of the fixture repository is published under. */
     private static final String VERSION = requireProperty("graphmaquina.version");
@@ -203,10 +212,23 @@ public final class PluginFixture {
 
     /**
      * The two cross-module scenarios as one multi-project build of the subprojects {@code producer} and
-     * {@code consumer}, each holding the sources of its side of {@link #crossModuleSources}. Both apply the plugin
-     * with its version, resolved from {@code repository} as {@link #publishedPlugin} resolves it, and carry the
-     * dependencies and the compiler options of every fixture build; {@code consumer} also depends on
-     * {@code project(":producer")} and registers {@code runScenario}, a {@code JavaExec} task of {@code app.Scenario}.
+     * {@code consumer}, each holding the sources of its side of {@link #crossModuleSources}. Both apply the
+     * {@code java} plugin and the StateGraph plugin with its version, resolved from {@code repository} as
+     * {@link #publishedPlugin} resolves it, and carry the dependencies and the compiler options of every fixture
+     * build; {@code consumer} also depends on {@code project(":producer")} and registers {@code runScenario}, a
+     * {@code JavaExec} task of {@code app.Scenario}.
+     *
+     * <p>The fixture is bound to the root project, which has only a settings file: no build script, no plugin, and
+     * so no build output. The helpers that read or rewrite the build script, or read what a build leaves under
+     * {@code build}, target files of the root this build never has, so they do not apply to it:
+     * {@link #appendToBuildScript}, {@link #replaceInBuildScript}, {@link #relocateClassOutput},
+     * {@link #addRunScenario}, {@link #replaceGeneratorWithOneThatReports}, {@link #writeSources},
+     * {@link #jarContains}, {@link #localExports}, {@link #publishedOrigin}, {@link #request},
+     * {@link #manifestDependencies}, {@link #inventoryIsSealed} and the like. Nor do the reporting helpers, though
+     * they do not fail: {@link #mainSourceRoots} and {@link #runtimeClasspathContains} run their reporting task by
+     * name from the root, which Gradle runs in both subprojects, so they answer for the two at once. A test reaches a
+     * subproject through paths relative to the root, such as {@code consumer/build/...}, and runs its tasks by path,
+     * such as {@code :consumer:runScenario}.</p>
      *
      * @param directory the temporary directory to materialize the build under
      * @param repository the file Maven repository the StateGraph artifacts and the plugin were published to
@@ -215,14 +237,34 @@ public final class PluginFixture {
      * @throws IllegalStateException if {@code repository} is not an existing directory
      */
     public static PluginFixture multiProject(Path directory, Path repository) throws IOException {
+        return multiProject(directory, repository, JAVA);
+    }
+
+    /**
+     * The build {@link #multiProject(Path, Path)} writes, with a {@code producer} that applies {@code java-library}
+     * in place of {@code java}, as a library module does. The same limits apply to the fixture it returns.
+     *
+     * @param directory the temporary directory to materialize the build under
+     * @param repository the file Maven repository the StateGraph artifacts and the plugin were published to
+     * @return a fixture bound to the root project of the written build
+     * @throws IOException if the build cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
+     */
+    public static PluginFixture multiProjectWithLibraryProducer(Path directory, Path repository) throws IOException {
+        return multiProject(directory, repository, JAVA_LIBRARY);
+    }
+
+    /** The multi-project build, with a {@code producer} that applies {@code producerPlugin}. */
+    private static PluginFixture multiProject(Path directory, Path repository, String producerPlugin)
+            throws IOException {
         requireRepository(repository);
-        Path build = Files.createDirectories(directory.resolve("fixture project ñ"));
+        Path build = Files.createDirectories(directory.resolve(FIXTURE_PROJECT));
         Files.writeString(build.resolve("settings.gradle.kts"),
                 settings(repository) + "include(\"producer\", \"consumer\")\n");
-        String script = buildScript(" version \"" + VERSION + "\"", "", "", "");
+        String pluginVersion = " version \"" + VERSION + "\"";
         PluginFixture fixture = new PluginFixture(build, false);
-        fixture.writeFile("producer/build.gradle.kts", script);
-        fixture.writeFile("consumer/build.gradle.kts", script + """
+        fixture.writeFile("producer/build.gradle.kts", buildScript(producerPlugin, pluginVersion, "", "", ""));
+        fixture.writeFile("consumer/build.gradle.kts", buildScript(JAVA, pluginVersion, "", "", "") + """
                 dependencies {
                     implementation(project(":producer"))
                 }
@@ -466,10 +508,10 @@ public final class PluginFixture {
             boolean injectedPluginClasspath, String testProcessors, String extraConfiguration,
             String earlyConfiguration) throws IOException {
         requireRepository(repository);
-        Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
+        Path project = Files.createDirectories(directory.resolve(FIXTURE_PROJECT));
         Files.writeString(project.resolve("settings.gradle.kts"), settings(repository));
         Files.writeString(project.resolve("build.gradle.kts"),
-                buildScript(pluginVersion, testProcessors, extraConfiguration, earlyConfiguration));
+                buildScript(JAVA, pluginVersion, testProcessors, extraConfiguration, earlyConfiguration));
         PluginFixture fixture = new PluginFixture(project, injectedPluginClasspath);
         fixture.writeSources(domainSources());
         return fixture;
@@ -512,13 +554,13 @@ public final class PluginFixture {
     }
 
     /**
-     * The build script: the plugin, a Java 21 toolchain, the strict compiler options, Lombok before the
-     * StateGraph processor, and the three reporting tasks the assertions read: {@code printRuntimeClasspath},
-     * {@code printSourceRoots} and {@code printGeneratorLauncher}.
+     * The build script: the Java plugin {@code javaPlugin} and the StateGraph plugin, a Java 21 toolchain, the
+     * strict compiler options, Lombok before the StateGraph processor, and the three reporting tasks the
+     * assertions read: {@code printRuntimeClasspath}, {@code printSourceRoots} and {@code printGeneratorLauncher}.
      */
-    private static String buildScript(String pluginVersion, String testProcessors,
+    private static String buildScript(String javaPlugin, String pluginVersion, String testProcessors,
             String extraConfiguration, String earlyConfiguration) {
-        return projectDeclaration(pluginVersion, earlyConfiguration) + dependencies(testProcessors)
+        return projectDeclaration(javaPlugin, pluginVersion, earlyConfiguration) + dependencies(testProcessors)
                 + compilerOptions() + reportingTasks(extraConfiguration);
     }
 
@@ -526,12 +568,12 @@ public final class PluginFixture {
      * The plugins, the group and version, the Java 21 toolchain, and the configuration spliced in before the
      * {@code dependencies} block.
      */
-    private static String projectDeclaration(String pluginVersion, String earlyConfiguration) {
+    private static String projectDeclaration(String javaPlugin, String pluginVersion, String earlyConfiguration) {
         return """
                 import io.github.graphmaquina.gradle.GenerateGraphApi
 
                 plugins {
-                    java
+                    %3$s
                     id("io.github.graphmaquina")%1$s
                 }
 
@@ -547,7 +589,7 @@ public final class PluginFixture {
                 }
 
                 %2$s
-                """.formatted(pluginVersion, earlyConfiguration);
+                """.formatted(pluginVersion, earlyConfiguration, javaPlugin);
     }
 
     /** The {@code dependencies} block: Lombok before the StateGraph processor, and {@code testProcessors}. */
