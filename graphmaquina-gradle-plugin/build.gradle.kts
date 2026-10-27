@@ -182,6 +182,12 @@ tasks.test {
     // The fixture projects build with the Lombok and JUnit versions of this build's own catalog.
     systemProperty("graphmaquina.lombokVersion", libs.versions.lombok.get())
     systemProperty("graphmaquina.junitVersion", libs.versions.junit.get())
+    // The cross-module scenarios, kept once in the processor's test resources as the package roots producer/ and
+    // consumer/: the fixtures build them as a multi-project build and as a consumer of the producer's jar, so a change
+    // to them reruns the tests.
+    val crossModule = layout.projectDirectory.dir("../graphmaquina-processor/src/test/resources/cross-module")
+    systemProperty("graphmaquina.crossModule", crossModule.asFile.absolutePath)
+    inputs.dir(crossModule).withPropertyName("crossModuleScenarios")
     // The fixtures also resolve core, the generator and the processor, which only the root build publishes.
     dependsOnPublicationOf(siblings)
     // Their files at this version, so a change to any of them within one commit runs the tests again. Not the module

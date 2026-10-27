@@ -12,6 +12,7 @@ import org.gradle.testkit.runner.GradleRunner;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -74,6 +75,17 @@ public final class PluginFixture {
 
     /** The inventory the preparation of the main compilation writes before it retires anything. */
     static final String MAIN_PENDING_INVENTORY = "build/graphmaquina/main/owned-outputs.pending.json";
+
+    /** The system property that names the directory of the cross-module scenarios. */
+    private static final String CROSS_MODULE = "graphmaquina.crossModule";
+
+    /** The task that runs {@code app.Scenario}, the program of both cross-module scenarios. */
+    private static final String RUN_SCENARIO = """
+            tasks.register<JavaExec>("runScenario") {
+                classpath = sourceSets.getByName("main").runtimeClasspath
+                mainClass = "app.Scenario"
+            }
+            """;
 
     /**
      * The program {@code fxs.Bookkeeping}: it books a stay, captures its deposit and its balance, captures the
@@ -190,6 +202,59 @@ public final class PluginFixture {
     }
 
     /**
+     * The two cross-module scenarios as one multi-project build of the subprojects {@code producer} and
+     * {@code consumer}, each holding the sources of its side of {@link #crossModuleSources}. Both apply the plugin
+     * with its version, resolved from {@code repository} as {@link #publishedPlugin} resolves it, and carry the
+     * dependencies and the compiler options of every fixture build; {@code consumer} also depends on
+     * {@code project(":producer")} and registers {@code runScenario}, a {@code JavaExec} task of {@code app.Scenario}.
+     *
+     * @param directory the temporary directory to materialize the build under
+     * @param repository the file Maven repository the StateGraph artifacts and the plugin were published to
+     * @return a fixture bound to the root project of the written build
+     * @throws IOException if the build cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
+     */
+    public static PluginFixture multiProject(Path directory, Path repository) throws IOException {
+        requireRepository(repository);
+        Path build = Files.createDirectories(directory.resolve("fixture project ñ"));
+        Files.writeString(build.resolve("settings.gradle.kts"),
+                settings(repository) + "include(\"producer\", \"consumer\")\n");
+        String script = buildScript(" version \"" + VERSION + "\"", "", "", "");
+        PluginFixture fixture = new PluginFixture(build, false);
+        fixture.writeFile("producer/build.gradle.kts", script);
+        fixture.writeFile("consumer/build.gradle.kts", script + """
+                dependencies {
+                    implementation(project(":producer"))
+                }
+
+                """ + RUN_SCENARIO);
+        for (String side : List.of("producer", "consumer")) {
+            Path root = build.resolve(side).resolve("src/main/java");
+            for (Map.Entry<String, String> source : crossModuleSources(side).entrySet()) {
+                write(root, source.getKey(), source.getValue(), StandardCharsets.UTF_8);
+            }
+        }
+        return fixture;
+    }
+
+    /**
+     * The project {@link #basic} writes, with {@code sources} in place of the shared adapter domain.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts were published to
+     * @param sources the compilation units of the main source set, keyed by qualified name
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
+     */
+    public static PluginFixture project(Path directory, Path repository, Map<String, String> sources)
+            throws IOException {
+        PluginFixture fixture = basic(directory, repository);
+        fixture.writeSources(sources);
+        return fixture;
+    }
+
+    /**
      * The same project, with a test source set that declares no StateGraph processor at all: plain JUnit tests
      * beside a main source set that does declare one. It is the shape of every project whose tests only assert
      * on the machines the main sources declare.
@@ -284,6 +349,17 @@ public final class PluginFixture {
         Path script = directory.resolve("build.gradle.kts");
         Files.writeString(script, Files.readString(script, StandardCharsets.UTF_8) + "\n" + snippet,
                 StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Registers {@code runScenario}, a {@code JavaExec} task that runs {@code app.Scenario}, the program of both
+     * cross-module scenarios, on the runtime classpath of the main source set, as the consumer of
+     * {@link #multiProject} does.
+     *
+     * @throws IOException if the build script cannot be rewritten
+     */
+    public void addRunScenario() throws IOException {
+        appendToBuildScript(RUN_SCENARIO);
     }
 
     /**
@@ -389,12 +465,7 @@ public final class PluginFixture {
     private static PluginFixture materialize(Path directory, Path repository, String pluginVersion,
             boolean injectedPluginClasspath, String testProcessors, String extraConfiguration,
             String earlyConfiguration) throws IOException {
-        if (!Files.isDirectory(repository)) {
-            throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
-                    + " ./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository"
-                    + " :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository"
-                    + " :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository first");
-        }
+        requireRepository(repository);
         Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
         Files.writeString(project.resolve("settings.gradle.kts"), settings(repository));
         Files.writeString(project.resolve("build.gradle.kts"),
@@ -402,6 +473,16 @@ public final class PluginFixture {
         PluginFixture fixture = new PluginFixture(project, injectedPluginClasspath);
         fixture.writeSources(domainSources());
         return fixture;
+    }
+
+    /** Refuses a {@code repository} that is not an existing directory, saying what stages it. */
+    private static void requireRepository(Path repository) {
+        if (!Files.isDirectory(repository)) {
+            throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
+                    + " ./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository"
+                    + " :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository"
+                    + " :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository first");
+        }
     }
 
     /**
@@ -1261,6 +1342,31 @@ public final class PluginFixture {
                     Outcome<Ticket, Level, Step> resolve(Ticket ticket);
                 }
                 """);
+    }
+
+    /**
+     * The sources of one side of the two cross-module scenarios, kept once as package roots in the processor's test
+     * resources, whose directory the build names in the system property {@value #CROSS_MODULE}: {@code producer}
+     * holds the payments and the items, {@code consumer} the bookings, the orders, their set and
+     * {@code app.Scenario}. Each {@code .java} file is keyed by its qualified name, its path relative to the side
+     * without the extension, in sorted order.
+     *
+     * @param root the side, {@code producer} or {@code consumer}
+     * @return a mutable copy of that side's sources
+     */
+    static Map<String, String> crossModuleSources(String root) {
+        Path side = Path.of(requireProperty(CROSS_MODULE)).resolve(root);
+        Map<String, String> sources = new LinkedHashMap<>();
+        try (Stream<Path> walk = Files.walk(side)) {
+            for (Path file : walk.filter((Path entry) -> entry.toString().endsWith(".java")).sorted().toList()) {
+                String relative = side.relativize(file).toString().replace(File.separatorChar, '.');
+                sources.put(relative.substring(0, relative.length() - ".java".length()),
+                        Files.readString(file, StandardCharsets.UTF_8));
+            }
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+        return sources;
     }
 
     /**
