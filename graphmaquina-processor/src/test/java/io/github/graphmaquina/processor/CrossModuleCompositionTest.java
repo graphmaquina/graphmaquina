@@ -27,7 +27,10 @@ import org.junit.jupiter.api.io.TempDir;
  * compiled apart, the consumer seeing only what the producer's build published: a booking whose deposit, a payment of
  * the producer, is captured leaves for {@code CONFIRMED}, and a paid order ships once the last of its items, items of
  * the producer, is packed. The checks of a binding hold against the child of a jar, at build time and, for a child jar
- * other than the one the consumer compiled against, when the set is built.
+ * other than the one the consumer compiled against, when the set is built; an exit without an edge from the bound
+ * state, a binding on a terminal state and a watch rule without an edge from the watched state are reported as they
+ * are within one compilation. A composition cycle, {@code SG805}, cannot cross a jar: a producer cannot name a machine
+ * of its consumer, so no child of a jar contains its parent again.
  */
 class CrossModuleCompositionTest {
 
@@ -62,6 +65,18 @@ class CrossModuleCompositionTest {
     /** The problems of the graph the set's builder refuses when the payments have a terminal state more at run time. */
     static final List<String> CHILD_WITH_ANOTHER_TERMINAL = List.of("[" + DiagnosticCode.SG801
             + "] Booking/BookingStatus.DEPOSIT: the terminal VOIDED of Payment/PaymentStatus has no exit");
+
+    /** What the build reports for the booking's binding declared on {@code CONFIRMED}, a terminal state. */
+    private static final List<String> BINDING_ON_A_TERMINAL = List.of(
+            "[" + DiagnosticCode.SG802 + "] Bookings.CONFIRMED: the exit on CAPTURED names DEPOSIT_PAID, which has no"
+                    + " edge from CONFIRMED",
+            "[" + DiagnosticCode.SG802 + "] Bookings.CONFIRMED: the exit on DECLINED names DEPOSIT_DECLINED, which"
+                    + " has no edge from CONFIRMED",
+            "[" + DiagnosticCode.SG803 + "] Bookings.CONFIRMED is terminal and cannot hold a sub-machine");
+
+    /** What the build reports for a rule of the watch of the orders' {@code PAID} that executes {@code PAY}. */
+    private static final List<String> RULE_WITHOUT_AN_EDGE = List.of("[" + DiagnosticCode.SG401
+            + "] the watch of PAID executes PAY, but no such transition leaves PAID");
 
     /** The messages the page on composing machines across modules shows, one text block each, in its order. */
     static final List<List<String>> PAGE_MESSAGES = List.of(EXITS_BESIDE_THE_TERMINALS, EXIT_WITHOUT_AN_EDGE,
@@ -181,19 +196,38 @@ class CrossModuleCompositionTest {
      */
     @Test
     void anExitWithoutAnEdgeFromTheBoundStateIsReportedAsWithinOneCompilation() throws Exception {
-        Path jar = published(CrossModuleSources.producer(), "producer.jar");
         Map<String, String> sources = CrossModuleSources.consumer();
         sources.put("book.Bookings", replaced(sources.get("book.Bookings"),
                 "@BookingsGraph.Transition(id = DEPOSIT_DECLINED, from = DEPOSIT, to = CANCELLED)",
                 "@BookingsGraph.Transition(id = DEPOSIT_DECLINED, from = REQUESTED, to = CANCELLED)"));
-        Map<String, String> together = new LinkedHashMap<>(CrossModuleSources.producer());
-        together.putAll(sources);
 
-        Compilation.Result acrossJars = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
-        Compilation.Result within = Compilation.compileTyped(together);
+        assertReportedAsWithinOneCompilation(sources, EXIT_WITHOUT_AN_EDGE);
+    }
 
-        assertEquals(EXIT_WITHOUT_AN_EDGE, acrossJars.errors(), acrossJars.describe());
-        assertEquals(within.errors(), acrossJars.errors(), within.describe());
+    /**
+     * A binding on a terminal state of the parent is reported against the child of a jar as it is when the child is
+     * compiled with its parent, and so are its exits, which have no edge from that state.
+     */
+    @Test
+    void aSubMachineOnATerminalStateIsReportedAsWithinOneCompilation() throws Exception {
+        Map<String, String> sources = CrossModuleSources.consumer();
+        sources.put("book.Bookings", replaced(sources.get("book.Bookings"), "    state = DEPOSIT,\n    child",
+                "    state = CONFIRMED,\n    child"));
+
+        assertReportedAsWithinOneCompilation(sources, BINDING_ON_A_TERMINAL);
+    }
+
+    /**
+     * A watch rule whose transition has no edge from the watched state is reported against the peer of a jar as it
+     * is when the peer is compiled with its owner.
+     */
+    @Test
+    void aWatchRuleWithoutAnEdgeFromTheWatchedStateIsReportedAsWithinOneCompilation() throws Exception {
+        Map<String, String> sources = CrossModuleSources.consumer();
+        sources.put("shop.Orders", replaced(sources.get("shop.Orders"), "allIn = ItemStatus.PACKED, transition = SHIP",
+                "allIn = ItemStatus.PACKED, transition = PAY"));
+
+        assertReportedAsWithinOneCompilation(sources, RULE_WITHOUT_AN_EDGE);
     }
 
     /**
@@ -216,6 +250,23 @@ class CrossModuleCompositionTest {
         Path jar = published(producer, "shop.jar");
 
         assertEquals("PAID SHIPPED", run(compiled(consumer, List.of(jar)), List.of(jar), "shop.Scenario"));
+    }
+
+    /**
+     * Asserts that the build reports {@code expected} for {@code sources}, consumer sources compiled against the
+     * producer's jar, and the same when they are compiled with the producer's sources in one compilation.
+     */
+    private void assertReportedAsWithinOneCompilation(Map<String, String> sources, List<String> expected)
+            throws Exception {
+        Path jar = published(CrossModuleSources.producer(), "producer.jar");
+        Map<String, String> together = new LinkedHashMap<>(CrossModuleSources.producer());
+        together.putAll(sources);
+
+        Compilation.Result acrossJars = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
+        Compilation.Result within = Compilation.compileTyped(together);
+
+        assertEquals(expected, acrossJars.errors(), acrossJars.describe());
+        assertEquals(within.errors(), acrossJars.errors(), within.describe());
     }
 
     /** The producer's jar of the payments alone, then the consumer's jar of the bookings, compiled against it. */
