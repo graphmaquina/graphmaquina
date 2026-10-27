@@ -49,7 +49,10 @@ import lombok.RequiredArgsConstructor;
 public final class MavenFixture {
 
     /** The published index a compilation leaves beside its classes. */
-    private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
+    static final String EXPORTS = "META-INF/graphmaquina/exports.json";
+
+    /** The system property that names the directory of the cross-module scenarios. */
+    private static final String CROSS_MODULE = "graphmaquina.crossModule";
 
     /** The annotation that carrier holds, which is what makes a generated source the carrier. */
     private static final String CARRIER_MARKER = "@GraphCompilation(";
@@ -133,16 +136,31 @@ public final class MavenFixture {
      * @throws IllegalStateException if {@code repository} is not an existing directory
      */
     public static MavenFixture basic(Path directory, Path repository) throws IOException {
+        return project(directory, repository, domainSources());
+    }
+
+    /**
+     * The project {@link #basic} writes, with {@code sources} in place of the shared adapter domain.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts were published to
+     * @param sources the compilation units of the main source root, keyed by qualified name
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
+     */
+    public static MavenFixture project(Path directory, Path repository, Map<String, String> sources)
+            throws IOException {
         MavenFixture fixture = write(directory, "fixture project ñ", "/it/basic/pom.xml", "fixture",
                 repository);
-        fixture.writeSources(domainSources());
+        fixture.writeSources(sources);
         return fixture;
     }
 
     /**
-     * Writes a second project that depends on the installed jar of {@link #basic} and on nothing else of it:
-     * no source of the producer is on its source path, so everything its generation resolves comes from the
-     * index the producer published inside that jar.
+     * Writes a second project that depends on the installed jar of {@link #basic}, or of {@link #project}, and on
+     * nothing else of it: no source of the producer is on its source path, so everything its generation resolves
+     * comes from the index the producer published inside that jar.
      *
      * @param directory the temporary directory to materialize the project under
      * @param repository the file Maven repository the StateGraph artifacts were published to
@@ -165,17 +183,43 @@ public final class MavenFixture {
      * @throws IOException if the projects cannot be rewritten
      */
     public MavenFixture module() throws IOException {
-        editPom("<packaging>jar</packaging>", """
-                <packaging>pom</packaging>
+        becomeParentOf(List.of("app"));
+        return writeModule("app", "/it/module/pom.xml", domainSources());
+    }
 
-                  <modules>
-                    <module>app</module>
-                  </modules>""");
+    /**
+     * Turns this project into the {@code pom} parent of the two modules of the cross-module scenarios, the way
+     * {@link #module} does: {@code producer}, which holds the producer's side of {@link #crossModuleSources}, and
+     * {@code consumer}, which holds the consumer's side and depends on {@code fx.build:producer:1.0.0}. Neither
+     * declares more than its parent, its packaging and, for {@code consumer}, that dependency: both inherit the rest.
+     * Call it on a fixture of {@link #project} with no sources; the parent itself keeps nothing to compile.
+     *
+     * @return a fixture bound to the {@code consumer} module; {@link #run} on the fixture this method was called on
+     *     builds the parent and both modules in one reactor
+     * @throws IOException if the projects cannot be rewritten
+     */
+    public MavenFixture reactor() throws IOException {
+        becomeParentOf(List.of("producer", "consumer"));
+        writeModule("producer", "/it/reactor/producer/pom.xml", crossModuleSources("producer"));
+        return writeModule("consumer", "/it/reactor/consumer/pom.xml", crossModuleSources("consumer"));
+    }
+
+    /** Makes this project's POM the {@code pom} parent of {@code modules} and removes its own sources. */
+    private void becomeParentOf(List<String> modules) throws IOException {
+        StringBuilder declared = new StringBuilder("<packaging>pom</packaging>\n\n  <modules>");
+        for (String module : modules) {
+            declared.append("\n    <module>").append(module).append("</module>");
+        }
+        editPom("<packaging>jar</packaging>", declared.append("\n  </modules>").toString());
         deleteRecursively(directory.resolve("src"));
-        Path module = Files.createDirectories(directory.resolve("app"));
-        Files.writeString(module.resolve("pom.xml"), template("/it/module/pom.xml"), StandardCharsets.UTF_8);
-        MavenFixture fixture = new MavenFixture(module, settings, "app");
-        fixture.writeSources(domainSources());
+    }
+
+    /** Writes the module {@code name} of this parent, its POM from {@code pom} and {@code sources} as its sources. */
+    private MavenFixture writeModule(String name, String pom, Map<String, String> sources) throws IOException {
+        Path module = Files.createDirectories(directory.resolve(name));
+        Files.writeString(module.resolve("pom.xml"), template(pom), StandardCharsets.UTF_8);
+        MavenFixture fixture = new MavenFixture(module, settings, name);
+        fixture.writeSources(sources);
         return fixture;
     }
 
@@ -991,6 +1035,31 @@ public final class MavenFixture {
     }
 
     /**
+     * The sources of one side of the two cross-module scenarios, kept once as package roots in the processor's test
+     * resources, whose directory the build names in the system property {@value #CROSS_MODULE}: {@code producer}
+     * holds the payments and the items, {@code consumer} the bookings, the orders, their set and
+     * {@code app.Scenario}. Each {@code .java} file is keyed by its qualified name, its path relative to the side
+     * without the extension, in sorted order.
+     *
+     * @param root the side, {@code producer} or {@code consumer}
+     * @return a mutable copy of that side's sources
+     */
+    static Map<String, String> crossModuleSources(String root) {
+        Path side = Path.of(requireProperty(CROSS_MODULE)).resolve(root);
+        Map<String, String> sources = new LinkedHashMap<>();
+        try (Stream<Path> walk = Files.walk(side)) {
+            for (Path file : walk.filter((Path entry) -> entry.toString().endsWith(".java")).sorted().toList()) {
+                String relative = side.relativize(file).toString().replace(File.separatorChar, '.');
+                sources.put(relative.substring(0, relative.length() - ".java".length()),
+                        Files.readString(file, StandardCharsets.UTF_8));
+            }
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+        return sources;
+    }
+
+    /**
      * Writes {@code sources} under {@code src/main/java}, one file per qualified name, replacing whatever the
      * main source root held before, which is what editing a source tree does.
      *
@@ -1174,23 +1243,59 @@ public final class MavenFixture {
 
     /** The same fixture runner, with a package-local test callback for the exact child {@link Process}. */
     String runMain(String mainClass, Consumer<Process> onStart) throws IOException {
-        Path core = coreJar();
+        return runMain(mainClass, List.of(), onStart);
+    }
+
+    /**
+     * The same, over {@code classpath} after the classes the main compilation wrote and the {@code graphmaquina-core}
+     * jar, so the program also reaches what this project depends on, such as the jar or the classes of a producer.
+     *
+     * @param mainClass the binary name of the class whose {@code main} method runs
+     * @param classpath the entries that follow the main classes and the core jar, in their order
+     * @return everything the process printed on both of its streams, in the order it wrote them
+     * @throws IOException under the conditions of {@link #runMain(String)}
+     * @throws IllegalStateException under the conditions of {@link #runMain(String)}
+     */
+    public String runMain(String mainClass, List<Path> classpath) throws IOException {
+        return runMain(mainClass, classpath, (Process ignored) -> { });
+    }
+
+    /** The fixture runner, over the main classes, the core jar and {@code classpath}, with {@code onStart}. */
+    private String runMain(String mainClass, List<Path> classpath, Consumer<Process> onStart) throws IOException {
+        List<String> entries = new ArrayList<>(List.of(directory.resolve("target/classes").toString(),
+                coreJar().toString()));
+        for (Path entry : classpath) {
+            entries.add(entry.toString());
+        }
         List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
+                "-classpath", String.join(File.pathSeparator, entries), mainClass);
         Path transcript = Files.createTempFile(directory, "publications-", ".out");
         return new ChildRun(mainClass, command, directory, transcript).run(onStart);
     }
 
     /** The {@code graphmaquina-core} jar the fixture build resolved into its local repository. */
     private static Path coreJar() {
-        String version = graphmaquinaVersion();
-        Path core = Path.of(localRepository(), "io", "github", "graphmaquina", "graphmaquina-core", version,
-                "graphmaquina-core-" + version + ".jar");
-        if (!Files.isRegularFile(core)) {
-            throw new IllegalStateException("the fixture build resolved no " + core
-                    + "; run a build that compiles the main sources first");
+        return installedJar("io.github.graphmaquina", "graphmaquina-core", graphmaquinaVersion());
+    }
+
+    /**
+     * The jar of {@code groupId:artifactId:version} in the one local repository of the fixture builds, where a
+     * fixture's {@code install} puts it and where a fixture build resolves a dependency into.
+     *
+     * @param groupId the group of the artifact
+     * @param artifactId the name of the artifact
+     * @param version the version of the artifact
+     * @return the path of the jar
+     * @throws IllegalStateException if no fixture build installed or resolved that jar
+     */
+    static Path installedJar(String groupId, String artifactId, String version) {
+        Path jar = Path.of(localRepository(), groupId.split("\\.")).resolve(artifactId).resolve(version)
+                .resolve(artifactId + '-' + version + ".jar");
+        if (!Files.isRegularFile(jar)) {
+            throw new IllegalStateException("no fixture build installed or resolved " + jar
+                    + "; run a build that installs it or compiles against it first");
         }
-        return core;
+        return jar;
     }
 
     /** The one local repository every fixture build of this module writes to; never the developer's {@code ~/.m2}. */

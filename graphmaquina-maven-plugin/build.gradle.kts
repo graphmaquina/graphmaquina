@@ -112,4 +112,10 @@ tasks.test {
         layout.buildDirectory.dir("maven-fixture-repo").get().asFile.absolutePath
     )
     systemProperty("graphmaquina.mavenExecutable", mavenExecutable())
+    // The cross-module scenarios, kept once in the processor's test resources as the package roots producer/ and
+    // consumer/: the fixtures build them as a reactor and as a consumer of the producer's installed jar, so a change
+    // to them reruns the tests.
+    val crossModule = layout.projectDirectory.dir("../graphmaquina-processor/src/test/resources/cross-module")
+    systemProperty("graphmaquina.crossModule", crossModule.asFile.absolutePath)
+    inputs.dir(crossModule).withPropertyName("crossModuleScenarios")
 }
