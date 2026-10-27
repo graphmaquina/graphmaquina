@@ -257,6 +257,7 @@ The build checks the relation against the producer's artifact it compiles agains
 | Generation, before anything is published | An index on the classpath was written by this version, and no two describe one machine | `SG602` |
 | Generation, before anything is published | A peer of a dependency comes from an artifact whose index lists it as its classes describe it, over enums the consumer's classpath declares | `SG602` |
 | Generation | A peer is a machine of this compilation or of a dependency's index, whose types the owner's package can name | `SG608` |
+| Generation | No type of the owner's package obscures a package the pair vocabulary writes, such as the peer's | `SG603` |
 | Processor | Each exit matches a terminal state of the child and has an edge from the bound state | `SG801`, `SG802` |
 | Processor | A watch declares exactly one of `owner` and `ownerLookup` | `SG405` |
 | Processor | A `parentLookup` or an `ownerLookup` has the signature its binding needs | `SG505` |
