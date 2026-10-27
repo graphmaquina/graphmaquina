@@ -27,10 +27,10 @@ import lombok.RequiredArgsConstructor;
  * that index, as {@link PublishedEntries} words it for the processor too. A peer read from the class output of this
  * compilation, as a previous run left it, is no dependency's, just as the processor never reports that output as one,
  * and neither is a peer that is a type of the sources and no machine of this compilation, whatever an index describes
- * under its name: both are refused as types that are no machine. No
- * two indexes describe one machine, which {@link io.github.graphmaquina.codegen.manifest.DependencyExports#read} has
- * already refused, and a machine of this compilation that an index describes too is refused by
- * {@link #refuseDescribedMachines}, which runs before any machine, and so any peer, is resolved.</p>
+ * under its name: both are refused as types that are no machine. No two indexes describe one machine, which
+ * {@link io.github.graphmaquina.codegen.manifest.DependencyExports#read} has already refused, and a machine of this
+ * compilation that an index describes too is refused by {@link #refuseDescribedMachines}, which runs before any
+ * machine, and so any peer, is resolved.</p>
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 final class DependencyPeers {
