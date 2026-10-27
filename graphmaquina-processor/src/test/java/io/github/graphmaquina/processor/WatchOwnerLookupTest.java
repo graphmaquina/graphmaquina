@@ -11,8 +11,9 @@ import org.junit.jupiter.api.Test;
  * the lookup to the DSL as the watch's {@code ownerOf}, called on its class when static and on the instance the
  * builder takes otherwise, with no wrapper: an empty {@code Optional} is a peer without an owner, which no reaction
  * follows, and a lookup that returns null is refused by the engine as any {@code ownerOf} is. A checked exception the
- * lookup declares is caught like any binding's, and a class that hosts both the lookup and a condition of the machine
- * is one parameter of the builder. An {@code owner} property keeps both of its shapes and the code generated for them.
+ * lookup declares is caught like any binding's, a class that hosts both the lookup and a condition of the machine is
+ * one parameter of the builder, and the hosts of two watches come watch by watch. An {@code owner} property keeps both
+ * of its shapes and the code generated for them.
  * Each scenario compiles the shop under {@code src/test/resources/watch-owner}, pays an order of two items, packs
  * them one by one and reports the order's state after each, then each reaction the second packing ended aborted.
  */
@@ -102,6 +103,29 @@ class WatchOwnerLookupTest {
         assertEquals("PAID SHIPPED", run(result));
         assertCompanion(result, " graph(OrderConditions orderConditions, OrderLookups orderLookups,"
                 + " OrderActions orderActions) {");
+    }
+
+    /**
+     * With two watches, the hosts come watch by watch: the condition host and then the lookup host of the watch of
+     * {@code PAID}, then those of the watch of {@code NEW}, declared after it, four classes, so the scenario's builder
+     * call compiles only in that order. The order is paid before its items change, so the second watch never reacts.
+     */
+    @Test
+    void theHostsOfTwoWatchesComeWatchByWatch() throws Exception {
+        Map<String, String> sources = sources("ownerLookup = OrderLookupsRefs.HeldOrderOf.class,",
+                "new OrderConditions(), new OrderLookups(), new UnpaidOrderConditions(), new UnpaidOrderLookups()");
+        String orders = replaced(sources.get("shop.Orders"), "allIn = ItemStatus.PACKED",
+                "condition = OrderConditionsRefs.Ready.class");
+        sources.put("shop.Orders", replaced(orders, "public interface Orders", """
+                @OrdersItems.Watch(state = NEW, peers = OrderRefs.Items.class,
+                    ownerLookup = UnpaidOrderLookupsRefs.UnpaidOrderOf.class,
+                    rules = @OrdersItems.When(condition = UnpaidOrderConditionsRefs.Packed.class, transition = PAY))
+                public interface Orders"""));
+        Compilation.Result result = compile(sources);
+
+        assertEquals("PAID SHIPPED", run(result));
+        assertCompanion(result, " graph(OrderConditions orderConditions, OrderLookups orderLookups,"
+                + " UnpaidOrderConditions unpaidOrderConditions, UnpaidOrderLookups unpaidOrderLookups) {");
     }
 
     /** {@code order} returns an {@code Optional} of the order and {@code placedIn} the order itself. */
