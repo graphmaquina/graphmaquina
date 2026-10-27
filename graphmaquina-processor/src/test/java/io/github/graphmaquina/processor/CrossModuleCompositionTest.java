@@ -28,9 +28,10 @@ import org.junit.jupiter.api.io.TempDir;
  * the producer, is captured leaves for {@code CONFIRMED}, and a paid order ships once the last of its items, items of
  * the producer, is packed. The checks of a binding hold against the child of a jar, at build time and, for a child jar
  * other than the one the consumer compiled against, when the set is built; an exit without an edge from the bound
- * state, a binding on a terminal state and a watch rule without an edge from the watched state are reported as they
- * are within one compilation. A composition cycle, {@code SG805}, cannot cross a jar: a producer cannot name a machine
- * of its consumer, so no child of a jar contains its parent again.
+ * state, a binding on a terminal state, an operation that requests an exit of the child from the bound state and a
+ * watch rule without an edge from the watched state are reported as they are within one compilation. Of the checks of
+ * a binding, only a composition cycle, {@code SG805}, is left out, because it cannot cross a jar: a producer cannot
+ * name a machine of its consumer, so no child of a jar contains its parent again.
  */
 class CrossModuleCompositionTest {
 
@@ -73,6 +74,10 @@ class CrossModuleCompositionTest {
             "[" + DiagnosticCode.SG802 + "] Bookings.CONFIRMED: the exit on DECLINED names DEPOSIT_DECLINED, which"
                     + " has no edge from CONFIRMED",
             "[" + DiagnosticCode.SG803 + "] Bookings.CONFIRMED is terminal and cannot hold a sub-machine");
+
+    /** What the build reports for an operation of the bookings that requests {@code DEPOSIT_PAID}, an exit. */
+    private static final List<String> EXIT_AS_AN_OPERATION = List.of("[" + DiagnosticCode.SG804
+            + "] Bookings.DEPOSIT: DEPOSIT_PAID is an exit of its sub-machine and cannot be the operation confirm");
 
     /** What the build reports for a rule of the watch of the orders' {@code PAID} that executes {@code PAY}. */
     private static final List<String> RULE_WITHOUT_AN_EDGE = List.of("[" + DiagnosticCode.SG401
@@ -215,6 +220,24 @@ class CrossModuleCompositionTest {
                 "    state = CONFIRMED,\n    child"));
 
         assertReportedAsWithinOneCompilation(sources, BINDING_ON_A_TERMINAL);
+    }
+
+    /**
+     * An operation that requests from the bound state a transition the binding takes as an exit is reported against
+     * the child of a jar as it is when the child is compiled with its parent: the edge {@code DEPOSIT_PAID} from
+     * {@code DEPOSIT}, which the facade declared on itself, moves onto a new operation {@code confirm}, and no action
+     * binding is needed.
+     */
+    @Test
+    void anOperationOnAnExitOfTheChildIsReportedAsWithinOneCompilation() throws Exception {
+        String edge = "@BookingsGraph.Transition(id = DEPOSIT_PAID, from = DEPOSIT, to = CONFIRMED)";
+        String operation = "    Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);\n";
+        Map<String, String> sources = CrossModuleSources.consumer();
+        String bookings = replaced(sources.get("book.Bookings"), edge + "\n", "");
+        sources.put("book.Bookings", replaced(bookings, operation, operation + "\n    " + edge
+                + "\n    Outcome<Booking, BookingStatus, BookingTransition> confirm(Booking booking);\n"));
+
+        assertReportedAsWithinOneCompilation(sources, EXIT_AS_AN_OPERATION);
     }
 
     /**
