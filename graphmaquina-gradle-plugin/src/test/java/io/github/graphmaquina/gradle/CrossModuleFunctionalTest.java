@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -30,7 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * deposit, a payment of the producer, is captured leaves for {@code CONFIRMED}, and a paid order ships once the last
  * of its items, items of the producer, is packed. The consumer receives the producer once as the jar a real build of
  * the producer assembled, and once as a project of the same multi-project build; a jar stripped of its export index is
- * refused, naming the jar.
+ * refused, naming the jar, and a library producer that keeps the module of its enums off its consumers' compile
+ * classpath is reported as missing them.
  */
 class CrossModuleFunctionalTest {
 
@@ -45,6 +47,42 @@ class CrossModuleFunctionalTest {
 
     /** The packages of the producer, which no source root of the consumer of its jar may hold. */
     private static final List<String> PRODUCER_PACKAGES = List.of("pay", "stock");
+
+    /** The enums of the payments, which {@link #splitDomain} moves out of the producer into {@code domain}. */
+    private static final List<String> PAYMENT_ENUMS = List.of("pay/PaymentStatus.java", "pay/PaymentTransition.java");
+
+    /** The build script of {@code domain}: a library of plain enums, compiled as every fixture compiles. */
+    private static final String DOMAIN_BUILD = """
+            plugins {
+                `java-library`
+            }
+
+            java {
+                toolchain { languageVersion = JavaLanguageVersion.of(21) }
+            }
+
+            tasks.withType<JavaCompile>().configureEach {
+                options.encoding = "UTF-8"
+                options.release = 21
+            }
+            """;
+
+    /** What a build script of {@link #splitDomain} appends to depend on {@code domain}. */
+    private static final String DEPENDS_ON_DOMAIN = """
+
+            dependencies {
+                implementation(project(":domain"))
+            }
+            """;
+
+    /** The one class of {@code unused} and of {@code fixed}, which uses nothing of the producer. */
+    private static final String NOTE = """
+            package other;
+
+            /** A class that uses nothing of the producer. */
+            public final class Note {
+            }
+            """;
 
     @TempDir
     Path tempDirectory;
@@ -107,6 +145,38 @@ class CrossModuleFunctionalTest {
     }
 
     /**
+     * A producer that applies {@code java-library} and declares the module of the payments' enums, {@code domain}, with
+     * {@code implementation}, which leaves that module off the compile classpath of its consumers, the classpath the
+     * plugin hands the generator and javac. {@code unused}, which uses no machine of the producer, is refused by the
+     * processor, which checks the export index of every dependency, as missing the state enum; {@code consumer},
+     * whose bookings declare the payments a peer, is refused by the generator the same way, naming the producer's
+     * directory of classes. {@code fixed}, the same as {@code unused} with {@code domain} as a dependency of its own,
+     * compiles.
+     */
+    @Test
+    void aLibraryProducerThatKeepsItsEnumsFromItsConsumersIsReportedAsMissingThem() throws IOException {
+        PluginFixture build = PluginFixture.multiProjectWithLibraryProducer(tempDirectory, FIXTURE_REPOSITORY);
+        splitDomain(build);
+
+        BuildResult result = build.runFailing(":unused:compileJava", ":consumer:compileJava", ":fixed:compileJava",
+                "--continue", "--refresh-dependencies", "--stacktrace");
+
+        Path classes = build.projectDirectory().resolve("producer").toRealPath().resolve("build/classes/java/main");
+        assertEquals(TaskOutcome.SUCCESS, result.task(":fixed:compileJava").getOutcome());
+        assertEquals(TaskOutcome.FAILED, result.task(":unused:compileJava").getOutcome());
+        assertTrue(result.getOutput().contains("[" + DiagnosticCode.SG602 + "] the annotation manifest "),
+                result::getOutput);
+        assertTrue(result.getOutput().contains(" describes the machine pay.Payments over the state enum"
+                + " pay.PaymentStatus, which that machine passes to Machine but this compilation's classpath does not"
+                + " declare: add the dependency that declares that type to this compilation's classpath"),
+                result::getOutput);
+        assertEquals(TaskOutcome.FAILED, result.task(":consumer:generateStateGraphApi").getOutcome());
+        assertTrue(result.getOutput().contains("[" + DiagnosticCode.SG602 + "] the peer machine pay.Payments declared"
+                + " by book.Bookings comes from " + classes + ", but the state type pay.PaymentStatus that it passes"
+                + " to Machine is missing from this classpath"), result::getOutput);
+    }
+
+    /**
      * The producer's jar without its export index still holds the class files of the payments and the items, which
      * javac would read; the generation refuses the machines it cannot trust, naming the jar they come from by its
      * real path, the one Gradle reads the project at, under a directory whose name is not plain ASCII.
@@ -142,6 +212,35 @@ class CrossModuleFunctionalTest {
         consumer.replaceInBuildScript("group = \"fx.build\"", "group = \"cx.build\"");
         consumer.writeFile(PRODUCER_JAR, producerJar);
         return consumer;
+    }
+
+    /**
+     * Rewrites the build {@link PluginFixture#multiProjectWithLibraryProducer} wrote: the payments' enums move into the
+     * new library {@code domain}, which the producer declares with {@code implementation}, and two more consumers of
+     * the producer, {@code unused} and {@code fixed}, each with the consumer's build script and one class that uses
+     * nothing of the producer; {@code fixed} also depends on {@code domain}.
+     */
+    private static void splitDomain(PluginFixture build) throws IOException {
+        Path root = build.projectDirectory();
+        Path settings = root.resolve("settings.gradle.kts");
+        String included = "include(\"producer\", \"consumer\")";
+        String content = Files.readString(settings, StandardCharsets.UTF_8);
+        assertTrue(content.contains(included), content);
+        Files.writeString(settings, content.replace(included,
+                "include(\"producer\", \"consumer\", \"domain\", \"unused\", \"fixed\")"), StandardCharsets.UTF_8);
+        build.writeFile("domain/build.gradle.kts", DOMAIN_BUILD);
+        for (String source : PAYMENT_ENUMS) {
+            Path target = Files.createDirectories(root.resolve("domain/src/main/java/pay")).resolve(Path.of(source)
+                    .getFileName());
+            Files.move(root.resolve("producer/src/main/java").resolve(source), target);
+        }
+        Files.writeString(root.resolve("producer/build.gradle.kts"), DEPENDS_ON_DOMAIN, StandardCharsets.UTF_8,
+                StandardOpenOption.APPEND);
+        String consumer = Files.readString(root.resolve("consumer/build.gradle.kts"), StandardCharsets.UTF_8);
+        build.writeFile("unused/build.gradle.kts", consumer);
+        build.writeFile("unused/src/main/java/other/Note.java", NOTE);
+        build.writeFile("fixed/build.gradle.kts", consumer + DEPENDS_ON_DOMAIN);
+        build.writeFile("fixed/src/main/java/other/Note.java", NOTE);
     }
 
     /**

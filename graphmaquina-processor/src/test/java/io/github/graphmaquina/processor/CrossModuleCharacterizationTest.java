@@ -28,7 +28,8 @@ import org.junit.jupiter.api.io.TempDir;
  * no index, or an index that is stale about it, is therefore reported by the generator, naming the jar, while a set
  * that holds a machine whose index is stale reaches the processor, which checks the manifest that carries the indexes
  * as a whole. That manifest carries the index of every dependency on the classpath, so a stale one is refused even
- * when nothing in the consumer, {@code other.Note} alone, uses its machine.</p>
+ * when nothing in the consumer, {@code other.Note} alone, uses its machine, and so is a current one whose machine
+ * passes {@code Machine} an enum the consumer's classpath lacks, which is reported as that missing enum.</p>
  */
 class CrossModuleCharacterizationTest {
 
@@ -136,8 +137,9 @@ class CrossModuleCharacterizationTest {
 
     /**
      * A jar whose index is stale is refused by the processor even when the consumer uses no machine and no symbol of
-     * it: the index renames a state, or names a state enum the classes do not declare. The control is the same consumer
-     * over the jar whose index is current.
+     * it: the index renames a state, or names a state enum the classes do not declare. The facade still passes
+     * {@code Machine} the enum it passed, {@code pay.PaymentStatus}, and spells {@code pay.Gone} nowhere, so the
+     * index alone is at fault. The control is the same consumer over the jar whose index is current.
      */
     @Test
     void aStaleIndexIsRefusedEvenWhenNothingUsesItsMachine() throws Exception {
@@ -147,6 +149,38 @@ class CrossModuleCharacterizationTest {
                 + " [PENDING, CAPTURED, REFUSED], but that enum now declares [PENDING, CAPTURED, DECLINED]");
         assertManifestRefused(publishedProducer("undeclared.jar", NAMES_AN_UNDECLARED_STATE_ENUM), "describes the"
                 + " machine pay.Payments over the state enum pay.Gone, which this compilation does not declare");
+    }
+
+    /**
+     * A jar whose index is current but whose state enum another jar holds, as a module of the producer that the
+     * producer does not expose to its consumers leaves it, is refused by the processor too, since the consumer's
+     * classpath lacks that enum, even when the consumer uses no machine of it. The facade still passes
+     * {@code Machine} that very enum, so the report names it as missing from this classpath and asks for the
+     * dependency that declares it rather than for another index. The control is the same consumer with both jars.
+     */
+    @Test
+    void aStateEnumAJarOffTheClasspathHoldsIsReportedAsMissing() throws Exception {
+        assertMissingEnum(tree("producer"), "pay/PaymentStatus.class", "the state enum pay.PaymentStatus");
+    }
+
+    /** So is a transition enum another jar holds. */
+    @Test
+    void aTransitionEnumAJarOffTheClasspathHoldsIsReportedAsMissing() throws Exception {
+        assertMissingEnum(tree("producer"), "pay/PaymentTransition.class", "the transition enum pay.PaymentTransition");
+    }
+
+    /** So is an enum the facade passes to {@code Machine} through a generic supertype of its own jar. */
+    @Test
+    void anEnumPassedThroughASupertypeIsReportedAsMissing() throws Exception {
+        Map<String, String> producer = new LinkedHashMap<>(tree("producer"));
+        String supertype = "extends Machine<Payment, PaymentStatus, PaymentTransition>";
+        assertTrue(producer.get("pay.Payments").contains(supertype));
+        producer.put("pay.Base", "package pay;\nimport io.github.graphmaquina.api.Machine;\n"
+                + "public interface Base<E, S extends Enum<S>, T extends Enum<T>> extends Machine<E, S, T> {}\n");
+        producer.put("pay.Payments", producer.get("pay.Payments").replace(supertype,
+                "extends Base<Payment, PaymentStatus, PaymentTransition>"));
+
+        assertMissingEnum(producer, "pay/PaymentStatus.class", "the state enum pay.PaymentStatus");
     }
 
     /** A peer literal that names no class is a different refusal from a peer that names a machine of a jar. */
@@ -201,6 +235,22 @@ class CrossModuleCharacterizationTest {
 
         assertEquals(List.of("[" + DiagnosticCode.SG602 + "] the annotation manifest "
                 + prepared.generation().annotationManifest() + " " + problem), result.errors(), result.describe());
+    }
+
+    /**
+     * The consumer that uses nothing of the producer is refused by the processor, over the jar of {@code producer}
+     * from which the class file {@code entry} of {@code enumType}, named by its role, moved into a jar of its own, as a
+     * missing type; with both jars it compiles.
+     */
+    private void assertMissingEnum(Map<String, String> producer, String entry, String enumType) throws Exception {
+        Path jar = PublishedJars.publish(producer, directory.resolve("split.jar"), UnaryOperator.identity());
+        Path enums = PublishedJars.moved(jar, entry, directory.resolve("enums.jar"));
+        assertCompiles(tree("unused"), List.of(jar, enums));
+
+        assertManifestRefused(jar, "describes the machine pay.Payments over " + enumType + ", which that machine passes"
+                + " to Machine but this compilation's classpath does not declare: add the dependency that declares"
+                + " that type to this compilation's classpath, or rebuild the producer through the complete lifecycle"
+                + " if its own artifact should carry it");
     }
 
     /** The control of a refusal: the same sources compile over the one jar that carries no fault. */

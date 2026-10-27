@@ -111,7 +111,8 @@ final class ManifestRegistry {
         } catch (IOException | CodegenException failure) {
             return failed("the annotation manifest " + file + " cannot be read: " + failure.getMessage());
         }
-        Optional<String> problem = ManifestChecks.verify(read, environment.getElementUtils());
+        Optional<String> problem = ManifestChecks.verify(read, environment.getElementUtils(),
+                environment.getTypeUtils());
         if (problem.isPresent()) {
             return failed("the annotation manifest " + file + " " + problem.get());
         }

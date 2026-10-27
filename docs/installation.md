@@ -378,7 +378,11 @@ producer index.
 For a multi-module build:
 
 1. Configure generation and the processor in each module that declares or consumes generated graph APIs.
-2. Build the producer before the consumer and declare it as a normal dependency.
+2. Build the producer before the consumer and declare it as a normal dependency. Every enum a machine of the
+   producer passes to `Machine` must reach the consumer's compile classpath too: a Gradle producer that applies
+   `java-library` and declares the module of those enums with `implementation` keeps that module off it, which the
+   consumer reports as `SG602`, naming the enum, even when it uses no machine of that producer. Give the consumer
+   that module as a dependency of its own.
 3. Package the generated classes and export index together. Avoid assembly steps that silently drop or
    overwrite `META-INF/graphmaquina` metadata.
 4. Regenerate and recompile consumers after changing a producer's exported API. A stale or missing index is a

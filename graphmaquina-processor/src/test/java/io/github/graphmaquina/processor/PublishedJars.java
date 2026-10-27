@@ -88,6 +88,21 @@ final class PublishedJars {
         }
     }
 
+    /**
+     * Moves the class file {@code entry} out of the jar {@code jar} into a new jar at {@code into}, as a build that
+     * keeps that type in a module of its own packs it, and returns {@code into}.
+     */
+    static Path moved(Path jar, String entry, Path into) throws IOException {
+        try (FileSystem source = FileSystems.newFileSystem(jar);
+                FileSystem target = FileSystems.newFileSystem(into, Map.of("create", "true"))) {
+            Path moved = target.getPath(entry);
+            Files.createDirectories(moved.getParent());
+            Files.copy(source.getPath(entry), moved);
+            Files.delete(source.getPath(entry));
+        }
+        return into;
+    }
+
     /** Every file under {@code root}, in a stable order. */
     private static List<Path> files(Path root) {
         try (Stream<Path> walk = Files.walk(root)) {
