@@ -395,9 +395,10 @@ that does not know the owner's entity cannot give the peer a property that retur
 with `ownerLookup`; `owner` still serves when the producer also publishes the owner's entity and the peer's entity
 returns it. [Compose machines across modules and JARs](cross-module-composition.md) runs such a watch. A peer that is
 a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
-otherwise than its classes, or that passes `Machine` an enum the classpath does not declare, is reported with
-`SG602`, naming that jar or directory whenever the generator can tell it; any other peer that is neither a machine of
-the same compilation nor a machine of a dependency that its export index describes is rejected with `SG608`.
+otherwise than its classes, or that passes `Machine` an enum, or reaches it only through a supertype, that the
+classpath does not declare, is reported with `SG602`, naming that jar or directory whenever the generator can tell it;
+any other peer that is neither a machine of the same compilation nor a machine of a dependency that its export index
+describes is rejected with `SG608`.
 
 ---
 

@@ -73,7 +73,7 @@ public final class MachineHeaders {
         requireAccessible(index, "the machine interface " + facade, header, packageName, origin);
 
         Binding binding = specialization(index, header, new Binding(Map.of(), Map.of()),
-                        Collections.newSetFromMap(new IdentityHashMap<>()))
+                        Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>())
                 .orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
                         facade + " does not extend " + MACHINE, origin));
         Map<TypeParameterKey, TypeUse> arguments = binding.arguments();
@@ -178,7 +178,7 @@ public final class MachineHeaders {
      */
     static Optional<Enums> enumsOf(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
         Optional<Binding> binding = specialization(index, facade, new Binding(Map.of(), Map.of()),
-                Collections.newSetFromMap(new IdentityHashMap<>()));
+                Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>());
         Optional<TypeHeader> state = binding.flatMap((Binding bound) -> bound.type(new TypeParameterKey(MACHINE, 1)))
                 .filter((TypeHeader type) -> type.kind() == ElementKind.ENUM);
         Optional<TypeHeader> transition = binding
@@ -198,8 +198,30 @@ public final class MachineHeaders {
      */
     static Optional<String> undeclaredEnum(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
         return specialization(index, facade, new Binding(Map.of(), Map.of()),
-                        Collections.newSetFromMap(new IdentityHashMap<>()))
+                        Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>())
                 .flatMap((Binding bound) -> undeclared(bound, 1, "state").or(() -> undeclared(bound, 2, "transition")));
+    }
+
+    /**
+     * The first supertype of {@code facade} that no header resolves, walked as {@link #enumsOf} walks the supertypes,
+     * when none that a header resolves takes it to {@code Machine}: a type this classpath does not declare, such as
+     * one of a jar it leaves out. It is named by the type it names, without the type arguments javac spells into the
+     * name of a type it cannot resolve, such as {@code pay.Base}. Empty when the facade reaches {@code Machine}, raw
+     * or not, and when every supertype it has resolves.
+     */
+    static Optional<String> undeclaredSupertype(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        List<TypeUse.Declared> skipped = new ArrayList<>();
+        Optional<Binding> binding = specialization(index, facade, new Binding(Map.of(), Map.of()),
+                Collections.newSetFromMap(new IdentityHashMap<>()), skipped);
+        return binding.isPresent()
+                ? Optional.empty()
+                : skipped.stream().findFirst().map((TypeUse.Declared supertype) -> typeName(supertype.name()));
+    }
+
+    /** {@code spelled} without the type arguments javac spells into the name of a type it cannot resolve. */
+    private static String typeName(String spelled) {
+        int arguments = spelled.indexOf('<');
+        return arguments < 0 ? spelled : spelled.substring(0, arguments);
     }
 
     /** The {@code role} type bound at {@code position} of {@code Machine}, if a declared type no header resolves. */
@@ -243,12 +265,13 @@ public final class MachineHeaders {
 
     /**
      * Walks the supertypes of {@code header} under {@code binding} until {@code Machine} is reached and returns
-     * what is bound to its own parameters. Supertypes that cannot be resolved are skipped: only the chain that
-     * actually reaches {@code Machine} has to be resolvable. {@code visited} holds the types walked so far by
-     * identity, since a type of a named package and a type of the unnamed package can share a canonical name.
+     * what is bound to its own parameters. Supertypes that cannot be resolved are skipped, each added to
+     * {@code skipped} in the order the walk meets it: only the chain that actually reaches {@code Machine} has to be
+     * resolvable. {@code visited} holds the types walked so far by identity, since a type of a named package and a
+     * type of the unnamed package can share a canonical name.
      */
     private static Optional<Binding> specialization(DeclarationIndex index, TypeHeader header, Binding binding,
-            Set<TypeHeader> visited) {
+            Set<TypeHeader> visited, List<TypeUse.Declared> skipped) {
         if (!visited.add(header)) {
             return Optional.empty();
         }
@@ -258,6 +281,7 @@ public final class MachineHeaders {
             }
             Optional<TypeHeader> resolved = index.resolveInHeader(header, declared.name());
             if (resolved.isEmpty()) {
+                skipped.add(declared);
                 continue;
             }
             TypeHeader superHeader = resolved.get();
@@ -265,7 +289,7 @@ public final class MachineHeaders {
             if (MACHINE.equals(superHeader.canonicalName())) {
                 return Optional.of(bound);
             }
-            Optional<Binding> found = specialization(index, superHeader, bound, visited);
+            Optional<Binding> found = specialization(index, superHeader, bound, visited, skipped);
             if (found.isPresent()) {
                 return found;
             }

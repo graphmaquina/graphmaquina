@@ -431,9 +431,10 @@ whose artifact carries the export index its build published, as
 [multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes;
 [compose machines across modules and JARs](cross-module-composition.md) binds one through a parent lookup. A child that
 is a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
-otherwise than its classes, or that passes `Machine` an enum the classpath does not declare, is `SG602`, naming that
-jar or directory whenever the generator can tell it; any other child that is neither is `SG608`. A standalone machine
-built with `StateMachines.Builder.build()` refuses any sub-machine binding, since its registry holds no other machine.
+otherwise than its classes, or that passes `Machine` an enum, or reaches it only through a supertype, that the
+classpath does not declare, is `SG602`, naming that jar or directory whenever the generator can tell it; any other
+child that is neither is `SG608`. A standalone machine built with `StateMachines.Builder.build()` refuses any
+sub-machine binding, since its registry holds no other machine.
 
 Assert bindings, starts and both refusals with the typed views of the testing guide's
 [sub-machines](testing-advanced.md#sub-machines) section. The

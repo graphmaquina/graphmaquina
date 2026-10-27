@@ -40,8 +40,9 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code SG608}; and a machine this compilation generates that an index also describes is refused with {@code SG602}
  * before any peer is resolved. A descriptor is used only once its class files agree with it, its enums declaring the
  * constants it lists and its facade extending {@code Machine} over them, which is {@code SG602} otherwise, naming the
- * enum when the classpath does not declare it, and once the package of each owner can name the peer and its state
- * enum, nested or not, which is {@code SG608} or {@code SG603} otherwise.
+ * enum the classpath does not declare, or a supertype it does not declare when none it declares reaches
+ * {@code Machine}, and once the package of each owner can name the peer and its state enum, nested or not, which is
+ * {@code SG608} or {@code SG603} otherwise.
  *
  * <p>The producer {@code pay.Payments} is compiled by javac alone and packed with an index written from a descriptor
  * that matches its class files, so nothing but the generator under test reads it; a test that needs a stale index
@@ -362,26 +363,6 @@ class DependencyPeersTest {
                 + " extend Machine over two enums the classpath declares");
     }
 
-    /**
-     * So is one beside a facade that reaches {@code Machine} only through a supertype the classpath lacks: the
-     * generator skips a supertype it cannot resolve, so nothing binds the enums. The control is the same producer
-     * with that supertype in its jar.
-     */
-    @Test
-    void refusesAPeerWhoseFacadeReachesMachineThroughASupertypeTheClasspathLacks() throws IOException {
-        Map<String, String> sources = based("Base<Payment, PaymentStatus, PaymentTransition>");
-        assertEquals(List.of(PAYMENTS), read(bookings(), published("intact", sources, PAYMENTS)).dependencyPeers());
-        Path stale = published("based", sources, PAYMENTS);
-        try (FileSystem archive = FileSystems.newFileSystem(stale)) {
-            Files.delete(archive.getPath("pay/Base.class"));
-        }
-
-        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
-
-        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
-                + " extend Machine over two enums the classpath declares");
-    }
-
     /** So is one beside a facade that extends {@code Machine} as a raw type, which binds no enum. */
     @Test
     void refusesAPeerWhoseFacadeExtendsARawMachine() throws IOException {
@@ -458,6 +439,46 @@ class DependencyPeersTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), lacking));
 
         assertUndeclared(failure, lacking, "the transition type pay.PaymentTransition");
+    }
+
+    /**
+     * Nor is one whose facade reaches {@code Machine} only through a supertype another jar holds: the generator skips
+     * a supertype it cannot resolve, so nothing binds the enums, and without that jar the report names that supertype
+     * and asks for the dependency that declares it. The control is the same two jars on the classpath.
+     */
+    @Test
+    void reportsAPeerWhoseSupertypeAJarOffTheClasspathHolds() throws IOException {
+        Path payments = published("based", based("Base<Payment, PaymentStatus, PaymentTransition>"), PAYMENTS);
+        Path bases = ProducerJars.moved(payments, "pay/Base.class", project.resolve("libs/bases.jar"));
+        assertEquals(List.of(PAYMENTS), read(bookings(), List.of(payments, bases)).dependencyPeers());
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), payments));
+
+        assertMissing(failure, payments, "its supertype pay.Base is missing from this classpath, and it reaches"
+                + " Machine through no supertype this classpath declares");
+    }
+
+    /**
+     * So is a supertype the facade reaches through another, here one that is not generic: the report names it as its
+     * class file spells it.
+     */
+    @Test
+    void reportsAPeerWhoseIndirectSupertypeTheClasspathLacks() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(producer());
+        sources.put("pay.Base", "package pay;\nimport io.github.graphmaquina.api.Machine;\n"
+                + "public interface Base extends Machine<Payment, PaymentStatus, PaymentTransition> {}\n");
+        sources.put("pay.Middle", "package pay;\npublic interface Middle extends Base {}\n");
+        sources.put("pay.Payments", "package pay;\nimport io.github.graphmaquina.annotation.GenerateGraphApi;\n"
+                + "@GenerateGraphApi\npublic interface Payments extends Middle {}\n");
+        Path lacking = published("middled", sources, PAYMENTS);
+        try (FileSystem archive = FileSystems.newFileSystem(lacking)) {
+            Files.delete(archive.getPath("pay/Base.class"));
+        }
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), lacking));
+
+        assertMissing(failure, lacking, "its supertype pay.Base is missing from this classpath, and it reaches"
+                + " Machine through no supertype this classpath declares");
     }
 
     /**
@@ -624,11 +645,18 @@ class DependencyPeersTest {
      * not declare.
      */
     private static void assertUndeclared(CodegenException failure, Path entry, String type) {
+        assertMissing(failure, entry, type + " that it passes to Machine is missing from this classpath");
+    }
+
+    /**
+     * Asserts that {@code failure} reports the peer {@code pay.Payments} of {@code book.Bookings} at that owner as a
+     * machine of {@code entry} of which this classpath lacks what {@code missing} says, a type it does not declare.
+     */
+    private static void assertMissing(CodegenException failure, Path entry, String missing) {
         assertEquals(DiagnosticCode.SG602.name(), failure.code());
-        assertEquals("the peer machine pay.Payments declared by book.Bookings comes from " + entry + ", but " + type
-                + " that it passes to Machine is missing from this classpath: add the dependency that declares that"
-                + " type to this compilation's classpath, or rebuild the producer through the complete lifecycle if"
-                + " its own artifact should carry it", failure.getMessage());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings comes from " + entry + ", but " + missing
+                + ": add the dependency that declares that type to this compilation's classpath, or rebuild the"
+                + " producer through the complete lifecycle if its own artifact should carry it", failure.getMessage());
         assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
     }
 

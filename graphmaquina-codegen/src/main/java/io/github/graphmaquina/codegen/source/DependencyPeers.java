@@ -71,9 +71,9 @@ final class DependencyPeers {
      *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from a
      *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type; and
      *     anchored at the owner of the first peer an index describes: {@code SG602} when the class files contradict
-     *     its descriptor or this classpath lacks an enum its facade passes to {@code Machine}, as
-     *     {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the owner's package cannot name
-     *     it, as {@link MachineHeaders#requireNameablePeer} words it
+     *     its descriptor, or this classpath lacks an enum its facade passes to {@code Machine} or a supertype it
+     *     needs to reach it, as {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the
+     *     owner's package cannot name it, as {@link MachineHeaders#requireNameablePeer} words it
      */
     static List<GraphDescriptor> resolve(DeclarationIndex index, List<MachineHeaders.Resolved> machines,
             List<PublishedIndex> dependencies, Path classesOutput) {
@@ -105,25 +105,24 @@ final class DependencyPeers {
      * declaring the constants that descriptor lists, in the same order, as the processor asks of the enums of an
      * index. A descriptor its class files contradict is stale, and a pair vocabulary typed from it would not match the
      * peer's machine. A type the peer passes to {@code Machine} as either enum that this classpath does not declare
-     * says nothing of the index: the type may live in a jar this classpath leaves out, as a sibling module of the
-     * producer that the producer does not expose to its consumers leaves it, or the producer's own artifact may have
-     * lost it, which the generator cannot tell apart.
+     * says nothing of the index, and neither does a supertype this classpath does not declare when no supertype it
+     * declares takes the peer to {@code Machine}: the type may live in a jar this classpath leaves out, as a sibling
+     * module of the producer that the producer does not expose to its consumers leaves it, or the producer's own
+     * artifact may have lost it, which the generator cannot tell apart.
      *
      * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry}: naming that type, as
-     *     {@link MachineHeaders#undeclaredEnum} finds it, and asking for the dependency that declares it, when the
-     *     peer passes one, and otherwise what its index says that the class files contradict, as
-     *     {@link PublishedEntries#staleIndex} words it
+     *     {@link #missing} words it, and asking for the dependency that declares it, as
+     *     {@link PublishedEntries#MISSING_TYPE_REMEDY} words it, when this classpath lacks one, and otherwise what
+     *     its index says that the class files contradict, as {@link PublishedEntries#staleIndex} words it
      */
     private static MachineHeaders.Enums requireCurrent(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner,
             Path entry, GraphDescriptor descriptor) {
         Optional<MachineHeaders.Enums> enums = MachineHeaders.enumsOf(index, peer);
-        Optional<String> undeclared = enums.isEmpty() ? MachineHeaders.undeclaredEnum(index, peer) : Optional.empty();
-        if (undeclared.isPresent()) {
+        Optional<String> missing = enums.isEmpty() ? missing(index, peer) : Optional.empty();
+        if (missing.isPresent()) {
             throw new CodegenException(DiagnosticCode.SG602.name(), "the peer machine " + peer.canonicalName()
-                    + " declared by " + owner.facade() + " comes from " + entry + ", but " + undeclared.get()
-                    + " that it passes to Machine is missing from this classpath: add the dependency that declares"
-                    + " that type to this compilation's classpath, or rebuild the producer through the complete"
-                    + " lifecycle if its own artifact should carry it", owner.origin());
+                    + " declared by " + owner.facade() + " comes from " + entry + ", but " + missing.get()
+                    + PublishedEntries.MISSING_TYPE_REMEDY, owner.origin());
         }
         Optional<String> staleness = enums.isEmpty()
                 ? Optional.of(describedOver(descriptor)
@@ -135,6 +134,21 @@ final class DependencyPeers {
                     owner.origin());
         }
         return enums.orElseThrow();
+    }
+
+    /**
+     * What this classpath lacks of {@code peer}, a binary whose facade passes {@code Machine} no two enums it declares:
+     * the first type the facade passes as either enum that it does not declare, as
+     * {@link MachineHeaders#undeclaredEnum} finds it, or else a supertype it does not declare when no supertype it
+     * declares takes the facade to {@code Machine}, as {@link MachineHeaders#undeclaredSupertype} finds it. Empty
+     * when it lacks neither.
+     */
+    private static Optional<String> missing(DeclarationIndex index, TypeHeader peer) {
+        return MachineHeaders.undeclaredEnum(index, peer)
+                .map((String type) -> type + " that it passes to Machine is missing from this classpath")
+                .or(() -> MachineHeaders.undeclaredSupertype(index, peer).map((String type) -> "its supertype " + type
+                        + " is missing from this classpath, and it reaches Machine through no supertype this"
+                        + " classpath declares"));
     }
 
     /**

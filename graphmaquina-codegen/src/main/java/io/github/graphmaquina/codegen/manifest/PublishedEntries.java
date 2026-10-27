@@ -38,6 +38,15 @@ public final class PublishedEntries {
             + " classes, or rebuild the producer through the complete lifecycle";
 
     /**
+     * What a diagnostic about a type that a dependency's class file names, but this compilation's classpath does not
+     * declare, asks for: that type may live in another artifact this classpath leaves out, or the producer's own
+     * artifact may have lost it.
+     */
+    public static final String MISSING_TYPE_REMEDY = ": add the dependency that declares that type to this"
+            + " compilation's classpath, or rebuild the producer through the complete lifecycle if its own artifact"
+            + " should carry it";
+
+    /**
      * The classpath entry javac read the class file at {@code classFile} from, absolute and normalized: the jar that
      * holds it, or the directory the path of that class file, which {@code binaryName} spells, is relative to. Empty
      * for a file that is not kept at a path of the default file system, or not where {@code binaryName} places it.
