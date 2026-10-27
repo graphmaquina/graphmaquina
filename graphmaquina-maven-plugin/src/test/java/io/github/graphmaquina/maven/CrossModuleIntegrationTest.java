@@ -88,17 +88,23 @@ class CrossModuleIntegrationTest {
     /**
      * The installed jar without its export index still holds the class files of the payments and the items, which
      * javac would read; the consumer's generation refuses the machines it cannot trust, naming the jar of the local
-     * repository they come from.
+     * repository they come from. The installed jar is put back as the producer's build installed it however the build
+     * ends, since every fixture build of this module shares that repository.
      */
     @Test
     void anInstalledProducerWithoutItsIndexIsRefusedNamingTheJar() throws IOException {
         installProducer();
         Path installed = MavenFixture.installedJar("fx.build", "fixture", "1.0.0");
-        Files.write(installed, withoutIndex(installed));
-        MavenFixture consumer = MavenFixture.consumer(tempDirectory, fixtureRepository);
-        consumer.writeSources(MavenFixture.crossModuleSources("consumer"));
-
-        MavenResult result = consumer.run("package");
+        byte[] original = Files.readAllBytes(installed);
+        MavenResult result;
+        try {
+            Files.write(installed, withoutIndex(installed));
+            MavenFixture consumer = MavenFixture.consumer(tempDirectory, fixtureRepository);
+            consumer.writeSources(MavenFixture.crossModuleSources("consumer"));
+            result = consumer.run("package");
+        } finally {
+            Files.write(installed, original);
+        }
 
         assertNotEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("[" + DiagnosticCode.SG602 + "]"), result.output());
