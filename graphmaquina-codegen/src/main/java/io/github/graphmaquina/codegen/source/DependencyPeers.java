@@ -109,10 +109,10 @@ final class DependencyPeers {
      * producer that the producer does not expose to its consumers leaves it, or the producer's own artifact may have
      * lost it, which the generator cannot tell apart.
      *
-     * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry}: naming that type and the
-     *     dependency it needs, as {@link MachineHeaders#undeclaredEnum} finds it, when the peer passes one, and
-     *     otherwise what its index says that the class files contradict, as {@link PublishedEntries#staleIndex}
-     *     words it
+     * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry}: naming that type, as
+     *     {@link MachineHeaders#undeclaredEnum} finds it, and asking for the dependency that declares it, when the
+     *     peer passes one, and otherwise what its index says that the class files contradict, as
+     *     {@link PublishedEntries#staleIndex} words it
      */
     private static MachineHeaders.Enums requireCurrent(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner,
             Path entry, GraphDescriptor descriptor) {

@@ -416,7 +416,7 @@ class DependencyPeersTest {
     /**
      * A peer whose enums another jar holds, as a sibling module of the producer that the producer does not expose to
      * its consumers leaves them, is no stale index: without that jar the report names the state type this classpath
-     * lacks and the dependency it needs. The control is the same two jars on the classpath.
+     * lacks and asks for the dependency that declares it. The control is the same two jars on the classpath.
      */
     @Test
     void reportsAPeerWhoseEnumsAJarOffTheClasspathHolds() throws IOException {
