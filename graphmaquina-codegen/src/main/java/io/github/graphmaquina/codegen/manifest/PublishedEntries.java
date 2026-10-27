@@ -54,7 +54,10 @@ public final class PublishedEntries {
                 if (separator < 0) {
                     return Optional.empty();
                 }
-                return Optional.of(Path.of(URI.create(location.substring(0, separator))).toAbsolutePath().normalize());
+                // The jar file system leaves a character that is not ASCII unescaped in the jar's path, which
+                // Path.of(URI) refuses; the ASCII form of the URI escapes it.
+                URI archive = URI.create(URI.create(location.substring(0, separator)).toASCIIString());
+                return Optional.of(Path.of(archive).toAbsolutePath().normalize());
             }
             if (!"file".equalsIgnoreCase(classFile.getScheme())) {
                 return Optional.empty();
