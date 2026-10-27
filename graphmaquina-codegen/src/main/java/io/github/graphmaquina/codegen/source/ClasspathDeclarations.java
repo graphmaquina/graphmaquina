@@ -4,6 +4,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.Trees;
 import io.github.graphmaquina.codegen.GenerationRequest;
+import io.github.graphmaquina.codegen.manifest.PublishedEntries;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -81,6 +82,8 @@ final class ClasspathDeclarations implements AutoCloseable {
     private final Map<String, Optional<TypeHeader>> unnamedHeaders = new HashMap<>();
     /** The package of every header materialized here, by identity, since two headers can be equal records. */
     private final Map<TypeHeader, String> packages = new IdentityHashMap<>();
+    /** The element every header materialized here was materialized from, by identity. */
+    private final Map<TypeHeader, TypeElement> types = new IdentityHashMap<>();
     /**
      * For every header of the unnamed package materialized here, by identity: the canonical names of the types its
      * header names that belong to a named package, and of those that belong to the unnamed package, as
@@ -152,12 +155,11 @@ final class ClasspathDeclarations implements AutoCloseable {
      * and read none of them.
      */
     Optional<TypeHeader> named(String canonicalName) {
-        Optional<TypeHeader> cached = namedHeaders.get(canonicalName);
-        if (cached == null) {
-            cached = materialize(namedType(segments(canonicalName)));
-            namedHeaders.put(canonicalName, cached);
+        if (!namedHeaders.containsKey(canonicalName)) {
+            namedHeaders.put(canonicalName,
+                    Optional.ofNullable(namedType(segments(canonicalName))).map(this::materialize));
         }
-        return cached;
+        return namedHeaders.get(canonicalName);
     }
 
     /**
@@ -166,14 +168,14 @@ final class ClasspathDeclarations implements AutoCloseable {
      * on to the last; never the synthetic class this task compiles.
      */
     Optional<TypeHeader> unnamed(String canonicalName) {
-        Optional<TypeHeader> cached = unnamedHeaders.get(canonicalName);
-        if (cached == null) {
+        if (!unnamedHeaders.containsKey(canonicalName)) {
             List<String> segments = segments(canonicalName);
-            cached = materialize(segments.get(0).isEmpty() || segments.get(0).equals(PROBE_NAME) ? null
-                    : members(topLevel(elements.getTypeElement(segments.get(0)), segments, 0), segments, 0));
-            unnamedHeaders.put(canonicalName, cached);
+            unnamedHeaders.put(canonicalName, segments.get(0).isEmpty() || segments.get(0).equals(PROBE_NAME)
+                    ? Optional.empty()
+                    : Optional.ofNullable(members(topLevel(elements.getTypeElement(segments.get(0)), segments, 0),
+                            segments, 0)).map(this::materialize));
         }
-        return cached;
+        return unnamedHeaders.get(canonicalName);
     }
 
     /**
@@ -193,6 +195,19 @@ final class ClasspathDeclarations implements AutoCloseable {
                 ? null
                 : elements.getTypeElement(canonicalName);
         return element == null ? "" : elements.getPackageOf(element).getQualifiedName().toString();
+    }
+
+    /**
+     * The classpath entry javac read the class file of {@code header} from, a jar or a directory of classes, as
+     * {@link PublishedEntries#entry} finds it in the location javac gives that class file. Empty for a header this
+     * task did not materialize, and for a class file kept in no jar or directory of the default file system, such as
+     * that of a type of the JDK.
+     */
+    Optional<Path> entry(TypeHeader header) {
+        return Optional.ofNullable(types.get(header))
+                .flatMap((TypeElement type) -> Optional.ofNullable(elements.getFileObjectOf(type))
+                        .flatMap((JavaFileObject file) -> PublishedEntries.entry(file.toUri(),
+                                elements.getBinaryName(type).toString())));
     }
 
     /**
@@ -228,20 +243,18 @@ final class ClasspathDeclarations implements AutoCloseable {
     }
 
     /**
-     * The header of {@code element}, empty for {@code null}, with the package that declares it recorded and, for a type
-     * of the unnamed package, whether each type its header names belongs to a named package or to the unnamed package.
-     * Those are the types that its supertypes, its fields, and the parameters and results of its methods name, with
-     * the owners, type arguments, wildcard bounds and array components of those uses, and the types of the annotations
-     * on the type, its fields and its methods.
+     * The header of {@code element}, with the package that declares it and the element itself recorded and, for a
+     * type of the unnamed package, whether each type its header names belongs to a named package or to the unnamed
+     * package. Those are the types that its supertypes, its fields, and the parameters and results of its methods
+     * name, with the owners, type arguments, wildcard bounds and array components of those uses, and the types of the
+     * annotations on the type, its fields and its methods.
      */
-    private Optional<TypeHeader> materialize(TypeElement element) {
-        if (element == null) {
-            return Optional.empty();
-        }
+    private TypeHeader materialize(TypeElement element) {
         Set<TypeElement> referenced = new HashSet<>();
         TypeHeader header = header(element, referenced);
         String packageName = elements.getPackageOf(element).getQualifiedName().toString();
         packages.put(header, packageName);
+        types.put(header, element);
         if (packageName.isEmpty()) {
             Set<String> named = new HashSet<>();
             Set<String> unnamed = new HashSet<>();
@@ -251,7 +264,7 @@ final class ClasspathDeclarations implements AutoCloseable {
             namedReferences.put(header, named);
             unnamedReferences.put(header, unnamed);
         }
-        return Optional.of(header);
+        return header;
     }
 
     /** The type of a named package that {@code segments} name, as {@link #named} looks it up, or {@code null}. */

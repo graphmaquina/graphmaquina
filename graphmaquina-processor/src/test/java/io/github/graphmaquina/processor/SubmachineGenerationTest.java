@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -551,11 +552,13 @@ class SubmachineGenerationTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG504] graph(GraphDefinition, Ledger) is the static graph(GraphDefinition, Ledger)"
+        assertEquals(List.of("[" + DiagnosticCode.SG504
+                + "] graph(GraphDefinition, Ledger) is the static graph(GraphDefinition, Ledger)"
                         + " the generated BookingsRuntime declares, which takes the definition of each machine it binds"
                         + " as a sub-machine, then every class with instance members the machine binds: give the method"
                         + " another name",
-                "[SG504] graph(GraphDefinition, GraphDefinition) is the static graph(GraphDefinition,"
+                "[" + DiagnosticCode.SG504
+                        + "] graph(GraphDefinition, GraphDefinition) is the static graph(GraphDefinition,"
                         + " GraphDefinition) the generated OrdersRuntime declares, which takes the definition of each"
                         + " machine it binds as a sub-machine: give the method another name"), result.errors(),
                 result.describe());
@@ -570,7 +573,8 @@ class SubmachineGenerationTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG510] builder(Ledger) is the static builder(Ledger) the generated BillingRuntime"
+        assertEquals(List.of("[" + DiagnosticCode.SG510
+                + "] builder(Ledger) is the static builder(Ledger) the generated BillingRuntime"
                 + " declares, which takes every class with instance members the set's machines use: give the method"
                 + " another name"), result.errors(), result.describe());
     }

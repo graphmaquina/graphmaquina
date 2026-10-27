@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -612,11 +613,13 @@ class TypedRecoveryRuntimeTest {
         Compilation.Result byKind = Compilation.compileTyped(besideBilling(kind));
         Compilation.Result byType = Compilation.compileTyped(besideBilling(type));
 
-        assertEquals(List.of("[SG603] the companion TicketsRuntime of fx.Tickets writes billing.Outages.Unavailable,"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the companion TicketsRuntime of fx.Tickets writes billing.Outages.Unavailable,"
                 + " but in its scope billing names the type fx.billing, not a package: rename that type or the package"
                 + " billing"), byKind.errors(), byKind.describe());
         assertFalse(byKind.hasGenerated("fx.TicketsRuntime"), byKind.describe());
-        assertEquals(List.of("[SG603] the companion TicketsRuntime of fx.Tickets writes billing.Outages.DownException,"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the companion TicketsRuntime of fx.Tickets writes billing.Outages.DownException,"
                 + " but in its scope billing names the type fx.billing, not a package: rename that type or the package"
                 + " billing"), byType.errors(), byType.describe());
         assertFalse(byType.hasGenerated("fx.TicketsRuntime"), byType.describe());

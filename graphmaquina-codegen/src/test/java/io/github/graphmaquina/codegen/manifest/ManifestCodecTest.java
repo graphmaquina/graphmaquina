@@ -9,6 +9,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -125,7 +126,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("member 'schemaVersion' must be a 32-bit integer in " + file + ", but is " + schemaVersion,
             failure.getMessage());
     }
@@ -141,7 +142,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("member 'line' must be a 64-bit integer in " + file + ", but is 10.5", failure.getMessage());
     }
 
@@ -165,7 +166,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("number with an exponent out of range in " + file + ": " + number + " at path " + place,
             failure.getMessage());
     }
@@ -182,7 +183,7 @@ class ManifestCodecTest {
         CodegenException failure =
             assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("number with an exponent out of range in " + file + ": 1e99999999999 at path $.generatedTypes[0]",
             failure.getMessage());
     }
@@ -209,10 +210,10 @@ class ManifestCodecTest {
         CodegenException name =
             assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(inventory));
 
-        assertEquals("SG602", value.code());
+        assertEquals(DiagnosticCode.SG602.name(), value.code());
         assertEquals("malformed JSON in " + request + ": an unpaired surrogate \\ud800 at path $.compilationId",
             value.getMessage());
-        assertEquals("SG602", name.code());
+        assertEquals(DiagnosticCode.SG602.name(), name.code());
         assertEquals("malformed JSON in " + inventory + ": an unpaired surrogate \\udc00 at path $.x\\udc00",
             name.getMessage());
         assertEquals(List.of("fx.A\ud83d\ude00"), ManifestCodec.readProcessorInventory(paired));
@@ -230,7 +231,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readRequest(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("unexpected trailing content in " + file, failure.getMessage());
     }
 
@@ -242,7 +243,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("malformed JSON in " + file + ": End of input at line 5 column 1 path $.sources[1]",
             failure.getMessage());
     }
@@ -257,7 +258,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("malformed JSON in " + file + ": bytes that are not UTF-8 text", failure.getMessage());
     }
 
@@ -273,7 +274,7 @@ class ManifestCodecTest {
         CodegenException failure =
             assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("malformed JSON in " + file
             + ": content that strict JSON does not allow at line 1 column 23 path $.schemaVersion",
             failure.getMessage());
@@ -480,7 +481,7 @@ class ManifestCodecTest {
             new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(), "processor-inventory.json",
                 List.of(ownedSource))));
 
-        assertEquals("SG602", onWrite.code());
+        assertEquals(DiagnosticCode.SG602.name(), onWrite.code());
         assertFalse(Files.exists(written));
         Path valid = directory.resolve("valid.json");
         ManifestCodec.writeCompile(valid, new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(),
@@ -488,7 +489,7 @@ class ManifestCodecTest {
         Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
             .replace("fx/Valid.java", entry.equals("NUL") ? "fx/X\\u0000.java" : entry), StandardCharsets.UTF_8);
         CodegenException onRead = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(read));
-        assertEquals("SG602", onRead.code());
+        assertEquals(DiagnosticCode.SG602.name(), onRead.code());
     }
 
     /**
@@ -505,7 +506,7 @@ class ManifestCodecTest {
             new CompileManifest(2, "2.0.0-test", index("fx:demo:main"), List.of(), inventory,
                 List.of("fx/Valid.java"))));
 
-        assertEquals("SG602", onWrite.code());
+        assertEquals(DiagnosticCode.SG602.name(), onWrite.code());
         assertEquals("processor inventory '" + inventory + "' is not a path in " + written, onWrite.getMessage());
         assertFalse(Files.exists(written));
         Path valid = directory.resolve("valid.json");
@@ -514,7 +515,7 @@ class ManifestCodecTest {
         Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
             .replace("work/inventory.json", "work/inventory\\u0000.json"), StandardCharsets.UTF_8);
         CodegenException onRead = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(read));
-        assertEquals("SG602", onRead.code());
+        assertEquals(DiagnosticCode.SG602.name(), onRead.code());
         assertEquals("processor inventory '" + inventory + "' is not a path in " + read, onRead.getMessage());
     }
 
@@ -586,7 +587,7 @@ class ManifestCodecTest {
 
             CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readRequest(file));
 
-            assertEquals("SG602", failure.code(), member.getKey());
+            assertEquals(DiagnosticCode.SG602.name(), failure.code(), member.getKey());
             assertTrue(failure.getMessage().contains("'" + member.getValue() + "'"), failure.getMessage());
             assertTrue(failure.getMessage().contains(file.toString()), failure.getMessage());
         }
@@ -697,7 +698,7 @@ class ManifestCodecTest {
 
             CodegenException failure =
                 assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
-            assertEquals("SG602", failure.code());
+            assertEquals(DiagnosticCode.SG602.name(), failure.code());
             assertTrue(failure.getMessage().contains("missing member '" + missing + "'"),
                 failure.getMessage());
         }
@@ -719,7 +720,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("unsupported schemaVersion 99 in " + file + "; expected 2", failure.getMessage());
     }
 
@@ -739,7 +740,7 @@ class ManifestCodecTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertEquals("unsupported schemaVersion 99 in " + file + "; expected 2", failure.getMessage());
     }
 

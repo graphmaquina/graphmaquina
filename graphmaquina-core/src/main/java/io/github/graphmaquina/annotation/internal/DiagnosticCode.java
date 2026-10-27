@@ -5,7 +5,8 @@ package io.github.graphmaquina.annotation.internal;
  * and no report prints a code that does not exist. A constant's name is the code as diagnostics print it, such as
  * {@code [SG603]}, and a public surface that carries a code, such as {@code InvalidGraphException.Problem}, carries
  * that name. The constants follow the numeric order, and {@code docs/diagnostics.md} documents each of them: a test
- * keeps the two in step and refuses the literal of a code anywhere else in production sources.
+ * keeps the two in step and refuses the spelling of a code anywhere but here in the main and test sources of every
+ * module, except on a line that is a comment.
  *
  * <p>A new code takes the next free number of its block. A number once used and then removed is never given again,
  * so that an old build log never reads as a new problem; the test of this registry lists the retired numbers.
@@ -66,6 +67,9 @@ public enum DiagnosticCode {
     /** A watch has no rules. */
     SG404,
 
+    /** A watch declared with annotations does not declare exactly one of {@code owner} and {@code ownerLookup}. */
+    SG405,
+
     /** Invalid machine or set declaration. */
     SG502,
 
@@ -108,7 +112,10 @@ public enum DiagnosticCode {
     /** Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. */
     SG601,
 
-    /** A manifest, an inventory or an export index is missing, incompatible, stale or malformed. */
+    /**
+     * A manifest, an inventory or an export index is missing, incompatible, stale or malformed, or the export indexes
+     * of two classpath entries describe one machine, or one describes a machine of this compilation.
+     */
     SG602,
 
     /** Generated output or export collision, a name generated code cannot write, or a forbidden output path. */
@@ -126,7 +133,11 @@ public enum DiagnosticCode {
     /** Too many values in an optional singleton element. */
     SG607,
 
-    /** Invalid, duplicated, unused or undeclared peer, a peer outside this compilation or one its owner cannot name. */
+    /**
+     * Invalid, duplicated, unused or undeclared peer, a peer that is no machine of this compilation or of a dependency,
+     * or one its owner cannot name. A {@code @GenerateGraphApi} machine of a dependency whose export index is missing
+     * or does not list it is {@link #SG602}.
+     */
     SG608,
 
     /** A non-terminal state declares no rejection policy. */

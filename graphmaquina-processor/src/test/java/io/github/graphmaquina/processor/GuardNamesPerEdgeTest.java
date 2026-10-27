@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class GuardNamesPerEdgeTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG105"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG105.name()), result.describe());
         List<String> errors = result.errors();
         assertTrue(errors.stream().anyMatch((String error) -> error.contains(
                 "the guards fx.DocActionsRefs.Approved and fx.ReviewsRefs.Approved share the name approved")),

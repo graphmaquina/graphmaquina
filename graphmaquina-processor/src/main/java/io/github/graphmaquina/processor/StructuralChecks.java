@@ -30,6 +30,7 @@ import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -71,7 +72,7 @@ final class StructuralChecks {
         if (type.getKind() != ElementKind.INTERFACE) {
             return Optional.empty();
         }
-        Optional<DeclaredType> machine = findMachine(type.asType());
+        Optional<DeclaredType> machine = findMachine(signatures.types(), type.asType());
         if (machine.isEmpty() || machine.get().getTypeArguments().size() != 3) {
             return Optional.empty();
         }
@@ -102,14 +103,18 @@ final class StructuralChecks {
         return names;
     }
 
-    private Optional<DeclaredType> findMachine(TypeMirror type) {
-        for (TypeMirror supertype : signatures.types().directSupertypes(type)) {
+    /**
+     * The {@code Machine} that {@code type} extends, met first among its supertypes as {@code types} gives them, depth
+     * first, with the type arguments each supertype's use substitutes; empty when it extends none.
+     */
+    static Optional<DeclaredType> findMachine(Types types, TypeMirror type) {
+        for (TypeMirror supertype : types.directSupertypes(type)) {
             if (supertype instanceof DeclaredType declared) {
                 TypeElement element = (TypeElement) declared.asElement();
                 if (element.getQualifiedName().contentEquals(MACHINE)) {
                     return Optional.of(declared);
                 }
-                Optional<DeclaredType> deeper = findMachine(declared);
+                Optional<DeclaredType> deeper = findMachine(types, declared);
                 if (deeper.isPresent()) {
                     return deeper;
                 }

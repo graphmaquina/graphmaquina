@@ -4,6 +4,7 @@ import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.ToolVersion;
+import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -12,8 +13,12 @@ import java.nio.file.Path;
 import java.nio.file.ProviderNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.NonNull;
 
 /**
@@ -23,7 +28,9 @@ import lombok.NonNull;
  * of class files, and this class aggregates those indexes for one compilation. Only the published name is read:
  * the {@code pending-exports.json} a processor writes during its own compilation belongs to that run and is
  * promoted by its build, never consumed here. An entry that carries an index of another schema or of another tool
- * version is refused rather than interpreted with the wrong rules.</p>
+ * version is refused rather than interpreted with the wrong rules, and so is a machine that the indexes of two
+ * different entries describe, as two copies or two versions of one producer do: only the machine's facade name is
+ * compared, and no rule here says which description is current.</p>
  */
 public final class DependencyExports {
 
@@ -31,19 +38,27 @@ public final class DependencyExports {
     }
 
     /**
-     * The indexes published on {@code classpath}, ordered by {@code compilationId}. An entry that does not exist,
-     * that is neither a directory nor a regular file, or that holds no published index carries nothing and is
-     * skipped, and so is a regular file that does not open as an archive, unless its name ends in {@code .jar} or
-     * {@code .zip}: such a file cannot be read.
+     * The indexes published on {@code classpath}, each with its entry made absolute and normalized, ordered by
+     * {@code compilationId}. An entry that the classpath lists again, in any spelling of the same path, is read
+     * once. An entry that does not exist, that is neither a directory nor a regular file, or that holds no
+     * published index carries nothing and is skipped, and so is a regular file that does not open as an archive,
+     * unless its name ends in {@code .jar} or {@code .zip}: such a file cannot be read.
      *
      * @throws CodegenException {@code SG602} if an entry carries an index this tool cannot read or that another
-     *     tool version wrote, naming that entry
+     *     tool version wrote, naming that entry, or if the indexes of two different entries describe one machine,
+     *     naming both in classpath order
      * @throws IOException if an entry exists but cannot be read, naming that entry
      */
-    public static List<ExportIndex> read(@NonNull List<Path> classpath) throws IOException {
+    public static List<PublishedIndex> read(@NonNull List<Path> classpath) throws IOException {
         String toolVersion = ToolVersion.current();
-        List<ExportIndex> indexes = new ArrayList<>();
-        for (Path entry : classpath) {
+        List<PublishedIndex> indexes = new ArrayList<>();
+        Set<Path> visited = new HashSet<>();
+        Map<String, Path> describedBy = new HashMap<>();
+        for (Path listed : classpath) {
+            Path entry = listed.toAbsolutePath().normalize();
+            if (!visited.add(entry)) {
+                continue;
+            }
             Optional<ExportIndex> index;
             try {
                 index = read(entry);
@@ -51,10 +66,12 @@ public final class DependencyExports {
                 throw new IOException("cannot read the classpath entry " + entry, failure);
             }
             if (index.isPresent()) {
-                indexes.add(compatible(index.get(), entry, toolVersion));
+                ExportIndex current = compatible(index.get(), entry, toolVersion);
+                refuseSecondDescription(current, entry, describedBy);
+                indexes.add(new PublishedIndex(entry, current));
             }
         }
-        indexes.sort(Comparator.comparing(ExportIndex::compilationId));
+        indexes.sort(Comparator.comparing((PublishedIndex published) -> published.index().compilationId()));
         return List.copyOf(indexes);
     }
 
@@ -92,5 +109,17 @@ public final class DependencyExports {
                 + " was written by tool version " + index.toolVersion() + "; this tool is " + toolVersion);
         }
         return index;
+    }
+
+    /** Records {@code entry} as the describer of each machine of {@code index}, refusing one that another entry has. */
+    private static void refuseSecondDescription(ExportIndex index, Path entry, Map<String, Path> describedBy) {
+        for (GraphDescriptor graph : index.model().graphs()) {
+            Path first = describedBy.computeIfAbsent(graph.facade(), (String facade) -> entry);
+            if (!first.equals(entry)) {
+                throw new CodegenException(DiagnosticCode.SG602.name(), "the machine " + graph.facade()
+                    + " is described by the export indexes of " + first + " and " + entry
+                    + ": keep one artifact of its producer on the classpath");
+            }
+        }
     }
 }

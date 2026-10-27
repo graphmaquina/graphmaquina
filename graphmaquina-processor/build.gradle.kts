@@ -16,6 +16,18 @@ dependencies {
     testRuntimeOnly(libs.junit.launcher)
 }
 
+tasks.test {
+    // The cross-module scenarios are kept once, as package roots under producer/ and consumer/: the tests compile and
+    // run them, and the guides quote them, which CrossModuleGuideTest checks. A change to the scenarios or to a guide
+    // reruns the tests.
+    val crossModule = layout.projectDirectory.dir("src/test/resources/cross-module")
+    val docs = rootProject.layout.projectDirectory.dir("docs")
+    systemProperty("graphmaquina.crossModule", crossModule.asFile.absolutePath)
+    systemProperty("graphmaquina.docs", docs.asFile.absolutePath)
+    inputs.dir(crossModule).withPropertyName("crossModuleScenarios")
+    inputs.files(docs.asFileTree.matching { include("*.md") }).withPropertyName("guides")
+}
+
 publishing {
     repositories {
         maven {

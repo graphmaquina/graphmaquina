@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.AsyncTransitionGuard;
@@ -229,7 +230,8 @@ class GraphBuilderTest {
     void anOpenEdgeRefusesEveryCallOnceBuildHasFailed() {
         GraphBuilder<Doc, DocStatus, DocTransition> builder = base();
         TransitionBuilder<Doc, DocStatus, DocTransition> retouch = builder.transition(RETOUCH, DRAFT, ARCHIVED);
-        assertEquals(List.of("SG507"), assertThrows(InvalidGraphException.class, builder::build).codes());
+        assertEquals(List.of(DiagnosticCode.SG507.name()),
+                assertThrows(InvalidGraphException.class, builder::build).codes());
         for (Executable call : List.<Executable>of(() -> retouch.guard(PASS), retouch::endTransition)) {
             assertEquals("build() was already called on the graph Doc/DocStatus, so DRAFT -RETOUCH-> ARCHIVED can no"
                     + " longer change", assertThrows(IllegalStateException.class, call).getMessage());

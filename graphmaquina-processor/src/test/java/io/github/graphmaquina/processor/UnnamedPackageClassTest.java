@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -191,7 +192,8 @@ class UnnamedPackageClassTest {
                     public static final class Gone { public @interface Nope { } }
                 """));
 
-        assertEquals(List.of("[SG602] the annotation manifest <manifest> lists the annotation type fx.Gone.Nope, which"
+        assertEquals(List.of("[" + DiagnosticCode.SG602
+                + "] the annotation manifest <manifest> lists the annotation type fx.Gone.Nope, which"
                 + " this compilation does not declare as an annotation"), without);
         assertEquals(without, beside);
         assertEquals(without, nesting);
@@ -616,7 +618,8 @@ class UnnamedPackageClassTest {
 
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
-        assertEquals(List.of("[SG505] no exported action named charge on Payments has the signature this machine"
+        assertEquals(List.of("[" + DiagnosticCode.SG505
+                + "] no exported action named charge on Payments has the signature this machine"
                 + " needs; expected ActionOutcome charge(TransitionContext<Order, OrderStatus, OrderTransition>) or"
                 + " CompletionStage<ActionOutcome> charge(TransitionContext<Order, OrderStatus, OrderTransition>)"),
                 result.errors(), result.describe());

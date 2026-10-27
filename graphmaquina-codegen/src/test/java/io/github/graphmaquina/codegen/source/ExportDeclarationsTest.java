@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.source.util.JavacTask;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -259,7 +260,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG604", failure.code());
+        assertEquals(DiagnosticCode.SG604.name(), failure.code());
         assertEquals("the member authorize of fx.PaymentActions declares more than one graph role: "
                 + "ACTION and GUARD", failure.getMessage());
         assertEquals("fx/PaymentActions.java",
@@ -319,7 +320,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG604", failure.code());
+        assertEquals(DiagnosticCode.SG604.name(), failure.code());
         assertEquals("the member orderOf of fx.OrderLookups declares more than one graph role: "
                 + "CONDITION and LOOKUP", failure.getMessage());
         assertEquals(6L, failure.location().orElseThrow().line());
@@ -391,7 +392,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the property status of fx.Order is declared twice, by the field status and by the "
                 + "method getStatus", failure.getMessage());
         assertEquals(6L, failure.location().orElseThrow().line());
@@ -411,7 +412,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the property status of fx.Order is declared twice, by the field status and by the "
                 + "method status", failure.getMessage());
         assertEquals(6L, failure.location().orElseThrow().line());
@@ -432,7 +433,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the symbol status of fx.Order is exported as both a method and a property",
                 failure.getMessage());
     }
@@ -479,7 +480,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the symbol status of fx.PaymentActions is exported as both a method and a property",
                 failure.getMessage());
     }
@@ -506,7 +507,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the references container fx.OuterInnerRefs is generated for both fx.Outer.Inner at "
                 + "fx/Outer.java:4 and fx.Outer_Inner at fx/Outer_Inner.java:3", failure.getMessage());
         assertEquals("fx/Outer.java", failure.location().orElseThrow().path());
@@ -527,7 +528,7 @@ class ExportDeclarationsTest {
                 import io.github.graphmaquina.annotation.GraphAction;
                 public class OuterInner { @GraphAction public void run() {} }
                 """)));
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.Outer.Inner"), failure.getMessage());
         assertTrue(failure.getMessage().contains("fx.OuterInner"), failure.getMessage());
         assertEquals("fx/Outer.java", failure.location().orElseThrow().path());
@@ -546,7 +547,7 @@ class ExportDeclarationsTest {
                         @GraphAction public void %s() {}
                     }
                     """.formatted(names[0], names[1]))));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertTrue(failure.getMessage().contains(names[0]), failure.getMessage());
             assertTrue(failure.getMessage().contains(names[1]), failure.getMessage());
             assertTrue(failure.getMessage().contains("Host.java:4"), failure.getMessage());
@@ -565,7 +566,7 @@ class ExportDeclarationsTest {
                     @GraphAction public void host_refs() {}
                 }
                 """)));
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("HostRefs"), failure.getMessage());
         assertTrue(failure.getMessage().contains("host_refs"), failure.getMessage());
         assertEquals(4L, failure.location().orElseThrow().line());
@@ -587,7 +588,7 @@ class ExportDeclarationsTest {
                         @GraphAction public void %s() {}
                     }
                     """.formatted(member))));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertEquals(4L, failure.location().orElseThrow().line());
             assertTrue(failure.getMessage().contains(member), failure.getMessage());
         }
@@ -597,7 +598,7 @@ class ExportDeclarationsTest {
                 import io.github.graphmaquina.annotation.GraphAction;
                 public class ___ { @GraphAction public void run() {} }
                 """)));
-        assertEquals("SG603", hostFailure.code());
+        assertEquals(DiagnosticCode.SG603.name(), hostFailure.code());
         assertEquals(3L, hostFailure.location().orElseThrow().line());
     }
 
@@ -857,7 +858,7 @@ class ExportDeclarationsTest {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.getValue())), shop.getKey());
 
-            assertEquals("SG604", failure.code());
+            assertEquals(DiagnosticCode.SG604.name(), failure.code());
             assertEquals("the marker @" + shop.getKey() + " is written in a local or anonymous class of fx.Shop,"
                     + " which no references container can name, so it exports nothing: mark a member of a top-level"
                     + " or member class instead", failure.getMessage());
@@ -1011,7 +1012,7 @@ class ExportDeclarationsTest {
             try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
                 CodegenException failure =
                         assertThrows(CodegenException.class, () -> ExportDeclarations.collect(index));
-                assertEquals("SG603", failure.code(), obscurer.getKey());
+                assertEquals(DiagnosticCode.SG603.name(), failure.code(), obscurer.getKey());
                 assertEquals("the references container generated for the host fx.Shop in package fx cannot name "
                         + obscurer.getValue() + ": the type " + obscurer.getKey() + " obscures the package "
                         + obscurer.getValue().substring(0, obscurer.getValue().indexOf('.')) + " there",
@@ -1038,7 +1039,7 @@ class ExportDeclarationsTest {
                     }
                     """)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the references container generated for the host String.Shop in package String cannot name"
                 + " String.Shop: the type java.lang.String obscures the package String there", failure.getMessage());
         assertEquals("String/Shop.java", failure.location().orElseThrow().path());
@@ -1311,7 +1312,7 @@ class ExportDeclarationsTest {
                             project.resolve("out/processor"), project.resolve("out/classes"),
                             project.resolve("out/work"), "fx:demo:main")));
 
-            assertEquals("SG601", failure.code());
+            assertEquals(DiagnosticCode.SG601.name(), failure.code());
             assertTrue(failure.getMessage().endsWith(fixture.getKey() + " is not on the generator classpath"),
                     failure.getMessage());
             assertEquals(4L, failure.location().orElseThrow().line(), failure.getMessage());
@@ -1508,7 +1509,7 @@ class ExportDeclarationsTest {
             CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of("fx.Order", ORDER,
                     "fx.Lib", lib, "fx.Shop", shop.formatted(body.getValue()))), body.getKey());
 
-            assertEquals("SG604", failure.code());
+            assertEquals(DiagnosticCode.SG604.name(), failure.code());
             assertEquals("the marker @" + body.getKey() + " is written in a local or anonymous class of fx.Shop, which"
                     + " no references container can name, so it exports nothing: mark a member of a top-level or"
                     + " member class instead", failure.getMessage());
@@ -1618,7 +1619,7 @@ class ExportDeclarationsTest {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", host.getValue())));
 
-            assertEquals("SG604", failure.code());
+            assertEquals(DiagnosticCode.SG604.name(), failure.code());
             assertTrue(failure.getMessage().startsWith("the host fx.Shop."), failure.getMessage());
             assertTrue(failure.getMessage().endsWith(": " + host.getKey() + " is private"), failure.getMessage());
             assertEquals("fx/Shop.java", failure.location().orElseThrow().path());

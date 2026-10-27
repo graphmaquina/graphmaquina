@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import java.io.File;
 import java.io.IOException;
@@ -110,8 +111,8 @@ class TypedWatchTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG605"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG605]")
+        assertEquals(1, result.countError(DiagnosticCode.SG605.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG605 + "]")
                 && error.contains("is a property of fx.Page, not of Doc")), result::describe);
     }
 
@@ -138,8 +139,8 @@ class TypedWatchTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG505"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG505]")
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG505 + "]")
                 && error.contains("boolean stale(Doc, Collection<? extends Page>, "
                         + "PeerView<Page, PageStatus, PageTransition>)")),
                 result::describe);
@@ -152,14 +153,14 @@ class TypedWatchTest {
                     rules = @DocsPages.When(transition = PUBLISH))
                 """));
         assertFalse(none.success(), none.describe());
-        assertEquals(1, none.countError("SG508"), none::describe);
+        assertEquals(1, none.countError(DiagnosticCode.SG508.name()), none::describe);
 
         Compilation.Result two = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
                     rules = @DocsPages.When(allIn = PageStatus.DONE, noneIn = PageStatus.OPEN, transition = PUBLISH))
                 """));
         assertFalse(two.success(), two.describe());
-        assertEquals(1, two.countError("SG508"), two::describe);
+        assertEquals(1, two.countError(DiagnosticCode.SG508.name()), two::describe);
     }
 
     @Test
@@ -170,7 +171,7 @@ class TypedWatchTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG607"), result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG607.name()), result::describe);
     }
 
     @Test
@@ -181,7 +182,7 @@ class TypedWatchTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG404"), result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG404.name()), result::describe);
     }
 
     @Test
@@ -195,7 +196,7 @@ class TypedWatchTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG403"), result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG403.name()), result::describe);
     }
 
     @Test
@@ -203,8 +204,8 @@ class TypedWatchTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, ""));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG608"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG608]")
+        assertEquals(1, result.countError(DiagnosticCode.SG608.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG608 + "]")
                 && error.contains("fx.Pages is declared as a peer of Docs")), result::describe);
     }
 
@@ -220,7 +221,7 @@ class TypedWatchTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.prepare(sources));
 
-        assertEquals("SG608", failure.code());
+        assertEquals(DiagnosticCode.SG608.name(), failure.code());
         assertEquals("fx.Pages is declared twice as a peer of fx.Docs", failure.getMessage());
         assertEquals("originals/fx/Docs.java", failure.location().orElseThrow().path());
     }
@@ -238,8 +239,8 @@ class TypedWatchTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG608"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG608]")
+        assertEquals(1, result.countError(DiagnosticCode.SG608.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG608 + "]")
                 && error.contains("fx.Pages is declared twice as a peer of Docs")), result::describe);
     }
 

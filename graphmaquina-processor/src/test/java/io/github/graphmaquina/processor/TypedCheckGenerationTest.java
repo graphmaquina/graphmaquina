@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -276,7 +277,7 @@ class TypedCheckGenerationTest {
 
     /** The check of an operation of a state that holds a sub-machine is no exit: it draws no {@code SG804}. */
     @Test
-    void aCheckOfAnOperationInABoundStateDrawsNoSG804() {
+    void aCheckOfAnOperationInABoundStateDrawsNoExitIdentifierClash() {
         Compilation.Result result = Compilation.compileTyped(bound(TypedSubmachineTest.BOUND));
 
         assertTrue(result.success(), result.describe());
@@ -285,13 +286,14 @@ class TypedCheckGenerationTest {
 
     /** The exits are validated as before: the operation that executes one is the only error, its check adds none. */
     @Test
-    void aCheckAddsNoSG804ToTheOperationThatExecutesAnExit() {
+    void aCheckAddsNoExitIdentifierClashToTheOperationThatExecutesAnExit() {
         Compilation.Result result = Compilation.compileTyped(bound("""
                 @DocsPages.Submachine(state = REVIEW, child = DocRefs.Current.class, parent = PageRefs.Doc.class,
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = PUBLISH))
                 """));
 
-        assertEquals(List.of("[SG804] Docs.REVIEW: PUBLISH is an exit of its sub-machine and cannot be the operation"
+        assertEquals(List.of("[" + DiagnosticCode.SG804
+                + "] Docs.REVIEW: PUBLISH is an exit of its sub-machine and cannot be the operation"
                 + " publish"), result.errors(), result.describe());
     }
 

@@ -52,6 +52,7 @@ time; each page links the next one in that order.
 | --- | --- |
 | [Machine sets, cascades and watches](coordination.md) | Generated machine sets, peer views, cascades in one unit of work, watches after a peer commits |
 | [Compose machines](composition.md) | Sub-machines: binding a machine to a state, parent lookups, starts, exits, interruptions, reuse |
+| [Compose machines across modules and JARs](cross-module-composition.md) | Watches and sub-machines over a machine of another module or jar: what the producer publishes, lookups, sets, checks |
 
 ## After the commit
 
@@ -99,6 +100,7 @@ time; each page links the next one in that order.
 | Move several entities in one unit of work | [Cascade a transition](coordination.md#cascade-a-transition) |
 | React when other machines change | [Watch other machines](coordination.md#watch-other-machines) |
 | Run a whole machine inside one state | [Compose machines](composition.md) |
+| Watch or bind a machine from another module | [Compose machines across modules and JARs](cross-module-composition.md) |
 | Run code only after a transition committed | [After-commit hooks](commit-and-persistence.md#after-commit-hooks) |
 | Count or audit every call; an eligibility check is no call | [Observers](commit-and-persistence.md#observers) |
 | Share values between the steps of one call | [The call's flow](call-flow.md) |

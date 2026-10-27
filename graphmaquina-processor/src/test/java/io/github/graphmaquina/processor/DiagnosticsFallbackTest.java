@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -42,7 +43,7 @@ class DiagnosticsFallbackTest {
 
         assertFalse(wrapped.success(), wrapped.describe());
         assertEquals(plain.errors(), wrapped.errors(), wrapped.describe());
-        assertEquals(1, wrapped.countError("SG302"), wrapped.describe());
+        assertEquals(1, wrapped.countError(DiagnosticCode.SG302.name()), wrapped.describe());
         String source = RecoveryFixtures.sources(FORBIDDEN_RULE).get("fx.Tickets");
         String literal = "RuntimeException.class";
         long start = source.indexOf(literal);
@@ -50,7 +51,7 @@ class DiagnosticsFallbackTest {
             Diagnostic<? extends JavaFileObject> diagnostic = result.diagnostics().stream()
                     .filter((Diagnostic<? extends JavaFileObject> candidate) ->
                             candidate.getKind() == Diagnostic.Kind.ERROR
-                            && candidate.getMessage(null).startsWith("[SG302]"))
+                            && candidate.getMessage(null).startsWith("[" + DiagnosticCode.SG302 + "]"))
                     .findFirst().orElseThrow();
             assertEquals(start, diagnostic.getStartPosition(), result.describe());
             assertEquals(start + literal.length(), diagnostic.getEndPosition(), result.describe());

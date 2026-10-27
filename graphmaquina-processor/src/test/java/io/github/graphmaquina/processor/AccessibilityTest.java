@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,7 @@ class AccessibilityTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG505"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result.describe());
         assertTrue(result.errors().get(0).contains("billing.Charges") && result.errors().get(0).contains("shop"),
                 result.describe());
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
@@ -67,7 +68,7 @@ class AccessibilityTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG505"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result.describe());
         assertTrue(result.errors().get(0).contains("billing.Outer"), result.describe());
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
     }
@@ -95,7 +96,7 @@ class AccessibilityTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG510"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG510.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shop.Order") && result.errors().get(0).contains("shop.Payments"),
                 result.describe());
         assertFalse(result.hasGenerated("app.ShopRuntime"), result.describe());
@@ -140,7 +141,7 @@ class AccessibilityTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG509"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG509.name()), result.describe());
         assertTrue(result.errors().get(0).contains("pages.Page"), result.describe());
         assertFalse(result.hasGenerated("docs.DocsRuntime"), result.describe());
     }

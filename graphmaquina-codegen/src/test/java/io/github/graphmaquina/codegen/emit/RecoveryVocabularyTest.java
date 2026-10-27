@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -221,7 +222,7 @@ class RecoveryVocabularyTest {
                 "Phase",
                 "/** State enum used by the unnamed-package collision fixture. */ public enum Phase { OPEN, CLOSED }",
                 "Recovery",
-                "/** Transition enum deliberately named Recovery for the SG603 fixture. */ "
+                "/** Transition enum deliberately named Recovery for the " + DiagnosticCode.SG603 + " fixture. */ "
                         + "public enum Recovery { CLOSE }",
                 "Tickets", """
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -231,7 +232,7 @@ class RecoveryVocabularyTest {
                     """));
         CodegenException transition = assertThrows(CodegenException.class,
                 () -> ApiEmitter.emit(unnamed, "unnamed"));
-        assertEquals("SG603", transition.code());
+        assertEquals(DiagnosticCode.SG603.name(), transition.code());
         assertEquals("the vocabulary TicketsGraph cannot name the transition type Recovery of Tickets: inside it,"
                 + " Recovery means its own nested type TicketsGraph.Recovery", transition.getMessage());
         assertEquals("unnamed/Tickets.java", transition.location().orElseThrow().path());
@@ -239,20 +240,22 @@ class RecoveryVocabularyTest {
         GenerationModel packaged = inspect("packaged", Map.of(
                 "Recovery.Doc",
                     "package Recovery; /** Entity with nested enums for the package-segment collision fixture. */ "
-                            + "public class Doc { /** State enum nested in Recovery.Doc for the SG603 fixture. */ "
+                            + "public class Doc { /** State enum nested in Recovery.Doc for the " + DiagnosticCode.SG603
+                            + " fixture. */ "
                             + "public enum Status { DRAFT } "
-                            + "/** Transition enum nested in Recovery.Doc for the SG603 fixture. */ "
+                            + "/** Transition enum nested in Recovery.Doc for the " + DiagnosticCode.SG603
+                            + " fixture. */ "
                             + "public enum Step { GO } }",
                 "fx.Docs", """
                     package fx;
                     import Recovery.Doc;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.api.Machine;
-                    /** Machine fixture referencing nested types in package Recovery for SG603. */ @GenerateGraphApi
+                    /** Machine fixture referencing nested types in package Recovery for %s. */ @GenerateGraphApi
                     public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
-                    """));
+                    """.formatted(DiagnosticCode.SG603)));
         CodegenException state = assertThrows(CodegenException.class, () -> ApiEmitter.emit(packaged, "packaged"));
-        assertEquals("SG603", state.code());
+        assertEquals(DiagnosticCode.SG603.name(), state.code());
         assertEquals("the vocabulary DocsGraph cannot name the state type Recovery.Doc.Status of fx.Docs: inside it,"
                 + " Recovery means its own nested type DocsGraph.Recovery", state.getMessage());
         assertEquals("packaged/fx/Docs.java", state.location().orElseThrow().path());

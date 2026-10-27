@@ -72,8 +72,8 @@ public record MachineModel(MachineTypes types, String packageName, String initia
 
     /**
      * The classes with at least one instance member the companion calls, in order of first appearance and without
-     * repeats: those of the edges the interface declares itself, then those of the watches, then the operations',
-     * then the lookups of the sub-machines.
+     * repeats: those of the edges the interface declares itself, then those of the watches, watch by watch its
+     * conditions and then its owner lookup, then the operations', then the lookups of the sub-machines.
      */
     public List<TypeElement> instanceDependencies() {
         List<TypeElement> owners = new ArrayList<>();

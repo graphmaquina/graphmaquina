@@ -480,7 +480,8 @@ public final class CompilationLifecycle {
                 throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with "
                         + String.join(" and ", debugSettings) + ": javac then leaves the SourceFile attribute out of"
                         + " every class file, and the completion step links each class file to the source that"
-                        + " declared it through that attribute, so it would fail with SG602. Remove "
+                        + " declared it through that attribute, so it would find no class of this compilation to"
+                        + " publish. Remove "
                         + (debugSettings.size() == 1 ? "that setting" : "those settings") + " from " + compilation
                         + ", or add a -g: list that names source, such as -g:source,lines,vars, to its compiler"
                         + " arguments.");

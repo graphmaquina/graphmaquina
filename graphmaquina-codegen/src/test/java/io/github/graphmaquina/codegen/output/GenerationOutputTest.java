@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.GenerationResult;
@@ -236,7 +237,7 @@ class GenerationOutputTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the generated type fx.DocsGraph would stand at fx/DocsGraph.java below the generated source"
                 + " root, where the original source " + sources().resolve("fx/DocsGraph.java")
                 + " stands below its own", failure.getMessage());
@@ -267,7 +268,7 @@ class GenerationOutputTest {
         for (int attempt = 0; attempt < 2; attempt++) {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> StateGraphCodegen.generate(request()));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertFalse(Files.exists(request().workDirectory().resolve("annotation-manifest.json")));
         }
         Files.delete(sources().resolve("fx/DocsGraph.java"));
@@ -318,7 +319,7 @@ class GenerationOutputTest {
         for (int attempt = 0; attempt < 2; attempt++) {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> StateGraphCodegen.generate(request()));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertEquals(handwritten, Files.readString(manual));
         }
     }
@@ -341,7 +342,7 @@ class GenerationOutputTest {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> StateGraphCodegen.generate(request()));
 
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertEquals("the generated type fx.DocsGraph would overwrite the unowned file "
                     + output().resolve("fx/DocsGraph.java") + ": nothing in the work directory "
                     + request().workDirectory() + " records a file a previous generation wrote, as when that directory"
@@ -378,7 +379,7 @@ class GenerationOutputTest {
                     original.workDirectory(), original.compilationId());
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> StateGraphCodegen.generate(withDependency));
-            assertEquals("SG603", failure.code());
+            assertEquals(DiagnosticCode.SG603.name(), failure.code());
             assertTrue(failure.getMessage().contains("fx.DocsGraph"));
             assertTrue(failure.getMessage().contains(dependency.toString()));
         }
@@ -399,7 +400,7 @@ class GenerationOutputTest {
         for (int attempt = 0; attempt < 2; attempt++) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
-            assertEquals("SG602", failure.code());
+            assertEquals(DiagnosticCode.SG602.name(), failure.code());
             assertEquals("unsupported schemaVersion 99 in " + manifest + "; expected 2", failure.getMessage());
             assertEquals(unreadable, Files.readString(manifest));
         }
@@ -460,7 +461,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(Files.isSymbolicLink(link));
         assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
     }
@@ -506,7 +507,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("symbolic link"), failure.getMessage());
         assertEquals("// not generated\n", Files.readString(victim, StandardCharsets.UTF_8));
         assertFalse(Files.exists(outside.resolve("DocRefs.java")));
@@ -526,7 +527,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("symbolic link"), failure.getMessage());
         try (Stream<Path> written = Files.list(outside)) {
             assertEquals(List.of(), written.toList());
@@ -545,7 +546,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
         assertTrue(failure.getMessage().contains("Helpers.java"), failure.getMessage());
         assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
@@ -563,7 +564,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
     }
 
@@ -614,7 +615,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
         assertTrue(failure.getMessage().contains("Helpers.java"), failure.getMessage());
     }
@@ -658,7 +659,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
                 + " source root, where the original source " + original.resolveSibling("DocsGraph.java")
                 + " stands below its own"), failure.getMessage());
@@ -676,7 +677,7 @@ class GenerationOutputTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("where the original source " + sources().resolve("fx/DocsGraph.java")
                 + " stands below its own"), failure.getMessage());
     }
@@ -699,7 +700,7 @@ class GenerationOutputTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
                 + " source root, where the original source " + original.toRealPath() + " stands below its own on a"
                 + " volume that does not tell names apart by case"), failure.getMessage());
@@ -723,7 +724,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("the generated type fx.DocsGraph differs only in case from"
                 + " fx.Docsgraph, which the original source sources/fx/Helpers.java declares"), failure.getMessage());
         assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
@@ -767,7 +768,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the generated types fx.OuterInnerRefs and fx.OuterinnerRefs differ only in case, and the volume"
                 + " of the generated sources " + directory.resolve("generated") + " does not tell their files apart",
                 failure.getMessage());
@@ -790,7 +791,7 @@ class GenerationOutputTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertEquals("the generated symbols fx.ReviewsRefs.ApproveID, of fx.Reviews#approveID at"
                 + " sources/fx/Reviews.java:5, and fx.ReviewsRefs.ApproveId, of fx.Reviews#approveId at"
                 + " sources/fx/Reviews.java:4, differ only in case, and the volume of the class output "
@@ -831,7 +832,7 @@ class GenerationOutputTest {
         List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
         ExportIndex dependency = new ExportIndex(2, ToolVersion.current(), "other:lib:main",
                 new GenerationModel(List.of(), List.of()), List.of("lib.Orders\ud800.Transition"));
-        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of(dependency));
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, List.of(), emitted, List.of(dependency));
 
         assertThrows(IOException.class, () -> GenerationOutput.publish(request, emitted, manifest));
 
@@ -854,7 +855,7 @@ class GenerationOutputTest {
         GenerationRequest request = request();
         GenerationModel model = Bootstrap.inspect(request);
         List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
-        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of());
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, List.of(), emitted, List.of());
         SourceFiles.write(sources(), Map.of("fx.Unresolved", """
             package fx;
             import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -875,7 +876,7 @@ class GenerationOutputTest {
             """));
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> GenerationOutput.publish(request, emitted, manifest));
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("fx.DocRefs is already declared by the original source"),
                 failure.getMessage());
     }

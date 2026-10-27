@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -173,7 +174,8 @@ class InheritedStaticBindingsTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(List.of("[SG604] fx.HostRefs.Archive exports fx.BaseActions.archive through fx.Host, which"
+        assertEquals(List.of("[" + DiagnosticCode.SG604
+                + "] fx.HostRefs.Archive exports fx.BaseActions.archive through fx.Host, which"
                 + " does not inherit it: fx.Host.archive hides it"), sgErrors(result), result.describe());
     }
 

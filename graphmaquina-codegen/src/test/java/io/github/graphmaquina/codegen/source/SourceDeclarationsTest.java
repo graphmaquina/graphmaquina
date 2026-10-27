@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.source.tree.ClassTree;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -69,7 +70,7 @@ class SourceDeclarationsTest {
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> SourceDeclarations.parse(directory, files));
 
-        assertEquals("SG601", failure.code());
+        assertEquals(DiagnosticCode.SG601.name(), failure.code());
         assertEquals("the original sources cannot be read: fx/Orders.java:4: illegal start of type",
                 failure.getMessage());
         assertEquals("fx/Orders.java", failure.location().orElseThrow().path());

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException;
 import java.util.ArrayList;
@@ -69,7 +70,8 @@ class MachineOutlineValidatorTest {
         List<InvalidGraphException.Problem> problems = MachineOutlineValidator.validate(outline);
         // SG202: PUBLISHED is terminal but declares ARCHIVE; SG205: ARCHIVED is in no cycle;
         // SG301: no ARCHIVE leaves REVIEW; SG401: no SUBMIT leaves ARCHIVED; SG402: ARCHIVED is terminal and watches.
-        assertEquals(List.of("SG202", "SG205", "SG301", "SG401", "SG402"), codes(problems));
+        assertEquals(List.of(DiagnosticCode.SG202.name(), DiagnosticCode.SG205.name(), DiagnosticCode.SG301.name(),
+                DiagnosticCode.SG401.name(), DiagnosticCode.SG402.name()), codes(problems));
         assertTrue(problems.get(0).message().contains("PUBLISHED is terminal but declares [ARCHIVE]"));
     }
 
@@ -81,7 +83,8 @@ class MachineOutlineValidatorTest {
                         move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
         List<InvalidGraphException.Problem> problems = MachineOutlineValidator.validate(outline);
-        assertEquals(List.of("SG203", "SG203", "SG204"), codes(problems));
+        assertEquals(List.of(DiagnosticCode.SG203.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG204.name()),
+                codes(problems));
         assertTrue(problems.get(0).message().startsWith("PUBLISHED is unreachable"));
         assertTrue(problems.get(2).message().contains("[DRAFT, REVIEW, DRAFT]"));
     }
@@ -99,7 +102,8 @@ class MachineOutlineValidatorTest {
                         new PolicyOutline("PUBLISHED", "published", Map.of()),
                         new PolicyOutline("ARCHIVED", "archived", Map.of())),
                 List.of());
-        assertEquals(List.of("SG102", "SG102", "SG103", "SG702"), codes(MachineOutlineValidator.validate(outline)));
+        assertEquals(List.of(DiagnosticCode.SG102.name(), DiagnosticCode.SG102.name(), DiagnosticCode.SG103.name(),
+                DiagnosticCode.SG702.name()), codes(MachineOutlineValidator.validate(outline)));
     }
 
     /**
@@ -116,7 +120,7 @@ class MachineOutlineValidatorTest {
                         move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
         List<InvalidGraphException.Problem> problems = MachineOutlineValidator.validate(outline);
-        assertEquals(List.of("SG507"), codes(problems));
+        assertEquals(List.of(DiagnosticCode.SG507.name()), codes(problems));
         assertTrue(problems.get(0).message().contains("declares onFailure without an action"));
     }
 
@@ -137,7 +141,7 @@ class MachineOutlineValidatorTest {
         MachineOutline watched = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
                 List.of(move("A", "X/Y", "A/X"), move("A/X", "X/Y", "END")), policies,
                 List.of(new WatchOutline("A/X", List.of("Y"))));
-        assertEquals(List.of("SG401"), codes(MachineOutlineValidator.validate(watched)));
+        assertEquals(List.of(DiagnosticCode.SG401.name()), codes(MachineOutlineValidator.validate(watched)));
 
         MachineOutline rejecting = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
                 List.of(move("A", "GO", "A/X"), move("A/X", "Y", "END")),
@@ -148,12 +152,12 @@ class MachineOutlineValidatorTest {
 
         MachineOutline recovering = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
                 List.of(action("A", "GO", "A/X", "X/Y"), move("A/X", "Y", "END")), policies, List.of());
-        assertEquals(List.of("SG301"), codes(MachineOutlineValidator.validate(recovering)));
+        assertEquals(List.of(DiagnosticCode.SG301.name()), codes(MachineOutlineValidator.validate(recovering)));
 
         MachineOutline ruled = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
                 List.of(recovering("A", "GO", "A/X", TransitionKind.ACTION, null, "X/Y"), move("A/X", "Y", "END")),
                 policies, List.of());
-        assertEquals(List.of("SG301"), codes(MachineOutlineValidator.validate(ruled)));
+        assertEquals(List.of(DiagnosticCode.SG301.name()), codes(MachineOutlineValidator.validate(ruled)));
     }
 
     /** A rule and the onFailure may name the same recovery transition, as long as an edge with it leaves the origin. */
@@ -176,7 +180,7 @@ class MachineOutlineValidatorTest {
                         recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "PUBLISH"),
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
-        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
                         "REVIEW -PUBLISH-> PUBLISHED declares recovery PUBLISH, which is its own key")),
                 MachineOutlineValidator.validate(outline));
     }
@@ -191,7 +195,7 @@ class MachineOutlineValidatorTest {
                         recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "SEND_BACK"),
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
-        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
                         "DRAFT -PUBLISH-> PUBLISHED declares recovery SEND_BACK, but no transition SEND_BACK leaves"
                                 + " DRAFT")),
                 MachineOutlineValidator.validate(outline));
@@ -206,7 +210,7 @@ class MachineOutlineValidatorTest {
                         action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
                         move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
-        assertEquals(List.of(new InvalidGraphException.Problem("SG507",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG507.name(),
                         "DRAFT -SUBMIT-> REVIEW declares recover without an action")),
                 MachineOutlineValidator.validate(outline));
     }
@@ -220,7 +224,7 @@ class MachineOutlineValidatorTest {
                         recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "ARCHIVE", "ARCHIVE"),
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
-        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+        assertEquals(List.of(new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
                         "REVIEW -PUBLISH-> PUBLISHED declares recovery ARCHIVE, but no transition ARCHIVE leaves"
                                 + " REVIEW")),
                 MachineOutlineValidator.validate(outline));
@@ -236,9 +240,11 @@ class MachineOutlineValidatorTest {
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
         assertEquals(List.of(
-                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                "REVIEW -PUBLISH-> PUBLISHED declares recovery"
                                 + " ARCHIVE, but no transition ARCHIVE leaves REVIEW"),
-                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
                                 + " ARCHIVE, but no transition ARCHIVE leaves REVIEW")),
                 MachineOutlineValidator.validate(outline));
     }
@@ -254,11 +260,14 @@ class MachineOutlineValidatorTest {
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
         assertEquals(List.of(
-                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                "REVIEW -PUBLISH-> PUBLISHED declares recovery"
                                 + " DISCARD, but no transition DISCARD leaves REVIEW"),
-                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                "REVIEW -PUBLISH-> PUBLISHED declares recovery"
                                 + " ARCHIVE, but no transition ARCHIVE leaves REVIEW"),
-                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
+                        new InvalidGraphException.Problem(DiagnosticCode.SG301.name(),
+                                "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
                                 + " RETOUCH, but no transition RETOUCH leaves REVIEW")),
                 MachineOutlineValidator.validate(outline));
     }
@@ -311,7 +320,7 @@ class MachineOutlineValidatorTest {
     void anUnauthorizedLargeCycleReportsOneWitnessPerComponent() {
         List<InvalidGraphException.Problem> problems =
                 MachineOutlineValidator.validate(CirculantOutlines.of(500, 8, false));
-        assertEquals(List.of("SG204"), codes(problems));
+        assertEquals(List.of(DiagnosticCode.SG204.name()), codes(problems));
         assertTrue(problems.get(0).message().startsWith("unauthorized cycle "));
     }
 }

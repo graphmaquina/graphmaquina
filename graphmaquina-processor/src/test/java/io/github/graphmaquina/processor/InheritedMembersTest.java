@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class InheritedMembersTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG504"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG504.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shelve") && result.errors().get(0).contains("fx.Archivable"),
                 result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
@@ -56,7 +57,8 @@ class InheritedMembersTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG504] Docs inherits the abstract method canShelve from fx.Checkable, which the"
+        assertEquals(List.of("[" + DiagnosticCode.SG504
+                + "] Docs inherits the abstract method canShelve from fx.Checkable, which the"
                 + " generated companion would not implement: declare every operation and check on Docs itself"),
                 result.errors(), result.describe());
     }
@@ -86,10 +88,10 @@ class InheritedMembersTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG504"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG504.name()), result.describe());
         assertTrue(result.errors().get(0).contains("submit") && result.errors().get(0).contains("fx.DocOperations"),
                 result.describe());
-        assertEquals(0, result.countError("SG203"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG203.name()), result.describe());
     }
 
     /**
@@ -119,9 +121,9 @@ class InheritedMembersTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG606"), result.describe());
-        assertEquals(1, result.countError("SG504"), result.describe());
-        assertEquals(0, result.countError("SG203"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG606.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG504.name()), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG203.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
@@ -232,7 +234,7 @@ class InheritedMembersTest {
         inherited.put("fx.Docs", inherited.get("fx.Docs").replace(EXTENDS,
                 "public interface Docs extends Machine<Doc, DocStatus, DocTransition>, Strict {"));
         Compilation.Result throughBase = Compilation.compileTyped(inherited);
-        assertEquals(1, throughBase.countError("SG504"), throughBase.describe());
+        assertEquals(1, throughBase.countError(DiagnosticCode.SG504.name()), throughBase.describe());
         assertTrue(throughBase.errors().get(0).contains("Docs inherits reevaluate from fx.Strict, which redeclares"
                 + " Machine.reevaluate with a result the generated companion's reevaluate cannot return: declare it in"
                 + " fx.Strict with the result Machine.reevaluate has, or leave the redeclaration out"),
@@ -243,7 +245,7 @@ class InheritedMembersTest {
                 Fixtures.DOCS_BODY
                         + "    @Override io.github.graphmaquina.api.Outcome.Applied<Doc, DocStatus, DocTransition> "
                         + "reevaluate(Doc doc);\n"));
-        assertEquals(1, declared.countError("SG504"), declared.describe());
+        assertEquals(1, declared.countError(DiagnosticCode.SG504.name()), declared.describe());
         assertTrue(declared.errors().get(0).contains("reevaluate redeclares Machine.reevaluate with a result the"
                 + " generated companion's reevaluate cannot return: declare it with the result Machine.reevaluate has,"
                 + " or leave the redeclaration out"), declared.describe());
@@ -266,7 +268,7 @@ class InheritedMembersTest {
 
         Compilation.Result inheritedAndDeclared = Compilation.compileTyped(sources);
 
-        assertEquals(1, inheritedAndDeclared.countError("SG510"), inheritedAndDeclared.describe());
+        assertEquals(1, inheritedAndDeclared.countError(DiagnosticCode.SG510.name()), inheritedAndDeclared.describe());
         assertTrue(inheritedAndDeclared.errors().get(0).contains("pages")
                 && inheritedAndDeclared.errors().get(0).contains("fx.HasPages"), inheritedAndDeclared.describe());
         assertFalse(inheritedAndDeclared.hasGenerated("fx.LibraryRuntime"), inheritedAndDeclared.describe());
@@ -275,7 +277,7 @@ class InheritedMembersTest {
         sources.put("fx.Docs", Fixtures.docs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY));
         Compilation.Result inheritedOnly = Compilation.compileTyped(sources);
 
-        assertEquals(1, inheritedOnly.countError("SG510"), inheritedOnly.describe());
+        assertEquals(1, inheritedOnly.countError(DiagnosticCode.SG510.name()), inheritedOnly.describe());
         assertTrue(inheritedOnly.errors().get(0).contains("fx.HasPages"), inheritedOnly.describe());
         assertFalse(inheritedOnly.errors().get(0).contains("declares no machine"), inheritedOnly.describe());
     }

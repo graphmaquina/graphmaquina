@@ -44,6 +44,40 @@ tasks.processResources {
         filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", release) }
     }
 }
+// The siblings that only the root build publishes, as it stages them in the adapter-test repository at this build's
+// version: the fixtures resolve all of them, and the tests compile against core's jar.
+val siblings = listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor")
+val stagedRelease = project.version.toString()
+val stagedRoot = layout.projectDirectory.dir("../build/adapter-test-repository/io/github/graphmaquina")
+val stagedJars = siblings.associateWith { stagedRoot.file("$it/$stagedRelease/$it-$stagedRelease.jar").asFile }
+
+// From the root build, the task depends on the publications of `modules`; the provider defers the lookup until the
+// root's projects are configured, after this build. Alone, with -p, there is no root build and they must already be
+// staged.
+fun Task.dependsOnPublicationOf(modules: List<String>) {
+    gradle.parent?.let { root ->
+        dependsOn(provider {
+            modules.map {
+                root.rootProject.project(":$it").tasks.named("publishMavenPublicationToAdapterTestsRepository").get()
+            }
+        })
+    }
+}
+
+// The task refuses to start while the jar of any of `modules` is not staged, and says what stages it.
+fun Task.requireStaged(modules: List<String>) {
+    // Locals for the action: the configuration cache cannot store an action that holds this script.
+    val jars = modules.associateWith { stagedJars.getValue(it) }
+    val release = stagedRelease
+    doFirst {
+        val missing = jars.filterValues { !it.isFile }.keys
+        check(missing.isEmpty()) {
+            "${missing.joinToString()} $release not staged in build/adapter-test-repository; run ./gradlew " +
+                modules.joinToString(" ") { ":$it:publishMavenPublicationToAdapterTestsRepository" } + " first"
+        }
+    }
+}
+
 dependencies {
     // Lombok is tooling for this build's own sources: compile-only, so the published plugin never depends on it.
     compileOnly(libs.lombok)
@@ -55,6 +89,9 @@ dependencies {
     testImplementation(gradleTestKit())
     // Only the tests decode the JSON the generator publishes; the plugin itself never loads codegen classes.
     testImplementation(libs.gson)
+    // Only the tests name diagnostic codes through core's DiagnosticCode, from the jar the sibling build stages for
+    // the fixtures; the published plugin depends on no library class.
+    testImplementation(files(stagedJars.getValue("graphmaquina-core")))
     testRuntimeOnly(libs.junit.launcher)
 }
 signing {
@@ -125,6 +162,12 @@ tasks.withType<PublishToMavenRepository>().configureEach {
     }
 }
 
+tasks.compileTestJava {
+    // The tests compile against the staged core jar, so the root build stages it first.
+    dependsOnPublicationOf(listOf("graphmaquina-core"))
+    requireStaged(listOf("graphmaquina-core"))
+}
+
 tasks.test {
     useJUnitPlatform()
     // The published-artifact test resolves `id("io.github.graphmaquina") version …` from the file repository, so this
@@ -139,29 +182,17 @@ tasks.test {
     // The fixture projects build with the Lombok and JUnit versions of this build's own catalog.
     systemProperty("graphmaquina.lombokVersion", libs.versions.lombok.get())
     systemProperty("graphmaquina.junitVersion", libs.versions.junit.get())
-    // The fixtures also resolve core, the generator and the processor, which only the root build publishes. From the
-    // root, the tests depend on those publications; the provider defers the lookup until the root's projects are
-    // configured, after this build. Alone, with -p, there is no root build and they must already be staged.
-    val siblings = listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor")
-    val release = project.version.toString()
-    val staged = layout.projectDirectory.dir("../build/adapter-test-repository/io/github/graphmaquina")
-    gradle.parent?.let { root ->
-        dependsOn(provider {
-            siblings.map {
-                root.rootProject.project(":$it").tasks.named("publishMavenPublicationToAdapterTestsRepository").get()
-            }
-        })
-    }
+    // The cross-module scenarios, kept once in the processor's test resources as the package roots producer/ and
+    // consumer/: the fixtures build them as a multi-project build and as a consumer of the producer's jar, so a change
+    // to them reruns the tests.
+    val crossModule = layout.projectDirectory.dir("../graphmaquina-processor/src/test/resources/cross-module")
+    systemProperty("graphmaquina.crossModule", crossModule.asFile.absolutePath)
+    inputs.dir(crossModule).withPropertyName("crossModuleScenarios")
+    // The fixtures also resolve core, the generator and the processor, which only the root build publishes.
+    dependsOnPublicationOf(siblings)
     // Their files at this version, so a change to any of them within one commit runs the tests again. Not the module
     // directories: their maven-metadata.xml changes on every publication.
-    inputs.files(siblings.map { staged.dir("$it/$release") }).withPropertyName("siblingArtifacts")
+    inputs.files(siblings.map { stagedRoot.dir("$it/$stagedRelease") }).withPropertyName("siblingArtifacts")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    val jars = siblings.associateWith { staged.file("$it/$release/$it-$release.jar").asFile }
-    doFirst {
-        val missing = jars.filterValues { !it.isFile }.keys
-        check(missing.isEmpty()) {
-            "${missing.joinToString()} $release not staged in build/adapter-test-repository; run ./gradlew " +
-                siblings.joinToString(" ") { ":$it:publishMavenPublicationToAdapterTestsRepository" } + " first"
-        }
-    }
+    requireStaged(siblings)
 }

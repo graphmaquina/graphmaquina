@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
@@ -157,7 +158,7 @@ class BootstrapTest {
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> Bootstrap.read(request(List.of(root))));
 
-            assertEquals("SG502", failure.code());
+            assertEquals(DiagnosticCode.SG502.name(), failure.code());
             assertEquals("the marker @" + declaration.getKey() + " is written on a local or anonymous class of"
                     + " fx.Holder, but a machine or a set must be a top-level interface: the generated companion lives"
                     + " next to it in the package", failure.getMessage());

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -30,8 +31,8 @@ class SetErrorsTest {
     @Test
     void sg502NotAnInterfaceOrNotMachines() {
         assertTrue(library(Fixtures.LIBRARY.replace("public interface Library extends Machines",
-                "public abstract class Library implements Machines")).hasError("SG502"));
-        assertTrue(library(Fixtures.LIBRARY.replace(" extends Machines", "")).hasError("SG502"));
+                "public abstract class Library implements Machines")).hasError(DiagnosticCode.SG502.name()));
+        assertTrue(library(Fixtures.LIBRARY.replace(" extends Machines", "")).hasError(DiagnosticCode.SG502.name()));
     }
 
     @Test
@@ -51,20 +52,23 @@ class SetErrorsTest {
                 }
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
-        assertTrue(result.hasError("SG502"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG502.name()), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
     }
 
     @Test
     void sg510AccessorShapeDuplicatesAndMissingPeer() {
-        assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();", "Docs docs(String name);")).hasError("SG510"));
-        assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();", "String docs();")).hasError("SG510"));
+        assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();",
+                "Docs docs(String name);")).hasError(DiagnosticCode.SG510.name()));
+        assertTrue(library(Fixtures.LIBRARY.replace("Docs docs();",
+                "String docs();")).hasError(DiagnosticCode.SG510.name()));
         assertTrue(library(Fixtures.LIBRARY.replace("Pages pages();", "Pages pages();\n    Pages more();"))
-                .hasError("SG510"));
+                .hasError(DiagnosticCode.SG510.name()));
         Compilation.Result missingPeer = library(Fixtures.LIBRARY.replace("    Pages pages();\n", ""));
-        assertTrue(missingPeer.hasError("SG510"), missingPeer.describe());
+        assertTrue(missingPeer.hasError(DiagnosticCode.SG510.name()), missingPeer.describe());
         assertTrue(missingPeer.errors().get(0).contains("Pages"), missingPeer.describe());
-        assertTrue(library(Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n", "")).hasError("SG510"));
+        assertTrue(library(Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n",
+                "")).hasError(DiagnosticCode.SG510.name()));
     }
 
     /**
@@ -109,7 +113,7 @@ class SetErrorsTest {
                 }
                 """);
         Compilation.Result different = Compilation.compileTyped(catalogues);
-        assertEquals(1, different.countError("SG510"), different.describe());
+        assertEquals(1, different.countError(DiagnosticCode.SG510.name()), different.describe());
         assertTrue(different.errors().get(0).contains("reviews") && different.errors().get(0).contains("docs"),
                 different.describe());
         assertFalse(different.hasGenerated("fx.DeskRuntime"), different.describe());
@@ -119,7 +123,7 @@ class SetErrorsTest {
                 .replace("DocsGraph", "CopiesGraph").replace("interface Docs ", "interface Copies "));
         same.put("fx.Desk", catalogues.get("fx.Desk").replace("Reviews reviews();", "Copies copies();"));
         Compilation.Result identical = Compilation.compileTyped(same);
-        assertEquals(1, identical.countError("SG510"), identical.describe());
+        assertEquals(1, identical.countError(DiagnosticCode.SG510.name()), identical.describe());
         assertFalse(identical.hasGenerated("fx.DeskRuntime"), identical.describe());
     }
 
@@ -133,8 +137,9 @@ class SetErrorsTest {
     void sg510AnAccessorCollidingWithTheCompanionsBuilderAndRenamedFieldsOtherwise() {
         Compilation.Result builder = synchronousLibrary("Pages builder();");
         assertFalse(builder.success(), builder.describe());
-        assertEquals(1, builder.countError("SG510"), builder.describe());
-        assertTrue(builder.errors().get(0).contains("[SG510] builder() is the static builder() the generated"
+        assertEquals(1, builder.countError(DiagnosticCode.SG510.name()), builder.describe());
+        assertTrue(builder.errors().get(0).contains("[" + DiagnosticCode.SG510
+                + "] builder() is the static builder() the generated"
                 + " LibraryRuntime declares"), builder.describe());
         assertFalse(builder.hasGenerated("fx.LibraryRuntime"), builder.describe());
 
@@ -165,12 +170,12 @@ class SetErrorsTest {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(blankPolicy + Fixtures.DOCS_WATCH,
                 Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertEquals(1, result.errors().size(), result.describe());
-        assertTrue(result.hasError("SG103"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG103.name()), result.describe());
 
         Compilation.Result builder = Compilation.compileTyped(Fixtures.withLibrary(blankPolicy, Fixtures.DOCS_BODY,
                 Fixtures.LIBRARY.replace("Pages pages();", "Pages builder();")));
         assertEquals(1, builder.errors().size(), builder.describe());
-        assertTrue(builder.hasError("SG103"), builder.describe());
+        assertTrue(builder.hasError(DiagnosticCode.SG103.name()), builder.describe());
     }
 
     /**
@@ -184,6 +189,7 @@ class SetErrorsTest {
                 .replace("Pages pages();", "Pages builder();"));
 
         assertEquals(1, result.errors().size(), result.describe());
-        assertTrue(result.errors().get(0).contains("[SG510] docs must be a no-argument accessor"), result.describe());
+        assertTrue(result.errors().get(0).contains("[" + DiagnosticCode.SG510
+                + "] docs must be a no-argument accessor"), result.describe());
     }
 }

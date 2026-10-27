@@ -305,7 +305,7 @@ final class ExportValidator {
             case HOOK -> "void from the entity alone or the entity and a CommitContext";
             case CONDITION -> "boolean from the entity, a supertype of Collection and a PeerView";
             case PROPERTY -> "a field or a getter";
-            case LOOKUP -> "Optional of the parent entity from the child entity alone";
+            case LOOKUP -> "Optional of the parent or owner entity from the child or peer entity alone";
         };
     }
 

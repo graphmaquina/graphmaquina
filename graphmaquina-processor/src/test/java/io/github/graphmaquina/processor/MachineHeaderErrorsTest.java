@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -125,7 +126,7 @@ class MachineHeaderErrorsTest {
         notInterface.put("fx.Docs", Fixtures.DOCS_IMPORTS + Fixtures.DOCS_HEADER
                 + "public abstract class Docs implements Machine<Doc, DocStatus, DocTransition> {\n}\n");
         Compilation.Result result = Compilation.compileTyped(notInterface);
-        assertTrue(result.hasError("SG502"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG502.name()), result.describe());
     }
 
     /**
@@ -141,7 +142,8 @@ class MachineHeaderErrorsTest {
                 + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n"
                 + Fixtures.DOCS_BODY.replace("@DocsGraph.", "@HolderDocsGraph.") + "}\n}\n");
         Compilation.Result result = Compilation.compileTyped(nested);
-        assertEquals(List.of("[SG502] Docs must be a top-level interface: the generated companion lives next to it in"
+        assertEquals(List.of("[" + DiagnosticCode.SG502
+                + "] Docs must be a top-level interface: the generated companion lives next to it in"
                 + " the package"), result.errors(), result.describe());
         try (Stream<Path> generated = Files.walk(result.output())) {
             assertEquals(List.of(), generated.filter(Files::isRegularFile).toList(), result.describe());
@@ -173,7 +175,8 @@ class MachineHeaderErrorsTest {
             Compilation.Result result = Compilation.compileTyped(sources);
 
             assertFalse(result.success(), result.describe());
-            assertEquals(List.of("[SG502] Inner must be a top-level interface: the generated companion lives next to"
+            assertEquals(List.of("[" + DiagnosticCode.SG502
+                    + "] Inner must be a top-level interface: the generated companion lives next to"
                     + " it in the package"), result.errors(), result.describe());
         }
     }
@@ -192,7 +195,8 @@ class MachineHeaderErrorsTest {
             Compilation.Result result = Compilation.compileTyped(sources);
 
             assertFalse(result.success(), result.describe());
-            assertEquals(List.of("[SG502] Docs must be an interface extending Machine<E, S, T>"), result.errors(),
+            assertEquals(List.of("[" + DiagnosticCode.SG502 + "] Docs must be an interface extending Machine<E, S, T>"),
+                    result.errors(),
                     result.describe());
         }
     }
@@ -211,8 +215,8 @@ class MachineHeaderErrorsTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG601"), result.describe());
-        assertEquals(0, result.countError("SG502"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG601.name()), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG502.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
@@ -232,9 +236,9 @@ class MachineHeaderErrorsTest {
         Compilation.Result state = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("state = DocRefs.Status.class", "state = DocRefs.Pages.class"),
                 Fixtures.DOCS_BODY));
-        assertTrue(state.hasError("SG503"), state.describe());
-        assertTrue(state.errors().stream().anyMatch(error -> error.contains("[SG503]") && error.contains("'pages'")),
-                state::describe);
+        assertTrue(state.hasError(DiagnosticCode.SG503.name()), state.describe());
+        assertTrue(state.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG503 + "]")
+                && error.contains("'pages'")), state::describe);
     }
 
     @Test
@@ -244,19 +248,19 @@ class MachineHeaderErrorsTest {
                         "@DocsGraph.StatePolicy(state = PUBLISHED, otherwise = "
                                 + "\"a published doc can only be archived\")\n", ""),
                 Fixtures.DOCS_BODY));
-        assertTrue(missing.hasError("SG701"), missing.describe());
+        assertTrue(missing.hasError(DiagnosticCode.SG701.name()), missing.describe());
         assertTrue(missing.errors().get(0).contains("PUBLISHED"), missing.describe());
 
         Compilation.Result duplicate = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER + "@DocsGraph.StatePolicy(state = DRAFT, otherwise = \"again\")\n",
                 Fixtures.DOCS_BODY));
-        assertTrue(duplicate.hasError("SG102"), duplicate.describe());
+        assertTrue(duplicate.hasError(DiagnosticCode.SG102.name()), duplicate.describe());
 
         Compilation.Result blank = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \""),
                 Fixtures.DOCS_BODY));
-        assertTrue(blank.hasError("SG103"), blank.describe());
-        assertEquals(0, blank.countError("SG701"), blank.describe());
+        assertTrue(blank.hasError(DiagnosticCode.SG103.name()), blank.describe());
+        assertEquals(0, blank.countError(DiagnosticCode.SG701.name()), blank.describe());
     }
 
     @Test

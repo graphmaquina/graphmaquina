@@ -2,6 +2,7 @@ package io.github.graphmaquina.dsl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException;
 import java.util.ArrayList;
@@ -28,8 +29,11 @@ import org.junit.jupiter.api.Test;
 class OutlineValidationDifferentialTest {
 
     /** Every code the validator can report; the corpus is worthless if it does not reach all of them. */
-    private static final List<String> EVERY_CODE = List.of("SG102", "SG103", "SG202", "SG203", "SG204", "SG205",
-            "SG301", "SG401", "SG402", "SG507", "SG701", "SG702");
+    private static final List<String> EVERY_CODE = List.of(DiagnosticCode.SG102.name(), DiagnosticCode.SG103.name(),
+            DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG204.name(),
+            DiagnosticCode.SG205.name(), DiagnosticCode.SG301.name(), DiagnosticCode.SG401.name(),
+            DiagnosticCode.SG402.name(), DiagnosticCode.SG507.name(), DiagnosticCode.SG701.name(),
+            DiagnosticCode.SG702.name());
 
     private static final List<String> STATES = List.of("A", "B", "C");
     private static final List<String> CATALOG = catalog();

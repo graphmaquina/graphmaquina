@@ -13,6 +13,7 @@ import io.github.graphmaquina.processor.model.StatePolicyModel;
 import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
+import io.github.graphmaquina.processor.model.WatchOwner;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -260,10 +261,8 @@ final class GraphStatements {
     }
 
     /**
-     * The chain of one watch: the call that opens it, one line per rule, and the call that closes it. An owner reader
-     * that returns the owner itself, rather than an {@code Optional} of it, is wrapped in one after a
-     * {@code requireNonNull} whose message is the engine's for an {@code ownerOf} that returns null: absence is an
-     * empty {@code Optional}, never null.
+     * The chain of one watch: the call that opens it, with the lambda that reads the peers of the entity and then the
+     * one that finds the owner of a peer, one line per rule, and the call that closes it.
      */
     private static List<String> watch(MachineModel model, Names names, Variables variables,
                                       BoundInvocation invocations, WatchModel watch) {
@@ -276,19 +275,14 @@ final class GraphStatements {
         List<String> arguments = conditionParameters(entity, variables);
         String peer = MachineGenerator.unique(MachineGenerator.decapitalize(watch.peer().entityName()),
                 variables.taken());
-        String read = peer + "." + watch.owner().method() + "()";
-        String refusal = "the ownerOf of " + model.types().entityName() + "/" + model.types().statesName() + "."
-                + watch.state() + " returned null";
-        String owner = watch.ownerIsOptional()
-                ? read
-                : names.qualifier(MachineGenerator.OPTIONAL) + ".of(" + names.qualifier(MachineGenerator.OBJECTS)
-                        + ".requireNonNull(" + read + ", " + MachineGenerator.quote(refusal) + "))";
         String peers = MachineGenerator.lambda(e + " " + entity, entity + "." + watch.peers().method() + "()",
                 invocations.caught(watch.peers().accessor()).map(names::of), true, variables.rethrow(),
                 variables.failure());
-        String owners = MachineGenerator.lambda(p + " " + peer, owner,
-                invocations.caught(watch.owner().accessor()).map(names::of), true, variables.rethrow(),
-                variables.failure());
+        String owners = switch (watch.owner()) {
+            case WatchOwner.Read read -> ownerReader(model, read, watch.state(), p, peer, variables, names,
+                    invocations);
+            case WatchOwner.Lookup lookup -> lookup(lookup.binding(), p, peer, variables, names, invocations);
+        };
         List<String> lines = new ArrayList<>();
         lines.add(".watch(" + MachineGenerator.constant(names, model.types().statesElement(), watch.state()) + ", "
                 + names.qualifier(MachineGenerator.MACHINE_KEY) + ".of(" + p + ".class, " + q + ".class, " + u
@@ -309,6 +303,26 @@ final class GraphStatements {
         }
         lines.add(".endWatch()");
         return lines;
+    }
+
+    /**
+     * The lambda that reads the owner of a peer entity, typed {@code p}, through {@code read}, the owner property of
+     * the watch of {@code state}. A property that returns the owner itself, rather than an {@code Optional} of it, is
+     * wrapped in one after a {@code requireNonNull} whose message is the engine's for an {@code ownerOf} that returns
+     * null: absence is an empty {@code Optional}, never null.
+     */
+    private static String ownerReader(MachineModel model, WatchOwner.Read read, String state, String p, String peer,
+                                      Variables variables, Names names, BoundInvocation invocations) {
+        String call = peer + "." + read.property().method() + "()";
+        String refusal = "the ownerOf of " + model.types().entityName() + "/" + model.types().statesName() + "."
+                + state + " returned null";
+        String owner = read.optional()
+                ? call
+                : names.qualifier(MachineGenerator.OPTIONAL) + ".of(" + names.qualifier(MachineGenerator.OBJECTS)
+                        + ".requireNonNull(" + call + ", " + MachineGenerator.quote(refusal) + "))";
+        return MachineGenerator.lambda(p + " " + peer, owner,
+                invocations.caught(read.property().accessor()).map(names::of), true, variables.rethrow(),
+                variables.failure());
     }
 
     /**
@@ -351,8 +365,10 @@ final class GraphStatements {
     }
 
     /**
-     * The lambda that finds the parent of a child entity, typed {@code p}, through {@code binding}, the lookup the
-     * sub-machine selected: on the host class for a static member and on the injected parameter for an instance one.
+     * The lambda that hands an entity, typed {@code p}, to {@code binding}, an exported lookup: the
+     * {@code parentLookup} of a sub-machine, which finds the parent of its child, or the {@code ownerLookup} of a
+     * watch, which finds the owner of its peer. The lookup is called on the host class for a static member and on the
+     * injected parameter for an instance one, and its {@code Optional} is handed to the DSL as it is.
      */
     private static String lookup(Binding binding, String p, String peer, Variables variables, Names names,
                                  BoundInvocation invocations) {

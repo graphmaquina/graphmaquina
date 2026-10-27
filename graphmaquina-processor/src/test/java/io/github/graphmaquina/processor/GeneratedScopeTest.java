@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.Machine;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -201,7 +202,7 @@ class GeneratedScopeTest {
                         "import billing.Payment;\nimport static shop.OrderStatus.*;")
                 .replace("pay(Order order);", "pay(Order order, Payment payment);"));
         Compilation.Result typed = Compilation.compileTyped(packageType);
-        assertEquals(1, typed.countError("SG603"), typed.describe());
+        assertEquals(1, typed.countError(DiagnosticCode.SG603.name()), typed.describe());
         assertTrue(typed.errors().get(0).contains("billing.Payment") && typed.errors().get(0).contains("shop.billing")
                 && typed.errors().get(0).contains("Orders"), typed.describe());
         assertFalse(typed.hasGenerated("shop.OrdersRuntime"), typed.describe());
@@ -261,11 +262,12 @@ class GeneratedScopeTest {
                 List.copyOf(sources.keySet()));
         Compilation.Result unlisted = Compilation.compileWithSourcePath(Compilation.prepare(sources), withoutTaker);
 
-        assertEquals(List.of("[SG603] the companion OrdersRuntime of shop.Orders writes billing.Payment, but in its"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the companion OrdersRuntime of shop.Orders writes billing.Payment, but in its"
                 + " scope billing names the type shop.billing, not a package: rename that type or the package"
                 + " billing"), listed.errors(), listed.describe());
         assertEquals(listed.errors(), unlisted.errors(), unlisted.describe());
-        assertEquals("Orders.java", source(unlisted, "SG603"), unlisted.describe());
+        assertEquals("Orders.java", source(unlisted, DiagnosticCode.SG603.name()), unlisted.describe());
         assertFalse(unlisted.hasGenerated("shop.OrdersRuntime"), unlisted.describe());
     }
 
@@ -274,7 +276,7 @@ class GeneratedScopeTest {
     void sg603AConstantOfTheFacadeNamedLikeAPackageTheCompanionWrites() {
         Compilation.Result constant = Compilation.compileTyped(
                 guardedBy("billing", "    String billing = \"audit\";\n"));
-        assertEquals(1, constant.countError("SG603"), constant.describe());
+        assertEquals(1, constant.countError(DiagnosticCode.SG603.name()), constant.describe());
         assertTrue(constant.errors().get(0).contains("billing.Checks")
                 && constant.errors().get(0).contains("Orders.billing"),
                 constant.describe());
@@ -315,7 +317,7 @@ class GeneratedScopeTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains("the companion OrdersRuntime of shop.Orders writes the type"
                 + " shop.OrderStatus as OrderStatus, but in its expressions OrderStatus names the constant"
                 + " Orders.OrderStatus: rename that constant"), result.describe());
@@ -346,7 +348,7 @@ class GeneratedScopeTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains(
                 "the companion OrdersRuntime of shop.Orders writes billing.Level, but"
                 + " in its expressions billing names the constant Orders.billing, not a package: rename that constant"
@@ -358,7 +360,7 @@ class GeneratedScopeTest {
     @Test
     void sg603APackageNamedLikeTheKeyFieldOfTheCompanion() {
         Compilation.Result key = Compilation.compileTyped(guardedBy("KEY", ""));
-        assertEquals(1, key.countError("SG603"), key.describe());
+        assertEquals(1, key.countError(DiagnosticCode.SG603.name()), key.describe());
         assertTrue(key.errors().get(0).contains("KEY.Checks") && key.errors().get(0).contains("KEY"), key.describe());
         assertFalse(key.hasGenerated("shop.OrdersRuntime"), key.describe());
     }
@@ -384,7 +386,7 @@ class GeneratedScopeTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains("fx.b") && result.errors().get(0).contains("Both"),
                 result.describe());
         assertFalse(result.hasGenerated("fx.BothRuntime"), result.describe());
@@ -415,7 +417,8 @@ class GeneratedScopeTest {
         assertTrue(memberTypes.success(), memberTypes.describe());
         String set = memberTypes.generated("fx.BothRuntime");
         assertTrue(set.contains("@Override") && !set.contains("@java.lang.Override"), set);
-        assertEquals(List.of("[SG603] the companion BothRuntime of fx.Both writes b.Things, but in its scope b names"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the companion BothRuntime of fx.Both writes b.Things, but in its scope b names"
                 + " the type fx.b, not a package: rename that type or the package b"), topLevelType.errors(),
                 topLevelType.describe());
         assertFalse(topLevelType.hasGenerated("fx.BothRuntime"), topLevelType.describe());
@@ -438,7 +441,8 @@ class GeneratedScopeTest {
         Compilation.Result member = Compilation.compileTyped(memberType);
         Compilation.Result topLevel = Compilation.compileTyped(topLevelType);
 
-        List<String> refused = List.of("[SG603] the generated runtime fx.BothRuntime for fx.Both conflicts with"
+        List<String> refused = List.of("[" + DiagnosticCode.SG603
+                + "] the generated runtime fx.BothRuntime for fx.Both conflicts with"
                 + " existing type fx.BothRuntime");
         assertEquals(refused, member.errors(), member.describe());
         assertFalse(member.hasGenerated("fx.BothRuntime"), member.describe());
@@ -485,7 +489,8 @@ class GeneratedScopeTest {
         Compilation.Result javaLang = Compilation.compileTyped(paidWith("Thread"));
         Compilation.Result nestedInJava = Compilation.compileTyped(nested);
 
-        assertEquals(List.of("[SG603] the companion OrdersRuntime of shop.Orders writes Thread.Payment, but in its"
+        assertEquals(List.of("[" + DiagnosticCode.SG603
+                + "] the companion OrdersRuntime of shop.Orders writes Thread.Payment, but in its"
                 + " scope Thread names the type java.lang.Thread, not a package: rename the package Thread"),
                 javaLang.errors(), javaLang.describe());
         assertFalse(javaLang.hasGenerated("shop.OrdersRuntime"), javaLang.describe());
@@ -525,7 +530,7 @@ class GeneratedScopeTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(2, result.countError("SG603"), result.describe());
+        assertEquals(2, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("the companion OrdersRuntime of"
                 + " shop.Orders writes OrdersRuntime.Payment, but in its scope OrdersRuntime names the companion"
                 + " OrdersRuntime itself, not a package: rename the package OrdersRuntime")), result.describe());
@@ -566,7 +571,7 @@ class GeneratedScopeTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains(
                 "the companion ShopRuntime of shop.Shop writes OrdersRuntime.Executor,"
                 + " but in its scope OrdersRuntime names the companion shop.OrdersRuntime this processor reserves for"
@@ -593,12 +598,12 @@ class GeneratedScopeTest {
 
         Compilation.Result result = withAnotherProcessor(sources, Map.of("shop.Shop", SHOP));
 
-        assertEquals(1, result.countError("SG603"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().get(0).contains("the companion OrdersRuntime of shop.Orders, written in an earlier"
                 + " round, writes ShopRuntime.Reason, but in its scope ShopRuntime would name the companion"
                 + " shop.ShopRuntime of shop.Shop, which this round reserves, not a package: rename shop.Shop or the"
                 + " package ShopRuntime"), result.describe());
-        assertEquals("Shop.java", source(result, "SG603"), result.describe());
+        assertEquals("Shop.java", source(result, DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.hasGenerated("shop.OrdersRuntime"), result.describe());
         assertFalse(result.hasGenerated("shop.ShopRuntime"), result.describe());
     }
@@ -622,7 +627,7 @@ class GeneratedScopeTest {
                 "shop.billing", "package shop;\npublic final class billing { }\n",
                 "shop.Override", "package shop;\npublic final class Override { }\n"));
 
-        assertEquals(2, result.countError("SG603"), result.describe());
+        assertEquals(2, result.countError(DiagnosticCode.SG603.name()), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("the companion OrdersRuntime of"
                 + " shop.Orders, written in an earlier round, writes billing.Payment, but in its scope billing now"
                 + " names the type shop.billing, new in a later round, not a package: rename that type or the package"
@@ -631,7 +636,7 @@ class GeneratedScopeTest {
                 + " shop.Orders, written in an earlier round, writes the type java.lang.Override as Override, but in"
                 + " its scope Override now names the type shop.Override, new in a later round: rename that type")),
                 result.describe());
-        assertEquals("Orders.java", source(result, "SG603"), result.describe());
+        assertEquals("Orders.java", source(result, DiagnosticCode.SG603.name()), result.describe());
     }
 
     /**
@@ -654,11 +659,11 @@ class GeneratedScopeTest {
         Compilation.Result result = Compilation.compileWithoutLifecycle(Compilation.prepare(sources), List.of(
                 "-processor", AnotherProcessor.class.getName() + "," + StateGraphProcessor.class.getName()));
 
-        assertEquals(1, result.countError("SG599"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG599.name()), result.describe());
         assertTrue(result.errors().stream()
                 .anyMatch((String error) -> error.contains("could not write shop.OrdersRuntime")),
                 result.describe());
-        assertEquals(0, result.countError("SG603"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG603.name()), result.describe());
     }
 
     /** Compiles {@code sources} with the processor and {@link AnotherProcessor}, which generates {@code generated}. */

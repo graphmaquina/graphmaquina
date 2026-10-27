@@ -23,9 +23,10 @@ The generated builder takes the instance binding hosts used by the machines. Its
 the set's declarations; inspect the generated method or completion when dependencies change. It takes the hosts in
 the order of the set's accessors, after the shared timeout when it has one, a host at the first accessor whose machine
 uses it: `ShopMachines` above gets `builder(Duration, OrderActions, ItemActions)`. Within one machine, hosts come in
-this order: the actions, guards and after-commit hooks of the edges the interface declares itself, then the watch
-conditions, then those of the edges declared on operations, then the lookups of its sub-machines. Reordering the accessors can
-therefore reorder its parameters, a source-incompatible change for every caller of `builder(...)`. GraphMaquina
+this order: the actions, guards and after-commit hooks of the edges the interface declares itself, then, watch by
+watch, its conditions and its owner lookup, then those of the edges declared on operations, then the lookups of its
+sub-machines. Reordering the accessors can therefore reorder its parameters, a source-incompatible change for every
+caller of `builder(...)`. GraphMaquina
 does not instantiate service classes or discover dependency-injection beans.
 
 | Builder option | Purpose / default |
@@ -221,7 +222,7 @@ sub-machine uses.
 ## Watch other machines
 
 A watch reevaluates an owner after one of its peers changes state. It declares both directions of the
-relationship: owner → peer collection and peer → owner, as an `Optional` or the owner itself.
+relationship: owner → peer collection, and peer → owner, through a property of the peer or a lookup.
 
 The shop has orders and items. An order watches its items while it is `PAID`, and ships when all are `PACKED`.
 
@@ -243,6 +244,44 @@ This excerpt belongs on the shop's `Orders` interface, alongside its definition,
 `allIn` is an `ItemStatus`, the peer's states. Mixing those enums is a javac type error. The rule executes the
 edge keyed by `(PAID, SHIP)`, including its guard, action and hook — never another edge that also reaches
 `SHIPPED`. That edge must exist from the watched state, or the build fails with `SG401`.
+
+### Find the owner with a lookup
+
+`owner` names a property of the peer that returns an `Optional` of the owner, empty for a peer without one, or the
+owner itself. When the peer's entity has no such property, `ownerLookup` names a lookup instead: a method marked
+`@GraphLookup`, of signature `Optional<Owner> name(Peer)`, static or instance, on any class, which the generator
+exports as a symbol of that class's `Refs`, as it does for the
+[lookup that finds the parent of a sub-machine](composition.md#find-the-parent-with-a-lookup). In the scenario of
+[compose machines across modules and JARs](cross-module-composition.md#watch-the-machines-of-a-jar), a consumer's
+orders watch the items of a producer's jar, whose `Item` cannot name an order. This lookup of the consumer's
+`OrderLookups` reads a map of orders by item id, where an application would ask its repository, and the watch names
+it:
+
+```java
+@GraphLookup
+public Optional<Order> orderOf(Item item) {
+    return Optional.ofNullable(orders.get(item.id()));
+}
+```
+
+```java
+@OrdersItems.Watch(
+    state = PAID,
+    peers = OrderRefs.Items.class,
+    ownerLookup = OrderLookupsRefs.OrderOf.class,
+    rules = @OrdersItems.When(allIn = ItemStatus.PACKED, transition = SHIP))
+```
+
+A watch declares exactly one of `owner` and `ownerLookup`, each with one value at most. Neither or both is `SG405`,
+reported at the watch, and nothing else is then reported about either element; an empty array, such as `owner = {}`,
+counts as none. Two values in one of them is `SG607`, and an exported lookup whose signature does not fit the watch,
+such as one that takes the owner rather than the peer, is `SG505`.
+
+A lookup returns only an `Optional`, whereas an `owner` property may return the owner itself: a lookup searches, and
+not finding is an ordinary answer. An empty `Optional` means the peer has no owner, and no reaction follows for it. A
+lookup that returns `null` is refused like an `owner` reader that does, as
+[triggering and observing watches](#triggering-and-observing-watches) describes. Supply an instance of the class of an
+instance lookup to the generated set builder, as for a condition below; a class that hosts both is supplied once.
 
 ### Ordered rules
 
@@ -321,7 +360,8 @@ Observers see each reaction as a call of its own, whose `MachineCall.reaction()`
 the registry's `maxWatchChain` evaluates no rule and ends as a `Reaction.Aborted` whose cause is a
 `WatchChainExceededException`.
 
-The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
+The watch's `owner` reader or `ownerLookup` and its `peers` reader (`ownerOf` and `peersOf` in the DSL) and its
+conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition or an eligibility check on their own
 thread: `execute`, `reevaluate` or `eligibility` called from one of them throws `ReentrantTransitionException`; a call
 submitted through `async(...)` runs as a separate call on the executor's thread, unless it runs on the function's own
@@ -330,9 +370,10 @@ the returned future fails with that exception as its cause. Inside a reevaluatio
 functions lets through ends
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
-its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`
-reader that returns `null`, whether it declares an `Optional` or the owner entity, is refused the same way, with a
-`NullPointerException` that says it returned null, and no condition runs over a `null` collection.
+its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, an `owner`
+reader that returns `null`, whether it declares an `Optional` or the owner entity, or an `ownerLookup` that does, is
+refused the same way, with a `NullPointerException` that says it returned null, and no condition runs over a `null`
+collection.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -347,10 +388,17 @@ rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-ma
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
-Cross-JAR watches and sub-machines are not supported yet. The owner and peer APIs must be generated in the same
-compilation.
-A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
-[issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
+The peer of a watch, like the child of a sub-machine, can come from a dependency, a jar or a directory of classes
+whose artifact carries the export index its build published, as
+[multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) describes. A producer
+that does not know the owner's entity cannot give the peer a property that returns it, so the watch finds its owner
+with `ownerLookup`; `owner` still serves when the producer also publishes the owner's entity and the peer's entity
+returns it. [Compose machines across modules and JARs](cross-module-composition.md) runs such a watch. A peer that is
+a machine of a dependency whose artifact carries no export index, or one that does not list it or describes it
+otherwise than its classes, or that passes `Machine` an enum the classpath does not declare, or that has a supertype
+the classpath does not declare and reaches `Machine` through none it declares, is reported with `SG602`, naming that
+jar or directory whenever the generator can tell it; any other peer that is neither a machine of the same compilation
+nor a machine of a dependency that its export index describes is rejected with `SG608`.
 
 ---
 

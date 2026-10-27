@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.junit.jupiter.api.Test;
 
 /** What one transition of a machine must hold: its signature, its elements and the key it claims. */
@@ -43,16 +44,16 @@ class MachineTransitionErrorsTest {
     @Test
     void sg504OperationSignatureAndMissingAnnotation() {
         assertTrue(body(SUBMIT + "    Outcome<Doc, DocStatus, DocTransition> orphan(Doc doc);\n"
-                + publish("") + ARCHIVE).hasError("SG504"));
+                + publish("") + ARCHIVE).hasError(DiagnosticCode.SG504.name()));
         assertTrue(body(SUBMIT
                 + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,"
                 + " action = DocActionsRefs.Publish.class)\n"
                 + "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, String reason, String extra);\n"
-                + ARCHIVE).hasError("SG504"));
+                + ARCHIVE).hasError(DiagnosticCode.SG504.name()));
         assertTrue(body(SUBMIT
                 + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,"
                 + " action = DocActionsRefs.Publish.class)\n"
-                + "    void publish(Doc doc);\n" + ARCHIVE).hasError("SG504"));
+                + "    void publish(Doc doc);\n" + ARCHIVE).hasError(DiagnosticCode.SG504.name()));
         Compilation.Result defaults = body(SUBMIT + publish("") + ARCHIVE
                 + "    default Outcome<Doc, DocStatus, DocTransition> publishTwice(Doc doc) {"
                 + " publish(doc); return publish(doc); }\n");
@@ -75,7 +76,7 @@ class MachineTransitionErrorsTest {
 
         Compilation.Result overriding = body(SUBMIT + publish("")
                 + ARCHIVE.replace("archive(Doc doc)", "reevaluate(Doc doc)"));
-        assertEquals(1, overriding.countError("SG504"), overriding.describe());
+        assertEquals(1, overriding.countError(DiagnosticCode.SG504.name()), overriding.describe());
         assertTrue(overriding.errors().get(0).contains("reevaluate") && overriding.errors().get(0).contains("Machine"),
                 overriding.describe());
         assertFalse(overriding.hasGenerated("fx.DocsRuntime"), overriding.describe());
@@ -101,16 +102,17 @@ class MachineTransitionErrorsTest {
 
     @Test
     void sg507WhatOnlyAnActionCanUse() {
-        assertTrue(header(declared(", onFailure = PUBLISH")).hasError("SG507"));
-        assertTrue(header(declared(", failsOn = java.io.IOException.class")).hasError("SG507"));
-        assertTrue(header(declared(", timeout = @Timeout(seconds = 1)")).hasError("SG507"));
+        assertTrue(header(declared(", onFailure = PUBLISH")).hasError(DiagnosticCode.SG507.name()));
+        assertTrue(header(declared(", failsOn = java.io.IOException.class")).hasError(DiagnosticCode.SG507.name()));
+        assertTrue(header(declared(", timeout = @Timeout(seconds = 1)")).hasError(DiagnosticCode.SG507.name()));
     }
 
     @Test
     void sg105DuplicateGuardAndSg302ForbiddenFailsOn() {
         assertTrue(body(SUBMIT + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class}")
-                + ARCHIVE).hasError("SG105"));
-        assertTrue(body(SUBMIT + publish(", failsOn = RuntimeException.class") + ARCHIVE).hasError("SG302"));
+                + ARCHIVE).hasError(DiagnosticCode.SG105.name()));
+        assertTrue(body(SUBMIT + publish(", failsOn = RuntimeException.class")
+                + ARCHIVE).hasError(DiagnosticCode.SG302.name()));
     }
 
     /**
@@ -131,17 +133,19 @@ class MachineTransitionErrorsTest {
                 """);
         Compilation.Result result = Compilation.compileTyped(refused);
 
-        assertEquals(4, result.countError("SG302"), result.describe());
-        assertTrue(result.errors().contains("[SG302] failsOn does not allow java.util.concurrent.CancellationException;"
+        assertEquals(4, result.countError(DiagnosticCode.SG302.name()), result.describe());
+        assertTrue(result.errors().contains("[" + DiagnosticCode.SG302
+                + "] failsOn does not allow java.util.concurrent.CancellationException;"
                 + " only throwable types foreign to the library, and never Throwable, Exception, RuntimeException,"
                 + " an Error or a CancellationException, which are never domain failures, nor CompletionException or"
                 + " ExecutionException, which are unwrapped before matching: declare the type of their cause"),
                 result.describe());
         assertTrue(result.errors().stream().anyMatch(
-                (String error) -> error.startsWith("[SG302] failsOn does not allow fx.Halted;")),
+                (String error) -> error.startsWith("[" + DiagnosticCode.SG302 + "] failsOn does not allow fx.Halted;")),
                 result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.startsWith(
-                "[SG302] failsOn does not allow java.util.concurrent.ExecutionException;")), result.describe());
+                "[" + DiagnosticCode.SG302 + "] failsOn does not allow java.util.concurrent.ExecutionException;")),
+                result.describe());
 
         java.util.Map<String, String> accepted = Fixtures.withDocs(Fixtures.DOCS_HEADER, SUBMIT
                 + publish(", failsOn = {IllegalStateException.class, Wrapped.class}") + ARCHIVE);
@@ -157,7 +161,7 @@ class MachineTransitionErrorsTest {
     void sg102TheSameKeyClaimedByAnOperationAndByTheInterface() {
         Compilation.Result result = header(Fixtures.DOCS_HEADER
                 + "@DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n");
-        assertTrue(result.hasError("SG102"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG102.name()), result.describe());
     }
 
     @Test
@@ -182,7 +186,7 @@ class MachineTransitionErrorsTest {
                 + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class},"
                         + " failsOn = RuntimeException.class")
                 + ARCHIVE);
-        assertEquals(1, result.countError("SG105"), result.describe());
-        assertEquals(1, result.countError("SG302"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG105.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG302.name()), result.describe());
     }
 }

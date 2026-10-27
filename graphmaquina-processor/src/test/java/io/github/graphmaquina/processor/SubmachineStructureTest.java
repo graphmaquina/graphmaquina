@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,10 +35,12 @@ class SubmachineStructureTest {
                              @DocsPages.Exit(on = PageStatus.OPEN, transition = COMPLETE)})
                 """));
 
-        assertEquals(List.of("[SG801] Docs.REVIEW: the terminal DONE of Pages has more than one exit",
-                "[SG801] Docs.REVIEW: the exit on OPEN names no terminal of Pages"), result.errors(),
+        assertEquals(List.of("[" + DiagnosticCode.SG801
+                + "] Docs.REVIEW: the terminal DONE of Pages has more than one exit",
+                "[" + DiagnosticCode.SG801 + "] Docs.REVIEW: the exit on OPEN names no terminal of Pages"),
+                result.errors(),
                 result.describe());
-        assertEquals(DEFINITION_LINE, result.lineOf("SG801"), result.describe());
+        assertEquals(DEFINITION_LINE, result.lineOf(DiagnosticCode.SG801.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
@@ -48,7 +51,8 @@ class SubmachineStructureTest {
                     exits = {})
                 """));
 
-        assertEquals(List.of("[SG801] Docs.REVIEW: the terminal DONE of Pages has no exit"), result.errors(),
+        assertEquals(List.of("[" + DiagnosticCode.SG801 + "] Docs.REVIEW: the terminal DONE of Pages has no exit"),
+                result.errors(),
                 result.describe());
     }
 
@@ -59,9 +63,10 @@ class SubmachineStructureTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG802] Docs.DRAFT: the exit on DONE names COMPLETE, which has no edge from DRAFT"),
+        assertEquals(List.of("[" + DiagnosticCode.SG802
+                + "] Docs.DRAFT: the exit on DONE names COMPLETE, which has no edge from DRAFT"),
                 result.errors(), result.describe());
-        assertEquals(DEFINITION_LINE, result.lineOf("SG802"), result.describe());
+        assertEquals(DEFINITION_LINE, result.lineOf(DiagnosticCode.SG802.name()), result.describe());
     }
 
     @Test
@@ -72,8 +77,10 @@ class SubmachineStructureTest {
                 """));
 
         assertEquals(List.of(
-                "[SG802] Docs.PUBLISHED: the exit on DONE names COMPLETE, which has no edge from PUBLISHED",
-                "[SG803] Docs.PUBLISHED is terminal and cannot hold a sub-machine"), result.errors(),
+                "[" + DiagnosticCode.SG802
+                        + "] Docs.PUBLISHED: the exit on DONE names COMPLETE, which has no edge from PUBLISHED",
+                "[" + DiagnosticCode.SG803 + "] Docs.PUBLISHED is terminal and cannot hold a sub-machine"),
+                result.errors(),
                 result.describe());
     }
 
@@ -82,9 +89,10 @@ class SubmachineStructureTest {
         Compilation.Result result = Compilation.compileTyped(TypedSubmachineTest.bound(
                 TypedSubmachineTest.BOUND + TypedSubmachineTest.BOUND));
 
-        assertEquals(List.of("[SG803] Docs.REVIEW holds more than one sub-machine"), result.errors(),
+        assertEquals(List.of("[" + DiagnosticCode.SG803 + "] Docs.REVIEW holds more than one sub-machine"),
+                result.errors(),
                 result.describe());
-        assertEquals(DEFINITION_LINE, result.lineOf("SG803"), result.describe());
+        assertEquals(DEFINITION_LINE, result.lineOf(DiagnosticCode.SG803.name()), result.describe());
     }
 
     @Test
@@ -106,11 +114,16 @@ class SubmachineStructureTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(List.of(
-                "[SG804] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be a recovery of PUBLISH",
-                "[SG804] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be the onFailure of PUBLISH",
-                "[SG804] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be executed by a watch rule"),
+                "[" + DiagnosticCode.SG804
+                        + "] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be a recovery of PUBLISH",
+                "[" + DiagnosticCode.SG804
+                        + "] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be the onFailure of"
+                        + " PUBLISH",
+                "[" + DiagnosticCode.SG804
+                        + "] Docs.REVIEW: COMPLETE is an exit of its sub-machine and cannot be executed by a watch"
+                        + " rule"),
                 result.errors(), result.describe());
-        assertEquals(DEFINITION_LINE, result.lineOf("SG804"), result.describe());
+        assertEquals(DEFINITION_LINE, result.lineOf(DiagnosticCode.SG804.name()), result.describe());
     }
 
     @Test
@@ -120,9 +133,10 @@ class SubmachineStructureTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = PUBLISH))
                 """));
 
-        assertEquals(List.of("[SG804] Docs.REVIEW: PUBLISH is an exit of its sub-machine and cannot be the operation"
+        assertEquals(List.of("[" + DiagnosticCode.SG804
+                + "] Docs.REVIEW: PUBLISH is an exit of its sub-machine and cannot be the operation"
                 + " publish"), result.errors(), result.describe());
-        assertEquals(HEADER_LINE + 1, result.lineOf("SG804"), result.describe());
+        assertEquals(HEADER_LINE + 1, result.lineOf(DiagnosticCode.SG804.name()), result.describe());
     }
 
     @Test
@@ -150,13 +164,17 @@ class SubmachineStructureTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(List.of(
-                "[SG805] the sub-machines of Docs contain Docs again: Docs.REVIEW -> Pages.OPEN -> Docs",
-                "[SG805] the sub-machines of Pages contain Pages again: Pages.OPEN -> Docs.REVIEW -> Pages"),
+                "[" + DiagnosticCode.SG805
+                        + "] the sub-machines of Docs contain Docs again: Docs.REVIEW -> Pages.OPEN -> Docs",
+                "[" + DiagnosticCode.SG805
+                        + "] the sub-machines of Pages contain Pages again: Pages.OPEN -> Docs.REVIEW -> Pages"),
                 result.errors().stream().sorted().toList(), result.describe());
-        assertEquals(HEADER_LINE, lineOf(result, "[SG805] the sub-machines of Docs contain Docs again: Docs.REVIEW"
-                + " -> Pages.OPEN -> Docs"), result.describe());
-        assertEquals(10, lineOf(result, "[SG805] the sub-machines of Pages contain Pages again: Pages.OPEN"
-                + " -> Docs.REVIEW -> Pages"), result.describe());
+        assertEquals(HEADER_LINE, lineOf(result, "[" + DiagnosticCode.SG805
+                + "] the sub-machines of Docs contain Docs again: Docs.REVIEW -> Pages.OPEN -> Docs"),
+                result.describe());
+        assertEquals(10, lineOf(result, "[" + DiagnosticCode.SG805
+                + "] the sub-machines of Pages contain Pages again: Pages.OPEN -> Docs.REVIEW -> Pages"),
+                result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }

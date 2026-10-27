@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -76,7 +77,8 @@ class TypedSubmachineTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        String needs = "[SG806] Docs.REVIEW: Pages governs Page, so the sub-machine needs child and one of parent or"
+        String needs = "[" + DiagnosticCode.SG806
+                + "] Docs.REVIEW: Pages governs Page, so the sub-machine needs child and one of parent or"
                 + " parentLookup";
         assertEquals(List.of(needs, needs, needs), result.errors(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
@@ -89,7 +91,8 @@ class TypedSubmachineTest {
                     exits = @DocsReviews.Exit(on = ReviewStatus.APPROVED, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG806] Docs.REVIEW: Reviews governs Doc itself, so child, parent and parentLookup must"
+        assertEquals(List.of("[" + DiagnosticCode.SG806
+                + "] Docs.REVIEW: Reviews governs Doc itself, so child, parent and parentLookup must"
                 + " be empty"), result.errors(), result.describe());
     }
 
@@ -102,9 +105,10 @@ class TypedSubmachineTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG607] child declares 2 values but holds one at most",
-                "[SG607] parent declares 2 values but holds one at most",
-                "[SG607] parentLookup declares 2 values but holds one at most"), result.errors(), result.describe());
+        assertEquals(List.of("[" + DiagnosticCode.SG607 + "] child declares 2 values but holds one at most",
+                "[" + DiagnosticCode.SG607 + "] parent declares 2 values but holds one at most",
+                "[" + DiagnosticCode.SG607 + "] parentLookup declares 2 values but holds one at most"), result.errors(),
+                result.describe());
     }
 
     @Test
@@ -114,9 +118,11 @@ class TypedSubmachineTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG503] Doc has no public reader for property 'pages' returning Optional<Page>: the"
+        assertEquals(List.of("[" + DiagnosticCode.SG503
+                + "] Doc has no public reader for property 'pages' returning Optional<Page>: the"
                         + " marker names fx.Doc.pages()",
-                "[SG503] Page has no public reader for property 'id' returning Optional<Doc>: the marker names"
+                "[" + DiagnosticCode.SG503
+                        + "] Page has no public reader for property 'id' returning Optional<Doc>: the marker names"
                         + " fx.Page.id()"), result.errors(), result.describe());
     }
 
@@ -137,9 +143,10 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG605] fx.PageRefs.Doc is a property of fx.Page, not of Doc",
-                "[SG605] fx.DocRefs.Current is a property of fx.Doc, not of Page",
-                "[SG605] fx.FakeLookup is not a symbol this compilation exports or depends on; use one of the"
+        assertEquals(List.of("[" + DiagnosticCode.SG605 + "] fx.PageRefs.Doc is a property of fx.Page, not of Doc",
+                "[" + DiagnosticCode.SG605 + "] fx.DocRefs.Current is a property of fx.Doc, not of Page",
+                "[" + DiagnosticCode.SG605
+                        + "] fx.FakeLookup is not a symbol this compilation exports or depends on; use one of the"
                         + " generated <Host>Refs types"), result.errors(), result.describe());
     }
 
@@ -151,7 +158,8 @@ class TypedSubmachineTest {
                     exits = @DocsPages.Exit(on = PageStatus.DONE, transition = COMPLETE))
                 """));
 
-        assertEquals(List.of("[SG505] no exported lookup named titleOf on fx.DocLookups has the signature this"
+        assertEquals(List.of("[" + DiagnosticCode.SG505
+                + "] no exported lookup named titleOf on fx.DocLookups has the signature this"
                 + " machine needs; expected Optional<Doc> titleOf(Page)"), result.errors(), result.describe());
     }
 
@@ -185,11 +193,12 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG601"), result.describe());
-        assertEquals(1, result.countError("SG509"), result.describe());
-        assertTrue(result.errors().contains("[SG509] fx.Pages declares its entity as fx.Page<java.lang.String>, a"
+        assertEquals(1, result.countError(DiagnosticCode.SG601.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG509.name()), result.describe());
+        assertTrue(result.errors().contains("[" + DiagnosticCode.SG509
+                + "] fx.Pages declares its entity as fx.Page<java.lang.String>, a"
                 + " parameterized type, which a parent cannot bind as its sub-machine"), result.describe());
-        assertEquals(0, result.countError("SG605"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG605.name()), result.describe());
     }
 
     /** A set that holds the parent but not its child could not build the binding. */
@@ -200,7 +209,8 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG806] the sub-machine of Docs.REVIEW is Pages, which is not in Library"),
+        assertEquals(List.of("[" + DiagnosticCode.SG806
+                + "] the sub-machine of Docs.REVIEW is Pages, which is not in Library"),
                 result.errors(), result.describe());
         assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
@@ -256,7 +266,8 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG509] fx.pages.Pages is bound as a sub-machine with fx.pages.PageTransition, which"
+        assertEquals(List.of("[" + DiagnosticCode.SG509
+                + "] fx.pages.Pages is bound as a sub-machine with fx.pages.PageTransition, which"
                 + " package fx, where the companion of Docs is generated, cannot access: make it public"),
                 result.errors(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
@@ -266,7 +277,8 @@ class TypedSubmachineTest {
     void sg608APairNeitherAWatchNorASubmachineUses() {
         Compilation.Result result = Compilation.compileTyped(bound(""));
 
-        assertEquals(List.of("[SG608] fx.Pages is declared as a peer of Docs but no watch or sub-machine of it uses"
+        assertEquals(List.of("[" + DiagnosticCode.SG608
+                + "] fx.Pages is declared as a peer of Docs but no watch or sub-machine of it uses"
                 + " that pair; declare the peers this machine watches or binds, and only those"), result.errors(),
                 result.describe());
     }
@@ -280,7 +292,8 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
-        assertEquals(List.of("[SG608] Docs declares a sub-machine of fx.Pages, which it does not declare with"
+        assertEquals(List.of("[" + DiagnosticCode.SG608
+                + "] Docs declares a sub-machine of fx.Pages, which it does not declare with"
                 + " @GraphPeers"), result.errors(), result.describe());
     }
 
@@ -296,8 +309,9 @@ class TypedSubmachineTest {
 
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
-        assertEquals(1, result.countError("SG608"), result.describe());
-        assertTrue(result.errors().contains("[SG608] fx.Pages is not a @GenerateGraphApi machine: the vocabulary of a"
+        assertEquals(1, result.countError(DiagnosticCode.SG608.name()), result.describe());
+        assertTrue(result.errors().contains("[" + DiagnosticCode.SG608
+                + "] fx.Pages is not a @GenerateGraphApi machine: the vocabulary of a"
                 + " pair is typed with the peer's own states, which only a generated API declares"), result.describe());
     }
 

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.Machine;
@@ -102,7 +103,7 @@ class SetGenerationTest {
         Compilation.Result overload = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY.replace(
                         "    Pages pages();\n", "    Pages pages();\n    void close(boolean now);\n")));
-        assertEquals(1, overload.countError("SG510"), overload.describe());
+        assertEquals(1, overload.countError(DiagnosticCode.SG510.name()), overload.describe());
         assertTrue(overload.errors().get(0).contains("close must be a no-argument accessor"), overload.describe());
     }
 

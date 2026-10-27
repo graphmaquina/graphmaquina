@@ -187,9 +187,9 @@ final class TypedMachineModelBuilder {
         if (initial.isEmpty() || terminals.isEmpty() || cycleAllowed.isEmpty()) {
             return Optional.empty();
         }
-        Optional<StateAccess> state = symbol(declaredState.get()).flatMap((TypeMirror symbol) ->
+        Optional<StateAccess> state = TypedValues.symbol(declaredState.get()).flatMap((TypeMirror symbol) ->
                 properties.state(symbol, types, DiagnosticAnchor.of(type, definition, declaredState.get())));
-        Optional<Property> id = symbol(declaredId.get()).flatMap((TypeMirror symbol) ->
+        Optional<Property> id = TypedValues.symbol(declaredId.get()).flatMap((TypeMirror symbol) ->
                 properties.id(symbol, types, DiagnosticAnchor.of(type, definition, declaredId.get())));
         Optional<Binding> defaultAfterCommit = transitions.afterCommit(type, definition, types);
 
@@ -438,11 +438,6 @@ final class TypedMachineModelBuilder {
         DiagnosticAnchor.of(element, mirror).report(diagnostics, DiagnosticCode.SG606, declaration.getQualifiedName()
                 + " is the vocabulary of " + machine + ", not of " + facade.getQualifiedName());
         return false;
-    }
-
-    /** The symbol {@code value} names, or empty when javac could not read it as a class literal. */
-    private static Optional<TypeMirror> symbol(AnnotationValue value) {
-        return value.getValue() instanceof TypeMirror type ? Optional.of(type) : Optional.empty();
     }
 
     private String packageName(TypeElement type) {

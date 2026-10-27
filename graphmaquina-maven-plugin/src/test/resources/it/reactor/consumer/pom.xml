@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The consumer module of the cross-module reactor: it inherits the same configuration from the pom parent as the
+  producer module does, and depends on that module by its coordinates, which the reactor resolves to the module it
+  builds first. It holds the bookings, the orders, their set and app.Scenario, and nothing of the producer: what its
+  generation resolves of the payments and the items comes from the index the producer published.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>fx.build</groupId>
+    <artifactId>fixture</artifactId>
+    <version>1.0.0</version>
+  </parent>
+
+  <artifactId>consumer</artifactId>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <dependency>
+      <groupId>fx.build</groupId>
+      <artifactId>producer</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>

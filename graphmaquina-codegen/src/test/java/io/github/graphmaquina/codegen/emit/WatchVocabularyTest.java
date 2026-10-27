@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -28,8 +29,10 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Verifies the vocabulary emitted for ordered pairs of local machines: the owner's enums and the peer's enum
  * are used where the specification places them, a rule executes a transition of the owner, the watch repeats
- * through its container, every optional array may be omitted, a machine has such a vocabulary over each peer it
- * declares and over no other machine, an unknown peer is refused, and an empty model still carries its compilation.
+ * through its container, every optional array may be omitted, the owner of a peer is read through a property or
+ * found through an exported lookup, a machine has such a vocabulary over each peer it declares and over no other
+ * machine, a peer a dependency describes is typed from its descriptor, an unknown peer is refused, and an empty model
+ * still carries its compilation.
  */
 class WatchVocabularyTest {
 
@@ -43,6 +46,7 @@ class WatchVocabularyTest {
         putDocAndPageEnums(sources);
         putDocAndPageEntities(sources);
         putMachinesAndConditions(sources);
+        putLookups(sources);
         return Map.copyOf(sources);
     }
 
@@ -121,6 +125,30 @@ class WatchVocabularyTest {
             """);
     }
 
+    /** A host whose exported lookup finds the document of a page, as a watch's {@code ownerLookup} names it. */
+    private static void putLookups(Map<String, String> sources) {
+        sources.put("fx.DocLookups", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphLookup;
+            import java.util.Optional;
+            public class DocLookups {
+                @GraphLookup
+                public static Optional<Doc> docOf(Page page) { return Optional.ofNullable(page.doc()); }
+            }
+            """);
+    }
+
+    /** The two elements of a {@code Watch} that find the owner of a peer, exactly as the vocabulary declares them. */
+    private static final String OWNER_ELEMENTS = ""
+        + "        /** {@return the property of a peer that reads its owner, as an {@code Optional}, empty for a peer"
+        + " without one, or as the owner itself, never null; at most one, and a watch declares exactly one of owner"
+        + " and ownerLookup} */\n"
+        + "        java.lang.Class<? extends io.github.graphmaquina.symbol.PropertySymbol>[] owner() default {};\n"
+        + "        /** {@return the exported lookup that finds the owner of a peer, {@code Optional<Owner> name(Peer)},"
+        + " empty for a peer without one; at most one, and a watch declares exactly one of owner and ownerLookup}"
+        + " */\n"
+        + "        java.lang.Class<? extends io.github.graphmaquina.symbol.LookupSymbol>[] ownerLookup() default {};\n";
+
     /** Repeats the watch and, across its three rules, omits each optional array in some and fills it in another. */
     private static final Map<String, String> USAGE = Map.of("use.WatchUsage", """
         package use;
@@ -160,6 +188,29 @@ class WatchVocabularyTest {
         assertTrue(watch.contains("@java.lang.annotation.Target({})"), watch);
 
         SourceFiles.Compilation compilation = compile(emitted, USAGE);
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertEquals(List.of(), compilation.messages());
+    }
+
+    /**
+     * {@code owner} and {@code ownerLookup} each hold one symbol at most and default to none, so a watch that finds its
+     * owner through a lookup omits {@code owner}; whether it declares exactly one of them is the processor's to check.
+     */
+    @Test
+    void declaresTheOwnerOfAPeerAsAPropertyOrAnExportedLookup() {
+        List<GeneratedSource> emitted = ApiEmitter.emit(model(), "io.github.graphmaquina:test:main");
+
+        String watch = content(emitted, "fx.DocsPages");
+        assertTrue(watch.contains(OWNER_ELEMENTS), watch);
+        SourceFiles.Compilation compilation = compile(emitted, Map.of("use.LookupUsage", """
+            package use;
+            @fx.DocsPages.Watch(
+                    state = fx.DocStatus.REVIEW,
+                    peers = fx.DocRefs.Pages.class,
+                    ownerLookup = fx.DocLookupsRefs.DocOf.class,
+                    rules = @fx.DocsPages.When(allIn = fx.PageStatus.CLOSED, transition = fx.DocTransition.PUBLISH))
+            public interface LookupUsage {}
+            """));
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(List.of(), compilation.messages());
     }
@@ -215,9 +266,32 @@ class WatchVocabularyTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(
                 new GenerationModel(List.of(owner), List.of()), "io.github.graphmaquina:test:main"));
 
-        assertEquals("SG608", failure.code());
+        assertEquals(DiagnosticCode.SG608.name(), failure.code());
         assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
-        assertTrue(failure.getMessage().contains("other.Bills"), failure.getMessage());
+        assertEquals("the peer machine other.Bills declared by fx.Docs is not a @GenerateGraphApi machine of this"
+                + " compilation or of a dependency export index", failure.getMessage());
+    }
+
+    /**
+     * A peer that a dependency export index describes is typed from that descriptor: the pair vocabulary is emitted in
+     * the owner's package over the peer's own state enum, and the peer's own vocabulary, which its producer
+     * published, is not emitted again.
+     */
+    @Test
+    void emitsThePairVocabularyOverAPeerOfADependency() {
+        GraphDescriptor owner = graph("Docs", List.of("other.Bills"));
+        GraphDescriptor bills = new GraphDescriptor("other.Bills", "other", "other.Bill", "other.BillStatus",
+                List.of("OPEN", "PAID"), "other.BillTransition", List.of("PAY"), List.of(),
+                new SourceLocation("src/main/java/other/Bills.java", 3L, 1L));
+        GenerationModel model = new GenerationModel(List.of(owner), List.of());
+
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, List.of(bills), "io.github.graphmaquina:test:main");
+
+        assertEquals(List.of("fx.DocsGraph", "fx.DocsBills"), emitted.stream().map(GeneratedSource::qualifiedName)
+                .filter((String name) -> !name.startsWith("io.github.graphmaquina.generated.")).toList());
+        assertTrue(content(emitted, "fx.DocsBills").contains("other.BillStatus[] allIn() default {};"),
+                content(emitted, "fx.DocsBills"));
+        assertTrue(ApiEmitter.annotationTypes(model, List.of(bills)).contains("fx.DocsBills.Watch"));
     }
 
     @Test

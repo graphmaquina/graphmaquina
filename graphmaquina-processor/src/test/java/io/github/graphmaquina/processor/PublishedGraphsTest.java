@@ -5,20 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
-import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,9 +23,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,7 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
 class PublishedGraphsTest {
 
     private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
-    private static final String PUBLISHED = "META-INF/graphmaquina/exports.json";
+    private static final String PUBLISHED = PublishedJars.PUBLISHED;
 
     @TempDir
     Path directory;
@@ -67,7 +61,7 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Client"));
 
-        assertEquals(1, result.countError("SG602"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG602.name()), result.describe());
         assertTrue(result.errors().get(0).contains("fx.Docs") && result.errors().get(0).contains("implicitly"),
                 result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
@@ -94,10 +88,11 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Library"));
 
-        assertEquals(List.of("[SG602] fx.Library holds fx.Docs, which this compilation never processed, so neither"
+        assertEquals(List.of("[" + DiagnosticCode.SG602
+                + "] fx.Library holds fx.Docs, which this compilation never processed, so neither"
                 + " gets a companion: javac does not process a source it compiles implicitly, from the source path,"
                 + " so pass every source of the compilation to javac"), result.errors(), result.describe());
-        assertEquals(5, result.lineOf("SG602"), result.describe());
+        assertEquals(5, result.lineOf(DiagnosticCode.SG602.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
@@ -142,7 +137,7 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(prepared);
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG404"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG404.name()), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result::describe);
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PUBLISHED)), result::describe);
         assertFalse(Files.exists(Path.of(ManifestCodec.readCompile(prepared.generation().annotationManifest())
@@ -151,7 +146,7 @@ class PublishedGraphsTest {
 
     @Test
     void linksAgainstThePublishedIndexOfAProducerAndPublishesOnlyItsOwn() throws IOException {
-        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
         ManifestProcessors.Recording.reset();
 
         Compilation.Prepared prepared = Compilation.prepare(consumer(), List.of(jar));
@@ -207,7 +202,7 @@ class PublishedGraphsTest {
                         + "AsyncCapable {"));
         producer.put("prod.Ledger", producer.get("prod.Ledger").replace(
                 "public interface Ledger extends Machines {", "public interface Ledger extends Machines, Lifecycle {"));
-        Path jar = publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
+        Path jar = PublishedJars.publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
@@ -222,7 +217,7 @@ class PublishedGraphsTest {
      */
     @Test
     void aConsumerSetBindsTheSubmachinesOfAPublishedParent() throws Exception {
-        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("billing.jar"),
+        Path jar = PublishedJars.publish(SubmachineGenerationTest.billing(), directory.resolve("billing.jar"),
                 UnaryOperator.identity());
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("cons.Shop", """
@@ -277,7 +272,7 @@ class PublishedGraphsTest {
     /** The same set without the child is refused, as a set of the producer's own compilation would be. */
     @Test
     void aConsumerSetWithoutTheChildOfAPublishedParentIsRefused() throws IOException {
-        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("parent.jar"),
+        Path jar = PublishedJars.publish(SubmachineGenerationTest.billing(), directory.resolve("parent.jar"),
                 UnaryOperator.identity());
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("cons.Shop", """
@@ -294,7 +289,8 @@ class PublishedGraphsTest {
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
 
-        String missing = "[SG806] the sub-machine of Bookings.%s is Payments, which is not in Shop";
+        String missing = "[" + DiagnosticCode.SG806
+                + "] the sub-machine of Bookings.%s is Payments, which is not in Shop";
         assertEquals(List.of(missing.formatted("DEPOSIT"), missing.formatted("BALANCE")), result.errors(),
                 result.describe());
         assertFalse(result.hasGenerated("cons.ShopRuntime"), result.describe());
@@ -308,20 +304,19 @@ class PublishedGraphsTest {
      */
     @Test
     void reportsAProducerJarWithoutItsExportIndexWhereTheConsumerUsesIt() throws IOException {
-        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
-        try (FileSystem archive = FileSystems.newFileSystem(jar)) {
-            Files.delete(archive.getPath(PUBLISHED));
-        }
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        PublishedJars.stripIndex(jar);
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillRefs.Status" + unlisted(jar),
-                "[SG602] prod.BillRefs.Id" + unlisted(jar),
-                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(jar),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(jar)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Status" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Id" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + unlisted(jar),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(jar)),
+                result.errors(),
                 result.describe());
-        assertTrue(result.lineOf("SG602") > 0, result.describe());
+        assertTrue(result.lineOf(DiagnosticCode.SG602.name()) > 0, result.describe());
         assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
         assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
     }
@@ -338,10 +333,11 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillRefs.Status" + unlisted(classes),
-                "[SG602] prod.BillRefs.Id" + unlisted(classes),
-                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(classes),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(classes)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Status" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] prod.BillRefs.Id" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + unlisted(classes),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(classes)),
+                result.errors(),
                 result.describe());
     }
 
@@ -360,14 +356,15 @@ class PublishedGraphsTest {
      */
     @Test
     void reportsAProducerJarWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
-        String older = publishedIndex(olderProducer());
-        Path jar = publish(producer(), directory.resolve("producer.jar"), (String current) -> older);
+        String older = PublishedJars.publishedIndex(olderProducer());
+        Path jar = PublishedJars.publish(producer(), directory.resolve("producer.jar"), (String current) -> older);
 
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillActionsRefs.Cancel" + stale(jar),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(jar)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + stale(jar),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + stale(jar)),
+                result.errors(),
                 result.describe());
         assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
         assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
@@ -376,7 +373,7 @@ class PublishedGraphsTest {
     /** The same producer compiled into a directory of classes, whose export index an older build's replaced. */
     @Test
     void reportsAProducerDirectoryWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
-        String older = publishedIndex(olderProducer());
+        String older = PublishedJars.publishedIndex(olderProducer());
         Compilation.Prepared producer = Compilation.prepare(producer());
         Compilation.Result produced = Compilation.compilePrepared(producer);
         assertTrue(produced.success(), produced.describe());
@@ -386,8 +383,9 @@ class PublishedGraphsTest {
         Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
 
         assertEquals(List.of(
-                "[SG602] prod.BillActionsRefs.Cancel" + stale(classes),
-                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(classes)), result.errors(),
+                "[" + DiagnosticCode.SG602 + "] prod.BillActionsRefs.Cancel" + stale(classes),
+                "[" + DiagnosticCode.SG602 + "] cons.Shelf holds prod.Bills, but prod.Bills" + stale(classes)),
+                result.errors(),
                 result.describe());
     }
 
@@ -398,51 +396,16 @@ class PublishedGraphsTest {
                 + " classes, or rebuild the producer through the complete lifecycle";
     }
 
-    /** The export index a compilation of {@code sources} publishes. */
-    private static String publishedIndex(Map<String, String> sources) throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-        assertTrue(result.success(), result.describe());
-        return Files.readString(prepared.request().classesOutput().resolve(PUBLISHED), StandardCharsets.UTF_8);
-    }
-
     @Test
     void refusesAProducerWhosePublishedIndexCannotBeRead() throws IOException {
-        Path jar = publish(producer(), directory.resolve("corrupt.jar"),
+        Path jar = PublishedJars.publish(producer(), directory.resolve("corrupt.jar"),
                 (String index) -> index.replace("\"compilationId\"", "\"compilationIdentifier\""));
 
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> Compilation.prepare(consumer(), List.of(jar)));
 
-        assertEquals("SG602", failure.code());
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
         assertTrue(failure.getMessage().contains("compilationId"), failure.getMessage());
-    }
-
-    /** A producer compiled on its own, packaged with the index its completion step published. */
-    private static Path publish(Map<String, String> sources, Path jar, UnaryOperator<String> index)
-            throws IOException {
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Compilation.Result result = Compilation.compilePrepared(prepared);
-        assertTrue(result.success(), result.describe());
-        Path classes = prepared.request().classesOutput();
-        String published = Files.readString(classes.resolve(PUBLISHED), StandardCharsets.UTF_8);
-        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-            for (Path file : files(classes)) {
-                String name = classes.relativize(file).toString().replace(File.separatorChar, '/');
-                // The completion step already removed the carrier, whose binaries belong to no jar.
-                assertFalse(name.startsWith("io/github/graphmaquina/generated/bootstrap/"), name);
-                if (name.equals(PUBLISHED)) {
-                    continue;
-                }
-                out.putNextEntry(new JarEntry(name));
-                out.write(Files.readAllBytes(file));
-                out.closeEntry();
-            }
-            out.putNextEntry(new JarEntry(PUBLISHED));
-            out.write(index.apply(published).getBytes(StandardCharsets.UTF_8));
-            out.closeEntry();
-        }
-        return jar;
     }
 
     /** A machine, its entity, two exported actions and a set holding the machine, in a package of their own. */
@@ -582,14 +545,5 @@ class PublishedGraphsTest {
             symbols.add(symbol.qualifiedName());
         }
         return symbols;
-    }
-
-    /** Every file under {@code root}, in a stable order. */
-    private static List<Path> files(Path root) {
-        try (Stream<Path> walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile).sorted().toList();
-        } catch (IOException failure) {
-            throw new UncheckedIOException(failure);
-        }
     }
 }

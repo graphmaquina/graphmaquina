@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,8 +108,8 @@ class TypedBindingsTest {
         Compilation.Result result = resolve(sources);
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG605"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG605]")
+        assertEquals(1, result.countError(DiagnosticCode.SG605.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG605 + "]")
                 && error.contains("fx.Fake")), result::describe);
     }
 
@@ -121,7 +122,8 @@ class TypedBindingsTest {
     void refusesAnInheritedOverloadThatTheSymbolDoesNotExport() {
         Compilation.Result result = Compilation.compileTyped(inheritedOverload());
 
-        assertEquals(List.of("[SG505] no exported hook named notified on fx.Payments has the signature this machine"
+        assertEquals(List.of("[" + DiagnosticCode.SG505
+                + "] no exported hook named notified on fx.Payments has the signature this machine"
                 + " needs; expected void notified(Doc) or void notified(Doc, CommitContext<DocStatus, DocTransition>)"),
                 result.errors(), result.describe());
     }
@@ -135,8 +137,8 @@ class TypedBindingsTest {
         Compilation.Result result = resolve(hosts());
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG505"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG505]")
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG505 + "]")
                 && error.contains("TransitionContext<Note, NoteStatus, NoteTransition>")), result::describe);
     }
 
@@ -173,10 +175,12 @@ class TypedBindingsTest {
 
         Compilation.Result result = resolve(sources);
 
-        assertEquals(List.of("[SG505] no exported action named publish on fx.Stages has the signature this machine"
+        assertEquals(List.of("[" + DiagnosticCode.SG505
+                + "] no exported action named publish on fx.Stages has the signature this machine"
                         + " needs; expected ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition>) or"
                         + " CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus, DocTransition>)",
-                "[SG505] no exported guard named approved on fx.Stages has the signature this machine needs;"
+                "[" + DiagnosticCode.SG505
+                        + "] no exported guard named approved on fx.Stages has the signature this machine needs;"
                         + " expected GuardResult approved(GuardContext<Doc, DocStatus, DocTransition>) or"
                         + " CompletionStage<GuardResult> approved(GuardContext<Doc, DocStatus, DocTransition>)"),
                 result.errors(), result.describe());

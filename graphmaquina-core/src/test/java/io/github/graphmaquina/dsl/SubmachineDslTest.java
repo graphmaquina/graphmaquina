@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -259,7 +260,8 @@ class SubmachineDslTest {
         GraphBuilder<Order, OrderStatus, OrderTransition> builder = orders();
         SubmachineBuilder<Order, OrderStatus, OrderTransition, Payment, PaymentStatus, PaymentTransition> stage =
                 builder.submachine(NEW, payments(), PAYMENT_OF, ORDER_OF).exit(PaymentStatus.CAPTURED, CHARGE);
-        assertEquals(List.of("SG801", "SG801"), assertThrows(InvalidGraphException.class, builder::build).codes());
+        assertEquals(List.of(DiagnosticCode.SG801.name(), DiagnosticCode.SG801.name()),
+                assertThrows(InvalidGraphException.class, builder::build).codes());
         IllegalStateException late = assertThrows(IllegalStateException.class,
                 () -> stage.exit(PaymentStatus.DECLINED, DECLINE));
         assertEquals("build() was already called on the graph Order/OrderStatus, so the sub-machine of NEW can no"
@@ -310,11 +312,14 @@ class SubmachineDslTest {
     @Test
     void sg801ATerminalWithoutExactlyOneExitAndAnExitOnAStateThatIsNotTerminal() {
         assertEquals(List.of(
-                        new Problem("SG801", "Order/OrderStatus.NEW: the terminal CAPTURED of Payment/PaymentStatus has"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the terminal CAPTURED of Payment/PaymentStatus has"
                                 + " more than one exit"),
-                        new Problem("SG801", "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the terminal VOIDED of Payment/PaymentStatus has"
                                 + " no exit"),
-                        new Problem("SG801", "Order/OrderStatus.NEW: the exit on AUTHORIZING names no terminal of"
+                        new Problem(DiagnosticCode.SG801.name(),
+                                "Order/OrderStatus.NEW: the exit on AUTHORIZING names no terminal of"
                                 + " Payment/PaymentStatus")),
                 problems(orders().submachine(NEW, payments(), PAYMENT_OF, ORDER_OF)
                         .exit(PaymentStatus.CAPTURED, CHARGE).exit(PaymentStatus.AUTHORIZING, DECLINE)
@@ -324,7 +329,8 @@ class SubmachineDslTest {
 
     @Test
     void sg802AnExitWhoseIdentifierHasNoEdgeFromTheNode() {
-        assertEquals(List.of(new Problem("SG802", "Order/OrderStatus.NEW: the exit on CAPTURED names SHIP, which has no"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG802.name(),
+                "Order/OrderStatus.NEW: the exit on CAPTURED names SHIP, which has no"
                         + " edge from NEW")),
                 problems(orders().submachine(NEW, payments(), PAYMENT_OF, ORDER_OF)
                         .exit(PaymentStatus.CAPTURED, SHIP).exit(PaymentStatus.DECLINED, DECLINE)
@@ -334,7 +340,8 @@ class SubmachineDslTest {
 
     @Test
     void sg803ATerminalNodeAndANodeWithTwoBindings() {
-        assertEquals(List.of(new Problem("SG803", "Order/OrderStatus.NEW holds more than one sub-machine")),
+        assertEquals(List.of(new Problem(DiagnosticCode.SG803.name(),
+                "Order/OrderStatus.NEW holds more than one sub-machine")),
                 problems(orders()
                         .submachine(NEW, payments(), PAYMENT_OF, ORDER_OF)
                             .exit(PaymentStatus.CAPTURED, CHARGE).exit(PaymentStatus.DECLINED, DECLINE)
@@ -344,11 +351,14 @@ class SubmachineDslTest {
                             .exit(CheckStatus.CLEARED, CHARGE).exit(CheckStatus.FLAGGED, CANCEL)
                             .endSubmachine()));
         assertEquals(List.of(
-                        new Problem("SG802", "Order/OrderStatus.SHIPPED: the exit on CLEARED names SHIP, which has no"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.SHIPPED: the exit on CLEARED names SHIP, which has no"
                                 + " edge from SHIPPED"),
-                        new Problem("SG802", "Order/OrderStatus.SHIPPED: the exit on FLAGGED names CANCEL, which has no"
+                        new Problem(DiagnosticCode.SG802.name(),
+                                "Order/OrderStatus.SHIPPED: the exit on FLAGGED names CANCEL, which has no"
                                 + " edge from SHIPPED"),
-                        new Problem("SG803", "Order/OrderStatus.SHIPPED is terminal and cannot hold a sub-machine")),
+                        new Problem(DiagnosticCode.SG803.name(),
+                                "Order/OrderStatus.SHIPPED is terminal and cannot hold a sub-machine")),
                 problems(orders().submachine(SHIPPED, checks())
                         .exit(CheckStatus.CLEARED, SHIP).exit(CheckStatus.FLAGGED, CANCEL)
                         .endSubmachine()));
@@ -379,11 +389,14 @@ class SubmachineDslTest {
                     .exit(PaymentStatus.VOIDED, CANCEL)
                     .endSubmachine();
         assertEquals(List.of(
-                        new Problem("SG804", "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: DECLINE is an exit of its sub-machine and cannot"
                                 + " be the onFailure of CHARGE"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
                                 + " a recovery of CHARGE"),
-                        new Problem("SG804", "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
+                        new Problem(DiagnosticCode.SG804.name(),
+                                "Order/OrderStatus.NEW: CANCEL is an exit of its sub-machine and cannot be"
                                 + " executed by a watch rule")),
                 problems(builder));
     }
@@ -391,7 +404,8 @@ class SubmachineDslTest {
     /** A second definition under the parent's own key is the only way the DSL can make a machine contain itself. */
     @Test
     void sg805AChildThatIsTheParentsOwnMachine() {
-        assertEquals(List.of(new Problem("SG805", "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG805.name(),
+                "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
                         + " again: Order/OrderStatus.NEW -> Order/OrderStatus")),
                 problems(orders().submachine(NEW, orders().build())
                         .exit(SHIPPED, CHARGE).exit(CANCELLED, CANCEL)
@@ -401,7 +415,8 @@ class SubmachineDslTest {
     /** A child that binds, in one of its own states, a definition under the parent's key. */
     @Test
     void sg805AParentReachedAgainThroughTheSubmachinesOfItsChild() {
-        assertEquals(List.of(new Problem("SG805", "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG805.name(),
+                "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
                         + " again: Order/OrderStatus.NEW -> Payment/PaymentStatus.AUTHORIZING -> Order/OrderStatus")),
                 problems(orders().submachine(NEW, paymentsBindingOrders(), PAYMENT_OF, ORDER_OF)
                         .exit(PaymentStatus.CAPTURED, CHARGE).exit(PaymentStatus.DECLINED, DECLINE)
@@ -412,7 +427,8 @@ class SubmachineDslTest {
     /** Distinct definitions of one child key are checked along each binding's own path. */
     @Test
     void sg805ChecksDistinctDefinitionsOfTheSameChildKey() {
-        assertEquals(List.of(new Problem("SG805", "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG805.name(),
+                "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
                         + " again: Order/OrderStatus.PAYMENT_DECLINED -> Payment/PaymentStatus.AUTHORIZING"
                         + " -> Order/OrderStatus")),
                 problems(orders()
@@ -429,7 +445,8 @@ class SubmachineDslTest {
     /** NEW leads back in two steps and PAYMENT_DECLINED in one: the shorter path is the one reported. */
     @Test
     void sg805ReportsOneShortestPath() {
-        assertEquals(List.of(new Problem("SG805", "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG805.name(),
+                "the sub-machines of Order/OrderStatus contain Order/OrderStatus"
                         + " again: Order/OrderStatus.PAYMENT_DECLINED -> Order/OrderStatus")),
                 problems(orders()
                         .submachine(NEW, paymentsBindingOrders(), PAYMENT_OF, ORDER_OF)
@@ -485,7 +502,8 @@ class SubmachineDslTest {
                 rung(Inner.class, Optional.of(bindsTop), Optional.empty()).build();
         GraphDefinition<Outer, Rung, RungMove> outer = rung(Outer.class, Optional.of(inner), Optional.empty()).build();
         Rebound<Reused> rebound = new Rebound<>(rung(Reused.class, Optional.empty(), Optional.empty()).build(), outer);
-        assertEquals(List.of(new Problem("SG805", "the sub-machines of Top/Rung contain Top/Rung again: Top/Rung.C"
+        assertEquals(List.of(new Problem(DiagnosticCode.SG805.name(),
+                "the sub-machines of Top/Rung contain Top/Rung again: Top/Rung.C"
                         + " -> Outer/Rung.B -> Inner/Rung.B -> Reused/Rung.B -> Top/Rung")),
                 problems(rung(Top.class, Optional.of(rebound), Optional.of(outer))));
     }

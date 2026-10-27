@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.MemberDescriptor;
@@ -103,7 +104,7 @@ class ReleaseAndEncodingTest {
                 () -> StateGraphCodegen.generate(request(new JsonObject())));
         StateGraphCodegen.generate(request(members("release", release)));
 
-        assertEquals("SG601", atTheDefault.code(), atTheDefault.getMessage());
+        assertEquals(DiagnosticCode.SG601.name(), atTheDefault.code(), atTheDefault.getMessage());
         assertTrue(Files.isRegularFile(directory.resolve("generated/fx/DocsGraph.java")));
     }
 
@@ -132,7 +133,7 @@ class ReleaseAndEncodingTest {
                 () -> StateGraphCodegen.generate(request(members("release", 17))));
         StateGraphCodegen.generate(request(new JsonObject()));
 
-        assertEquals("SG601", atRelease17.code(), atRelease17.getMessage());
+        assertEquals(DiagnosticCode.SG601.name(), atRelease17.code(), atRelease17.getMessage());
         assertTrue(atRelease17.getMessage().contains("originals/fx/Describe.java"), atRelease17.getMessage());
         assertTrue(Files.isRegularFile(directory.resolve("generated/fx/DocsGraph.java")));
     }
@@ -205,7 +206,7 @@ class ReleaseAndEncodingTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> StateGraphCodegen.generate(request(members("encoding", "ISO-8859-1"))));
 
-        assertEquals("SG603", failure.code(), failure.getMessage());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code(), failure.getMessage());
         assertTrue(failure.getMessage().contains("fx.DocActionsRefs"), failure.getMessage());
         assertTrue(failure.getMessage().contains("Helpers.java"), failure.getMessage());
     }

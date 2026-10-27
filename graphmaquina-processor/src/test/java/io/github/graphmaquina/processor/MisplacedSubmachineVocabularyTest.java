@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ class MisplacedSubmachineVocabularyTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(2, result.countError("SG606"), result.describe());
+        assertEquals(2, result.countError(DiagnosticCode.SG606.name()), result.describe());
         assertEquals(2, result.errors().size(), result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("fx.DocsPages.Submachine is read")
                 && error.contains("never read on fx.DocService")), result.describe());
@@ -51,8 +52,10 @@ class MisplacedSubmachineVocabularyTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(List.of("[SG606] fx.DocsPages.Submachine is the vocabulary of a pair of fx.Docs, not of fx.Pages",
-                "[SG606] fx.DocsPages.Submachine is the vocabulary of a pair of fx.Docs, not of fx.Pages"),
+        assertEquals(List.of("[" + DiagnosticCode.SG606
+                + "] fx.DocsPages.Submachine is the vocabulary of a pair of fx.Docs, not of fx.Pages",
+                "[" + DiagnosticCode.SG606
+                        + "] fx.DocsPages.Submachine is the vocabulary of a pair of fx.Docs, not of fx.Pages"),
                 result.errors(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());

@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -49,7 +50,8 @@ class LookupExportTest {
                     @GraphLookup Optional<Order> orderPaying(Payment payment) { return Optional.empty(); }
                 """));
 
-        assertEquals(List.of("[SG604] fx.OrderLookups.orderPaying is exported as a lookup, so it must be public:"
+        assertEquals(List.of("[" + DiagnosticCode.SG604
+                + "] fx.OrderLookups.orderPaying is exported as a lookup, so it must be public:"
                 + " generated code calls it from another package"), result.errors(), result.describe());
     }
 
@@ -63,10 +65,12 @@ class LookupExportTest {
                     }
                 """));
 
-        String expected = " does not have the signature of a lookup: expected Optional of the parent entity from"
-                + " the child entity alone";
-        assertEquals(List.of("[SG604] fx.OrderLookups.bare" + expected, "[SG604] fx.OrderLookups.noChild" + expected,
-                "[SG604] fx.OrderLookups.twoChildren" + expected), result.errors(), result.describe());
+        String expected = " does not have the signature of a lookup: expected Optional of the parent or owner entity"
+                + " from the child or peer entity alone";
+        assertEquals(List.of("[" + DiagnosticCode.SG604 + "] fx.OrderLookups.bare" + expected,
+                "[" + DiagnosticCode.SG604 + "] fx.OrderLookups.noChild" + expected,
+                "[" + DiagnosticCode.SG604 + "] fx.OrderLookups.twoChildren" + expected), result.errors(),
+                result.describe());
     }
 
     @Test
@@ -87,7 +91,8 @@ class LookupExportTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertTrue(result.errors().contains("[SG604] fx.PaymentConditions.orderOf is exported as a condition, but it"
+        assertTrue(result.errors().contains("[" + DiagnosticCode.SG604
+                + "] fx.PaymentConditions.orderOf is exported as a condition, but it"
                 + " overrides fx.OrderLookups.orderOf, whose contract is a lookup"), result.describe());
     }
 

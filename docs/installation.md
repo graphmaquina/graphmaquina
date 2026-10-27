@@ -378,18 +378,34 @@ producer index.
 For a multi-module build:
 
 1. Configure generation and the processor in each module that declares or consumes generated graph APIs.
-2. Build the producer before the consumer and declare it as a normal dependency.
+2. Build the producer before the consumer and declare it as a normal dependency. Every enum a machine of the
+   producer passes to `Machine` must reach the consumer's compile classpath too: a Gradle producer that applies
+   `java-library` and declares the module of those enums with `implementation` keeps that module off it, which the
+   consumer reports as `SG602`, naming the enum, even when it uses no machine of that producer. Give the consumer
+   that module as a dependency of its own.
 3. Package the generated classes and export index together. Avoid assembly steps that silently drop or
    overwrite `META-INF/graphmaquina` metadata.
 4. Regenerate and recompile consumers after changing a producer's exported API. A stale or missing index is a
    build error: one that is missing, or that does not list a machine or a symbol the classes beside it carry, is
-   reported as `SG602` wherever the consumer uses that machine or symbol, naming the jar or directory of classes
-   that carries it. Build producers and consumers with the same GraphMaquina version: an index that another version
-   wrote is refused with `SG602` too.
+   reported as `SG602`, naming the jar or directory of classes that carries it whenever that entry can be told.
+   The generator reports it where a machine declares that machine a peer with `@GraphPeers`, before it publishes
+   anything; otherwise it is reported where a set holds that machine or a declaration binds that symbol. The
+   generator reports the same way an index that describes such a peer otherwise than the classes beside it, such
+   as over enums whose constants now differ from those it lists, or that the peer no longer extends `Machine` with;
+   [build troubleshooting](build-troubleshooting.md#troubleshooting) lists every case. Build producers and
+   consumers with the same GraphMaquina version: an index that another version wrote is refused with `SG602` too,
+   and so is a machine that the indexes of two jars or directories on the classpath both describe, as two versions
+   of one producer do: the error names both entries, and keeping one artifact of that producer on the classpath
+   fixes it.
 
-Support for published symbols and sets does not imply support for a watch whose pair spans separate
-compilations. Keep watched owner and peer declarations in the same compilation until
-[issue #1](https://github.com/graphmaquina/graphmaquina/issues/1) is implemented.
+A consumer can also bind a machine of a dependency as the sub-machine of one of its own states, or watch it,
+declaring it with `@GraphPeers` like any child or peer. The pair vocabulary is generated from what the dependency's
+export index says of that machine, so its artifact must carry the index its build published, and the consumer's
+`@StateGraphs` set must hold both machines. A producer that does not know the consumer's entity cannot give its own
+entity a property that returns it, so the way back is a lookup of the consumer: `parentLookup` for a sub-machine,
+`ownerLookup` for a watch. A watch can still use `owner` when the producer also publishes the owner's entity and
+the peer's entity has a property that returns the owner.
+[Compose machines across modules and JARs](cross-module-composition.md) walks through both.
 
 ---
 

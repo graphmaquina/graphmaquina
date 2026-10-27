@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,7 +36,7 @@ class TypedCardinalityTest {
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", onFailure = {RETURN, SUBMIT}")));
         assertFalse(many.success(), many.describe());
-        assertTrue(many.hasError("SG607"), many.describe());
+        assertTrue(many.hasError(DiagnosticCode.SG607.name()), many.describe());
     }
 
     @Test
@@ -53,7 +54,7 @@ class TypedCardinalityTest {
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", afterCommit = {DocActionsRefs.Notified.class, DocActionsRefs.Notified.class}")));
         assertFalse(many.success(), many.describe());
-        assertTrue(many.hasError("SG607"), many.describe());
+        assertTrue(many.hasError(DiagnosticCode.SG607.name()), many.describe());
     }
 
     @Test
@@ -71,7 +72,7 @@ class TypedCardinalityTest {
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 TypedFixtures.archive(", timeout = {@Timeout(seconds = 1), @Timeout(seconds = 2)}")));
         assertFalse(many.success(), many.describe());
-        assertTrue(many.hasError("SG607"), many.describe());
+        assertTrue(many.hasError(DiagnosticCode.SG607.name()), many.describe());
     }
 
     @Test
@@ -94,7 +95,7 @@ class TypedCardinalityTest {
                         "to = DRAFT, action = {DocActionsRefs.Publish.class, DocActionsRefs.Publish.class})"),
                 publish("")));
         assertFalse(many.success(), many.describe());
-        assertTrue(many.hasError("SG607"), many.describe());
+        assertTrue(many.hasError(DiagnosticCode.SG607.name()), many.describe());
     }
 
     /** The operations of the fixture, publishing with the synchronous action and {@code extra} declared on it. */

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -80,7 +81,7 @@ class CommitHookTest {
     void rejectsAnUnrelatedSecondParameterAtExport() {
         Compilation.Result result = Compilation.compileTyped(fixture("Doc doc, String context", ""));
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG604"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG604.name()), result.describe());
     }
 
     @Test
@@ -89,7 +90,7 @@ class CommitHookTest {
         sources.put("fx.OtherStatus", "package fx; public enum OtherStatus { OPEN, CLOSED }");
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG505"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG505.name()), result.describe());
     }
 
     @Test
@@ -101,7 +102,7 @@ class CommitHookTest {
                 """));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG505"), result.describe());
+        assertTrue(result.hasError(DiagnosticCode.SG505.name()), result.describe());
     }
 
     @Test
@@ -157,7 +158,7 @@ class CommitHookTest {
                 "Doc doc, CommitContext<?, ?> context"}) {
             Compilation.Result result = Compilation.compileTyped(fixture(parameters, ""));
             assertFalse(result.success(), result.describe());
-            assertTrue(result.hasError("SG505"), result.describe());
+            assertTrue(result.hasError(DiagnosticCode.SG505.name()), result.describe());
         }
     }
 
@@ -167,10 +168,10 @@ class CommitHookTest {
         nonVoid.put("fx.DocActions", edit(nonVoid.get("fx.DocActions"), "void notified", "boolean notified"));
         Compilation.Result returned = Compilation.compileTyped(nonVoid);
         assertFalse(returned.success(), returned.describe());
-        assertTrue(returned.hasError("SG604"), returned.describe());
+        assertTrue(returned.hasError(DiagnosticCode.SG604.name()), returned.describe());
         Compilation.Result extra = Compilation.compileTyped(fixture(CONTEXTUAL + ", String extra", ""));
         assertFalse(extra.success(), extra.describe());
-        assertTrue(extra.hasError("SG604"), extra.describe());
+        assertTrue(extra.hasError(DiagnosticCode.SG604.name()), extra.describe());
     }
 
     private static String run(Compilation.Result result) throws Exception {

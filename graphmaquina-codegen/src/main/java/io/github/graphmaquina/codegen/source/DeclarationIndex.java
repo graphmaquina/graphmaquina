@@ -640,6 +640,14 @@ public final class DeclarationIndex implements AutoCloseable {
                 : classpath.packageOf(header);
     }
 
+    /**
+     * The classpath entry, a jar or a directory of classes, that javac read {@code header} from, as
+     * {@link ClasspathDeclarations#entry} gives it; empty for a header of the sources.
+     */
+    Optional<Path> classpathEntry(TypeHeader header) {
+        return header.origin().isPresent() ? Optional.empty() : classpath.entry(header);
+    }
+
     /** Rejects a simple name that several imports offer at once instead of choosing one by order. */
     private Optional<TypeHeader> unique(List<Optional<TypeHeader>> candidates, String name,
             TypeHeader context) {

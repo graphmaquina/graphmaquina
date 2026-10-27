@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.processor.TypedProcessors.Use;
 import java.io.File;
@@ -171,8 +172,8 @@ class TypedPropertiesTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG503"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG503]")
+        assertEquals(1, result.countError(DiagnosticCode.SG503.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG503 + "]")
                 && error.contains("status")), result::describe);
     }
 
@@ -194,8 +195,8 @@ class TypedPropertiesTest {
                 """));
 
         assertFalse(result.success(), result.describe());
-        assertEquals(1, result.countError("SG503"), result::describe);
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG503]")
+        assertEquals(1, result.countError(DiagnosticCode.SG503.name()), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[" + DiagnosticCode.SG503 + "]")
                 && error.contains("setStatus")), result::describe);
     }
 
@@ -212,7 +213,7 @@ class TypedPropertiesTest {
 
         CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.prepare(sources));
 
-        assertEquals("SG603", failure.code());
+        assertEquals(DiagnosticCode.SG603.name(), failure.code());
         assertTrue(failure.getMessage().contains("status"), failure::getMessage);
     }
 

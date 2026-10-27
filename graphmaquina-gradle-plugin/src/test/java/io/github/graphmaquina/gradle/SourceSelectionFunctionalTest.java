@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -290,7 +291,7 @@ class SourceSelectionFunctionalTest {
         assertTrue(refused.getOutput().contains("When task ':compileJava' is given such a filter, give it to the java"
                 + " sources of the source set instead"),
                 refused::getOutput);
-        assertFalse(refused.getOutput().contains("[SG601]"), refused::getOutput);
+        assertFalse(refused.getOutput().contains("[" + DiagnosticCode.SG601 + "]"), refused::getOutput);
         assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
 
         fixture.replaceInBuildScript("tasks.named<JavaCompile>(\"compileJava\") {\n    exclude {",

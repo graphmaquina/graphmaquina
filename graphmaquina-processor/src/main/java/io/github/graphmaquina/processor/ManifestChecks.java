@@ -7,6 +7,7 @@ import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
+import io.github.graphmaquina.codegen.manifest.PublishedEntries;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.MemberDescriptor;
 import io.github.graphmaquina.codegen.model.PropertyDescriptor;
@@ -29,8 +30,10 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 
 /**
  * Matches one manifest against the declarations javac actually has.
@@ -39,7 +42,9 @@ import javax.lang.model.util.Elements;
  * started. Every name it carries is therefore a claim, not a fact: a generated annotation must exist and must
  * carry the metadata that says which machine it belongs to, a machine's states must still be the constants of
  * its enum, and a symbol must still name a member that exists. A claim that no longer holds means the
- * generation is stale, and the whole manifest is refused rather than used in part.</p>
+ * generation is stale, and the whole manifest is refused rather than used in part. An enum a claim names that this
+ * compilation does not declare, while the class file of its machine still passes it to {@code Machine}, is reported as
+ * missing from the classpath rather than as a stale claim, and the whole manifest is refused all the same.</p>
  *
  * <p>Existence, identity and the declared signature are checked here. Whether a member's effective signature suits the
  * role it declares is the frontend's work, once the model is being built.</p>
@@ -56,9 +61,9 @@ final class ManifestChecks {
 
     /**
      * The first reason {@code manifest} cannot be trusted, phrased to follow the manifest's own path in a
-     * diagnostic, or empty when every claim it makes holds.
+     * diagnostic, or empty when every claim it makes holds. {@code types} walks the supertypes of a facade.
      */
-    static Optional<String> verify(CompileManifest manifest, Elements elements) {
+    static Optional<String> verify(CompileManifest manifest, Elements elements, Types types) {
         Optional<String> versions = versions(manifest);
         if (versions.isPresent()) {
             return versions;
@@ -70,7 +75,7 @@ final class ManifestChecks {
         Annotations annotations = new Annotations(elements);
         MemberIndex members = new MemberIndex(elements);
         for (ExportIndex index : indexes(manifest)) {
-            Optional<String> problem = index(index, members, annotations);
+            Optional<String> problem = index(index, members, annotations, types);
             if (problem.isPresent()) {
                 return problem;
             }
@@ -127,11 +132,12 @@ final class ManifestChecks {
         return Optional.empty();
     }
 
-    private static Optional<String> index(ExportIndex index, MemberIndex members, Annotations annotations) {
+    private static Optional<String> index(ExportIndex index, MemberIndex members, Annotations annotations,
+            Types types) {
         Map<String, GraphDescriptor> graphs = new LinkedHashMap<>();
         for (GraphDescriptor graph : index.model().graphs()) {
             graphs.put(graph.facade(), graph);
-            Optional<String> problem = enums(graph, members);
+            Optional<String> problem = enums(graph, members, types);
             if (problem.isPresent()) {
                 return problem;
             }
@@ -155,24 +161,38 @@ final class ManifestChecks {
      * A machine's states and its transition identifiers are the constants of its two enums, in the order those
      * enums declare them.
      */
-    private static Optional<String> enums(GraphDescriptor graph, MemberIndex members) {
-        Optional<String> states = constants(graph, "state", graph.stateType(), graph.states(), members);
+    private static Optional<String> enums(GraphDescriptor graph, MemberIndex members, Types types) {
+        Optional<String> states = constants(graph, "state", 1, graph.stateType(), graph.states(), members, types);
         if (states.isPresent()) {
             return states;
         }
-        return constants(graph, "transition", graph.transitionType(), graph.transitions(), members);
+        return constants(graph, "transition", 2, graph.transitionType(), graph.transitions(), members, types);
     }
 
-    /** One enum of {@code graph}: it must still be declared, still be an enum, and still declare {@code claimed}. */
-    private static Optional<String> constants(GraphDescriptor graph, String role, String type, List<String> claimed,
-            MemberIndex members) {
-        TypeElement declaration = CanonicalNames.type(members, type, graph.packageName());
-        if (declaration == null || declaration.getKind() != ElementKind.ENUM) {
+    /**
+     * One enum of {@code graph}, the {@code role} enum, which its facade passes to {@code Machine} at
+     * {@code position}: it must still be declared, still be an enum, and still declare {@code claimed}. An enum this
+     * compilation does not declare that the facade, as javac reads it, still passes to {@code Machine}, a type javac
+     * cannot resolve spelled as the index names it, is missing from this compilation's classpath, which says nothing
+     * of the index: that type may live in another artifact the classpath leaves out, or the producer's artifact may
+     * have lost it.
+     */
+    private static Optional<String> constants(GraphDescriptor graph, String role, int position, String type,
+            List<String> claimed, MemberIndex members, Types types) {
+        Optional<TypeElement> found = Optional.ofNullable(CanonicalNames.type(members, type, graph.packageName()));
+        if (found.isEmpty() && passesUnresolved(graph, position, type, members, types)) {
+            return Optional.of("describes the machine " + graph.facade() + " over the " + role + " enum " + type
+                + ", which that machine passes to Machine but this compilation's classpath does not declare"
+                + PublishedEntries.MISSING_TYPE_REMEDY);
+        }
+        Optional<TypeElement> declaration =
+                found.filter((TypeElement element) -> element.getKind() == ElementKind.ENUM);
+        if (declaration.isEmpty()) {
             return Optional.of("describes the machine " + graph.facade() + " over the " + role + " enum " + type
                 + ", which this compilation does not declare");
         }
         List<String> declared = new ArrayList<>();
-        for (Element member : declaration.getEnclosedElements()) {
+        for (Element member : declaration.get().getEnclosedElements()) {
             if (member.getKind() == ElementKind.ENUM_CONSTANT) {
                 declared.add(member.getSimpleName().toString());
             }
@@ -182,6 +202,20 @@ final class ManifestChecks {
                 + ", but that enum now declares " + declared);
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether the facade of {@code graph}, as javac reads it, passes {@code Machine} at {@code position} a type javac
+     * cannot resolve whose name is {@code type}.
+     */
+    private static boolean passesUnresolved(GraphDescriptor graph, int position, String type, MemberIndex members,
+            Types types) {
+        return Optional.ofNullable(CanonicalNames.type(members, graph.facade(), graph.packageName()))
+                .flatMap((TypeElement facade) -> StructuralChecks.findMachine(types, facade.asType()))
+                .filter((DeclaredType machine) -> machine.getTypeArguments().size() > position)
+                .map((DeclaredType machine) -> machine.getTypeArguments().get(position))
+                .filter((TypeMirror argument) -> argument.getKind() == TypeKind.ERROR && name(argument).equals(type))
+                .isPresent();
     }
 
     /** A listed annotation type must exist, be an annotation, and say which machine of this index it serves. */
@@ -316,7 +350,7 @@ final class ManifestChecks {
         return indexes;
     }
 
-    /** The canonical name of a type an annotation value names. */
+    /** The canonical name of a type an annotation value or a type argument names. */
     private static String name(TypeMirror type) {
         if (type instanceof DeclaredType declared && declared.asElement() instanceof TypeElement element) {
             return element.getQualifiedName().toString();

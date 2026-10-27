@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -76,7 +77,7 @@ class DefaultAfterCommitTest {
         sources.compute("fx.Recorder", (key, text) -> text.replace("persist(Doc doc)", "persist(String doc)"));
         Compilation.Result invalid = Compilation.compileTyped(sources);
         assertFalse(invalid.success());
-        assertTrue(invalid.hasError("SG505"), invalid::describe);
+        assertTrue(invalid.hasError(DiagnosticCode.SG505.name()), invalid::describe);
         assertFalse(invalid.hasGenerated("fx.DocsRuntime"));
     }
 
@@ -95,8 +96,8 @@ class DefaultAfterCommitTest {
         Compilation.Result result = Compilation.compileTyped(DefaultHookFixtures.sources(
             ", afterCommit = {RecorderRefs.Persist.class, RecorderRefs.Persist.class}", ""));
         assertFalse(result.success());
-        assertEquals(1, result.countError("SG607"), result::describe);
-        assertEquals(10, result.lineOf("SG607"), result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG607.name()), result::describe);
+        assertEquals(10, result.lineOf(DiagnosticCode.SG607.name()), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
     }
 
@@ -108,7 +109,7 @@ class DefaultAfterCommitTest {
             """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success());
-        assertTrue(result.hasError("SG605"), result::describe);
+        assertTrue(result.hasError(DiagnosticCode.SG605.name()), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
     }
 
@@ -122,8 +123,8 @@ class DefaultAfterCommitTest {
             """));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success());
-        assertEquals(1, result.countError("SG505"), result::describe);
-        assertEquals(10, result.lineOf("SG505"), result::describe);
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result::describe);
+        assertEquals(10, result.lineOf(DiagnosticCode.SG505.name()), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
         assertFalse(result.hasGenerated("fx.LibraryRuntime"));
     }
@@ -150,7 +151,7 @@ class DefaultAfterCommitTest {
         Compilation.Result result = Compilation.compileTyped(DefaultHookFixtures.sources(DEFAULT,
             ", afterCommit = {DocActionsRefs.Notified.class, DocActionsRefs.Notified.class}"));
         assertFalse(result.success());
-        assertTrue(result.hasError("SG607"), result::describe);
+        assertTrue(result.hasError(DiagnosticCode.SG607.name()), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
     }
 }

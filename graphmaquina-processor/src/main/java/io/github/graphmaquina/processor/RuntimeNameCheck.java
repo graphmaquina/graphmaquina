@@ -89,7 +89,8 @@ final class RuntimeNameCheck {
         for (Element declaration : declarations) {
             TypeElement type = (TypeElement) declaration;
             if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
-                continue; // The model builder reports unsupported nested declarations as SG502.
+                // The model builder reports unsupported nested declarations as SG502.
+                continue;
             }
             Optional<String> name = runtimeName(type);
             if (name.isPresent() && reserve(type, name.get())) {

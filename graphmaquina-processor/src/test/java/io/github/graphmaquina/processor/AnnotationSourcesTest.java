@@ -66,6 +66,25 @@ class AnnotationSourcesTest {
             }
             """;
 
+    /** A classfile-only carrier whose edge and rule name their throwable types in opposite orders. */
+    private static final String CLASSFILE_CARRIER = """
+            package fx;
+            /** Classfile-only edge with textual fallback first, which cannot be recovered from bytecode. */
+            @Carrier.Edge(failsOn = {IllegalArgumentException.class, java.io.IOException.class},
+                recoveries = @Carrier.Recovery(kind = Carrier.Kind.class,
+                    failsOn = {java.io.IOException.class, IllegalArgumentException.class}))
+            public class Carrier {
+                /** Valid named failure kind. */ \
+            public record Kind() implements io.github.graphmaquina.api.FailureKind {}
+                /** Stand-in nested recovery annotation. */ public @interface Recovery {
+                    Class<?> kind(); Class<?>[] failsOn();
+                }
+                /** Stand-in edge annotation. */ public @interface Edge {
+                    Recovery[] recoveries(); Class<?>[] failsOn();
+                }
+            }
+            """;
+
     @TempDir
     Path directory;
 
@@ -177,23 +196,7 @@ class AnnotationSourcesTest {
 
     @Test
     void classfileAnnotationsHaveNoSourceAndDuplicatesUseRuleThenFallbackOrder() throws IOException {
-        Run library = compile("Carrier", """
-                package fx;
-                /** Classfile-only edge with textual fallback first, which cannot be recovered from bytecode. */
-                @Carrier.Edge(failsOn = {IllegalArgumentException.class, java.io.IOException.class},
-                    recoveries = @Carrier.Recovery(kind = Carrier.Kind.class,
-                        failsOn = {java.io.IOException.class, IllegalArgumentException.class}))
-                public class Carrier {
-                    /** Valid named failure kind. */ \
-                public record Kind() implements io.github.graphmaquina.api.FailureKind {}
-                    /** Stand-in nested recovery annotation. */ public @interface Recovery {
-                        Class<?> kind(); Class<?>[] failsOn();
-                    }
-                    /** Stand-in edge annotation. */ public @interface Edge {
-                        Recovery[] recoveries(); Class<?>[] failsOn();
-                    }
-                }
-                """, null);
+        Run library = compile("Carrier", CLASSFILE_CARRIER, null);
         assertTrue(library.success(), library.diagnostics().toString());
         Probe processor = new Probe((ProcessingEnvironment environment) -> {
             Diagnostics diagnostics = new Diagnostics(environment);
@@ -219,7 +222,8 @@ class AnnotationSourcesTest {
         Run result = compile("Trigger",
                 "package fx; /** Triggers processing of the classfile carrier. */ public class Trigger {}", processor);
         assertFalse(result.success());
-        assertEquals(List.of("[SG304] java.lang.IllegalArgumentException", "[SG304] java.io.IOException"),
+        assertEquals(List.of("[" + DiagnosticCode.SG304 + "] java.lang.IllegalArgumentException",
+                "[" + DiagnosticCode.SG304 + "] java.io.IOException"),
                 result.diagnostics().stream().map((Diagnostic<? extends JavaFileObject> diagnostic) ->
                         diagnostic.getMessage(null).split(" is declared", 2)[0]).toList());
         assertTrue(result.diagnostics().stream().allMatch((Diagnostic<? extends JavaFileObject> diagnostic) ->

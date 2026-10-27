@@ -3,8 +3,8 @@ package io.github.graphmaquina.codegen;
 import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.DependencyExports;
-import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestAssembler;
+import io.github.graphmaquina.codegen.manifest.PublishedIndex;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.output.GenerationOutput;
@@ -30,11 +30,12 @@ public final class StateGraphCodegen {
     /**
      * Generates the typed graph API of {@code request} and returns the sources it wrote and its manifest.
      *
-     * <p>The original sources are walked and parsed once: the publication checks the generated types against the
-     * very sources the model was read from. The dependencies of the manifest are the indexes the classpath
-     * publishes, except the one in this compilation's own class output: a caller may put that output on the
-     * classpath as its previous run left it, and its index describes this compilation, never a dependency of
-     * it.</p>
+     * <p>The dependencies are the indexes the classpath publishes, except the one in this compilation's own class
+     * output: a caller may put that output on the classpath as its previous run left it, and its index describes
+     * this compilation, never a dependency of it. They are read and checked first, so a fault of a dependency index
+     * is reported before any fault of the request's own sources; the declared peers this compilation does not
+     * generate are then resolved against them, and the vocabulary is emitted. The original sources are walked and
+     * parsed once: the publication checks the generated types against the very sources the model was read from.</p>
      *
      * @throws CodegenException if the request's sources, its classpath indexes or its outputs are not usable, an
      *     original source that javac cannot read or parse included
@@ -44,11 +45,12 @@ public final class StateGraphCodegen {
      *     original source or the class output the collision checks look up cannot be examined
      */
     public static GenerationResult generate(@NonNull GenerationRequest request) throws IOException {
-        Bootstrap.Inspection inspection = Bootstrap.read(request);
+        Bootstrap.Inspection inspection =
+            Bootstrap.read(request, DependencyExports.read(dependencyClasspath(request)));
         GenerationModel model = inspection.model();
-        List<GeneratedSource> sources = ApiEmitter.emit(model, request.compilationId());
-        List<ExportIndex> dependencies = DependencyExports.read(dependencyClasspath(request));
-        CompileManifest manifest = ManifestAssembler.assemble(request, model, sources, dependencies);
+        List<GeneratedSource> sources = ApiEmitter.emit(model, inspection.dependencyPeers(), request.compilationId());
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, inspection.dependencyPeers(), sources,
+            inspection.dependencies().stream().map(PublishedIndex::index).toList());
         return GenerationOutput.publish(request, sources, manifest, inspection.sources());
     }
 

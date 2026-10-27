@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
@@ -101,7 +102,7 @@ class FluentApiTest {
         InvalidGraphException invalid = assertThrows(InvalidGraphException.class,
                 () -> StateGraph.define(TestDomain.KEY).build());
         InvalidGraphAssert view = GraphAssertions.assertThat(invalid);
-        assertSame(view, view.hasCodesExactly("SG201"));
+        assertSame(view, view.hasCodesExactly(DiagnosticCode.SG201.name()));
     }
 
     /**
@@ -113,7 +114,7 @@ class FluentApiTest {
     void aCapturedInvalidGraphIsReachedByNarrowingTheFailureView() {
         Throwable failure = GraphAssertions.captureFailure(
                 () -> StateGraph.define(TestDomain.KEY).build());
-        GraphAssertions.assertThat(failure).isInvalidGraph().hasCodesExactly("SG201");
+        GraphAssertions.assertThat(failure).isInvalidGraph().hasCodesExactly(DiagnosticCode.SG201.name());
         IllegalStateException other = new IllegalStateException("boom");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> GraphAssertions.assertThat(other).isInvalidGraph()),

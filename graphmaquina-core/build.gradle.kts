@@ -10,14 +10,16 @@ tasks.jar {
 tasks.test {
     // Single carrier for virtual threads: any pinning by monitor blocks and the test detects it.
     jvmArgs("-Djdk.virtualThreadScheduler.parallelism=1", "-Djdk.virtualThreadScheduler.maxPoolSize=1")
-    // DiagnosticCodeTest reads the diagnostics table and the production sources of every module, so a change to any
-    // of them reruns it instead of serving its result from the build cache. The modules are the root's directories
-    // with a src/main/java, as the test finds them; nothing else under the root, such as worktrees, is walked.
+    // DiagnosticCodeTest reads the diagnostics table and the main and test Java sources of every module, so a change
+    // to any of them reruns it instead of serving its result from the build cache. The modules are the root's
+    // directories with a src/main/java or a src/test/java, as the test finds them; nothing else under the root, such
+    // as worktrees, is walked.
     val repository = rootProject.layout.projectDirectory
     systemProperty("graphmaquina.repository", repository.asFile.absolutePath)
     inputs.file(repository.file("docs/diagnostics.md")).withPropertyName("diagnosticsTable")
-    inputs.files(repository.asFile.listFiles().orEmpty().map { it.resolve("src/main/java") }.filter { it.isDirectory })
-        .withPropertyName("productionSources")
+    inputs.files(repository.asFile.listFiles().orEmpty()
+        .flatMap { listOf(it.resolve("src/main/java"), it.resolve("src/test/java")) }.filter { it.isDirectory })
+        .withPropertyName("javaSources")
 }
 
 dependencies {

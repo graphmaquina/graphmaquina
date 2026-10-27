@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -50,10 +51,10 @@ class GenericTypesTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG601"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG601.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shop.Ticket<java.lang.String>")
                 && result.errors().get(0).contains("parameterized"), result.describe());
-        assertEquals(0, result.countError("SG605"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG605.name()), result.describe());
         assertFalse(result.hasGenerated("shop.TicketsRuntime"), result.describe());
     }
 
@@ -98,10 +99,10 @@ class GenericTypesTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG601"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG601.name()), result.describe());
         assertTrue(result.errors().get(0).contains("fx.Store<java.lang.String>.Doc")
                 && result.errors().get(0).contains("parameterized"), result.describe());
-        assertEquals(0, result.countError("SG605"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG605.name()), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
@@ -130,18 +131,18 @@ class GenericTypesTest {
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
-        assertEquals(1, result.countError("SG601"), result.describe());
-        assertEquals(1, result.countError("SG509"), result.describe());
-        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("[SG509]")
+        assertEquals(1, result.countError(DiagnosticCode.SG601.name()), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG509.name()), result.describe());
+        assertTrue(result.errors().stream().anyMatch((String error) -> error.contains("[" + DiagnosticCode.SG509 + "]")
                 && error.contains("fx.Page<java.lang.String>") && error.contains("parameterized")), result.describe());
-        assertEquals(0, result.countError("SG605"), result.describe());
+        assertEquals(0, result.countError(DiagnosticCode.SG605.name()), result.describe());
     }
 
     @Test
     void sg505AnInstanceMemberOfAGenericHost() {
         Compilation.Result result = Compilation.compileTyped(ledger(""));
 
-        assertEquals(1, result.countError("SG505"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shop.Ledger") && result.errors().get(0).contains("generic"),
                 result.describe());
         assertFalse(result.hasGenerated("shop.OrdersRuntime"), result.describe());
@@ -156,7 +157,7 @@ class GenericTypesTest {
     void sg505AnInstanceMemberOfAnInnerClassOfAGenericClass() {
         Compilation.Result result = Compilation.compileTyped(book(""));
 
-        assertEquals(1, result.countError("SG505"), result.describe());
+        assertEquals(1, result.countError(DiagnosticCode.SG505.name()), result.describe());
         assertTrue(result.errors().get(0).contains("shop.Ledger.Book")
                 && result.errors().get(0).contains("an inner class of a generic class"), result.describe());
         assertFalse(result.errors().get(0).contains("has the signature this machine needs"), result.describe());

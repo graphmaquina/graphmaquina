@@ -126,8 +126,12 @@ final class WatchVocabularyEmitter {
         String property = MachineVocabularyEmitter.symbolClass(PropertySymbol.class);
         element(source, owner.stateType() + " state();", "the state of the owner in which its peers are watched");
         element(source, property + " peers();", "the property of the owner that reads its peers");
-        element(source, property + " owner();", "the property of a peer that reads its owner, as an {@code Optional},"
-            + " empty for a peer without one, or as the owner itself, never null");
+        element(source, property + "[] owner() default {};", "the property of a peer that reads its owner, as an"
+            + " {@code Optional}, empty for a peer without one, or as the owner itself, never null; at most one, and a"
+            + " watch declares exactly one of owner and ownerLookup");
+        element(source, MachineVocabularyEmitter.symbolClass(LookupSymbol.class) + "[] ownerLookup() default {};",
+            "the exported lookup that finds the owner of a peer, {@code Optional<Owner> name(Peer)}, empty for a peer"
+                + " without one; at most one, and a watch declares exactly one of owner and ownerLookup");
         element(source, vocabulary + ".When[] rules();", "the rules, in order: the first that holds is applied");
         close(source);
     }

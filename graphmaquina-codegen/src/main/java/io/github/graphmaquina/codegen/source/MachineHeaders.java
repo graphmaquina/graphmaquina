@@ -4,6 +4,7 @@ import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import java.util.ArrayList;
@@ -72,7 +73,7 @@ public final class MachineHeaders {
         requireAccessible(index, "the machine interface " + facade, header, packageName, origin);
 
         Binding binding = specialization(index, header, new Binding(Map.of(), Map.of()),
-                        Collections.newSetFromMap(new IdentityHashMap<>()))
+                        Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>())
                 .orElseThrow(() -> new CodegenException(DiagnosticCode.SG601.name(),
                         facade + " does not extend " + MACHINE, origin));
         Map<TypeParameterKey, TypeUse> arguments = binding.arguments();
@@ -109,13 +110,14 @@ public final class MachineHeaders {
     }
 
     /**
-     * Refuses a peer whose pair vocabulary its owner's package could not compile. The vocabulary of an ordered
-     * pair is generated in the owner's package and names the peer machine and the peer's state enum, so both must
-     * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
-     * of a qualified name it writes. A peer is the type its class literal names. A declared peer that is none of
-     * {@code machines} is left to the emitter, which reports it as {@code SG608} too, unless one of them shares its
-     * canonical name: the emitter, which matches peers by name, would take that machine for it, so it is refused
-     * here.
+     * Refuses a peer whose pair vocabulary its owner's package could not compile, as {@link #requireNameablePeer}
+     * words it. A peer is the type its class literal names. A declared peer that is none of {@code machines} is left
+     * to {@link DependencyPeers#resolve}, which resolves it against the export indexes of the dependencies, checks
+     * the descriptor it takes from one against the class files and applies the same two rules to it, or refuses it,
+     * with {@code SG602} when it is a {@code @GenerateGraphApi} machine a dependency carries without an index that
+     * lists it and with {@code SG608} otherwise, unless one of {@code machines} shares its canonical name: the
+     * emitter, which matches peers by name, would take that machine for it, so it is refused here, in the words of
+     * {@link ApiEmitter#unknownPeer}.
      *
      * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access or the
      *     peer that no machine of this compilation is though one shares its name; {@code SG603} naming a type of the
@@ -123,7 +125,6 @@ public final class MachineHeaders {
      */
     static void requireWatchablePeers(@NonNull DeclarationIndex index, @NonNull List<Resolved> machines) {
         for (Resolved owner : machines) {
-            GraphDescriptor graph = owner.graph();
             for (TypeHeader peerType : owner.peers()) {
                 String peer = peerType.canonicalName();
                 Optional<Resolved> watched = machines.stream()
@@ -131,29 +132,104 @@ public final class MachineHeaders {
                         .findFirst();
                 if (watched.isEmpty()) {
                     if (machines.stream().anyMatch((Resolved machine) -> machine.graph().facade().equals(peer))) {
-                        throw new CodegenException(DiagnosticCode.SG608.name(),
-                                "the peer machine " + peer + " declared by "
-                                + graph.facade() + " is not a @GenerateGraphApi machine of this compilation",
-                                graph.origin());
+                        throw ApiEmitter.unknownPeer(peer, owner.graph());
                     }
                     continue;
                 }
-                Resolved peerMachine = watched.get();
-                for (TypeHeader named : List.of(peerMachine.facade(), peerMachine.state())) {
-                    Optional<String> reason = index.inaccessibility(named, graph.packageName());
-                    if (reason.isPresent()) {
-                        throw new CodegenException(DiagnosticCode.SG608.name(),
-                                "the peer machine " + peer + " declared by "
-                                + graph.facade() + " cannot be named from " + where(graph.packageName())
-                                + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
-                    }
-                }
-                index.requireUnobscured(graph.packageName(), "the pair vocabulary generated for the machine "
-                        + graph.facade() + " over " + peer + " in " + where(graph.packageName()),
-                        qualifiedNames(index, List.of(owner.facade(), peerMachine.facade(), owner.state(),
-                                owner.transition(), peerMachine.state())), graph.origin());
+                requireNameablePeer(index, owner, watched.get().facade(), watched.get().state());
             }
         }
+    }
+
+    /**
+     * Refuses the peer {@code peerFacade} of {@code owner}, whose state enum is {@code peerState}, when the pair
+     * vocabulary generated in the owner's package could not compile there. That vocabulary names the peer machine and
+     * its state enum, so both must be accessible there, and no type of that package or of {@code java.lang} may be
+     * named like the first segment of a qualified name it writes. The peer is a machine of this compilation or, read
+     * from the classpath, one of a dependency.
+     *
+     * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access;
+     *     {@code SG603} naming a type of the owner's package or of {@code java.lang} that obscures a package the
+     *     vocabulary names
+     */
+    static void requireNameablePeer(@NonNull DeclarationIndex index, @NonNull Resolved owner,
+            @NonNull TypeHeader peerFacade, @NonNull TypeHeader peerState) {
+        GraphDescriptor graph = owner.graph();
+        String peer = peerFacade.canonicalName();
+        for (TypeHeader named : List.of(peerFacade, peerState)) {
+            Optional<String> reason = index.inaccessibility(named, graph.packageName());
+            if (reason.isPresent()) {
+                throw new CodegenException(DiagnosticCode.SG608.name(),
+                        "the peer machine " + peer + " declared by "
+                        + graph.facade() + " cannot be named from " + where(graph.packageName())
+                        + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
+            }
+        }
+        index.requireUnobscured(graph.packageName(), "the pair vocabulary generated for the machine "
+                + graph.facade() + " over " + peer + " in " + where(graph.packageName()),
+                qualifiedNames(index, List.of(owner.facade(), peerFacade, owner.state(), owner.transition(),
+                        peerState)), graph.origin());
+    }
+
+    /**
+     * The state enum and the transition enum that {@code facade} passes to the {@code Machine<E, S, T>} it ultimately
+     * extends, an original source or a classpath binary, walked as {@link #resolveDeclaration} walks it. Empty when it
+     * does not extend {@code Machine}, or when the type it passes as either enum cannot be resolved or is no enum.
+     */
+    static Optional<Enums> enumsOf(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        Optional<Binding> binding = specialization(index, facade, new Binding(Map.of(), Map.of()),
+                Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>());
+        Optional<TypeHeader> state = binding.flatMap((Binding bound) -> bound.type(new TypeParameterKey(MACHINE, 1)))
+                .filter((TypeHeader type) -> type.kind() == ElementKind.ENUM);
+        Optional<TypeHeader> transition = binding
+                .flatMap((Binding bound) -> bound.type(new TypeParameterKey(MACHINE, 2)))
+                .filter((TypeHeader type) -> type.kind() == ElementKind.ENUM);
+        return state.flatMap((TypeHeader stateType) -> transition.map((TypeHeader transitionType) ->
+                new Enums(stateType, transitionType)));
+    }
+
+    /**
+     * The first type that {@code facade} passes to the {@code Machine<E, S, T>} it ultimately extends, walked as
+     * {@link #enumsOf} walks it, as its state enum and then as its transition enum, by a declared type that no header
+     * resolves: a type this classpath does not declare, such as one of a jar it leaves out. It is named by its role
+     * and spelled as the header spells it, such as {@code the state type pay.PaymentStatus}. Empty when the facade
+     * does not extend {@code Machine}, and when each of those two arguments names a type a header resolves or is no
+     * declared type, such as a type variable.
+     */
+    static Optional<String> undeclaredEnum(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        return specialization(index, facade, new Binding(Map.of(), Map.of()),
+                        Collections.newSetFromMap(new IdentityHashMap<>()), new ArrayList<>())
+                .flatMap((Binding bound) -> undeclared(bound, 1, "state").or(() -> undeclared(bound, 2, "transition")));
+    }
+
+    /**
+     * The first supertype of {@code facade} that no header resolves, walked as {@link #enumsOf} walks the supertypes,
+     * when none that a header resolves takes it to {@code Machine}: a type this classpath does not declare, such as
+     * one of a jar it leaves out. It is named by the type it names, without the type arguments javac spells into the
+     * name of a type it cannot resolve, such as {@code pay.Base}. Empty when the facade reaches {@code Machine}, raw
+     * or not, and when every supertype it has resolves.
+     */
+    static Optional<String> undeclaredSupertype(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        List<TypeUse.Declared> skipped = new ArrayList<>();
+        Optional<Binding> binding = specialization(index, facade, new Binding(Map.of(), Map.of()),
+                Collections.newSetFromMap(new IdentityHashMap<>()), skipped);
+        return binding.isPresent()
+                ? Optional.empty()
+                : skipped.stream().findFirst().map((TypeUse.Declared supertype) -> typeName(supertype.name()));
+    }
+
+    /** {@code spelled} without the type arguments javac spells into the name of a type it cannot resolve. */
+    private static String typeName(String spelled) {
+        int arguments = spelled.indexOf('<');
+        return arguments < 0 ? spelled : spelled.substring(0, arguments);
+    }
+
+    /** The {@code role} type bound at {@code position} of {@code Machine}, if a declared type no header resolves. */
+    private static Optional<String> undeclared(Binding binding, int position, String role) {
+        TypeParameterKey parameter = new TypeParameterKey(MACHINE, position);
+        return binding.argument(parameter)
+                .filter((TypeUse argument) -> argument instanceof TypeUse.Declared && binding.type(parameter).isEmpty())
+                .map((TypeUse argument) -> "the " + role + " type " + argument.render());
     }
 
     /**
@@ -189,12 +265,13 @@ public final class MachineHeaders {
 
     /**
      * Walks the supertypes of {@code header} under {@code binding} until {@code Machine} is reached and returns
-     * what is bound to its own parameters. Supertypes that cannot be resolved are skipped: only the chain that
-     * actually reaches {@code Machine} has to be resolvable. {@code visited} holds the types walked so far by
-     * identity, since a type of a named package and a type of the unnamed package can share a canonical name.
+     * what is bound to its own parameters. Supertypes that cannot be resolved are skipped, each added to
+     * {@code skipped} in the order the walk meets it: only the chain that actually reaches {@code Machine} has to be
+     * resolvable. {@code visited} holds the types walked so far by identity, since a type of a named package and a
+     * type of the unnamed package can share a canonical name.
      */
     private static Optional<Binding> specialization(DeclarationIndex index, TypeHeader header, Binding binding,
-            Set<TypeHeader> visited) {
+            Set<TypeHeader> visited, List<TypeUse.Declared> skipped) {
         if (!visited.add(header)) {
             return Optional.empty();
         }
@@ -204,6 +281,7 @@ public final class MachineHeaders {
             }
             Optional<TypeHeader> resolved = index.resolveInHeader(header, declared.name());
             if (resolved.isEmpty()) {
+                skipped.add(declared);
                 continue;
             }
             TypeHeader superHeader = resolved.get();
@@ -211,7 +289,7 @@ public final class MachineHeaders {
             if (MACHINE.equals(superHeader.canonicalName())) {
                 return Optional.of(bound);
             }
-            Optional<Binding> found = specialization(index, superHeader, bound, visited);
+            Optional<Binding> found = specialization(index, superHeader, bound, visited, skipped);
             if (found.isPresent()) {
                 return found;
             }
@@ -318,6 +396,20 @@ public final class MachineHeaders {
         Optional<TypeHeader> type(TypeParameterKey parameter) {
             return Optional.ofNullable(types.get(parameter));
         }
+
+        /** The argument bound to {@code parameter}, empty when the supertype's use spells none, as a raw type. */
+        Optional<TypeUse> argument(TypeParameterKey parameter) {
+            return Optional.ofNullable(arguments.get(parameter));
+        }
+    }
+
+    /**
+     * The enums a facade passes to {@code Machine}, as {@link #enumsOf} finds them.
+     *
+     * @param state the state enum
+     * @param transition the transition enum
+     */
+    record Enums(@NonNull TypeHeader state, @NonNull TypeHeader transition) {
     }
 
     /**

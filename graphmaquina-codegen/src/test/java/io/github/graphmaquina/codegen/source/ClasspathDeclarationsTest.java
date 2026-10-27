@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.io.IOException;
@@ -108,7 +109,7 @@ class ClasspathDeclarationsTest {
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> ClasspathDeclarations.open(List.of(corrupt)).close());
 
-        assertEquals("SG601", failure.code());
+        assertEquals(DiagnosticCode.SG601.name(), failure.code());
         assertTrue(failure.getMessage().startsWith("the classpath headers cannot be read: "),
                 failure.getMessage());
         assertTrue(failure.getMessage().contains("corrupt.jar"), failure.getMessage());
