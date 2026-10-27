@@ -39,9 +39,9 @@ import org.junit.jupiter.api.io.TempDir;
  * reported with {@code SG602}, naming that entry; any other type, a type of the sources among them, is refused with
  * {@code SG608}; and a machine this compilation generates that an index also describes is refused with {@code SG602}
  * before any peer is resolved. A descriptor is used only once its class files agree with it, its enums declaring the
- * constants it lists and its facade extending {@code Machine} over them, which is {@code SG602} otherwise, and once
- * the package of each owner can name the peer and its state enum, nested or not, which is {@code SG608} or
- * {@code SG603} otherwise.
+ * constants it lists and its facade extending {@code Machine} over them, which is {@code SG602} otherwise, naming the
+ * enum when the classpath does not declare it, and once the package of each owner can name the peer and its state
+ * enum, nested or not, which is {@code SG608} or {@code SG603} otherwise.
  *
  * <p>The producer {@code pay.Payments} is compiled by javac alone and packed with an index written from a descriptor
  * that matches its class files, so nothing but the generator under test reads it; a test that needs a stale index
@@ -307,20 +307,6 @@ class DependencyPeersTest {
                 + " Machine over pay.PaymentStatus and pay.PaymentTransition");
     }
 
-    /** So is one beside classes that lack the state enum the facade passes to {@code Machine}. */
-    @Test
-    void refusesAPeerWhoseStateTypeTheClasspathLacks() throws IOException {
-        Path stale = published("lacking", producer(), PAYMENTS);
-        try (FileSystem archive = FileSystems.newFileSystem(stale)) {
-            Files.delete(archive.getPath("pay/PaymentStatus.class"));
-        }
-
-        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), stale));
-
-        assertStale(failure, stale, "describes it over pay.PaymentStatus and pay.PaymentTransition, but it does not"
-                + " extend Machine over two enums the classpath declares");
-    }
-
     /** So is one beside classes whose state type, as the facade passes it to {@code Machine}, is no longer an enum. */
     @Test
     void refusesAPeerWhoseStateTypeIsNoLongerAnEnum() throws IOException {
@@ -428,6 +414,53 @@ class DependencyPeersTest {
     }
 
     /**
+     * A peer whose enums another jar holds, as a sibling module of the producer that the producer does not expose to
+     * its consumers leaves them, is no stale index: without that jar the report names the state type this classpath
+     * lacks and the dependency it needs. The control is the same two jars on the classpath.
+     */
+    @Test
+    void reportsAPeerWhoseEnumsAJarOffTheClasspathHolds() throws IOException {
+        Path payments = published("split", producer(), PAYMENTS);
+        Path enums = project.resolve("libs/enums.jar");
+        ProducerJars.moved(payments, "pay/PaymentStatus.class", enums);
+        ProducerJars.moved(payments, "pay/PaymentTransition.class", enums);
+        assertEquals(List.of(PAYMENTS), read(bookings(), List.of(payments, enums)).dependencyPeers());
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), payments));
+
+        assertUndeclared(failure, payments, "the state type pay.PaymentStatus");
+    }
+
+    /**
+     * Classes that lack the state enum the facade passes to {@code Machine}, as a jar an assembly step damaged leaves
+     * them, are reported the same way: the generator cannot tell a type a jar lost from one another jar holds.
+     */
+    @Test
+    void reportsAPeerWhoseStateTypeTheClasspathLacks() throws IOException {
+        Path lacking = published("lacking", producer(), PAYMENTS);
+        try (FileSystem archive = FileSystems.newFileSystem(lacking)) {
+            Files.delete(archive.getPath("pay/PaymentStatus.class"));
+        }
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), lacking));
+
+        assertUndeclared(failure, lacking, "the state type pay.PaymentStatus");
+    }
+
+    /** So are classes that lack only the transition enum, which the pair vocabulary does not name. */
+    @Test
+    void reportsAPeerWhoseTransitionTypeTheClasspathLacks() throws IOException {
+        Path lacking = published("lacking-transition", producer(), PAYMENTS);
+        try (FileSystem archive = FileSystems.newFileSystem(lacking)) {
+            Files.delete(archive.getPath("pay/PaymentTransition.class"));
+        }
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> read(bookings(), lacking));
+
+        assertUndeclared(failure, lacking, "the transition type pay.PaymentTransition");
+    }
+
+    /**
      * The pair vocabulary is generated in the owner's package and names the peer's state enum, so a peer from a jar
      * whose state enum is not public is refused at the owner, as a peer of the same compilation is.
      */
@@ -532,6 +565,11 @@ class DependencyPeersTest {
 
     /** The same, with {@code producer} on the classpath in place of the producer's jar. */
     private Bootstrap.Inspection read(Map<String, String> sources, Path producer) throws IOException {
+        return read(sources, List.of(producer));
+    }
+
+    /** The same, with the entries of {@code producer}, in order, on the classpath in place of the producer's jar. */
+    private Bootstrap.Inspection read(Map<String, String> sources, List<Path> producer) throws IOException {
         GenerationRequest request = request(sources, producer);
         return Bootstrap.read(request, DependencyExports.read(request.classpath()));
     }
@@ -541,15 +579,15 @@ class DependencyPeersTest {
      * class output is {@code classes}.
      */
     private GenerationRequest request(Map<String, String> sources) {
-        return request(sources, jar);
+        return request(sources, List.of(jar));
     }
 
-    /** The same, with {@code producer} on the classpath in place of the producer's jar. */
-    private GenerationRequest request(Map<String, String> sources, Path producer) {
+    /** The same, with the entries of {@code producer}, in order, on the classpath in place of the producer's jar. */
+    private GenerationRequest request(Map<String, String> sources, List<Path> producer) {
         Path root = project.resolve("src");
         SourceFiles.write(root, sources);
         List<Path> classpath = new ArrayList<>(SourceFiles.classpath());
-        classpath.add(producer);
+        classpath.addAll(producer);
         return new GenerationRequest(project, List.of(root), classpath, project.resolve("generated"),
                 project.resolve("processor-generated"), project.resolve("classes"), project.resolve("work"),
                 "book:test:main");
@@ -577,6 +615,20 @@ class DependencyPeersTest {
         assertEquals("the peer machine pay.Payments declared by book.Bookings comes from " + entry + ", whose export"
                 + " index META-INF/graphmaquina/exports.json " + discrepancy + PublishedEntries.REMEDY,
                 failure.getMessage());
+        assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * Asserts that {@code failure} reports the peer {@code pay.Payments} of {@code book.Bookings} at that owner as a
+     * machine of {@code entry} that passes {@code Machine} {@code type}, named by its role, which this classpath does
+     * not declare.
+     */
+    private static void assertUndeclared(CodegenException failure, Path entry, String type) {
+        assertEquals(DiagnosticCode.SG602.name(), failure.code());
+        assertEquals("the peer machine pay.Payments declared by book.Bookings comes from " + entry + ", but " + type
+                + " that it passes to Machine is missing from this classpath: add the dependency that declares that"
+                + " type to this compilation's classpath, or rebuild the producer through the complete lifecycle if"
+                + " its own artifact should carry it", failure.getMessage());
         assertEquals("src/book/Bookings.java", failure.location().orElseThrow().path());
     }
 

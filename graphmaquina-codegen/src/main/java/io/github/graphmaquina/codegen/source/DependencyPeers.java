@@ -71,8 +71,9 @@ final class DependencyPeers {
      *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from a
      *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type; and
      *     anchored at the owner of the first peer an index describes: {@code SG602} when the class files contradict
-     *     its descriptor, as {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the owner's
-     *     package cannot name it, as {@link MachineHeaders#requireNameablePeer} words it
+     *     its descriptor or this classpath lacks an enum its facade passes to {@code Machine}, as
+     *     {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the owner's package cannot name
+     *     it, as {@link MachineHeaders#requireNameablePeer} words it
      */
     static List<GraphDescriptor> resolve(DeclarationIndex index, List<MachineHeaders.Resolved> machines,
             List<PublishedIndex> dependencies, Path classesOutput) {
@@ -103,14 +104,27 @@ final class DependencyPeers {
      * enum and the transition enum that {@code descriptor}, which the index of {@code entry} gives it, names, each
      * declaring the constants that descriptor lists, in the same order, as the processor asks of the enums of an
      * index. A descriptor its class files contradict is stale, and a pair vocabulary typed from it would not match the
-     * peer's machine.
+     * peer's machine. A type the peer passes to {@code Machine} as either enum that this classpath does not declare
+     * says nothing of the index: the type may live in a jar this classpath leaves out, as a sibling module of the
+     * producer that the producer does not expose to its consumers leaves it, or the producer's own artifact may have
+     * lost it, which the generator cannot tell apart.
      *
-     * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry} and what its index says
-     *     that the class files contradict, as {@link PublishedEntries#staleIndex} words it
+     * @throws CodegenException {@code SG602} anchored at the owner, naming {@code entry}: naming that type and the
+     *     dependency it needs, as {@link MachineHeaders#undeclaredEnum} finds it, when the peer passes one, and
+     *     otherwise what its index says that the class files contradict, as {@link PublishedEntries#staleIndex}
+     *     words it
      */
     private static MachineHeaders.Enums requireCurrent(DeclarationIndex index, TypeHeader peer, GraphDescriptor owner,
             Path entry, GraphDescriptor descriptor) {
         Optional<MachineHeaders.Enums> enums = MachineHeaders.enumsOf(index, peer);
+        Optional<String> undeclared = enums.isEmpty() ? MachineHeaders.undeclaredEnum(index, peer) : Optional.empty();
+        if (undeclared.isPresent()) {
+            throw new CodegenException(DiagnosticCode.SG602.name(), "the peer machine " + peer.canonicalName()
+                    + " declared by " + owner.facade() + " comes from " + entry + ", but " + undeclared.get()
+                    + " that it passes to Machine is missing from this classpath: add the dependency that declares"
+                    + " that type to this compilation's classpath, or rebuild the producer through the complete"
+                    + " lifecycle if its own artifact should carry it", owner.origin());
+        }
         Optional<String> staleness = enums.isEmpty()
                 ? Optional.of(describedOver(descriptor)
                         + ", but it does not extend Machine over two enums the classpath declares")

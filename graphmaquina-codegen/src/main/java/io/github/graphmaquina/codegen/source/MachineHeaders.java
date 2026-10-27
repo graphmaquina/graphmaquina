@@ -189,6 +189,28 @@ public final class MachineHeaders {
     }
 
     /**
+     * The first type that {@code facade} passes to the {@code Machine<E, S, T>} it ultimately extends, walked as
+     * {@link #enumsOf} walks it, as its state enum and then as its transition enum, by a declared type that no header
+     * resolves: a type this classpath does not declare, such as one of a jar it leaves out. It is named by its role
+     * and spelled as the header spells it, such as {@code the state type pay.PaymentStatus}. Empty when the facade
+     * does not extend {@code Machine}, and when each of those two arguments names a type a header resolves or is no
+     * declared type, such as a type variable.
+     */
+    static Optional<String> undeclaredEnum(@NonNull DeclarationIndex index, @NonNull TypeHeader facade) {
+        return specialization(index, facade, new Binding(Map.of(), Map.of()),
+                        Collections.newSetFromMap(new IdentityHashMap<>()))
+                .flatMap((Binding bound) -> undeclared(bound, 1, "state").or(() -> undeclared(bound, 2, "transition")));
+    }
+
+    /** The {@code role} type bound at {@code position} of {@code Machine}, if a declared type no header resolves. */
+    private static Optional<String> undeclared(Binding binding, int position, String role) {
+        TypeParameterKey parameter = new TypeParameterKey(MACHINE, position);
+        return binding.argument(parameter)
+                .filter((TypeUse argument) -> argument instanceof TypeUse.Declared && binding.type(parameter).isEmpty())
+                .map((TypeUse argument) -> "the " + role + " type " + argument.render());
+    }
+
+    /**
      * The qualified names a vocabulary writes: the packages of the StateGraph and JDK types it names, then the
      * canonical name of every one of {@code declarations} that belongs to a named package. A declaration of the
      * unnamed package is written by its canonical name too, whose first segment names its top-level type there
@@ -349,6 +371,11 @@ public final class MachineHeaders {
         /** The type the argument bound to {@code parameter} names, empty when no header resolves it. */
         Optional<TypeHeader> type(TypeParameterKey parameter) {
             return Optional.ofNullable(types.get(parameter));
+        }
+
+        /** The argument bound to {@code parameter}, empty when the supertype's use spells none, as a raw type. */
+        Optional<TypeUse> argument(TypeParameterKey parameter) {
+            return Optional.ofNullable(arguments.get(parameter));
         }
     }
 

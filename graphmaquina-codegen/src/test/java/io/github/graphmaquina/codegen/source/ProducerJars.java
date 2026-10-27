@@ -44,6 +44,21 @@ public final class ProducerJars {
     }
 
     /**
+     * Moves the class file {@code entry} out of the jar {@code jar} into a new jar at {@code into}, as a build that
+     * keeps that type in a module of its own packs it, and returns {@code into}.
+     */
+    public static Path moved(Path jar, String entry, Path into) throws IOException {
+        try (FileSystem source = FileSystems.newFileSystem(jar);
+                FileSystem target = FileSystems.newFileSystem(into, Map.of("create", "true"))) {
+            Path moved = target.getPath(entry);
+            Files.createDirectories(moved.getParent());
+            Files.copy(source.getPath(entry), moved);
+            Files.delete(source.getPath(entry));
+        }
+        return into;
+    }
+
+    /**
      * Compiles {@code sources} with javac alone, as {@link SourceFiles#compileToJar} does, under
      * {@code workDirectory}, and packs the classes into {@code jar} with {@code index} as its published export index.
      */

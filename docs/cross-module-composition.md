@@ -255,7 +255,7 @@ The build checks the relation against the producer's artifact it compiles agains
 | Step | Check | Code |
 | --- | --- | --- |
 | Generation, before anything is published | An index on the classpath was written by this version, and no two describe one machine | `SG602` |
-| Generation, before anything is published | A peer of a dependency comes from an artifact whose index lists it as its classes describe it | `SG602` |
+| Generation, before anything is published | A peer of a dependency comes from an artifact whose index lists it as its classes describe it, over enums the consumer's classpath declares | `SG602` |
 | Generation | A peer is a machine of this compilation or of a dependency's index, whose types the owner's package can name | `SG608` |
 | Processor | Each exit matches a terminal state of the child and has an edge from the bound state | `SG801`, `SG802` |
 | Processor | A watch declares exactly one of `owner` and `ownerLookup` | `SG405` |
@@ -280,7 +280,7 @@ give its binding an exit for the new terminal state: until it declares one, that
 
 | Code | Across modules it means | Remedy |
 | --- | --- | --- |
-| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one the generator cannot read, one another version wrote, or one that does not list the peer or describes it otherwise than its classes; or two artifacts on the classpath describe the same machine. The message names the jar or directory whenever the generator can tell it | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists the messages and their remedies |
+| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one the generator cannot read, one another version wrote, or one that does not list the peer or describes it otherwise than its classes; the peer passes `Machine` an enum the consumer's classpath does not declare; or two artifacts on the classpath describe the same machine. The message names the jar or directory whenever the generator can tell it | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, add the dependency that declares a missing enum to the consumer's classpath, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists the messages and their remedies |
 | [`SG608`](diagnostics.md#generation-and-typed-binding-diagnostics) | The peer is no machine of this compilation or of a dependency's export index, or the owner's package cannot name its types, as when its state enum is not public | Name a `@GenerateGraphApi` machine whose types the owner's package can reach |
 | [`SG405`](diagnostics.md#graph-and-declaration-diagnostics) | A watch declares neither or both of `owner` and `ownerLookup` | Declare `ownerLookup` when the peer's entity cannot name the owner, `owner` when it can |
 
