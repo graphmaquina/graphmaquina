@@ -51,7 +51,8 @@ public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransit
 ```
 
 `Items` has the same shape: an item is `OPEN` until `PACK` takes it to `PACKED`. For a consumer to use them, the
-producer's artifact must meet four requirements:
+build must meet four requirements, the first three on the producer's artifact and the last on the consumer's
+classpath:
 
 - **The complete lifecycle.** Build the producer through generation, javac with the processor, and completion, as
   [building with the typed graph API](typed-annotations-build.md) describes. The completion step publishes the
@@ -263,6 +264,9 @@ The build checks the relation against the producer's artifact it compiles agains
 | Generation | A peer is a machine of this compilation or of a dependency's index, whose types the owner's package can name | `SG608` |
 | Generation | No type of the owner's package obscures a package the pair vocabulary writes, such as the peer's | `SG603` |
 | Processor | Each exit matches a terminal state of the child and has an edge from the bound state | `SG801`, `SG802` |
+| Processor | The bound state is no terminal state of the parent | `SG803` |
+| Processor | No operation of the parent takes, from the bound state, a transition that is an exit of the binding | `SG804` |
+| Processor | Each rule of a watch executes a transition that leaves the watched state | `SG401` |
 | Processor | A watch declares exactly one of `owner` and `ownerLookup` | `SG405` |
 | Processor | A `parentLookup` or an `ownerLookup` has the signature its binding needs | `SG505` |
 | Processor | The set holds each child and each watched peer | `SG806`, `SG510` |
@@ -285,7 +289,7 @@ give its binding an exit for the new terminal state: until it declares one, that
 
 | Code | Across modules it means | Remedy |
 | --- | --- | --- |
-| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one the generator cannot read, one another version wrote, or one that does not list the peer or describes it otherwise than its classes; the peer passes `Machine` an enum, or reaches it only through a supertype, that the consumer's classpath does not declare, or another machine of the producer passes it such an enum; or two artifacts on the classpath describe the same machine. The message names the jar or directory whenever the generator can tell it | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, add the dependency that declares a missing enum or supertype to the consumer's classpath, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists the messages and their remedies |
+| [`SG602`](diagnostics.md#generation-and-typed-binding-diagnostics) | The producer's artifact carries no export index, one the generator cannot read, one another version wrote, or one that does not list the peer or describes it otherwise than its classes; the peer passes `Machine` an enum the consumer's classpath does not declare, or has a supertype that classpath does not declare and reaches `Machine` through none it declares; another machine of the producer passes `Machine` an enum that classpath does not declare; or two artifacts on the classpath describe the same machine. The generator's message names the jar or directory whenever it can tell it; the processor's, for an enum another machine of the producer passes, names the annotation manifest instead | Package the index the producer's build publishes with its classes, rebuild the producer through the complete lifecycle with the consumer's version, add the dependency that declares a missing enum or supertype to the consumer's classpath, or keep one artifact of the producer on the classpath. [Build troubleshooting](build-troubleshooting.md#troubleshooting) lists the messages and their remedies |
 | [`SG608`](diagnostics.md#generation-and-typed-binding-diagnostics) | The peer is no machine of this compilation or of a dependency's export index, or the owner's package cannot name its types, as when its state enum is not public | Name a `@GenerateGraphApi` machine whose types the owner's package can reach |
 | [`SG405`](diagnostics.md#graph-and-declaration-diagnostics) | A watch declares neither or both of `owner` and `ownerLookup` | Declare `ownerLookup` when the peer's entity cannot name the owner, `owner` when it can |
 

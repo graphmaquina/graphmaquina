@@ -71,9 +71,10 @@ final class DependencyPeers {
      *     nor a classpath type an index describes: {@code SG602} for a {@code @GenerateGraphApi} machine read from a
      *     dependency on the classpath, as {@link #unresolved} words it, and {@code SG608} for any other type; and
      *     anchored at the owner of the first peer an index describes: {@code SG602} when the class files contradict
-     *     its descriptor, or this classpath lacks an enum its facade passes to {@code Machine} or a supertype it
-     *     needs to reach it, as {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the
-     *     owner's package cannot name it, as {@link MachineHeaders#requireNameablePeer} words it
+     *     its descriptor, or this classpath lacks an enum its facade passes to {@code Machine}, or lacks a supertype
+     *     of the facade while no supertype it declares takes the facade to {@code Machine}, as
+     *     {@link #requireCurrent} words it, then {@code SG608} or {@code SG603} when the owner's package cannot name
+     *     it, as {@link MachineHeaders#requireNameablePeer} words it
      */
     static List<GraphDescriptor> resolve(DeclarationIndex index, List<MachineHeaders.Resolved> machines,
             List<PublishedIndex> dependencies, Path classesOutput) {
