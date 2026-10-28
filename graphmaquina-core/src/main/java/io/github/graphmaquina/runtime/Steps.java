@@ -304,7 +304,7 @@ final class Steps {
                     tx.enter(CallPhase.ACTION);
                 }
                 int savepoint = uow.savepoint();
-                appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
+                appendHop(tx, machine, ref, entity, transition, depth, false, Optional.empty());
                 if (transition.action().isPresent()) {
                     return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
                 }
@@ -333,7 +333,8 @@ final class Steps {
      * Logs the hop of {@code entity} along {@code edge}. When the edge enters a state of the machine's own graph that
      * holds a sub-machine, the start of that child follows right after it, as {@link Submachines#start} says; a
      * machine whose graph binds no sub-machine pays one field read. Both entries sit after the savepoint the caller
-     * took, so a rollback to it drops them together. {@code recovery} is present only on the hop of a failure route in
+     * took, so a rollback to it drops them together. {@code stopsChain} is true only on the hop of a failure route that
+     * does not continue the automatic chain. {@code recovery} is present only on the hop of a failure route in
      * a call that records its trail: it goes on the hop's mark as soon as the hop is marked, before the child starts,
      * so a start that aborts leaves the hop in the trail with what it recovered from.
      */
@@ -341,9 +342,10 @@ final class Steps {
                                                                     DefaultStateMachine<E, S, T> machine,
                                                                     EntityRef ref, E entity,
                                                                     TransitionSpec<E, S, T> edge, int depth,
+                                                                    boolean stopsChain,
                                                                     Optional<FlowEntry.Recovery> recovery) {
         UnitOfWork uow = tx.uow();
-        uow.append(new LogEntry.Hop(ref, edge, depth));
+        uow.append(new LogEntry.Hop(ref, edge, depth, stopsChain));
         if (recovery.isPresent()) {
             uow.flow().orElseThrow().recovery(uow.savepoint() - 1, recovery.get());
         }

@@ -301,7 +301,7 @@ class CallLogTest {
         Doc parent = new Doc("1", DRAFT);
         Doc child = new Doc("2", ARCHIVED);
         TransitionSpec<Doc, DocStatus, DocTransition> submit = graph().findTransition(DRAFT, SUBMIT).orElseThrow();
-        log.committed(List.of(new LogEntry.Hop(ref(parent), submit, 0),
+        log.committed(List.of(new LogEntry.Hop(ref(parent), submit, 0, false),
                 new LogEntry.Start(ref(child), ARCHIVED, DRAFT, ref(parent), REVIEW, 1)));
         assertEquals(List.of(
                 "DEBUG call=" + log.id() + " committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
@@ -319,7 +319,7 @@ class CallLogTest {
         CallLog applied = CallLog.open(backend, Optional.empty());
         applied.entity(ref(doc));
         TransitionRecord<Doc, DocStatus, DocTransition> hop = Typed.record(DOCS,
-                new LogEntry.Hop(ref(doc), graph().findTransition(REVIEW, PUBLISH).orElseThrow(), 0));
+                new LogEntry.Hop(ref(doc), graph().findTransition(REVIEW, PUBLISH).orElseThrow(), 0, false));
         Outcome<Doc, DocStatus, DocTransition> done = new Outcome.Ignored<>(doc, PUBLISHED, IgnoreReason.NO_WATCH);
         applied.end(new Outcome.Applied<>(doc, REVIEW, PUBLISH, PUBLISHED, List.of(hop),
                 List.of(new Reaction.Done(DOCS, doc, done),

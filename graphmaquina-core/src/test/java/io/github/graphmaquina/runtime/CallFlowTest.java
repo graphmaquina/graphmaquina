@@ -44,7 +44,7 @@ class CallFlowTest {
     private static LogEntry.Hop hop(EntityRef ref) {
         return new LogEntry.Hop(ref, new TransitionSpec<Object, S, T>(S.A, T.GO, S.B,
                 Optional.empty(), List.of(), Optional.empty(), List.of(),
-                Optional.empty(), Optional.empty()), 0);
+                Optional.empty(), Optional.empty()), 0, false);
     }
 
     @Test

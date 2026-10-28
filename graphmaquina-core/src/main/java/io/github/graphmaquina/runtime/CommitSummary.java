@@ -64,6 +64,21 @@ final class CommitSummary {
     }
 
     /**
+     * One entry per entity of the log, in order of first appearance, round trips and self-loops included, which
+     * {@link #movedEntities} leaves out. The state is where the entity's last entry leaves it, the destination of a
+     * hop or the initial state of a start, and the entry stops the chain only when that last entry is a hop that says
+     * so.
+     */
+    List<ChainStart> chainStarts() {
+        List<ChainStart> starts = new ArrayList<>();
+        for (Change change : changes) {
+            LogEntry last = change.last();
+            starts.add(new ChainStart(change.ref(), last.to(), last instanceof LogEntry.Hop hop && hop.stopsChain()));
+        }
+        return List.copyOf(starts);
+    }
+
+    /**
      * One entity of the transaction: the reference the commit writes through, which is the one its first entry
      * carried, plus that first entry and the last one. Everything in between only matters to records and hooks.
      */

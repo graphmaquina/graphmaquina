@@ -25,8 +25,9 @@ final class FailureRoutes {
 
     /**
      * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the original
-     * origin and run that edge without guards and without a failure route of its own. An empty {@code recovery} leaves
-     * the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
+     * origin and run that edge without guards and without a failure route of its own. Its hop is logged as one that
+     * stops the automatic chain unless {@code continueChain}, the flag of the route that selected it, is set. An empty
+     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
      * completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of the call aborts
      * the call with it as cause, and the abort holds {@code cause}, the original throwable, as suppressed when it is
      * present and another one: adding it reads no message. These aborts that the engine builds for the recovery step
@@ -43,8 +44,8 @@ final class FailureRoutes {
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity,
             TransitionSpec<E, S, T> failing, int depth, int savepoint, Optional<T> recovery,
-            Optional<Class<? extends FailureKind>> failureKind, String reason, Optional<Throwable> cause,
-            Optional<Object> input) {
+            Optional<Class<? extends FailureKind>> failureKind, boolean continueChain, String reason,
+            Optional<Throwable> cause, Optional<Object> input) {
         UnitOfWork uow = tx.uow();
         uow.rollbackTo(savepoint);
         S from = failing.from();
@@ -66,7 +67,7 @@ final class FailureRoutes {
                 ? Optional.of(new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind))
                 : Optional.empty();
         try {
-            Steps.appendHop(tx, machine, ref, entity, route, depth, recovered);
+            Steps.appendHop(tx, machine, ref, entity, route, depth, !continueChain, recovered);
         } catch (TransitionAbortedException entering) {
             // Only the abort a start built for this hop gets here, on a unit of work that no poison preceded.
             throw Transaction.keepingOriginal(entering, cause);

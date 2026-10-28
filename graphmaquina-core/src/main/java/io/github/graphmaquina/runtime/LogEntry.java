@@ -22,8 +22,14 @@ sealed interface LogEntry permits LogEntry.Hop, LogEntry.Start {
     /**
      * A hop: the entity it moved and the very edge that was selected. Commit and the post-commit hooks read that
      * reference, so neither looks an edge up again by its endpoints.
+     *
+     * @param ref the entity the hop moved
+     * @param spec the edge that was selected
+     * @param depth the depth of the step that logged the hop
+     * @param stopsChain true only on the hop of a failure route that does not continue the automatic chain; false on
+     *     a normal hop and on the hop of a continuing route
      */
-    record Hop(EntityRef ref, TransitionSpec<?, ?, ?> spec, int depth) implements LogEntry {
+    record Hop(EntityRef ref, TransitionSpec<?, ?, ?> spec, int depth, boolean stopsChain) implements LogEntry {
 
         @Override
         public Enum<?> from() { return spec.from(); }

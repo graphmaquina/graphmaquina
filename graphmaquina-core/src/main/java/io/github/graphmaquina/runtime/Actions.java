@@ -56,8 +56,9 @@ final class Actions {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
+            RecoverySelector.Route<T> selected = RecoverySelector.returned(transition, failed.failureKind());
             return FailureRoutes.failureRoute(tx, machine, ref, entity, transition, depth, savepoint,
-                    RecoverySelector.returned(transition, failed.failureKind()), failed.failureKind(), failed.reason(),
+                    selected.recovery(), selected.failureKind(), selected.continueChain(), failed.reason(),
                     Optional.empty(), input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
@@ -85,8 +86,8 @@ final class Actions {
             }
             RecoverySelector.Route<T> selected = RecoverySelector.thrown(transition, cause);
             return FailureRoutes.failureRoute(tx, machine, ref, entity, transition, depth, savepoint,
-                    selected.recovery(), selected.failureKind(), FailureRoutes.describe(cause), Optional.of(cause),
-                    input);
+                    selected.recovery(), selected.failureKind(), selected.continueChain(),
+                    FailureRoutes.describe(cause), Optional.of(cause), input);
         }
         throw tx.abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                 Optional.of(transition.to()), Optional.of(action.name()), depth,

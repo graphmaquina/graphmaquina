@@ -54,17 +54,25 @@ class RecoverySelectorTest {
                 false, false);
     }
 
+    /** READY -PUBLISH-> PUBLISHED whose onFailure is declared as continuing or not. */
+    private static TransitionSpec<Ticket, TicketState, TicketChange> publishWithOnFailure(boolean continues,
+            List<RecoveryRule<TicketChange>> rules) {
+        return new TransitionSpec<>(TicketState.READY, TicketChange.PUBLISH, TicketState.PUBLISHED,
+                Optional.of(PUBLISH), List.of(), Optional.of(TicketChange.MARK_INTEGRATION_FAILED),
+                List.of(InvalidResponseException.class), Optional.empty(), Optional.empty(), rules, false, continues);
+    }
+
     private static Optional<Class<? extends FailureKind>> kind(Class<? extends FailureKind> kind) {
         return Optional.of(kind);
     }
 
     private static RecoverySelector.Route<TicketChange> route(TicketChange recovery,
                                                               Class<? extends FailureKind> kind) {
-        return new RecoverySelector.Route<>(Optional.of(recovery), Optional.of(kind));
+        return new RecoverySelector.Route<>(Optional.of(recovery), Optional.of(kind), false);
     }
 
     private static RecoverySelector.Route<TicketChange> fallback(Optional<TicketChange> recovery) {
-        return new RecoverySelector.Route<>(recovery, Optional.empty());
+        return new RecoverySelector.Route<>(recovery, Optional.empty(), false);
     }
 
     @Test
@@ -74,9 +82,9 @@ class RecoverySelectorTest {
             TransitionSpec<Ticket, TicketState, TicketChange> edge =
                     publish(Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(), rules);
             assertEquals(Optional.of(TicketChange.SCHEDULE_RETRY),
-                    RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)));
+                    RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)).recovery());
             assertEquals(Optional.of(TicketChange.RECORD_REJECTION),
-                    RecoverySelector.returned(edge, kind(PublicationFailures.Rejected.class)));
+                    RecoverySelector.returned(edge, kind(PublicationFailures.Rejected.class)).recovery());
         }
     }
 
@@ -87,9 +95,9 @@ class RecoverySelectorTest {
                 publish(Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(),
                         List.of(RETRY_WHEN_UNAVAILABLE, RECORD_WHEN_REJECTED));
         assertEquals(Optional.of(TicketChange.MARK_INTEGRATION_FAILED),
-                RecoverySelector.returned(edge, Optional.empty()));
+                RecoverySelector.returned(edge, Optional.empty()).recovery());
         assertEquals(Optional.of(TicketChange.MARK_INTEGRATION_FAILED),
-                RecoverySelector.returned(edge, kind(Postponed.class)));
+                RecoverySelector.returned(edge, kind(Postponed.class)).recovery());
     }
 
     /** Without a fallback, only a rule's own kind selects anything. */
@@ -98,9 +106,10 @@ class RecoverySelectorTest {
         TransitionSpec<Ticket, TicketState, TicketChange> edge =
                 publish(Optional.empty(), List.of(), List.of(RETRY_WHEN_UNAVAILABLE));
         assertEquals(Optional.of(TicketChange.SCHEDULE_RETRY),
-                RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)));
-        assertEquals(Optional.empty(), RecoverySelector.returned(edge, kind(PublicationFailures.Rejected.class)));
-        assertEquals(Optional.empty(), RecoverySelector.returned(edge, Optional.empty()));
+                RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)).recovery());
+        assertEquals(Optional.empty(),
+                RecoverySelector.returned(edge, kind(PublicationFailures.Rejected.class)).recovery());
+        assertEquals(Optional.empty(), RecoverySelector.returned(edge, Optional.empty()).recovery());
     }
 
     /** An edge without rules behaves as before rules existed: every returned failure takes onFailure, if any. */
@@ -109,10 +118,55 @@ class RecoverySelectorTest {
         TransitionSpec<Ticket, TicketState, TicketChange> routed =
                 publish(Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(), List.of());
         assertEquals(Optional.of(TicketChange.MARK_INTEGRATION_FAILED),
-                RecoverySelector.returned(routed, kind(PublicationFailures.Unavailable.class)));
+                RecoverySelector.returned(routed, kind(PublicationFailures.Unavailable.class)).recovery());
         TransitionSpec<Ticket, TicketState, TicketChange> unrouted = publish(Optional.empty(), List.of(), List.of());
         assertEquals(Optional.empty(),
-                RecoverySelector.returned(unrouted, kind(PublicationFailures.Unavailable.class)));
+                RecoverySelector.returned(unrouted, kind(PublicationFailures.Unavailable.class)).recovery());
+    }
+
+    @Test
+    void aContinuingRuleRouteContinues() {
+        RecoveryRule<TicketChange> continuing = new RecoveryRule<>(PublicationFailures.Unavailable.class,
+                TicketChange.SCHEDULE_RETRY, List.of(ServiceUnavailableException.class), true);
+        TransitionSpec<Ticket, TicketState, TicketChange> edge = publishWithOnFailure(false, List.of(continuing));
+        assertEquals(new RecoverySelector.Route<>(Optional.of(TicketChange.SCHEDULE_RETRY),
+                kind(PublicationFailures.Unavailable.class), true),
+                RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)));
+        assertEquals(new RecoverySelector.Route<>(Optional.of(TicketChange.SCHEDULE_RETRY),
+                kind(PublicationFailures.Unavailable.class), true),
+                RecoverySelector.thrown(edge, new ServiceUnavailableException("provider down")));
+    }
+
+    @Test
+    void aStoppingRuleRouteStops() {
+        TransitionSpec<Ticket, TicketState, TicketChange> edge = publishWithOnFailure(true,
+                List.of(RETRY_WHEN_UNAVAILABLE));
+        assertFalse(RecoverySelector.returned(edge, kind(PublicationFailures.Unavailable.class)).continueChain());
+        assertFalse(RecoverySelector.thrown(edge, new ServiceUnavailableException("provider down")).continueChain());
+    }
+
+    @Test
+    void onFailureContinuesFollowsTheEdge() {
+        for (boolean continues : List.of(true, false)) {
+            TransitionSpec<Ticket, TicketState, TicketChange> edge =
+                    publishWithOnFailure(continues, List.of(RETRY_WHEN_UNAVAILABLE));
+            assertEquals(continues, RecoverySelector.returned(edge, Optional.empty()).continueChain());
+            assertEquals(continues,
+                    RecoverySelector.thrown(edge, new InvalidResponseException("garbled body")).continueChain());
+        }
+    }
+
+    /** The kind has no rule, so onFailure takes it, and the flag of a rule that declares another kind is not used. */
+    @Test
+    void aReturnedKindWithoutRuleTakesOnFailuresFlag() {
+        RecoveryRule<TicketChange> continuing = new RecoveryRule<>(PublicationFailures.Unavailable.class,
+                TicketChange.SCHEDULE_RETRY, List.of(), true);
+        TransitionSpec<Ticket, TicketState, TicketChange> stopping = publishWithOnFailure(false, List.of(continuing));
+        assertEquals(new RecoverySelector.Route<>(Optional.of(TicketChange.MARK_INTEGRATION_FAILED),
+                kind(Postponed.class), false), RecoverySelector.returned(stopping, kind(Postponed.class)));
+        TransitionSpec<Ticket, TicketState, TicketChange> continuingEdge =
+                publishWithOnFailure(true, List.of(RETRY_WHEN_UNAVAILABLE));
+        assertTrue(RecoverySelector.returned(continuingEdge, kind(Postponed.class)).continueChain());
     }
 
     /** A rule's types admit a throwable as failsOn's do, and nothing else does. */
