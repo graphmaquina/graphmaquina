@@ -44,6 +44,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Set<S> cycleAllowed;
     private final Map<S, String> statePolicies;
     private final Map<S, Map<T, String>> rejections;
+    private final Map<S, List<T>> automaticOrders;
     private final List<TransitionDraft<E, S, T>> drafts = new ArrayList<>();
     private final List<TransitionSpec<E, S, T>> declared = new ArrayList<>();
     private final Map<S, WatchDraft<E, S, T, ?, ?, ?>> watches;
@@ -60,6 +61,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.cycleAllowed = EnumSet.noneOf(key.states());
         this.statePolicies = new EnumMap<>(key.states());
         this.rejections = new EnumMap<>(key.states());
+        this.automaticOrders = new EnumMap<>(key.states());
         this.watches = new EnumMap<>(key.states());
     }
 
@@ -140,6 +142,19 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             problems.add(DiagnosticCode.SG102, state.ordinal(), transition.ordinal(),
                     "the state " + state.name() + " rejects " + transition.name() + " twice");
         }
+        return this;
+    }
+
+    /** The first order declared for a state is kept; build rules for repeated and unusable orders come later. */
+    @Override
+    public GraphBuilder<E, S, T> automaticOrder(@NonNull S from, @NonNull List<T> transitions) {
+        requireUnbuilt();
+        requireState(from);
+        List<T> order = List.copyOf(transitions);
+        for (T transition : order) {
+            requireTransition(transition);
+        }
+        automaticOrders.putIfAbsent(from, order);
         return this;
     }
 
@@ -230,7 +245,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             throw new InvalidGraphException(key, problems.sorted());
         }
         return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs,
-                resolveSubmachines());
+                resolveSubmachines(), automaticOrders);
     }
 
     /** The first binding declared on each state; SG803 has already reported a second one. */

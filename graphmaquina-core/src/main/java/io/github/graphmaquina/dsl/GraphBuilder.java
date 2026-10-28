@@ -3,6 +3,7 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -28,6 +29,15 @@ public interface GraphBuilder<E, S extends Enum<S>, T extends Enum<T>> {
 
     /** The reason this very identifier is rejected from {@code state}. Only valid where no edge is declared. */
     GraphBuilder<E, S, T> reject(S state, T transition, String reason);
+
+    /**
+     * Declares the order in which the automatic edges leaving {@code from} are listed by
+     * {@code GraphDefinition.automaticFrom(from)}: the edges {@code transitions} names that are automatic, in that
+     * order, then any other automatic edge from {@code from} in the order of the edges. A name that is not an
+     * automatic edge leaving {@code from} is left out. A {@code List} rather than a varargs, which a generic
+     * interface method cannot mark {@code @SafeVarargs}.
+     */
+    GraphBuilder<E, S, T> automaticOrder(S from, List<T> transitions);
 
     /**
      * Opens one edge keyed by {@code (from, transition)}; {@code endTransition()} closes it. An edge left open is

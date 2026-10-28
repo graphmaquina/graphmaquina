@@ -145,6 +145,11 @@ class SubmachineExitTest {
         }
 
         @Override
+        public List<TransitionSpec<Booking, BookingStatus, BookingTransition>> automaticFrom(BookingStatus state) {
+            return graph.automaticFrom(state);
+        }
+
+        @Override
         public Optional<TransitionSpec<Booking, BookingStatus, BookingTransition>> findTransition(
                 BookingStatus from, BookingTransition transition) {
             return graph.findTransition(from, transition);

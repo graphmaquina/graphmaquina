@@ -556,6 +556,11 @@ class PropagationTest {
         }
 
         @Override
+        public List<TransitionSpec<E, S, T>> automaticFrom(S state) {
+            return delegate.automaticFrom(state).stream().map(this::rebuilt).toList();
+        }
+
+        @Override
         public Optional<TransitionSpec<E, S, T>> findTransition(S from, T transition) {
             return delegate.findTransition(from, transition).map(this::rebuilt);
         }

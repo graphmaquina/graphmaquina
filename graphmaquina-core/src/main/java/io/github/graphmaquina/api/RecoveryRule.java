@@ -39,9 +39,12 @@ import lombok.NonNull;
  * @param kind the failure kind of the rule
  * @param transition identifier of the recovery edge the rule names
  * @param failsOn throwable types the rule declares, in declaration order; may be empty
+ * @param continueChain whether the graph declares the rule as a continuing one, as {@code recoverAndContinue} does in
+ *     the DSL
  */
 public record RecoveryRule<T extends Enum<T>>(@NonNull Class<? extends FailureKind> kind, @NonNull T transition,
-                                              @NonNull List<Class<? extends Throwable>> failsOn) {
+                                              @NonNull List<Class<? extends Throwable>> failsOn,
+                                              boolean continueChain) {
 
     /**
      * Copies the declared types, then checks that the kind and every type declaration are valid and unique.
@@ -49,6 +52,7 @@ public record RecoveryRule<T extends Enum<T>>(@NonNull Class<? extends FailureKi
      * @param kind failure kind of this rule
      * @param transition identifier of the recovery edge this rule names
      * @param failsOn throwable types declared by this rule, in declaration order; may be empty
+     * @param continueChain whether the graph declares the rule as a continuing one
      * @throws NullPointerException if an argument or a declared type is null
      * @throws IllegalArgumentException if the kind is invalid, a type is forbidden, or a type is repeated
      */

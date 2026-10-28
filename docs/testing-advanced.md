@@ -63,11 +63,13 @@ assertThat(machine.definition())
             new RecoveryRule<>(
                 PublicationFailures.Unavailable.class,
                 PublicationChange.SCHEDULE_RETRY,
-                List.of(ServiceUnavailableException.class)),
+                List.of(ServiceUnavailableException.class),
+                false),
             new RecoveryRule<>(
                 PublicationFailures.Rejected.class,
                 PublicationChange.RECORD_REJECTION,
-                List.of(ProviderRejectedException.class))))
+                List.of(ProviderRejectedException.class),
+                false))
         .failsOnExactly(InvalidResponseException.class)
         .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
 ```

@@ -31,6 +31,13 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
     /** The edges leaving {@code state}, in the same order. */
     List<TransitionSpec<E, S, T>> outgoingFrom(S state);
 
+    /**
+     * The immutable list of the automatic edges leaving {@code state}, in the order the graph declares them; empty when
+     * the state has none. It holds exactly the edges leaving {@code state} whose {@link TransitionSpec#automatic()} is
+     * true.
+     */
+    List<TransitionSpec<E, S, T>> automaticFrom(S state);
+
     /** The single edge keyed by {@code (from, transition)}, if it was declared. Runs no effects. */
     Optional<TransitionSpec<E, S, T>> findTransition(S from, T transition);
 

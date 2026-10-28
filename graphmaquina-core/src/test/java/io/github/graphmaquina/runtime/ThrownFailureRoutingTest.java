@@ -576,7 +576,7 @@ class ThrownFailureRoutingTest {
             }
             return new TransitionSpec<>(spec.from(), spec.transition(), spec.to(), spec.action(), spec.guards(),
                     spec.onFailure(), List.of(RuntimeException.class), spec.timeout(), spec.afterCommit(),
-                    spec.recoveryRules());
+                    spec.recoveryRules(), false, false);
         }
 
         @Override
@@ -607,6 +607,11 @@ class ThrownFailureRoutingTest {
         @Override
         public List<TransitionSpec<Ticket, TicketState, TicketChange>> outgoingFrom(TicketState state) {
             return delegate.outgoingFrom(state).stream().map(this::rebuilt).toList();
+        }
+
+        @Override
+        public List<TransitionSpec<Ticket, TicketState, TicketChange>> automaticFrom(TicketState state) {
+            return delegate.automaticFrom(state).stream().map(this::rebuilt).toList();
         }
 
         @Override

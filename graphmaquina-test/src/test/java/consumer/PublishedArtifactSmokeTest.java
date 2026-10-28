@@ -439,9 +439,9 @@ class PublishedArtifactSmokeTest {
                     List<Class<? extends Throwable>> rejectedTypes = List.of(ProviderRejectedException.class);
                     List<RecoveryRule<TicketChange>> rules = List.of(
                             new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                                    unavailableTypes),
+                                    unavailableTypes, false),
                             new RecoveryRule<>(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-                                    rejectedTypes));
+                                    rejectedTypes, false));
                     GraphAssertions.assertThat(definition)
                             .transition(TicketState.READY, TicketChange.PUBLISH)
                             .isAction()

@@ -250,6 +250,7 @@ class GraphExportTest {
         @Override public DirectedGraph<S,T> graph() { return delegate.graph(); }
         @Override public List<TransitionSpec<E,S,T>> transitions() { return delegate.transitions(); }
         @Override public List<TransitionSpec<E,S,T>> outgoingFrom(S state) { return delegate.outgoingFrom(state); }
+        @Override public List<TransitionSpec<E,S,T>> automaticFrom(S state) { return delegate.automaticFrom(state); }
 
         @Override public Optional<TransitionSpec<E,S,T>> findTransition(S from, T transition) {
             return delegate.findTransition(from, transition);

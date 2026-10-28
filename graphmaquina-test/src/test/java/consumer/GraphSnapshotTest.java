@@ -304,7 +304,7 @@ class GraphSnapshotTest {
                         FIXTURE + "PublicationFailures$Throttled")),
                 diff(SnapshotGraphs.publication().build(), firstRule(new RecoveryRule<>(
                         PublicationFailures.Throttled.class, TicketChange.SCHEDULE_RETRY,
-                        List.of(ServiceUnavailableException.class)))));
+                        List.of(ServiceUnavailableException.class), false))));
     }
 
     @Test
@@ -313,7 +313,7 @@ class GraphSnapshotTest {
                         "MARK_INTEGRATION_FAILED")),
                 diff(SnapshotGraphs.publication().build(), firstRule(new RecoveryRule<>(
                         PublicationFailures.Unavailable.class, TicketChange.MARK_INTEGRATION_FAILED,
-                        List.of(ServiceUnavailableException.class)))));
+                        List.of(ServiceUnavailableException.class), false))));
     }
 
     /**
@@ -326,7 +326,7 @@ class GraphSnapshotTest {
         GraphDefinition<String, TicketState, TicketChange> before = SnapshotGraphs.publication().build();
         GraphDefinition<String, TicketState, TicketChange> replaced = firstRule(new RecoveryRule<>(
                 PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                List.of(TimeoutException.class)));
+                List.of(TimeoutException.class), false));
         assertEquals(render(before), render(replaced), "a rule's throwable type must not be drawn");
         assertEquals(List.of(change(PUBLISH + "/recoveries/0/failsOn/0", FIXTURE + "ServiceUnavailableException",
                         "java.util.concurrent.TimeoutException")),
@@ -335,11 +335,11 @@ class GraphSnapshotTest {
                         change(PUBLISH + "/recoveries/0/failsOn/count", "1", "2")),
                 diff(before, firstRule(new RecoveryRule<>(PublicationFailures.Unavailable.class,
                         TicketChange.SCHEDULE_RETRY,
-                        List.of(ServiceUnavailableException.class, TimeoutException.class)))));
+                        List.of(ServiceUnavailableException.class, TimeoutException.class), false))));
         assertEquals(List.of(removed(PUBLISH + "/recoveries/0/failsOn/0", FIXTURE + "ServiceUnavailableException"),
                         change(PUBLISH + "/recoveries/0/failsOn/count", "1", "0")),
                 diff(before, firstRule(new RecoveryRule<>(PublicationFailures.Unavailable.class,
-                        TicketChange.SCHEDULE_RETRY, List.of()))));
+                        TicketChange.SCHEDULE_RETRY, List.of(), false))));
     }
 
     /**

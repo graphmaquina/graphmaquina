@@ -41,7 +41,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
      * instead of thrown by {@link RecoveryRule}.
      */
     private record DeclaredRecovery<T extends Enum<T>>(Class<? extends FailureKind> kind, T transition,
-                                                       List<Class<? extends Throwable>> failsOn) { }
+                                                       List<Class<? extends Throwable>> failsOn,
+                                                       boolean continueChain) { }
 
     private final DefaultGraphBuilder<E, S, T> graph;
     private final S from;
@@ -55,10 +56,12 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     private final List<GuardDraft<E, S, T>> guards = new ArrayList<>();
     private Optional<T> onFailure = Optional.empty();
     private int onFailures;
+    private boolean onFailureContinues;
     private final List<Class<? extends Throwable>> failsOn = new ArrayList<>();
     private final List<DeclaredRecovery<T>> recoveries = new ArrayList<>();
     private Optional<Duration> timeout = Optional.empty();
     private int timeouts;
+    private int automatics;
     private Optional<HookRef<E, S, T>> afterCommit = Optional.empty();
     private boolean closed;
 
@@ -131,11 +134,29 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     @Override
+    public TransitionDraft<E, S, T> automatic() {
+        requireOpen();
+        automatics++;
+        return this;
+    }
+
+    @Override
     public TransitionDraft<E, S, T> onFailure(@NonNull T recovery) {
+        return declareOnFailure(recovery, false);
+    }
+
+    @Override
+    public TransitionDraft<E, S, T> onFailureAndContinue(@NonNull T recovery) {
+        return declareOnFailure(recovery, true);
+    }
+
+    /** Both forms count as the edge's one onFailure; the flag is the one of the last declaration. */
+    private TransitionDraft<E, S, T> declareOnFailure(T recovery, boolean continues) {
         requireOpen();
         graph.requireTransition(recovery);
         onFailures++;
         onFailure = Optional.of(recovery);
+        onFailureContinues = continues;
         return this;
     }
 
@@ -153,13 +174,26 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     @Override
     public TransitionDraft<E, S, T> recover(@NonNull Class<? extends FailureKind> kind, @NonNull T transition,
                                             @NonNull List<Class<? extends Throwable>> failsOn) {
+        return declareRecovery(kind, transition, failsOn, false);
+    }
+
+    /** As {@code recover}, with a rule that continues the chain. */
+    @Override
+    public TransitionDraft<E, S, T> recoverAndContinue(@NonNull Class<? extends FailureKind> kind,
+                                                       @NonNull T transition,
+                                                       @NonNull List<Class<? extends Throwable>> failsOn) {
+        return declareRecovery(kind, transition, failsOn, true);
+    }
+
+    private TransitionDraft<E, S, T> declareRecovery(Class<? extends FailureKind> kind, T transition,
+                                                     List<Class<? extends Throwable>> failsOn, boolean continueChain) {
         List<Class<? extends Throwable>> types = new ArrayList<>(failsOn);
         for (Class<? extends Throwable> type : types) {
             Objects.requireNonNull(type, "failsOn contains a null element");
         }
         requireOpen();
         graph.requireTransition(transition);
-        recoveries.add(new DeclaredRecovery<>(kind, transition, List.copyOf(types)));
+        recoveries.add(new DeclaredRecovery<>(kind, transition, List.copyOf(types), continueChain));
         return this;
     }
 
@@ -262,7 +296,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         }
         List<RecoveryRule<T>> rules = recoveryRules();
         return Optional.of(new TransitionSpec<>(from, transition, to, actionRef, guardRefs, onFailure, failsOn, timeout,
-                afterCommit, rules));
+                afterCommit, rules, automatics > 0, onFailureContinues));
     }
 
     /** Records SG302 for each forbidden throwable type in failsOn, and answers whether it recorded none. */
@@ -283,7 +317,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     private List<RecoveryRule<T>> recoveryRules() {
         List<RecoveryRule<T>> rules = new ArrayList<>();
         for (DeclaredRecovery<T> recovery : recoveries) {
-            rules.add(new RecoveryRule<>(recovery.kind(), recovery.transition(), recovery.failsOn()));
+            rules.add(new RecoveryRule<>(recovery.kind(), recovery.transition(), recovery.failsOn(),
+                    recovery.continueChain()));
         }
         return rules;
     }
@@ -329,8 +364,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     /**
-     * Records SG507 for a timeout on a synchronous action and for more than one onFailure or timeout, then SG511 for
-     * a timeout that is not positive, and answers whether it recorded nothing.
+     * Records SG507 for a timeout on a synchronous action and for more than one onFailure, timeout or automatic
+     * mark, then SG511 for a timeout that is not positive, and answers whether it recorded nothing.
      */
     private boolean checkTimeoutAndOnFailure(String where, int fromIndex, int idIndex, Problems problems) {
         boolean valid = true;
@@ -347,6 +382,11 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         if (timeouts > 1) {
             problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
                     where + " declares " + timeouts + " timeouts, but an edge has at most one");
+            valid = false;
+        }
+        if (automatics > 1) {
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
+                    where + " declares " + automatics + " automatic marks, but an edge has at most one");
             valid = false;
         }
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {

@@ -48,10 +48,10 @@ class RecoveryAssertionsTest {
 
     private static final RecoveryRule<TicketChange> UNAVAILABLE = new RecoveryRule<>(
             PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-            List.of(ServiceUnavailableException.class));
+            List.of(ServiceUnavailableException.class), false);
     private static final RecoveryRule<TicketChange> REJECTED = new RecoveryRule<>(
             PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-            List.of(ProviderRejectedException.class));
+            List.of(ProviderRejectedException.class), false);
 
     // --- an action result ------------------------------------------------------------------------------
 
@@ -242,7 +242,7 @@ class RecoveryAssertionsTest {
     @Test
     void aRuleMatchesOnlyWithTheExceptionClassesItLists() {
         RecoveryRule<TicketChange> withoutClasses = new RecoveryRule<>(PublicationFailures.Unavailable.class,
-                TicketChange.SCHEDULE_RETRY, List.of());
+                TicketChange.SCHEDULE_RETRY, List.of(), false);
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> GraphAssert.assertThat(publicationGraph()).transition(TicketState.READY, TicketChange.PUBLISH)
                         .recoversExactly(List.of(withoutClasses, REJECTED)));

@@ -40,17 +40,18 @@ class RecoverySelectorTest {
 
     private static final RecoveryRule<TicketChange> RETRY_WHEN_UNAVAILABLE =
             new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                    List.of(ServiceUnavailableException.class));
+                    List.of(ServiceUnavailableException.class), false);
 
     private static final RecoveryRule<TicketChange> RECORD_WHEN_REJECTED = new RecoveryRule<>(
-            PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION, List.of());
+            PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION, List.of(), false);
 
     /** READY -PUBLISH-> PUBLISHED with a synchronous action, {@code onFailure}, {@code failsOn} and {@code rules}. */
     private static TransitionSpec<Ticket, TicketState, TicketChange> publish(
             Optional<TicketChange> onFailure, List<Class<? extends Throwable>> failsOn,
             List<RecoveryRule<TicketChange>> rules) {
         return new TransitionSpec<>(TicketState.READY, TicketChange.PUBLISH, TicketState.PUBLISHED,
-                Optional.of(PUBLISH), List.of(), onFailure, failsOn, Optional.empty(), Optional.empty(), rules);
+                Optional.of(PUBLISH), List.of(), onFailure, failsOn, Optional.empty(), Optional.empty(), rules,
+                false, false);
     }
 
     private static Optional<Class<? extends FailureKind>> kind(Class<? extends FailureKind> kind) {
@@ -135,7 +136,7 @@ class RecoverySelectorTest {
         TransitionSpec<Ticket, TicketState, TicketChange> edge =
                 publish(Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(Throwable.class),
                         List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                                List.of(IllegalStateException.class))));
+                                List.of(IllegalStateException.class), false)));
         assertFalse(RecoverySelector.admits(edge, new AssertionError("invariant broken")));
         assertFalse(RecoverySelector.admits(edge, new CancellationException("cancelled")));
         assertFalse(RecoverySelector.admits(edge, new StateMachineException("the ledger refused the entry")));
@@ -146,9 +147,9 @@ class RecoverySelectorTest {
     @Test
     void betweenRulesTheSubclassWinsInEitherOrder() {
         RecoveryRule<TicketChange> broad = new RecoveryRule<>(PublicationFailures.Unavailable.class,
-                TicketChange.SCHEDULE_RETRY, List.of(IOException.class));
+                TicketChange.SCHEDULE_RETRY, List.of(IOException.class), false);
         RecoveryRule<TicketChange> narrow = new RecoveryRule<>(PublicationFailures.Rejected.class,
-                TicketChange.RECORD_REJECTION, List.of(SocketTimeoutException.class));
+                TicketChange.RECORD_REJECTION, List.of(SocketTimeoutException.class), false);
         for (List<RecoveryRule<TicketChange>> rules : List.of(List.of(broad, narrow), List.of(narrow, broad))) {
             TransitionSpec<Ticket, TicketState, TicketChange> edge = publish(Optional.empty(), List.of(), rules);
             assertEquals(route(TicketChange.RECORD_REJECTION, PublicationFailures.Rejected.class),
@@ -167,7 +168,7 @@ class RecoverySelectorTest {
         TransitionSpec<Ticket, TicketState, TicketChange> failsOnSubtype = publish(
                 Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(SocketTimeoutException.class),
                 List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                        List.of(IOException.class))));
+                        List.of(IOException.class), false)));
         assertEquals(fallback(Optional.of(TicketChange.MARK_INTEGRATION_FAILED)),
                 RecoverySelector.thrown(failsOnSubtype, new SocketTimeoutException("read timed out")));
         assertEquals(route(TicketChange.SCHEDULE_RETRY, PublicationFailures.Unavailable.class),
@@ -176,7 +177,7 @@ class RecoverySelectorTest {
         TransitionSpec<Ticket, TicketState, TicketChange> ruleSubtype = publish(
                 Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(IOException.class),
                 List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                        List.of(SocketTimeoutException.class))));
+                        List.of(SocketTimeoutException.class), false)));
         assertEquals(route(TicketChange.SCHEDULE_RETRY, PublicationFailures.Unavailable.class),
                 RecoverySelector.thrown(ruleSubtype, new SocketTimeoutException("read timed out")));
         assertEquals(fallback(Optional.of(TicketChange.MARK_INTEGRATION_FAILED)),
