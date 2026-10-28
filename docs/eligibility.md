@@ -226,7 +226,7 @@ static ButtonState buttonFor(
 }
 ```
 
-[Runtime exceptions](diagnostics.md#runtime-exceptions) lists `EligibilityCheckException` with the others.
+[Runtime exceptions](runtime-exceptions.md) lists `EligibilityCheckException` with the others.
 
 ## What a check runs and never does
 

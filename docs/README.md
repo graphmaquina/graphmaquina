@@ -67,7 +67,8 @@ time; each page links the next one in that order.
 | [Debug a call with logs](logs.md) | The runtime's `System.Logger` output at `DEBUG` and `TRACE` |
 | [The call's flow](call-flow.md) | Typed values every step of a call shares, values applied only on commit, and the call's trail |
 | [Inspect graphs and export diagrams](graph-inspection.md) | Reading a definition, Graphviz export, topology queries |
-| [Diagnostics and troubleshooting](diagnostics.md) | Every `SG` diagnostic code, runtime exceptions and common build problems |
+| [Diagnostics and troubleshooting](diagnostics.md) | Every `SG` diagnostic code and common build problems |
+| [Runtime exceptions](runtime-exceptions.md) | Every exception the library throws, its phase, its accessors and what to investigate |
 
 ## Test your machines
 
