@@ -17,7 +17,9 @@ import lombok.NonNull;
 
 /**
  * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
- * reachability, cycles, failure routes, watches and sub-machines. The failure routes of an edge are the identifiers
+ * reachability, cycles, failure routes, watches and sub-machines, and, when none of those found a problem, the
+ * automatic orders, the cycles of the automatic edges and the continuing routes ({@link AutomaticRules} and
+ * {@link ContinuationRules}). The failure routes of an edge are the identifiers
  * its recovery rules name and the one its {@code onFailure} names. Shared by the DSL and the annotation processor, so
  * both report the same codes for these checks.
  */
@@ -48,6 +50,11 @@ public final class MachineOutlineValidator {
         failureRoutes(outline, index, byKey, problems);
         watches(outline, index, byKey, problems);
         submachines(outline, index, byKey, problems);
+        // The automatic rules read routes and bindings that the checks above have just vouched for.
+        if (problems.isEmpty()) {
+            AutomaticRules.check(outline, index, problems);
+            ContinuationRules.check(outline, index, problems);
+        }
     }
 
     private static Map<EdgeKey, TransitionOutline> uniqueKeys(MachineOutline outline, OutlineIndex index,
@@ -149,7 +156,7 @@ public final class MachineOutlineValidator {
     }
 
     /** More than one node, or a single node that reaches itself. */
-    private static boolean cyclic(Set<String> component, Graph<String> graph) {
+    static boolean cyclic(Set<String> component, Graph<String> graph) {
         if (component.size() > 1) {
             return true;
         }

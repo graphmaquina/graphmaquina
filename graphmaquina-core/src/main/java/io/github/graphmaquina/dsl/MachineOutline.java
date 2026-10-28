@@ -8,12 +8,13 @@ import lombok.NonNull;
 
 /**
  * Structural model of a machine by names only: its states, its catalogue of transition identifiers, the edges
- * that were actually declared, the policies, the watches and the sub-machines. The DSL builds it from its drafts and
+ * that were actually declared, the policies, the watches, the sub-machines and the automatic orders. The DSL builds it from its drafts and
  * the annotation processor from the annotations, so the same validator runs in {@code build()} and in javac, each time
  * only once that producer has found no problem of its own. There is no expected number of pairs and no index by
  * endpoints. The constructor refuses, with {@link IllegalArgumentException}, an empty state list, a repeated state or
- * identifier and any name that is not one of them, the identifiers that an edge's recovery rules name, the state a
- * sub-machine is bound to and the identifiers its exits name included. The states a sub-machine's exits are declared
+ * identifier and any name that is not one of them, the identifiers that an edge's recovery rules name, whether they
+ * continue or not, the state a sub-machine is bound to, the identifiers its exits name, and the state and the
+ * identifiers of an automatic order included. The states a sub-machine's exits are declared
  * on and its terminal states are names of the child, which this outline does not hold, so the constructor does not
  * check them. Everything else, invalid combinations included, is left for the validator to report.
  *
@@ -30,11 +31,14 @@ import lombok.NonNull;
  * @param watches the declared watches
  * @param submachines the declared sub-machine bindings, in the order the producer lists them: both producers in
  *     declaration order; a state may appear more than once, which the validator reports
+ * @param automaticOrders every {@code automaticOrder} declared, in declaration order; a state may appear more than
+ *     once, which the validator reports
  */
 public record MachineOutline(@NonNull String name, @NonNull List<String> states, @NonNull List<String> catalog,
                              @NonNull String initial, @NonNull Set<String> terminals, @NonNull Set<String> cycleAllowed,
                              @NonNull List<TransitionOutline> transitions, @NonNull List<PolicyOutline> policies,
-                             @NonNull List<WatchOutline> watches, @NonNull List<SubmachineOutline> submachines) {
+                             @NonNull List<WatchOutline> watches, @NonNull List<SubmachineOutline> submachines,
+                             @NonNull List<AutomaticOrderOutline> automaticOrders) {
 
     public MachineOutline {
         states = List.copyOf(states);
@@ -45,6 +49,7 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         policies = List.copyOf(policies);
         watches = List.copyOf(watches);
         submachines = List.copyOf(submachines);
+        automaticOrders = List.copyOf(automaticOrders);
         Set<String> stateNames = new HashSet<>(states);
         Set<String> transitionNames = new HashSet<>(catalog);
         if (states.isEmpty() || stateNames.size() != states.size()) {
@@ -64,6 +69,7 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         requirePolicyNames(name, states, stateNames, catalog, transitionNames, policies);
         requireWatchNames(name, states, stateNames, catalog, transitionNames, watches);
         requireSubmachineNames(name, states, stateNames, catalog, transitionNames, submachines);
+        requireOrderNames(name, states, stateNames, catalog, transitionNames, automaticOrders);
     }
 
     /** Refuses an edge that names a state or an identifier the outline lacks, onFailure and recoveries included. */
@@ -78,6 +84,9 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
             }
             for (String recovery : edge.recoveryTransitions()) {
                 requireTransition(name, catalog, transitionNames, recovery, "transition.recovery");
+            }
+            for (String continuing : edge.continuingRecoveries()) {
+                requireTransition(name, catalog, transitionNames, continuing, "transition.continuingRecovery");
             }
         }
     }
@@ -115,11 +124,23 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         }
     }
 
-    /** An outline that declares no sub-machine. */
+    /** Refuses an automatic order whose state, or an identifier it names, the outline lacks. */
+    private static void requireOrderNames(String name, List<String> states, Set<String> stateNames,
+            List<String> catalog, Set<String> transitionNames, List<AutomaticOrderOutline> automaticOrders) {
+        for (AutomaticOrderOutline order : automaticOrders) {
+            requireState(name, states, stateNames, order.state(), "automaticOrder.state");
+            for (String transition : order.transitions()) {
+                requireTransition(name, catalog, transitionNames, transition, "automaticOrder.transition");
+            }
+        }
+    }
+
+    /** An outline that declares no sub-machine and no automatic order. */
     public MachineOutline(String name, List<String> states, List<String> catalog, String initial, Set<String> terminals,
                           Set<String> cycleAllowed, List<TransitionOutline> transitions, List<PolicyOutline> policies,
                           List<WatchOutline> watches) {
-        this(name, states, catalog, initial, terminals, cycleAllowed, transitions, policies, watches, List.of());
+        this(name, states, catalog, initial, terminals, cycleAllowed, transitions, policies, watches, List.of(),
+                List.of());
     }
 
     private static void requireState(String name, List<String> states, Set<String> stateNames, String state,

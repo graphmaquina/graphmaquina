@@ -34,6 +34,9 @@ import lombok.NonNull;
  */
 final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> implements GraphBuilder<E, S, T> {
 
+    /** One {@code automaticOrder} call, as it was written. */
+    private record OrderDeclaration<S, T>(S state, List<T> transitions) { }
+
     @Getter(AccessLevel.PACKAGE)
     private final MachineKey<E, S, T> key;
     private final S[] states;
@@ -44,7 +47,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Set<S> cycleAllowed;
     private final Map<S, String> statePolicies;
     private final Map<S, Map<T, String>> rejections;
-    private final Map<S, List<T>> automaticOrders;
+    private final List<OrderDeclaration<S, T>> automaticOrders = new ArrayList<>();
     private final List<TransitionDraft<E, S, T>> drafts = new ArrayList<>();
     private final List<TransitionSpec<E, S, T>> declared = new ArrayList<>();
     private final Map<S, WatchDraft<E, S, T, ?, ?, ?>> watches;
@@ -61,7 +64,6 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.cycleAllowed = EnumSet.noneOf(key.states());
         this.statePolicies = new EnumMap<>(key.states());
         this.rejections = new EnumMap<>(key.states());
-        this.automaticOrders = new EnumMap<>(key.states());
         this.watches = new EnumMap<>(key.states());
     }
 
@@ -145,7 +147,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         return this;
     }
 
-    /** The first order declared for a state is kept; build rules for repeated and unusable orders come later. */
+    /** Every order is kept, so that build() can report a state that declares more than one. */
     @Override
     public GraphBuilder<E, S, T> automaticOrder(@NonNull S from, @NonNull List<T> transitions) {
         requireUnbuilt();
@@ -154,7 +156,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (T transition : order) {
             requireTransition(transition);
         }
-        automaticOrders.putIfAbsent(from, order);
+        automaticOrders.add(new OrderDeclaration<>(from, order));
         return this;
     }
 
@@ -245,7 +247,16 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             throw new InvalidGraphException(key, problems.sorted());
         }
         return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs,
-                resolveSubmachines(), automaticOrders);
+                resolveSubmachines(), firstOrders());
+    }
+
+    /** The first order declared on each state; the validator has already reported a second one. */
+    private Map<S, List<T>> firstOrders() {
+        Map<S, List<T>> first = new EnumMap<>(key.states());
+        for (OrderDeclaration<S, T> declaration : automaticOrders) {
+            first.putIfAbsent(declaration.state(), declaration.transitions());
+        }
+        return first;
     }
 
     /** The first binding declared on each state; SG803 has already reported a second one. */
@@ -316,8 +327,13 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (SubmachineDraft<E, S, T, ?, ?, ?> draft : submachines) {
             submachineOutlines.add(draft.toOutline());
         }
+        List<AutomaticOrderOutline> orderOutlines = new ArrayList<>();
+        for (OrderDeclaration<S, T> declaration : automaticOrders) {
+            orderOutlines.add(new AutomaticOrderOutline(declaration.state().name(),
+                    declaration.transitions().stream().map(Enum::name).toList()));
+        }
         return new MachineOutline(key.toString(), stateNames, catalogNames, initial.orElseThrow().name(), terminalNames,
-                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines);
+                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines, orderOutlines);
     }
 
     /** The outline of each edge of {@code ordered}, in that order, with the identifiers its recovery rules name. */
@@ -325,11 +341,16 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         List<TransitionOutline> edges = new ArrayList<>();
         for (TransitionSpec<E, S, T> spec : ordered) {
             List<String> recoveries = new ArrayList<>();
+            Set<String> continuing = new LinkedHashSet<>();
             for (RecoveryRule<T> rule : spec.recoveryRules()) {
                 recoveries.add(rule.transition().name());
+                if (rule.continueChain()) {
+                    continuing.add(rule.transition().name());
+                }
             }
             edges.add(new TransitionOutline(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
-                    spec.onFailure().map(Enum::name), recoveries));
+                    spec.onFailure().map(Enum::name), recoveries, !spec.guards().isEmpty(), spec.automatic(),
+                    spec.onFailureContinues(), List.copyOf(continuing)));
         }
         return edges;
     }

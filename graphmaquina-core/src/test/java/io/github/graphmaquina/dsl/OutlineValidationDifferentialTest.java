@@ -25,10 +25,18 @@ import org.junit.jupiter.api.Test;
  * nowhere, and the fixtures of {@link MachineOutlineValidatorTest}, large circulants included, except the five whose
  * names hold a slash: the frozen validator keys an edge by its printed form and answers those differently from the
  * live one.
+ *
+ * <p>No outline of the corpus declares an automatic edge, an automatic order or a continuing route, so the rules of
+ * {@link AutomaticRules} and {@link ContinuationRules} never fire here and the frozen validator needs none of them:
+ * those rules have their own tests in {@link AutomaticValidationTest}, {@link AutomaticSubmachineValidationTest}
+ * and {@link MachineOutlineValidatorTest}.
  */
 class OutlineValidationDifferentialTest {
 
-    /** Every code the validator can report; the corpus is worthless if it does not reach all of them. */
+    /**
+     * Every code the frozen validator can report, which is every structural code but the five of the automatic
+     * vocabulary; the corpus is worthless if it does not reach all of them.
+     */
     private static final List<String> EVERY_CODE = List.of(DiagnosticCode.SG102.name(), DiagnosticCode.SG103.name(),
             DiagnosticCode.SG202.name(), DiagnosticCode.SG203.name(), DiagnosticCode.SG204.name(),
             DiagnosticCode.SG205.name(), DiagnosticCode.SG301.name(), DiagnosticCode.SG401.name(),
@@ -277,7 +285,8 @@ class OutlineValidationDifferentialTest {
 
     private static TransitionOutline recovering(String from, String transition, String to, TransitionKind kind,
             String onFailure, String... recoveries) {
-        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries));
+        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries),
+                false, false, false, List.of());
     }
 
     private static List<PolicyOutline> docPolicies(String... states) {

@@ -30,7 +30,8 @@ class MachineOutlineValidatorTest {
 
     private static TransitionOutline recovering(String from, String transition, String to, TransitionKind kind,
             String onFailure, String... recoveries) {
-        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries));
+        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries),
+                false, false, false, List.of());
     }
 
     private static List<PolicyOutline> policies(String... states) {
@@ -277,13 +278,13 @@ class MachineOutlineValidatorTest {
     void anEdgeKeepsACopyOfItsRecoveryTransitions() {
         List<String> recoveries = new ArrayList<>(List.of("SEND_BACK", "DISCARD", "SEND_BACK"));
         TransitionOutline edge = new TransitionOutline("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION,
-                Optional.empty(), recoveries);
+                Optional.empty(), recoveries, false, false, false, List.of());
         recoveries.clear();
         assertEquals(List.of("SEND_BACK", "DISCARD", "SEND_BACK"), edge.recoveryTransitions());
         assertThrows(UnsupportedOperationException.class, () -> edge.recoveryTransitions().add("ARCHIVE"));
         assertEquals(List.of(), action("REVIEW", "PUBLISH", "PUBLISHED", "SEND_BACK").recoveryTransitions());
         NullPointerException error = assertThrows(NullPointerException.class, () -> new TransitionOutline("REVIEW",
-                "PUBLISH", "PUBLISHED", TransitionKind.ACTION, Optional.empty(), null));
+                "PUBLISH", "PUBLISHED", TransitionKind.ACTION, Optional.empty(), null, false, false, false, List.of()));
         assertTrue(error.getMessage().startsWith("recoveryTransitions"), error.getMessage());
     }
 
@@ -322,5 +323,51 @@ class MachineOutlineValidatorTest {
                 MachineOutlineValidator.validate(CirculantOutlines.of(500, 8, false));
         assertEquals(List.of(DiagnosticCode.SG204.name()), codes(problems));
         assertTrue(problems.get(0).message().startsWith("unauthorized cycle "));
+    }
+
+    private static TransitionOutline automatic(String from, String transition, String to, boolean guarded) {
+        return new TransitionOutline(from, transition, to, TransitionKind.MOVE, Optional.empty(), List.of(), guarded,
+                true, false, List.of());
+    }
+
+    private static MachineOutline withAutomatic(List<TransitionOutline> edges, List<AutomaticOrderOutline> orders) {
+        return new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"), Set.of(), edges,
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of(), List.of(), orders);
+    }
+
+    @Test
+    void theAutomaticRulesWaitForTheOtherStructuralChecks() {
+        MachineOutline outline = withAutomatic(
+                List.of(automatic("DRAFT", "SUBMIT", "REVIEW", false), automatic("DRAFT", "DISCARD", "ARCHIVED", false),
+                        action("REVIEW", "PUBLISH", "PUBLISHED", "RETOUCH"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                List.of());
+        assertEquals(List.of(DiagnosticCode.SG301.name()), codes(MachineOutlineValidator.validate(outline)));
+    }
+
+    @Test
+    void anOrderedPairBuildsWithoutProblems() {
+        MachineOutline outline = withAutomatic(
+                List.of(automatic("DRAFT", "SUBMIT", "REVIEW", true), automatic("DRAFT", "DISCARD", "ARCHIVED", false),
+                        move("REVIEW", "PUBLISH", "PUBLISHED"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                List.of(new AutomaticOrderOutline("DRAFT", List.of("SUBMIT", "DISCARD"))));
+        assertEquals(List.of(), MachineOutlineValidator.validate(outline));
+    }
+
+    @Test
+    void aContinuationFlagWithoutAnOnFailureIsLeftToTheProducer() {
+        TransitionOutline flagged = new TransitionOutline("DRAFT", "SUBMIT", "REVIEW", TransitionKind.ACTION,
+                Optional.empty(), List.of(), false, false, true, List.of());
+        MachineOutline outline = withAutomatic(List.of(flagged, move("REVIEW", "PUBLISH", "PUBLISHED"),
+                move("PUBLISHED", "ARCHIVE", "ARCHIVED")), List.of());
+        assertEquals(List.of(), MachineOutlineValidator.validate(outline));
+    }
+
+    @Test
+    void aRecoveryNamedByTwoRulesIsReportedOnceWhenOneOfThemContinues() {
+        TransitionOutline twice = new TransitionOutline("DRAFT", "SUBMIT", "REVIEW", TransitionKind.ACTION,
+                Optional.empty(), List.of("DISCARD", "DISCARD"), false, false, false, List.of("DISCARD"));
+        MachineOutline outline = withAutomatic(List.of(twice, move("DRAFT", "DISCARD", "ARCHIVED"),
+                move("REVIEW", "PUBLISH", "PUBLISHED"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")), List.of());
+        assertEquals(List.of(DiagnosticCode.SG305.name()), codes(MachineOutlineValidator.validate(outline)));
     }
 }

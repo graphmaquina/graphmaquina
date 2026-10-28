@@ -18,6 +18,8 @@ import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -51,26 +53,33 @@ class AutomaticDslTest {
     record Declined3() implements FailureKind { }
 
     /**
-     * DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED, shaped by {@code discard}; then
-     * the plain REVIEW -PUBLISH-> PUBLISHED and PUBLISHED -ARCHIVE-> ARCHIVED. {@code order} is applied to the graph
-     * before it is built.
+     * DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> REVIEW, shaped by {@code discard}; REVIEW
+     * -PUBLISH-> PUBLISHED, shaped by {@code publish}; then the plain PUBLISHED -ARCHIVE-> ARCHIVED. {@code order} is
+     * applied to the graph before it is built.
      */
     private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
             UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
             UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard,
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> publish,
             List<DocTransition> order) {
         GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
                 .statePolicy(DRAFT, "a draft is submitted or discarded")
                 .statePolicy(REVIEW, "a review is published")
                 .statePolicy(PUBLISHED, "a publication is archived");
         graph = submit.apply(graph.transition(SUBMIT, DRAFT, REVIEW)).endTransition();
-        graph = discard.apply(graph.transition(DISCARD, DRAFT, ARCHIVED)).endTransition();
+        graph = discard.apply(graph.transition(DISCARD, DRAFT, REVIEW)).endTransition();
         if (!order.isEmpty()) {
             graph = graph.automaticOrder(DRAFT, order);
         }
-        return graph.transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
-                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
-                .build();
+        graph = publish.apply(graph.transition(PUBLISH, REVIEW, PUBLISHED)).endTransition();
+        return graph.transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition().build();
+    }
+
+    private static GraphDefinition<Doc, DocStatus, DocTransition> docs(
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard,
+            List<DocTransition> order) {
+        return docs(submit, discard, AutomaticDslTest::plain, order);
     }
 
     private static TransitionBuilder<Doc, DocStatus, DocTransition> plain(
@@ -81,6 +90,12 @@ class AutomaticDslTest {
     private static TransitionBuilder<Doc, DocStatus, DocTransition> automatic(
             TransitionBuilder<Doc, DocStatus, DocTransition> edge) {
         return edge.automatic();
+    }
+
+    private static TransitionBuilder<Doc, DocStatus, DocTransition> guardedAutomatic(
+            TransitionBuilder<Doc, DocStatus, DocTransition> edge) {
+        return edge.automatic()
+                .guard("open", (GuardContext<Doc, DocStatus, DocTransition> context) -> GuardResult.pass());
     }
 
     private static InvalidGraphException refused(
@@ -110,7 +125,8 @@ class AutomaticDslTest {
         TransitionSpec<Doc, DocStatus, DocTransition> submit = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> edge) -> edge.action("submit", SUCCEEDS)
                         .onFailureAndContinue(DISCARD),
-                AutomaticDslTest::plain, List.of()).findTransition(DRAFT, SUBMIT).orElseThrow();
+                AutomaticDslTest::plain, AutomaticDslTest::automatic, List.of())
+                .findTransition(DRAFT, SUBMIT).orElseThrow();
         assertEquals(DISCARD, submit.onFailure().orElseThrow());
         assertTrue(submit.onFailureContinues());
     }
@@ -131,7 +147,8 @@ class AutomaticDslTest {
                         .recover(Declined.class, DISCARD)
                         .recoverAndContinue(Declined2.class, DISCARD)
                         .recoverAndContinue(Declined3.class, DISCARD, List.of(IllegalStateException.class)),
-                AutomaticDslTest::plain, List.of()).findTransition(DRAFT, SUBMIT).orElseThrow();
+                AutomaticDslTest::plain, AutomaticDslTest::automatic, List.of())
+                .findTransition(DRAFT, SUBMIT).orElseThrow();
         List<RecoveryRule<DocTransition>> rules = submit.recoveryRules();
         assertEquals(3, rules.size());
         assertFalse(rules.get(0).continueChain());
@@ -143,7 +160,7 @@ class AutomaticDslTest {
     @Test
     void automaticFromFollowsTheDeclaredOrderNotTheEnum() {
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(AutomaticDslTest::automatic,
-                AutomaticDslTest::automatic, List.of(DISCARD, SUBMIT));
+                AutomaticDslTest::guardedAutomatic, List.of(DISCARD, SUBMIT));
         assertEquals(List.of(SUBMIT, DISCARD), identifiers(graph.outgoingFrom(DRAFT)));
         assertEquals(List.of(DISCARD, SUBMIT), identifiers(graph.automaticFrom(DRAFT)));
     }
@@ -163,20 +180,6 @@ class AutomaticDslTest {
         assertEquals(List.of(), graph.automaticFrom(REVIEW));
         assertThrows(UnsupportedOperationException.class,
                 () -> graph.automaticFrom(DRAFT).add(graph.findTransition(DRAFT, SUBMIT).orElseThrow()));
-    }
-
-    @Test
-    void automaticFromListsOnlyAutomaticEdgesWhateverTheOrderNames() {
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(AutomaticDslTest::plain,
-                AutomaticDslTest::automatic, List.of(PUBLISH, SUBMIT, DISCARD));
-        assertEquals(List.of(DISCARD), identifiers(graph.automaticFrom(DRAFT)));
-    }
-
-    @Test
-    void automaticFromAppendsTheAutomaticEdgesTheOrderDoesNotName() {
-        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(AutomaticDslTest::automatic,
-                AutomaticDslTest::automatic, List.of(DISCARD));
-        assertEquals(List.of(DISCARD, SUBMIT), identifiers(graph.automaticFrom(DRAFT)));
     }
 
     private static List<DocTransition> identifiers(List<TransitionSpec<Doc, DocStatus, DocTransition>> edges) {

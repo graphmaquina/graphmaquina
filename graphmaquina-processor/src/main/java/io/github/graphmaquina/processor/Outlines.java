@@ -39,7 +39,7 @@ final class Outlines {
             }
             for (String from : transition.from()) {
                 edges.add(new TransitionOutline(from, transition.transitionId(), transition.to(), transition.kind(),
-                        transition.onFailure(), recoveries));
+                        transition.onFailure(), recoveries, false, false, false, List.of()));
             }
         }
         List<WatchOutline> watches = new ArrayList<>();
@@ -61,7 +61,7 @@ final class Outlines {
         }
         return new MachineOutline(model.facadeName(), model.types().stateNames(), model.types().transitionNames(),
                 model.initial(), Set.copyOf(model.terminals()), Set.copyOf(model.cycleAllowed()), edges,
-                policies(model), watches, submachines);
+                policies(model), watches, submachines, List.of());
     }
 
     /**
