@@ -41,5 +41,11 @@ public enum CallPhase {
      * The watch reactions of the commit. Only an Error leaves this phase: any other throwable becomes a
      * {@link Reaction.Aborted}.
      */
-    REACTIONS
+    REACTIONS,
+
+    /**
+     * The automatic chains of the entities the commit moved, once its watch reactions ran: each attempt is a call of
+     * its own. Only an Error leaves this phase: any other throwable becomes an {@link AutomaticStep.Aborted}.
+     */
+    AUTOMATIC_STEPS
 }

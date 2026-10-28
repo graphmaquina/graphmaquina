@@ -178,8 +178,9 @@ child's machine too, built from that very definition: otherwise `MachineRegistry
 | `as(facade)` | The facade type that identifies the machine in `peer(Class)` and `cascade(Class, ...)` |
 | `build()` | A standalone `StateMachine`, in an internal registry of its own |
 
-`MachineRegistry.builder()` gathers several machines: `add(builder)` adds one, `maxCascadeDepth(n)` and
-`maxWatchChain(n)` bound cascades and watch chains (10 each by default, and at least 1), `observer(observer)` adds an
+`MachineRegistry.builder()` gathers several machines: `add(builder)` adds one, `maxCascadeDepth(n)`,
+`maxWatchChain(n)` and `maxAutomaticChain(n)` bound cascades, watch chains and automatic chains (10 each by default,
+and at least 1), `observer(observer)` adds an
 [observer](commit-and-persistence.md#observers), and `build()` checks every machine before it builds any.
 `registry.of(key)` returns a machine and `keys()` lists them. Every machine whose calls can run an edge implicitly
 must also declare `asyncTimeout(...)` when that edge is asynchronous, including a child's binding exit and a terminal

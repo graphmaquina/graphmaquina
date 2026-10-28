@@ -75,7 +75,10 @@ class CallVocabularyTest {
         assertEquals(CallRequest.ADVANCE, advanced.request());
         assertEquals(List.of("EXECUTE", "REEVALUATE", "ADVANCE"),
                 Arrays.stream(CallRequest.values()).map(Enum::name).toList());
-        assertEquals(List.of("APPLICATION", "WATCH_REACTION"),
+        MachineCall step = new MachineCall(DOCS, doc, CallRequest.ADVANCE, Optional.empty(),
+                CallOrigin.AUTOMATIC_STEP);
+        assertEquals(List.of(CallRequest.ADVANCE, CallOrigin.AUTOMATIC_STEP), List.of(step.request(), step.origin()));
+        assertEquals(List.of("APPLICATION", "WATCH_REACTION", "AUTOMATIC_STEP"),
                 Arrays.stream(CallOrigin.values()).map(Enum::name).toList());
     }
 
@@ -108,6 +111,18 @@ class CallVocabularyTest {
     }
 
     @Test
+    void anAutomaticStepIsAnAdvance() {
+        Doc doc = new Doc("1", DocStatus.DRAFT);
+        IllegalArgumentException execute = assertThrows(IllegalArgumentException.class,
+                () -> new MachineCall(DOCS, doc, CallRequest.EXECUTE, Optional.of(DocTransition.SUBMIT),
+                        CallOrigin.AUTOMATIC_STEP));
+        assertEquals("an automatic step is an advance", execute.getMessage());
+        IllegalArgumentException reevaluate = assertThrows(IllegalArgumentException.class,
+                () -> reevaluate(doc, CallOrigin.AUTOMATIC_STEP));
+        assertEquals("an automatic step is an advance", reevaluate.getMessage());
+    }
+
+    @Test
     void toStringNamesRequestAndOrigin() {
         Doc doc = new Doc("secret", DocStatus.DRAFT);
         assertEquals("Doc/DocStatus SUBMIT", execute(doc).toString());
@@ -116,6 +131,8 @@ class CallVocabularyTest {
                 reevaluate(doc, CallOrigin.WATCH_REACTION).toString());
         assertEquals("Doc/DocStatus advance", new MachineCall(DOCS, doc, CallRequest.ADVANCE, Optional.empty(),
                 CallOrigin.APPLICATION).toString());
+        assertEquals("Doc/DocStatus advance (automatic step)", new MachineCall(DOCS, doc, CallRequest.ADVANCE,
+                Optional.empty(), CallOrigin.AUTOMATIC_STEP).toString());
     }
 
     @Test
@@ -140,7 +157,7 @@ class CallVocabularyTest {
 
     @Test
     void thePhasesAndTheWriteLevelsAreTheDocumentedOnesInOrder() {
-        assertEquals(List.of("RESOLVE", "GUARD", "ACTION", "COMMIT", "HOOK", "REACTIONS"),
+        assertEquals(List.of("RESOLVE", "GUARD", "ACTION", "COMMIT", "HOOK", "REACTIONS", "AUTOMATIC_STEPS"),
                 Arrays.stream(CallPhase.values()).map(Enum::name).toList());
         assertEquals(List.of("NONE", "PARTIAL", "ALL"),
                 Arrays.stream(StatesWritten.values()).map(Enum::name).toList());
@@ -163,7 +180,7 @@ class CallVocabularyTest {
             }
         }
         assertEquals(List.of("RESOLVE/NONE", "GUARD/NONE", "ACTION/NONE", "COMMIT/NONE", "COMMIT/PARTIAL",
-                "HOOK/ALL", "REACTIONS/ALL"), possible);
+                "HOOK/ALL", "REACTIONS/ALL", "AUTOMATIC_STEPS/ALL"), possible);
     }
 
     @Test

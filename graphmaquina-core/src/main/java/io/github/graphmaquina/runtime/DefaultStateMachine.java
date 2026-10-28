@@ -166,7 +166,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Optional<Observed> observed = RootCall.observe(this, entity, CallRequest.EXECUTE, requested,
                 CallOrigin.APPLICATION, log);
         return RootCall.run(this, entity, CallRequest.EXECUTE, requested, CallOrigin.APPLICATION, observed, log,
-                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
+                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), new ChainLevels(0, 0),
+                Optional.empty()).outcome();
     }
 
     @Override
@@ -181,12 +182,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Outcome<E, S, T> reevaluate(@NonNull E entity) {
-        return Reevaluation.reevaluate(this, entity, 0, Optional.empty());
+        return Reevaluation.reevaluate(this, entity, new ChainLevels(0, 0), Optional.empty());
     }
 
     @Override
     public Outcome<E, S, T> advance(@NonNull E entity) {
-        return Attempts.attempt(this, entity, CallOrigin.APPLICATION, Optional.empty());
+        return Attempts.attempt(this, entity, CallOrigin.APPLICATION, Optional.empty(), new ChainLevels(0, 1),
+                Optional.empty()).outcome();
     }
 
     @Override

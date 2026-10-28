@@ -127,9 +127,9 @@ public final class StateMachines {
          * ended the call, at the instant it ended. The root machine decides for the whole call, as it does with
          * asyncTimeout: the hops of the peers it cascades to and of the exits its steps run are recorded whatever those
          * machines declare, and a call that a machine without a trail starts records nothing, even when it cascades
-         * into one with a trail. A watch reaction is a root call of its own, decided by its own machine. A call that
-         * records its trail creates its flow when its step starts, so it hands out its flow, with the root entity and
-         * the trail, even when none of its steps or hooks wrote to it; an ignored outcome hands out the empty flow: a
+         * into one with a trail. A watch reaction is a root call of its own, decided by its own machine, and so is an
+         * automatic attempt. A call that records its trail creates its flow when its step starts, so it hands out its
+         * flow, with the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored outcome hands out the empty flow: a
          * reevaluation that selects no edge and an advance whose state has no automatic edge run no step, and an
          * advance whose automatic edges were all refused wrote nothing. The clock is read on the thread running the
          * call, once per entry the call appends, an entry a rollback later drops included, so a clock that advances on

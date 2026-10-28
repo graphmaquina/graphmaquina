@@ -272,7 +272,9 @@ final class Steps {
      * guards, annotate, execute, failure route. The hop is logged as {@link #appendHop} says. When
      * {@code admitOnly}, the guards alone: each is noted as the guard in flight, as {@link Transaction#guarding}
      * says, right before it is evaluated, and once every guard passed the step returns {@link StepResult.Applied}
-     * before the call enters ACTION, with nothing run; a step that executes notes no guard.
+     * before the call enters ACTION, with nothing run; a step that executes notes no guard. Once the guards of the
+     * root's own step passed, it throws the refusal its transaction holds, if any, as
+     * {@link Transaction#checkRootAction} says, before the call enters ACTION.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runEdge(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from,
@@ -301,6 +303,7 @@ final class Steps {
             // keeps this method's bytecode under 325 bytes, C2's FreqInlineSize, as it was without the mode.
             if (!admitOnly) {
                 if (depth == 0) {
+                    tx.checkRootAction();
                     tx.enter(CallPhase.ACTION);
                 }
                 int savepoint = uow.savepoint();

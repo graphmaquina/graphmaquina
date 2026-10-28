@@ -12,9 +12,9 @@ public interface Machines extends AutoCloseable {
      *
      * @throws IllegalStateException before it closes anything, on a thread that runs an operation of one of those
      *         default executors, an asynchronous call or the supplier of a facade's {@code async}, which closing that
-     *         executor would wait for forever, whatever calls it there: an action, a hook or a watch reaction of the
-     *         call, a call a hook starts, or a dependent that completing the operation's future runs on that thread.
-     *         The set stays open.
+     *         executor would wait for forever, whatever calls it there: an action, a hook, a watch reaction or an
+     *         automatic attempt of the call, a call a hook starts, or a dependent that completing the operation's
+     *         future runs on that thread. The set stays open.
      */
     @Override
     void close();

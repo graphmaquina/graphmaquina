@@ -5,9 +5,9 @@ exceptions such as `NullPointerException`, `IllegalArgumentException`, `IllegalS
 `WrongThreadException`. The failures of a call
 extend `CallFailedException`, which reports the call's `phase()`, `statesWritten()`, `journal()` and `flow()`: they
 are `TransitionAbortedException`, `CommitFailedException` and `AfterCommitException`. `UnhandledFailureException`,
-`CascadeException`, `CascadeCycleException`, `CascadeDepthExceededException`, `PoisonedUnitOfWorkException` and
-`WatchChainExceededException` are `TransitionAbortedException`s, whose `details()` also report the machine key, the
-entity, the action and the cascade path.
+`CascadeException`, `CascadeCycleException`, `CascadeDepthExceededException`, `PoisonedUnitOfWorkException`,
+`WatchChainExceededException` and `AutomaticChainExceededException` are `TransitionAbortedException`s, whose
+`details()` also report the machine key, the entity, the action and the cascade path.
 
 ```mermaid
 classDiagram
@@ -23,6 +23,7 @@ classDiagram
     TransitionAbortedException <|-- CascadeDepthExceededException
     TransitionAbortedException <|-- PoisonedUnitOfWorkException
     TransitionAbortedException <|-- WatchChainExceededException
+    TransitionAbortedException <|-- AutomaticChainExceededException
     StateMachineException <|-- InvalidGraphException
     StateMachineException <|-- UninitializedStateException
     StateMachineException <|-- ReentrantTransitionException
@@ -46,6 +47,7 @@ classDiagram
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth, which `maxDepth()` reports. |
 | `WatchChainExceededException` | A watch chain exceeded its limit, which `maxChain()` reports; inspect reaction cycles. Neither `execute`, nor `reevaluate`, nor `advance` throws it to its caller: it arrives as the cause of a `Reaction.Aborted`, of phase `RESOLVE`, and the observers hear of it as a failed call. |
+| `AutomaticChainExceededException` | An automatic attempt past the registry's `maxAutomaticChain`, which `maxChain()` reports, admitted a candidate: once that candidate's guards passed, the attempt aborted before its action ran, writing nothing, of phase `GUARD`, or `RESOLVE` when the candidate has no guard; its details name the candidate's edge. Inspect paths that keep moving entities through cascades, watches or sub-machines. Neither `execute`, nor `reevaluate`, nor `advance` throws it to its caller: it arrives as the cause of an `AutomaticStep.Aborted`, and the observers hear of it as a failed call. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. A sub-machine whose `childOf` answers another instance with the identity of the child being called raises it too, and so does one whose `parentOf` answers another instance with the identity of a parent already in the call. |
 | `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. A parent that leaves one bound node for another that binds the same child is not two: it holds the child only in the node it enters. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade or an exit. |
 | `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute`, `reevaluate`, `advance` or `eligibility`; so did a guard, a state accessor, an identity function, or a `childOf` or `parentOf` that an eligibility check runs. An action moves peers through `ctx.cascade(...)`; hooks may start transitions and checks; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. Inside a check it arrives as the cause of its `EligibilityCheckException`. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
@@ -72,7 +74,7 @@ each exception exposes what identifies its cause:
 | `UnhandledFailureException` | `reason()`, the reason of the failure no route took |
 | `CascadeException` | `errors()`, the aborts of the elements, in element order |
 | `CascadeCycleException` | `route()`, `inFlightTransition()`, `requestedTransition()` |
-| `CascadeDepthExceededException` / `WatchChainExceededException` | `maxDepth()` / `maxChain()` |
+| `CascadeDepthExceededException` / `WatchChainExceededException` / `AutomaticChainExceededException` | `maxDepth()` / `maxChain()` / `maxChain()` |
 | `PoisonedUnitOfWorkException` | `original()`, the failure that poisoned the transaction |
 | `CommitFailedException` | `applied()`, `failedEntity()`, `pending()` |
 | `AfterCommitException` | `hook()`, `hop()`, `records()`, `starts()` |

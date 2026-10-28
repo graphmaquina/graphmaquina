@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="830" viewBox="0 0 1440 830" role="img" aria-labelledby="title desc">
-<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and its sub-machines, the starts of those its hops enter and the exits of those its steps end, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended, and the call returns its outcome with its frozen flow and its reactions; external side effects are not rolled back automatically.</desc>
+<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and its sub-machines, the starts of those its hops enter and the exits of those its steps end, in a shared unit of work. Commit checks and writes state. Hooks, watch reactions and the automatic chains of the entities it moved run afterward, then the observers learn how the call ended, and the call returns its outcome with its frozen flow, its reactions and its automatic steps; external side effects are not rolled back automatically.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -33,29 +33,34 @@
 <text x="926" y="390" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Write final state per entity</text>
 <path d="M 842 354 L 902 354" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 892 347 L 902 354 L 892 361" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1145 433 V 452 H 1408 V 600 H 180 V 627" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 180 610 L 180 627" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 173 617 L 180 627 L 187 617" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1145 433 V 452 H 1408 V 600 H 159 V 627" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 159 610 L 159 627" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 152 617 L 159 627 L 166 617" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <text x="923" y="486" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="700" fill="#55e0c0" text-anchor="start">STATE IS NOW COMMITTED</text>
 <text x="923" y="526" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="400" fill="#a9b8ce" text-anchor="start">Setters must not throw.</text>
-<rect x="52" y="627" width="260" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="52" y="627" width="214" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="74" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#ffc77a" text-anchor="start">Hooks</text>
 <text x="74" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Committed hop order</text>
-<rect x="391" y="627" width="307" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<text x="413" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#c3a2ff" text-anchor="start">Watch reactions</text>
-<text x="413" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">New root transactions</text>
-<rect x="777" y="627" width="240" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<text x="799" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#7aafff" text-anchor="start">Observers</text>
-<text x="799" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Observe outcome</text>
-<rect x="1096" y="627" width="292" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<text x="1118" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#55e0c0" text-anchor="start">Return</text>
-<text x="1118" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome, flow, reactions</text>
-<path d="M 318 676 L 385 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 375 669 L 385 676 L 375 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 704 676 L 771 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 761 669 L 771 676 L 761 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1023 676 L 1090 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1080 669 L 1090 676 L 1080 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="312" y="627" width="248" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="334" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#c3a2ff" text-anchor="start">Watch reactions</text>
+<text x="334" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">New root transactions</text>
+<rect x="606" y="627" width="248" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="628" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#55e0c0" text-anchor="start">Automatic steps</text>
+<text x="628" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">One chain per entity</text>
+<rect x="900" y="627" width="190" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="922" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#7aafff" text-anchor="start">Observers</text>
+<text x="922" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Observe outcome</text>
+<rect x="1136" y="627" width="252" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="1158" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#55e0c0" text-anchor="start">Return</text>
+<text x="1158" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome, flow, reactions</text>
+<path d="M 272 676 L 306 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 296 669 L 306 676 L 296 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 566 676 L 600 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 590 669 L 600 676 L 590 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 860 676 L 894 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 884 669 L 894 676 L 884 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1096 676 L 1130 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 669 L 1130 676 L 1120 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 52 766 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 <text x="52" y="801" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Normal completion path. A throwing hook stops the remaining post-commit sequence, but observers are told it failed; committed state remains.</text>
 </svg>

@@ -89,7 +89,25 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * The flow of the root call that returned this outcome, frozen once its hooks and its watch reactions ran: the
+     * The automatic attempts this root call's commit triggered once its watch reactions ran. Each entity with a hop or
+     * a sub-machine start in the commit, a self-loop included, runs its chain, in the order of the commit's log, unless
+     * its last hop there is a failure route that does not continue the chain: from the state the commit left it in,
+     * while that state has an automatic edge, one attempt after another, each a call of its own, an
+     * {@link AutomaticStep.Done} with its outcome or an {@link AutomaticStep.Aborted}. The chain stops after an attempt
+     * that admits no candidate, which is listed with its rejections, after one whose failure takes a route that does
+     * not continue, and after one that aborts. The list holds each chain whole, flat and in order. The attempts that
+     * the commit of an attempt triggers for other entities are in that attempt's own outcome. The outcome of an
+     * advance is its first attempt, so the chain of its entity here starts with the attempt that followed. Empty for a
+     * rejected or ignored outcome and for any outcome a cascade returned. An applied outcome may still end in an
+     * aborted step, so inspect them whatever the status.
+     */
+    default List<AutomaticStep> automaticSteps() {
+        return List.of();
+    }
+
+    /**
+     * The flow of the root call that returned this outcome, frozen once its hooks, its watch reactions and its
+     * automatic steps ran: the
      * root call's entity and the values present then, each under the key that put it, in the order of
      * {@link FlowView#keys()}. They are what the call's steps and hooks put and no failure route dropped, so a failed
      * outcome holds the recovery action's writes and none of the failed action's. When the root machine records its
@@ -102,7 +120,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * trail and none of whose steps or hooks wrote to it, a rejected outcome included, since only its guards ran and
      * a guard cannot write; for an ignored outcome; and for any outcome a cascade returned, whose flow belongs to its
      * root. A watch reaction is a call of its own: the outcome in {@link Reaction.Done} hands out the reaction's own
-     * flow, whose trail its own machine decides.
+     * flow, whose trail its own machine decides; and so is an automatic attempt, whose outcome in
+     * {@link AutomaticStep.Done} hands out the attempt's own flow.
      */
     FlowView flow();
 
@@ -125,33 +144,40 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
      * committed, cascaded ones included, in log order, {@code reactions} the watch reactions of that commit,
-     * {@code starts} the sub-machines it started, and {@code flow} the call's flow, as {@link Outcome#flow()} says.
-     * Returned by a cascade, it is written only if its root commits, the three lists are empty and the flow is
+     * {@code starts} the sub-machines it started, {@code flow} the call's flow, as {@link Outcome#flow()} says, and
+     * {@code automaticSteps} the automatic attempts that commit triggered, as {@link Outcome#automaticSteps()} says.
+     * Returned by a cascade, it is written only if its root commits, the four lists are empty and the flow is
      * {@link FlowView#empty()}. The constructor without {@code starts} reports none, and the constructors without
-     * {@code flow} give {@link FlowView#empty()}.
+     * {@code flow} give {@link FlowView#empty()} and report no automatic step.
      */
     record Applied<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
             @NonNull List<Reaction> reactions,
             @NonNull List<SubmachineStart<?, ?, ?>> starts,
-            @NonNull FlowView flow) implements Outcome<E, S, T> {
+            @NonNull FlowView flow,
+            @NonNull List<AutomaticStep> automaticSteps) implements Outcome<E, S, T> {
+        /** Copies the committed records, reactions, starts and automatic steps. */
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
             starts = List.copyOf(starts);
+            automaticSteps = List.copyOf(automaticSteps);
         }
 
-        /** Builds an applied outcome whose flow is {@link FlowView#empty()}. */
+        /** Builds an applied outcome whose flow is {@link FlowView#empty()} and that lists no automatic step. */
         public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
                        List<Reaction> reactions, List<SubmachineStart<?, ?, ?>> starts) {
-            this(entity, from, transition, to, records, reactions, starts, FlowView.empty());
+            this(entity, from, transition, to, records, reactions, starts, FlowView.empty(), List.of());
         }
 
-        /** Builds an applied outcome that started no sub-machine and whose flow is {@link FlowView#empty()}. */
+        /**
+         * Builds an applied outcome that started no sub-machine, whose flow is {@link FlowView#empty()} and that lists
+         * no automatic step.
+         */
         public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
                        List<Reaction> reactions) {
-            this(entity, from, transition, to, records, reactions, List.of(), FlowView.empty());
+            this(entity, from, transition, to, records, reactions, List.of(), FlowView.empty(), List.of());
         }
 
         @Override
@@ -337,12 +363,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
      * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
      * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
-     * call, it committed, with {@code records}, {@code reactions}, {@code starts} and {@code flow} as in
-     * {@link Applied}; returned by a cascade, it is written only if its root commits, the three lists are empty and the
-     * flow is {@link FlowView#empty()}. The constructor refuses a blank reason, and a present failure kind that
-     * {@link ActionOutcome#failed(Class, String)} would refuse; the constructors without {@code failureKind} report
-     * none, those without {@code starts} report none either, and those without {@code flow} give
-     * {@link FlowView#empty()}.
+     * call, it committed, with {@code records}, {@code reactions}, {@code starts}, {@code flow} and
+     * {@code automaticSteps} as in {@link Applied}; returned by a cascade, it is written only if its root commits, the
+     * four lists are empty and the flow is {@link FlowView#empty()}. The constructor refuses a blank reason, and a
+     * present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the constructors without
+     * {@code failureKind} report none, those without {@code starts} report none either, and those without
+     * {@code flow} give {@link FlowView#empty()} and report no automatic step.
      * When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
      * {@link #explanation()} leaves that reason out.
      */
@@ -354,8 +380,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull List<Reaction> reactions,
             @NonNull Optional<Class<? extends FailureKind>> failureKind,
             @NonNull List<SubmachineStart<?, ?, ?>> starts,
-            @NonNull FlowView flow) implements Outcome<E, S, T> {
-        /** Validates the reason and failure kind, and copies the committed records, reactions and starts. */
+            @NonNull FlowView flow,
+            @NonNull List<AutomaticStep> automaticSteps) implements Outcome<E, S, T> {
+        /**
+         * Validates the reason and failure kind, and copies the committed records, reactions, starts and automatic
+         * steps.
+         */
         public Failed {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
@@ -364,32 +394,36 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
             starts = List.copyOf(starts);
+            automaticSteps = List.copyOf(automaticSteps);
         }
 
-        /** Builds a routed failure whose flow is {@link FlowView#empty()}. */
+        /** Builds a routed failure whose flow is {@link FlowView#empty()} and that lists no automatic step. */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
                       Optional<Class<? extends FailureKind>> failureKind, List<SubmachineStart<?, ?, ?>> starts) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    failureKind, starts, FlowView.empty());
+                    failureKind, starts, FlowView.empty(), List.of());
         }
 
-        /** Builds a routed failure that started no sub-machine and whose flow is {@link FlowView#empty()}. */
+        /**
+         * Builds a routed failure that started no sub-machine, whose flow is {@link FlowView#empty()} and that lists
+         * no automatic step.
+         */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
                       Optional<Class<? extends FailureKind>> failureKind) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    failureKind, List.of(), FlowView.empty());
+                    failureKind, List.of(), FlowView.empty(), List.of());
         }
 
         /**
-         * Builds a routed failure without a failure kind that started no sub-machine and whose flow is
-         * {@link FlowView#empty()}.
+         * Builds a routed failure without a failure kind that started no sub-machine, whose flow is
+         * {@link FlowView#empty()} and that lists no automatic step.
          */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    Optional.empty(), List.of(), FlowView.empty());
+                    Optional.empty(), List.of(), FlowView.empty(), List.of());
         }
 
         @Override

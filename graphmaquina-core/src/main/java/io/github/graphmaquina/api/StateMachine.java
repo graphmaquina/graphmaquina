@@ -17,10 +17,10 @@ import lombok.NonNull;
  * wait. Within a registry, a machine must declare one when an edge that its calls can run implicitly is asynchronous:
  * the exit of a binding in which it is the child, a failure route of such an edge, an exit it leads to, or an exit
  * selected by a terminal initial descendant of a binding its own edge enters.
- * The watch reactions a call triggers are not part of it: each runs as a new root, bounded by the
- * asyncTimeout of the machine that reacts, counted from the moment that root starts. A machine built standalone runs
- * in a registry of its own that is internal and unreachable, so nothing can close it, and its default executor is
- * never closed.
+ * The watch reactions and the automatic attempts a call triggers are not part of it: each runs as a new root, bounded
+ * by the asyncTimeout of the machine that reacts or attempts, counted from the moment that root starts. A machine
+ * built standalone runs in a registry of its own that is internal and unreachable, so nothing can close it, and its
+ * default executor is never closed.
  * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
  */
 public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
@@ -41,7 +41,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * step moved it out of the bound state or entered it again, and the outcome is still this step's; an exit that is
      * rejected or fails without a route aborts the call. A null argument, an identifier of another catalogue and a call
      * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
-     * asynchronous edge.
+     * asynchronous edge. Once the call committed and its hooks and watch reactions ran, it runs the automatic chain of
+     * each entity it moved, unless the last hop it committed for that entity is a failure route that does not
+     * continue; {@link Outcome#automaticSteps()} lists those attempts, and a failure of one of them, anything but an
+     * Error, never throws to the caller: it is listed there.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
@@ -70,7 +73,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * </ul>
      * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
      * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error. A null argument and a
-     * call made where no call may start are refused before the call starts and throw as themselves.
+     * call made where no call may start are refused before the call starts and throw as themselves. Once the attempt
+     * committed, it runs the automatic chain of each entity it moved, as execute does, its own entity's included
+     * unless the attempt's failure took a route that does not continue: the attempts that follow are each a call of
+     * their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an Error, never throw
+     * to the caller.
      */
     Outcome<E, S, T> advance(E entity);
 
@@ -122,9 +129,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * after it: the binding check of a sub-machine, the edge lookup, the refusal of a reserved exit, then the guards
      * in declaration order until one rejects, each with the context it gets in execute; asynchronous guards are awaited
      * under this machine's asyncTimeout, counted from the start of the check. A check is no call: whatever it answers
-     * or throws, it writes no state, runs no action, hook or watch reaction, starts no sub-machine, runs no exit and
-     * tells no observer, and a context its guards got is stale once it ends. It answers for any identifier of the
-     * catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a check made where
+     * or throws, it writes no state, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine,
+     * runs no exit and tells no observer, and a context its guards got is stale once it ends. It answers for any
+     * identifier of the catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a
+     * check made where
      * no call may start, such as from a guard, an action or an observer, are refused before the check starts and
      * throw as themselves; while a check runs, no call or check may start on its thread either. A check that cannot
      * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error

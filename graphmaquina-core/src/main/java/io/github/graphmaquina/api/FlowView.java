@@ -9,9 +9,10 @@ import java.util.Set;
  * A read-only view of the flow of one call: the typed values that the steps and the post-commit hooks of the call
  * put, the entity of the root call and, when the root machine records it, the trail of what the call took. Every root
  * call has one flow, which all its steps share, cascaded steps and the exits of sub-machines included, whatever
- * entity each step moves, and so do its hooks; a watch reaction is a call of its own, with its own flow, and so is a
- * call that a hook makes. A guard receives this view from {@link GuardContext#flow()}; an action receives the
- * writable {@link FlowContext} from {@link TransitionContext#flow()}, and a hook from {@link CommitContext#flow()}.
+ * entity each step moves, and so do its hooks; a watch reaction is a call of its own, with its own flow, and so are an
+ * automatic attempt and a call that a hook makes. A guard receives this view from {@link GuardContext#flow()}; an
+ * action receives the writable {@link FlowContext} from {@link TransitionContext#flow()}, and a hook from
+ * {@link CommitContext#flow()}.
  * The view a context hands out works only on the thread running the guard or the action and only until the root
  * transaction ends, as that context's {@code flow()} says; the one a hook receives works only on the thread running
  * the hook and only while it runs. Each of these is equal only to itself. Once the call ended, its caller receives
@@ -82,9 +83,9 @@ public interface FlowView {
      * cannot date that one fails the call, whose trail then ends as a failed call's; an Error adds none. A hop or a
      * start whose instant the clock could not read, which fails the call, is left out. Empty unless the root
      * machine of the call was built with {@code recordTrail}: the root machine decides for the whole call, whatever
-     * the machines its steps cascade to or exit into, and a watch reaction, a call of its own, is decided by its own
-     * machine. Read during the call, it lists what the call took so far. The list is unmodifiable and does not follow
-     * later entries.
+     * the machines its steps cascade to or exit into, and a watch reaction or an automatic attempt, a call of its own,
+     * is decided by its own machine. Read during the call, it lists what the call took so far. The list is unmodifiable
+     * and does not follow later entries.
      */
     List<FlowEntry> trail();
 }

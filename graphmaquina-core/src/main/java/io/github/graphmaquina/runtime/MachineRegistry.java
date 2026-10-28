@@ -79,11 +79,13 @@ import lombok.RequiredArgsConstructor;
  * of its own too, but that registry is internal and unreachable, so nothing can close it, and the machine's default
  * executor is never closed.
  *
- * <p>A cascade, the exit of a sub-machine and a watch reaction each run one level deeper on the stack of the calling
- * thread, so that stack bounds maxCascadeDepth and maxWatchChain too. A call that outgrows it meets a
- * StackOverflowError, which reaches the actions on its way up, as {@link io.github.graphmaquina.api.TransitionContext}
- * says, and otherwise ends the call; in a watch chain, the root and the reactions before the one that overflowed have
- * committed already. Neither the registry nor the thread is left unusable by it: later calls run as before.
+ * <p>A cascade, the exit of a sub-machine, a watch reaction and an automatic attempt each run one level deeper on the
+ * stack of the calling thread than the step or the call that runs them, so that stack bounds maxCascadeDepth,
+ * maxWatchChain and maxAutomaticChain too; the attempts of one entity's chain run one after another at the same level.
+ * A call that outgrows it meets a StackOverflowError, which reaches the actions on its way up, as
+ * {@link io.github.graphmaquina.api.TransitionContext} says, and otherwise ends the call; in a watch chain or an
+ * automatic chain, the root and the reactions and attempts before the one that overflowed have committed already.
+ * Neither the registry nor the thread is left unusable by it: later calls run as before.
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {
@@ -105,6 +107,9 @@ public final class MachineRegistry implements AutoCloseable {
     private final int maxCascadeDepth;
     @Getter(AccessLevel.PACKAGE)
     private final int maxWatchChain;
+    /** How many automatic attempts may follow one another, as {@link Builder#maxAutomaticChain} says. */
+    @Getter(AccessLevel.PACKAGE)
+    private final int maxAutomaticChain;
     @Getter(AccessLevel.PACKAGE)
     private final Observers observers;
 
@@ -115,7 +120,7 @@ public final class MachineRegistry implements AutoCloseable {
     /** A registry of one, assembled as a registry builder would, with the default limits and no observer. */
     static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(
             StateMachines.Builder<E, S, T> builder) {
-        return assemble(List.of(builder), 10, 10, Observers.NONE).machineFor(builder.key());
+        return assemble(List.of(builder), 10, 10, 10, Observers.NONE).machineFor(builder.key());
     }
 
     /**
@@ -125,7 +130,8 @@ public final class MachineRegistry implements AutoCloseable {
      * parent's states.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
-                                            int maxCascadeDepth, int maxWatchChain, Observers observers) {
+                                            int maxCascadeDepth, int maxWatchChain, int maxAutomaticChain,
+                                            Observers observers) {
         Map<MachineKey<?, ?, ?>, StateMachines.Builder<?, ?, ?>> byKey = new HashMap<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             byKey.put(builder.key(), builder);
@@ -156,7 +162,7 @@ public final class MachineRegistry implements AutoCloseable {
             }
         }
         initializeRuntime();
-        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
+        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, maxAutomaticChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             registry.register(builder, bindings.getOrDefault(builder.key(), List.of()));
         }
@@ -275,9 +281,9 @@ public final class MachineRegistry implements AutoCloseable {
      *
      * @throws IllegalStateException before it closes anything, on a thread that runs an operation of one of those
      *         default executors, an asynchronous call or a {@code supplyAsync} supplier, which closing that executor
-     *         would wait for forever, whatever calls it there: an action, a hook or a watch reaction of the call, a
-     *         call a hook starts, or a dependent that completing the operation's future runs on that thread. The
-     *         registry stays open.
+     *         would wait for forever, whatever calls it there: an action, a hook, a watch reaction or an automatic
+     *         attempt of the call, a call a hook starts, or a dependent that completing the operation's future runs
+     *         on that thread. The registry stays open.
      */
     @Override
     public void close() {
@@ -354,9 +360,10 @@ public final class MachineRegistry implements AutoCloseable {
      * calls execute, reevaluate or advance ends that way too. {@code log} is the log of the call whose commit is
      * dispatched: at TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner
      * is a target, the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each
-     * reaction's log names its id as the trigger.
+     * reaction's log names its id as the trigger. Each reaction is one watch level above {@code levels}, at the same
+     * automatic level.
      */
-    List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
+    List<Reaction> dispatchWatches(CommitSummary summary, ChainLevels levels, CallLog log) {
         if (watchers.isEmpty()) {
             return List.of();
         }
@@ -388,7 +395,8 @@ public final class MachineRegistry implements AutoCloseable {
             }
         }
         for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
-            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
+            reactions.add(entry.getValue().react(entry.getKey().instance(),
+                    new ChainLevels(levels.watch() + 1, levels.automatic()), trigger));
         }
         return List.copyOf(reactions);
     }
@@ -426,6 +434,7 @@ public final class MachineRegistry implements AutoCloseable {
         private final List<StateMachines.Builder<?, ?, ?>> builders = new ArrayList<>();
         private int maxCascadeDepth = 10;
         private int maxWatchChain = 10;
+        private int maxAutomaticChain = 10;
         private final List<MachineObserver> observers = new ArrayList<>();
         private boolean used;
 
@@ -481,6 +490,26 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
+         * Bounds how many automatic attempts that commit something may follow one another on one path of
+         * continuations from a call of the application; the default is 10, and a value below 1 is refused. The k-th
+         * attempt of an entity's chain is k levels above the call whose commit started that chain, and the first
+         * attempt of an advance is at level 1. A watch reaction passes the level it was triggered at on unchanged, and
+         * an attempt passes the watch chain on unchanged. The attempt past the bound still tries its candidates: one
+         * that admits none ends Ignored, so a chain of exactly this many attempts ends as usual, and one that admits a
+         * candidate aborts before its action, writing nothing, with
+         * {@link io.github.graphmaquina.error.AutomaticChainExceededException}. A call that an after-commit hook
+         * starts is a new root, which this bound never counts, as {@link #maxWatchChain} says.
+         */
+        public Builder maxAutomaticChain(int chain) {
+            requireUnused();
+            if (chain < 1) {
+                throw new IllegalArgumentException("maxAutomaticChain must be greater than or equal to 1");
+            }
+            this.maxAutomaticChain = chain;
+            return this;
+        }
+
+        /**
          * Adds an observer of every call of the registry's machines. Observers add up and are notified in the order
          * they were added; see {@link MachineObserver} for what an observer is told and what it cannot do.
          */
@@ -504,7 +533,8 @@ public final class MachineRegistry implements AutoCloseable {
                 }
             }
             Observers registered = observers.isEmpty() ? Observers.NONE : new Observers(observers);
-            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, registered);
+            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, maxAutomaticChain,
+                    registered);
             used = true;
             return registry;
         }

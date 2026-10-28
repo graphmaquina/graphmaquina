@@ -3,14 +3,15 @@ package io.github.graphmaquina.api;
 import java.time.Duration;
 
 /**
- * Observes every call of a registry: each {@code execute}, {@code reevaluate} and {@code advance}, watch reactions
- * included, but not a cascade, which is part of the call that runs it. A call notifies {@link #onStarted} once, then
- * exactly one of {@link #onCompleted} and {@link #onFailed}, on the thread that runs it and before {@code execute},
- * {@code reevaluate} or {@code advance} returns or throws. A request refused before it starts notifies nothing: a null
- * argument, an identifier of another catalogue, or a call made where no call may start. An eligibility check, which
- * {@link StateMachine#eligibility} answers, is no call and notifies nothing either. Calls nest like a stack on their
- * thread: a watch reaction starts and ends inside the {@link CallPhase#REACTIONS} phase of the call that triggered it.
- * A machine built standalone has no observers.
+ * Observes every call of a registry: each {@code execute}, {@code reevaluate} and {@code advance}, watch reactions and
+ * automatic attempts included, but not a cascade, which is part of the call that runs it. A call notifies
+ * {@link #onStarted} once, then exactly one of {@link #onCompleted} and {@link #onFailed}, on the thread that runs it
+ * and before {@code execute}, {@code reevaluate} or {@code advance} returns or throws. A request refused before it
+ * starts notifies nothing: a null argument, an identifier of another catalogue, or a call made where no call may start.
+ * An eligibility check, which {@link StateMachine#eligibility} answers, is no call and notifies nothing either. Calls
+ * nest like a stack on their thread: a watch reaction starts and ends inside the {@link CallPhase#REACTIONS} phase of
+ * the call that triggered it, and an automatic attempt inside the {@link CallPhase#AUTOMATIC_STEPS} phase of the call
+ * whose commit triggered it. A machine built standalone has no observers.
  *
  * <p>An observer watches without taking part:
  * <ul>

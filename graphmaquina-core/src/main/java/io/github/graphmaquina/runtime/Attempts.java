@@ -7,14 +7,18 @@ import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.error.AbortDetails;
+import io.github.graphmaquina.error.AutomaticChainExceededException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * An automatic attempt on an entity of a machine, which {@code advance} makes: under the reentrancy marker, the state
- * read and the automatic edges of that state, its candidates; then, when there are any, a root call that tries them
- * in order, each as the root step of an execute of its identifier, and runs the first one admitted.
+ * An automatic attempt on an entity of a machine, which {@code advance} makes, and each step of an automatic chain as
+ * {@link AutomaticChains} runs it: under the reentrancy marker, the state read and the automatic edges of that state,
+ * its candidates; then, when there are any, a root call that tries them in order, each as the root step of an execute
+ * of its identifier, and runs the first one admitted.
  */
 final class Attempts {
 
@@ -27,11 +31,18 @@ final class Attempts {
      * {@link Reevaluation#unresolvedEnd} says. A state without automatic edges ends it with an Ignored of
      * NO_AUTOMATIC_TRANSITION, which ran no step. Otherwise the candidates run as a root call, as
      * {@link #firstAdmitted} says. {@code origin} says who made the call and {@code trigger} is the id the start line
-     * names, empty for an advance the application made.
+     * names, empty for an advance the application made. {@code levels} is where the attempt stands in the watch and
+     * automatic chains: an attempt whose automatic level is above maxAutomaticChain still tries its candidates, and the
+     * one admitted throws an AutomaticChainExceededException once its guards passed, as {@link #exceeded} says.
+     * {@code continuing} is the entity of the chain this attempt is a step of, which the attempt's own commit chains no
+     * further, and empty for an advance the application made. The attempt hands back what its commit says of its
+     * entity, as {@link #attemptOf} reads it.
      */
-    static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> attempt(DefaultStateMachine<E, S, T> machine,
+    static <E, S extends Enum<S>, T extends Enum<T>> Attempt<E, S, T> attempt(DefaultStateMachine<E, S, T> machine,
                                                                              E entity, CallOrigin origin,
-                                                                             Optional<Long> trigger) {
+                                                                             Optional<Long> trigger,
+                                                                             ChainLevels levels,
+                                                                             Optional<EntityRef> continuing) {
         Reentrancy.check(machine.key(), entity);
         CallLog log = CallLog.open(trigger);
         Optional<Observed> observed = RootCall.observe(machine, entity, CallRequest.ADVANCE, Optional.empty(), origin,
@@ -54,11 +65,49 @@ final class Attempts {
             throw thrown;
         }
         if (candidates.isEmpty()) {
-            return RootCall.ignored(observed, log,
+            Outcome<E, S, T> ignored = RootCall.ignored(observed, log,
                     new Outcome.Ignored<>(entity, state, IgnoreReason.NO_AUTOMATIC_TRANSITION));
+            return new Attempt<>(ignored, Set.of(), false, state);
         }
-        return RootCall.run(machine, entity, CallRequest.ADVANCE, Optional.empty(), origin, observed, log,
-                (Transaction tx) -> firstAdmitted(tx, machine, entity, state, candidates), 0);
+        boolean limited = levels.automatic() > machine.registry().maxAutomaticChain();
+        Committed<E, S, T> committed = RootCall.run(machine, entity, CallRequest.ADVANCE, Optional.empty(), origin,
+                observed, log, (Transaction tx) -> {
+                    if (limited) {
+                        tx.refuseRootActionWith(() -> exceeded(tx, machine));
+                    }
+                    return firstAdmitted(tx, machine, entity, state, candidates);
+                }, levels, continuing);
+        return attemptOf(machine, entity, state, committed);
+    }
+
+    /**
+     * What {@code committed} says of {@code entity}: the entry its commit summary lists for it, found by the very
+     * instance, which a commit registers once, says whether it stops the chain and the state it leaves the entity in.
+     * An attempt that committed nothing lists none: it stops no chain, and its state is {@code read}, the one it read.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Attempt<E, S, T> attemptOf(
+            DefaultStateMachine<E, S, T> machine, E entity, S read, Committed<E, S, T> committed) {
+        for (ChainStart start : committed.summary().chainStarts()) {
+            if (start.ref().instance() == entity && start.ref().key().equals(machine.key())) {
+                return new Attempt<>(committed.outcome(), committed.movedBelow(), start.stopsChain(),
+                        machine.key().states().cast(start.state()));
+            }
+        }
+        return new Attempt<>(committed.outcome(), committed.movedBelow(), false, read);
+    }
+
+    /**
+     * The abort of an attempt past maxAutomaticChain, which its admitted candidate throws once its guards passed,
+     * before the call enters ACTION: an abort of the attempt's own call, in the phase the call is in, GUARD when the
+     * candidate has guards and RESOLVE otherwise, that describes the root step in flight, the candidate's edge, with
+     * no action. The candidate's action never runs, and nothing is written.
+     */
+    private static AutomaticChainExceededException exceeded(Transaction tx, DefaultStateMachine<?, ?, ?> machine) {
+        InFlight root = tx.uow().rootFrame();
+        AbortDetails details = tx.details(machine, root.ref(), root.spec().from(), Optional.of(root.transition()),
+                Optional.of(root.spec().to()), Optional.empty());
+        return new AutomaticChainExceededException(tx.call(), tx.phase(), details,
+                machine.registry().maxAutomaticChain());
     }
 
     /**

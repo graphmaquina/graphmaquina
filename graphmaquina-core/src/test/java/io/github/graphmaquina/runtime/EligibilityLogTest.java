@@ -287,7 +287,7 @@ class EligibilityLogTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#d1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#d1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE check=B start Doc/DocStatus SUBMIT",
                     "FINE check=B end verdict=ELIGIBLE transition=SUBMIT state=DRAFT entity=Doc/DocStatus#d1"
                             + " elapsed=<us>"),

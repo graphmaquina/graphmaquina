@@ -201,7 +201,7 @@ class RuntimeLogTraceTest {
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINER call=A hook Notify Doc/DocStatus#1 SUBMIT",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -219,12 +219,12 @@ class RuntimeLogTraceTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINER call=A depth=0 no-edge Doc/DocStatus#1 REVIEW SUBMIT",
                     "FINE call=A end code=NO_TRANSITION state=REVIEW entity=Doc/DocStatus#1 records=0 starts=0"
-                            + " reactions=0 aborted=0 reason=\"a review is published\" elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 reason=\"a review is published\" elapsed=<us>",
                     "FINE call=B start Doc/DocStatus SUBMIT",
                     "FINER call=B depth=0 resolved Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW kind=MOVE",
                     "FINER call=B depth=0 guard Ready REJECT reason=\"no reviewer\" elapsed=<us>",
                     "FINE call=B end code=GUARD_REJECTED state=DRAFT entity=Doc/DocStatus#2 records=0 starts=0"
-                            + " reactions=0 aborted=0 reason=\"no reviewer\" elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 reason=\"no reviewer\" elapsed=<us>"), lines(log));
         }
     }
 
@@ -259,7 +259,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter Doc/DocStatus#1 DRAFT -> ARCHIVED entries=1",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -DISCARD-> ARCHIVED depth=0",
                     "FINE call=A end code=FAILURE_ROUTED state=ARCHIVED entity=Doc/DocStatus#1 records=1 starts=0"
-                            + " reactions=0 aborted=0 reason=\"the reviewer is busy\" elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 reason=\"the reviewer is busy\" elapsed=<us>",
                     "FINE call=B start Doc/DocStatus SUBMIT",
                     "FINER call=B depth=0 resolved Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
                     "FINER call=B depth=0 action Review start mode=sync",
@@ -271,7 +271,8 @@ class RuntimeLogTraceTest {
                     "FINER call=B setter Doc/DocStatus#2 DRAFT -> ARCHIVED entries=1",
                     "FINE call=B committed Doc/DocStatus#2 DRAFT -DISCARD-> ARCHIVED depth=0",
                     "FINE call=B end code=FAILURE_ROUTED state=ARCHIVED entity=Doc/DocStatus#2 records=1 starts=0"
-                            + " reactions=0 aborted=0 reason=\"the reviewer is away\" elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 reason=\"the reviewer is away\" elapsed=<us>"),
+                    lines(log));
         }
     }
 
@@ -329,7 +330,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter Doc/DocStatus#1 DRAFT -> ARCHIVED entries=1",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -DISCARD-> ARCHIVED depth=0",
                     "FINE call=A end code=FAILURE_ROUTED state=ARCHIVED entity=Doc/DocStatus#1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=B start Doc/DocStatus SUBMIT",
                     "FINER call=B depth=0 resolved Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
                     "FINER call=B depth=0 action Review start mode=sync",
@@ -410,7 +411,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter Doc/DocStatus#1 DRAFT -> REVIEW entries=1",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>",
+                            + " aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=B start Doc/DocStatus SUBMIT",
                     "FINER call=B depth=0 resolved Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
                     "FINER call=B depth=0 action Review start mode=async",
@@ -459,7 +460,7 @@ class RuntimeLogTraceTest {
                     "FINE call=A committed Item/ItemStatus#i1 PACKING -PACK-> PACKED depth=1",
                     "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner-state=CANCELLED",
                     "FINE call=A end code=APPLIED state=CANCELLED entity=Order/OrderStatus#o1 records=3 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -532,7 +533,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner-state=CANCELLED",
                     "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i2 owner-state=CANCELLED",
                     "FINE call=A end code=APPLIED state=CANCELLED entity=Order/OrderStatus#o1 records=3 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -737,7 +738,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A watch watcher=Booking/BookingStatus moved=Payment/PaymentStatus#d1 owner=none",
                     "FINER call=A watch watcher=Booking/BookingStatus moved=Payment/PaymentStatus#p2 owner=none",
                     "FINE call=A end code=APPLIED state=CAPTURED entity=Payment/PaymentStatus#d1 records=2 starts=1"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -754,8 +755,8 @@ class RuntimeLogTraceTest {
                     "FINER call=A depth=0 detached Payment/PaymentStatus#d1"
                             + " reason=\"no parent holds it in DEPOSIT or BALANCE\"",
                     "FINE call=A end code=DETACHED state=AUTHORIZING entity=Payment/PaymentStatus#d1 records=0"
-                            + " starts=0 reactions=0 aborted=0 reason=\"no parent holds it in DEPOSIT or BALANCE\""
-                            + " elapsed=<us>"), lines(log));
+                            + " starts=0 reactions=0 aborted=0 automatic=0 reason=\"no parent holds it in DEPOSIT or"
+                            + " BALANCE\" elapsed=<us>"), lines(log));
         }
     }
 
@@ -784,7 +785,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter Account/AccountStatus#a1 ADDRESS_SET -> ACTIVE entries=1",
                     "FINE call=A committed Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE-> ACTIVE depth=0",
                     "FINE call=A end code=APPLIED state=ACTIVE entity=Account/AccountStatus#a1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=B start Account/AccountStatus advance",
                     "FINER call=B depth=0 resolved Account/AccountStatus#a2 INFO_SET -COMPLETE_ADDRESS-> ADDRESS_SET"
                             + " kind=ACTION",
@@ -792,12 +793,12 @@ class RuntimeLogTraceTest {
                     "FINER call=B depth=0 candidate COMPLETE_ADDRESS refused GUARD guard=addressComplete:"
                             + " address is incomplete",
                     "FINE call=B end code=NO_CANDIDATE_ADMITTED state=INFO_SET entity=Account/AccountStatus#a2"
-                            + " records=0 starts=0 reactions=0 aborted=0 reason=\"no automatic transition was"
-                            + " admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
+                            + " records=0 starts=0 reactions=0 aborted=0 automatic=0 reason=\"no automatic transition"
+                            + " was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
                             + " elapsed=<us>",
                     "FINE call=C start Account/AccountStatus advance",
                     "FINE call=C end code=NO_AUTOMATIC_TRANSITION state=REVIEW records=0 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -1016,9 +1017,9 @@ class RuntimeLogTraceTest {
                     "FINER call=B setter Order/OrderStatus#o1 PAID -> SHIPPED entries=1",
                     "FINE call=B committed Order/OrderStatus#o1 PAID -SHIP-> SHIPPED depth=0",
                     "FINE call=B end code=APPLIED state=SHIPPED entity=Order/OrderStatus#o1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=A end code=APPLIED state=PACKED entity=Item/ItemStatus#i2 records=1 starts=0"
-                            + " reactions=1 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=1 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -1052,7 +1053,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A watch-lookup-threw watcher=Doc/DocStatus moved=Doc/DocStatus#1"
                             + " error=java.lang.IllegalStateException: no owner index",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=1"
-                            + " aborted=1 elapsed=<us>"), lines(log));
+                            + " aborted=1 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -1092,7 +1093,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A watch-lookup-threw watcher=Doc/DocStatus moved=Doc/DocStatus#1"
                             + " error=java.lang.IllegalStateException: unhashable identity",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=1"
-                            + " aborted=1 elapsed=<us>"), lines(log));
+                            + " aborted=1 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -1120,7 +1121,7 @@ class RuntimeLogTraceTest {
                         "FINE call=A start Doc/DocStatus SUBMIT",
                         "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                         "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0"
-                                + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                                + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
             }
             assertEquals(2, printed.get());
             try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
@@ -1153,7 +1154,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter Lamp/Shade#l1 DARK -> LIT entries=1",
                     "FINE call=A committed Lamp/Shade#l1 DARK -LIGHT-> LIT depth=0",
                     "FINE call=A end code=APPLIED state=LIT entity=Lamp/Shade#l1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -1174,7 +1175,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A setter " + marker + " DRAFT -> REVIEW entries=1",
                     "FINE call=A committed " + marker + " DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=" + marker + " records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 

@@ -45,13 +45,17 @@ Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain
 `IllegalStateException`.
 
 Both limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
-reaction runs one level deeper, so that stack bounds them too. How many levels a stack holds depends on the JIT, on
-the platform and on the frames of your own callbacks. As one measure, with an action that only cascades to the next
+reaction runs one level deeper, so that stack bounds them too. So does each automatic attempt that a commit triggers,
+one level deeper than the call whose commit triggered it, while the attempts of one entity's chain run one after
+another at the same level; `MachineRegistry.builder().maxAutomaticChain(int)` bounds how many attempts may follow one
+another on one path of continuations, 10 by default and at least 1: the attempt one past it that admits a candidate
+aborts, before its action runs, with `AutomaticChainExceededException`. How many levels a stack holds depends on the
+JIT, on the platform and on the frames of your own callbacks. As one measure, with an action that only cascades to the next
 entity, on JDK 21.0.9 on macOS arm64, a thread of 1 MiB held about 300 to 450 cascade levels, and one of 8 MiB about
 2,600 over the first calls of the JVM and about 30,000 once the JIT had optimized the engine's code. A call that goes deeper than its thread's stack meets a `StackOverflowError`, which reaches your actions
-on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch chain,
-the root and the reactions before the one that overflowed have committed already. The registry and the thread are not
-left unusable by it: later calls run as before. Keep the limits within what the stacks of your threads hold, or run
+on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch chain or
+an automatic chain, the root and the reactions and attempts before the one that overflowed have committed already. The
+registry and the thread are not left unusable by it: later calls run as before. Keep the limits within what the stacks of your threads hold, or run
 deep calls on threads with a larger stack.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
@@ -351,8 +355,9 @@ is currently in the watched state and deduplicates owners within that dispatch. 
 A reaction failure does not roll back the peer commit that triggered it. A sub-machine start that moved its child from
 another state counts as a move here, although a start is no hop.
 
-The reactions run on the calling thread, after the triggering call's hooks and before `execute` or `reevaluate`
-returns. Every owner lookup runs before any reaction, and the call's outcome lists them in `reactions()`: first the
+The reactions run on the calling thread, after the triggering call's hooks and before its automatic chains, as
+[commit, hooks and observers](commit-and-persistence.md#commit-hooks-and-observers) orders them, and before `execute`,
+`reevaluate` or `advance` returns. Every owner lookup runs before any reaction, and the call's outcome lists them in `reactions()`: first the
 `Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and
 a `Reaction.Aborted` what ended it, as [records, journals and reactions](outcomes.md#records-journals-and-reactions)
 details. An aborted reevaluation names the owner it reevaluated; an owner lookup that threw names the peer that moved.

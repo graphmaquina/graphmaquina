@@ -9,5 +9,11 @@ public enum CallOrigin {
     APPLICATION,
 
     /** A watch reaction called it, as a call of its own, after a peer moved. */
-    WATCH_REACTION
+    WATCH_REACTION,
+
+    /**
+     * An automatic step called it: an advance of an entity that a commit moved, as a call of its own, once that commit
+     * ran its watch reactions.
+     */
+    AUTOMATIC_STEP
 }

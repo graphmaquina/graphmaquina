@@ -21,8 +21,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * Every outcome answers {@link Outcome#flow()}: an applied, failed or rejected outcome carries it as its last
- * component, and its constructors without it give {@link FlowView#empty()}; an ignored outcome answers the empty view.
+ * Every outcome answers {@link Outcome#flow()}: an applied, failed or rejected outcome carries it as a component, and
+ * its constructors without it give {@link FlowView#empty()}; an ignored outcome answers the empty view.
  * The flow is part of an outcome's value (spec D6): two outcomes are equal only when their flows are.
  */
 class OutcomeFlowTest {
@@ -40,12 +40,12 @@ class OutcomeFlowTest {
     }
 
     private static Outcome.Applied<Doc, DocStatus, DocTransition> applied(FlowView flow) {
-        return new Outcome.Applied<>(DOC, DRAFT, SUBMIT, REVIEW, List.of(), List.of(), List.of(), flow);
+        return new Outcome.Applied<>(DOC, DRAFT, SUBMIT, REVIEW, List.of(), List.of(), List.of(), flow, List.of());
     }
 
     private static Outcome.Failed<Doc, DocStatus, DocTransition> failed(FlowView flow) {
         return new Outcome.Failed<>(DOC, DRAFT, SUBMIT, REVIEW, DISCARD, ARCHIVED, "declined", Optional.empty(),
-                List.of(), List.of(), Optional.of(Declined.class), List.of(), flow);
+                List.of(), List.of(), Optional.of(Declined.class), List.of(), flow, List.of());
     }
 
     private static Outcome.Rejected<Doc, DocStatus, DocTransition> rejected(FlowView flow) {

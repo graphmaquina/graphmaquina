@@ -12,7 +12,7 @@ their text in the page.
 | [Build pipeline](build-pipeline.svg) | Build-time generation, compilation, completion and runtime boundary |
 | [Ticket workflow](ticket-workflow.svg) | The quickstart's four states and six identified edges, including two parallel edges and a self-loop |
 | [Operation decisions](operation-decisions.svg) | How one identifier selects one edge, which outcome each path produces, and how far an eligibility check runs before it answers |
-| [Commit lifecycle](commit-lifecycle.svg) | Shared unit of work and the normal post-commit sequence, up to the outcome returned with the call's frozen flow and its reactions |
+| [Commit lifecycle](commit-lifecycle.svg) | Shared unit of work and the normal post-commit sequence, hooks, watch reactions and automatic steps, up to the outcome returned with the call's frozen flow, its reactions and its automatic steps |
 | [Watch reactions](watch-reactions.svg) | Item commit followed by an independent owner reaction |
 | [Sub-machine binding](submachine-binding.svg) | One payment machine bound in two states of a booking: the starts, the exits from the child's terminal states, an interruption from the state's border, and the three rules of a binding |
 | [Annotation bootstrap](annotation-bootstrap.svg) | The first build: a generator reads the original Java source and writes the typed vocabulary, then javac compiles both together |

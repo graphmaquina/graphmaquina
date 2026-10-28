@@ -6,6 +6,7 @@ import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
 import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
+import static io.github.graphmaquina.fixtures.DocTransition.RETOUCH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -112,7 +113,8 @@ class RuntimeInitializationTest {
         InitializationLog log = new InitializationLog(output, library);
         assertEquals(List.of("SUBMIT APPLIED", "PUBLISH TransitionAbortedException",
                 "SUBMIT TransitionAbortedException", "SUBMIT AssertionError", "SUBMIT CascadeException",
-                "PUBLISH GUARD_REJECTED", "reevaluate NO_WATCH", "ARCHIVE APPLIED", "supplyAsync done"), log.calls,
+                "PUBLISH GUARD_REJECTED", "reevaluate NO_WATCH", "ARCHIVE APPLIED", "advance APPLIED",
+                "supplyAsync done"), log.calls,
                 String.join("\n", output));
         List<String> notBefore = new ArrayList<>();
         for (Class<?> type : MachineRegistry.staticallyInitialized()) {
@@ -247,9 +249,9 @@ class RuntimeInitializationTest {
 
     /**
      * Assembles a registry with an observer, prints {@code ASSEMBLED}, then runs calls through the paths a call can
-     * take, printing {@code CALL} and how each ended: a cascade that commits with a hook, a guard that throws, a
-     * nested abort and a nested Error that the action caught, a COLLECT that aggregates, a rejection, a reevaluation
-     * with no watch, an asynchronous action and a supplyAsync.
+     * take, printing {@code CALL} and how each ended: a cascade that commits with a hook, whose peer then runs its
+     * automatic chain, a guard that throws, a nested abort and a nested Error that the action caught, a COLLECT that
+     * aggregates, a rejection, a reevaluation with no watch, an asynchronous action, an advance and a supplyAsync.
      */
     public static final class CallsAfterAssembly {
 
@@ -267,6 +269,7 @@ class RuntimeInitializationTest {
             call("PUBLISH", () -> docs.execute(new Doc("rejected", REVIEW), PUBLISH));
             call("reevaluate", () -> docs.reevaluate(new Doc("still", DRAFT)));
             call("ARCHIVE", () -> docs.execute(new Doc("archived", PUBLISHED), ARCHIVE));
+            call("advance", () -> docs.advance(new Doc("retouched", PUBLISHED)));
             System.out.println("CALL supplyAsync " + docs.supplyAsync(() -> "done").get(10, TimeUnit.SECONDS));
             registry.close();
         }
@@ -290,6 +293,7 @@ class RuntimeInitializationTest {
                         .asyncAction("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                                 CompletableFuture.completedFuture(ActionOutcome.ok()))
                         .endTransition()
+                    .transition(RETOUCH, PUBLISHED, ARCHIVED).automatic().endTransition()
                     .build();
         }
 

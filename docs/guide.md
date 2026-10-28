@@ -65,7 +65,7 @@ flowchart LR
     facade --> engine["Runtime<br/>graphmaquina-core"]
     engine -- "guards, then the action" --> bindings["Your bindings<br/>TicketActions"]
     engine -- "commit through the state setter" --> entity["Your entity<br/>Ticket"]
-    engine -- "after a commit" --> after["Hooks and watch reactions"]
+    engine -- "after a commit" --> after["Hooks, watch reactions and automatic chains"]
     engine -- "at the start and end of every call" --> observers["Observers"]
     engine -- "Outcome" --> app
 ```
@@ -90,7 +90,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | Do both machines commit together? | [Cascade versus watch](images/cascade-vs-watch.svg) | [Machine coordination](coordination.md#read-peers-and-cascade-transitions) |
 | When does an owner react to its peers? | [Watch reactions](images/watch-reactions.svg) | [Watch other machines](coordination.md#watch-other-machines) |
 | How does a state hold a whole machine? | [Sub-machine binding](images/submachine-binding.svg) | [Compose machines](composition.md) |
-| When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](commit-and-persistence.md#commit-hooks-and-observers) |
+| When do hooks, reactions and automatic steps run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](commit-and-persistence.md#commit-hooks-and-observers) |
 | What does a call share between its steps, and what does its caller get back? | [One call's flow](images/call-flow.svg) | [The call's flow](call-flow.md) |
 
 ## Requirements and artifacts

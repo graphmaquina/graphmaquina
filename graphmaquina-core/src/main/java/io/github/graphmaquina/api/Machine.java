@@ -20,7 +20,8 @@ public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
      * Makes one automatic attempt, as {@link StateMachine#advance} says: runs the first automatic edge of the entity's
      * state that is admitted, trying them in their declared order, or returns {@link Outcome.Ignored}, never
      * {@link Outcome.Rejected}, with {@link IgnoreReason#NO_AUTOMATIC_TRANSITION} or
-     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED}. A failure throws as it would in an operation.
+     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED}. A failure throws as it would in an operation. The attempts that
+     * follow once it committed are in {@link Outcome#automaticSteps()}.
      */
     Outcome<E, S, T> advance(E entity);
 

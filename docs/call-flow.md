@@ -177,8 +177,8 @@ the same values: that is why the shop gives each item's restock a key of its own
 
 ## Read the flow after the call
 
-A call that returns freezes its flow once its hooks and its watch reactions ran, and one that fails freezes it as
-it stood when the call failed. The caller reads it as `flow()` on the outcome the call returns, or `flow()` on the
+A call that returns freezes its flow once its hooks, its watch reactions and its automatic chains ran, and one that
+fails freezes it as it stood when the call failed. The caller reads it as `flow()` on the outcome the call returns, or `flow()` on the
 `CallFailedException` it throws. Both are a `FlowView`, which prints as `FrozenFlow[keys=...]`, its keys alone, and is read with `get`,
 `keys()`, `entity()` and `trail()` as a guard reads it. For instance, a REST handler that cancels an order can answer
 with the cancellation the call recorded, whether the call returned or failed:

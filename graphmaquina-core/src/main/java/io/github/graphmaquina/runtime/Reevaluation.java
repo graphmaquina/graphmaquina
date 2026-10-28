@@ -36,9 +36,10 @@ final class Reevaluation {
     private Reevaluation() { }
 
     /**
-     * chain counts reaction -> transition -> reaction, so a chain above 0 is a watch reaction. Exceeding
-     * maxWatchChain throws WatchChainExceededException after the reentrancy check and the state read, before any
-     * watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
+     * The watch level of {@code levels} counts reaction -> transition -> reaction, so a level above 0 is a watch
+     * reaction; the automatic level passes on to the commit of the selected edge, whose chains start above it.
+     * Exceeding maxWatchChain throws WatchChainExceededException after the reentrancy check and the state read, before
+     * any watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
      * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
@@ -52,10 +53,10 @@ final class Reevaluation {
      * application made.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> reevaluate(DefaultStateMachine<E, S, T> machine,
-                                                                               E entity, int chain,
+                                                                               E entity, ChainLevels levels,
                                                                                Optional<Long> trigger) {
         Reentrancy.check(machine.key(), entity);
-        CallOrigin origin = chain > 0 ? CallOrigin.WATCH_REACTION : CallOrigin.APPLICATION;
+        CallOrigin origin = levels.watch() > 0 ? CallOrigin.WATCH_REACTION : CallOrigin.APPLICATION;
         CallLog log = CallLog.open(trigger);
         Optional<Observed> observed = RootCall.observe(machine, entity, CallRequest.REEVALUATE,
                 Optional.empty(), origin, log);
@@ -69,7 +70,7 @@ final class Reevaluation {
             boolean[] marker = Reentrancy.enter(machine.key(), entity);
             try {
                 state = stateOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
-                requireChain(machine, entity, observed, origin, state, chain);
+                requireChain(machine, entity, observed, origin, state, levels.watch());
                 watch = machine.definition().watch(state);
                 if (watch.isPresent()) {
                     selected = selection(machine, watch.get(), entity, observed, origin, state);
@@ -89,7 +90,7 @@ final class Reevaluation {
         }
         T resolved = selected.orElseThrow();
         return RootCall.run(machine, entity, CallRequest.REEVALUATE, Optional.empty(), origin, observed, log,
-                (Transaction tx) -> tx.transition(machine, entity, resolved, 0), chain);
+                (Transaction tx) -> tx.transition(machine, entity, resolved, 0), levels, Optional.empty()).outcome();
     }
 
     /**

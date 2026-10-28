@@ -179,7 +179,7 @@ class RuntimeLogBackendFailureTest {
                         machine.execute(committed, SUBMIT)));
         assertEquals(REVIEW, committed.status());
         Doc applied = new Doc("2", DRAFT);
-        assertEquals(List.of("failed with the backend's Error in REACTIONS, ALL"), terminalEvents(" end code=",
+        assertEquals(List.of("failed with the backend's Error in AUTOMATIC_STEPS, ALL"), terminalEvents(" end code=",
                 readable(plain()), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
                         machine.execute(applied, SUBMIT)));
         assertEquals(REVIEW, applied.status());

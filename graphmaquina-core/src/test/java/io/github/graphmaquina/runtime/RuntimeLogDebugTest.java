@@ -146,7 +146,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -163,10 +163,10 @@ class RuntimeLogDebugTest {
             assertEquals(List.of(
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A end code=NO_TRANSITION state=REVIEW entity=Doc/DocStatus#1 records=0 starts=0"
-                            + " reactions=0 aborted=0 reason=\"a review is published\" elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 reason=\"a review is published\" elapsed=<us>",
                     "FINE call=B start Doc/DocStatus SUBMIT",
                     "FINE call=B end code=GUARD_REJECTED state=DRAFT entity=Doc/DocStatus#2 records=0 starts=0"
-                            + " reactions=0 aborted=0 reason=\"no reviewer\" elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 reason=\"no reviewer\" elapsed=<us>"), lines(log));
         }
     }
 
@@ -184,7 +184,8 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -DISCARD-> ARCHIVED depth=0",
                     "FINE call=A end code=FAILURE_ROUTED state=ARCHIVED entity=Doc/DocStatus#1 records=1 starts=0"
-                            + " reactions=0 aborted=0 reason=\"the reviewer is away\" elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 reason=\"the reviewer is away\" elapsed=<us>"),
+                    lines(log));
         }
     }
 
@@ -284,7 +285,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A committed Order/OrderStatus#o1 NEW -CANCEL-> CANCELLED depth=0",
                     "FINE call=A committed Item/ItemStatus#i1 PENDING -CANCEL-> CANCELLED depth=1",
                     "FINE call=A end code=APPLIED state=CANCELLED entity=Order/OrderStatus#o1 records=2 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -300,7 +301,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A started Payment/PaymentStatus#d1 CAPTURED -> AUTHORIZING"
                             + " parent=Booking/BookingStatus#b1 node=DEPOSIT depth=0",
                     "FINE call=A end code=APPLIED state=DEPOSIT entity=Booking/BookingStatus#b1 records=1 starts=1"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -326,16 +327,16 @@ class RuntimeLogDebugTest {
                     "FINE call=B start Order/OrderStatus reevaluate trigger=A",
                     "FINE call=B committed Order/OrderStatus#o1 PAID -SHIP-> SHIPPED depth=0",
                     "FINE call=B end code=APPLIED state=SHIPPED entity=Order/OrderStatus#o1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>",
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=A end code=APPLIED state=PACKED entity=Item/ItemStatus#i2 records=1 starts=0"
-                            + " reactions=1 aborted=0 elapsed=<us>",
+                            + " reactions=1 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=C start Item/ItemStatus PACK",
                     "FINE call=C committed Item/ItemStatus#i2 PACKING -PACK-> PACKED depth=0",
                     "FINE call=D start Order/OrderStatus reevaluate trigger=C",
                     "FINE call=D failed phase=ACTION written=NONE entity=Order/OrderStatus#o1 error="
                             + reaction.cause() + " elapsed=<us>",
                     "FINE call=C end code=APPLIED state=PACKED entity=Item/ItemStatus#i2 records=1 starts=0"
-                            + " reactions=1 aborted=1 elapsed=<us>"), lines(log));
+                            + " reactions=1 aborted=1 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -381,9 +382,9 @@ class RuntimeLogDebugTest {
                     "FINE call=C start Doc/DocStatus reevaluate trigger=B",
                     "FINE call=C failed phase=RESOLVE written=NONE error=" + refused.cause() + " elapsed=<us>",
                     "FINE call=B end code=APPLIED state=DRAFT entity=Doc/DocStatus#d1 records=1 starts=0 reactions=1"
-                            + " aborted=1 elapsed=<us>",
+                            + " aborted=1 automatic=0 elapsed=<us>",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#d1 records=1 starts=0 reactions=1"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -398,7 +399,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus reevaluate",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -414,11 +415,11 @@ class RuntimeLogDebugTest {
             registry.of(DOCS).reevaluate(unmatched);
             assertEquals(List.of(
                     "FINE call=A start Doc/DocStatus reevaluate",
-                    "FINE call=A end code=NO_WATCH state=REVIEW records=0 starts=0 reactions=0 aborted=0"
+                    "FINE call=A end code=NO_WATCH state=REVIEW records=0 starts=0 reactions=0 aborted=0 automatic=0"
                             + " elapsed=<us>",
                     "FINE call=B start Doc/DocStatus reevaluate",
                     "FINE call=B end code=NO_RULE_MATCHED state=DRAFT records=0 starts=0 reactions=0 aborted=0"
-                            + " elapsed=<us>"), lines(log));
+                            + " automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -522,7 +523,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed " + ref + " DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=" + ref + " records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -543,7 +544,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
             for (LogRecord record : log.records()) {
                 assertEquals(worker, record.getLongThreadID());
             }
@@ -564,7 +565,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed " + marker + " DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=" + marker + " records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -595,7 +596,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Order/OrderStatus reevaluate",
                     "FINE call=A committed Order/OrderStatus#o1 PAID -SHIP-> SHIPPED depth=0",
                     "FINE call=A end code=APPLIED state=SHIPPED entity=Order/OrderStatus#o1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -639,7 +640,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus PUBLISH",
                     "FINE call=A committed Doc/DocStatus#1 REVIEW -PUBLISH-> PUBLISHED depth=0",
                     "FINE call=A end code=APPLIED state=PUBLISHED entity=Doc/DocStatus#1 records=1 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -666,7 +667,7 @@ class RuntimeLogDebugTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 

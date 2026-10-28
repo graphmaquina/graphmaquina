@@ -766,7 +766,7 @@ class FlowBagTest {
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -DISCARD-> ARCHIVED depth=0",
                     "FINE call=A committed Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW depth=1",
                     "FINE call=A end code=APPLIED state=ARCHIVED entity=Doc/DocStatus#1 records=2 starts=0"
-                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+                            + " reactions=0 aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -788,7 +788,7 @@ class FlowBagTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
         assertEquals(0, counted.printed.get());
     }

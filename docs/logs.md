@@ -41,15 +41,15 @@ With this file, a ticket machine like the quickstart's, without its `committed` 
 ```text
 FINE: call=1 start Ticket/TicketState SUBMIT
 FINE: call=1 committed Ticket/TicketState#T-1 OPEN -SUBMIT-> REVIEW depth=0
-FINE: call=1 end code=APPLIED state=REVIEW entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 elapsed=15033us
+FINE: call=1 end code=APPLIED state=REVIEW entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 automatic=0 elapsed=15033us
 FINE: call=2 start Ticket/TicketState APPROVE
 FINE: call=2 committed Ticket/TicketState#T-1 REVIEW -APPROVE-> DONE depth=0
-FINE: call=2 end code=APPLIED state=DONE entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 elapsed=322us
+FINE: call=2 end code=APPLIED state=DONE entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 automatic=0 elapsed=322us
 FINE: call=3 start Ticket/TicketState SUBMIT
-FINE: call=3 end code=GUARD_REJECTED state=OPEN entity=Ticket/TicketState#T-2 records=0 starts=0 reactions=0 aborted=0 reason="a ticket needs a title" elapsed=658us
+FINE: call=3 end code=GUARD_REJECTED state=OPEN entity=Ticket/TicketState#T-2 records=0 starts=0 reactions=0 aborted=0 automatic=0 reason="a ticket needs a title" elapsed=658us
 FINE: call=4 start Ticket/TicketState SUBMIT
 FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
-FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=1060us
+FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 automatic=0 reason="the review board declined the ticket" elapsed=1060us
 ```
 
 With both levels at `FINER`, the fourth of those calls, whose action fails into its route, logs these lines:
@@ -64,7 +64,7 @@ FINER: call=4 depth=0 route SUBMIT -> DECLINE rollback-to=0 reason="the review b
 FINER: call=4 commit-check entities=1 hops=1
 FINER: call=4 setter Ticket/TicketState#T-3 OPEN -> FAILED entries=1
 FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
-FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=2644us
+FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 automatic=0 reason="the review board declined the ticket" elapsed=2644us
 ```
 
 The quickstart's own machine also runs its `committed` hook for the `DECLINE` hop, so at `TRACE` it also logs a `hook`
@@ -128,10 +128,10 @@ lines are a call's.
 
 | Level | Line | Logged when |
 | --- | --- | --- |
-| `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, `reevaluate` or `advance`. A `reevaluate` or an `advance` logs it before it reads the state. A watch reaction adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, `reevaluate` or `advance`. A `reevaluate` or an `advance` logs it before it reads the state. A watch reaction, and an `advance` of an automatic chain, adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
 | `DEBUG` | `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
 | `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
-| `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
+| `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n> automatic=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, the size of its `automaticSteps()`, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
 | `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call ended with its `CallFailedException`, just before its [observers](commit-and-persistence.md#observers) hear of it: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. An `Error` that an observer then throws reaches the caller in place of the exception. |
 | `DEBUG` | `check=<id> start <machine> <T>` | An eligibility check starts. `<machine>` is the machine key and `<T>` the identifier it was asked about. A check refused before it starts, as a call is, logs nothing. |
 | `DEBUG` | `check=<id> end verdict=ELIGIBLE transition=<T> state=<state> entity=<ref> elapsed=<us>` / `check=<id> end verdict=INELIGIBLE transition=<T> kind=<kind>[ guard=<name>] state=<state> entity=<ref> reason="<reason>" elapsed=<us>` | The check answered `Eligible` or `Ineligible`. `<T>` is the identifier it was asked about, `<state>` the state it read, `<kind>` the `RejectionKind` of the refusal, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason of the refusal, as given and unescaped. The time is counted since the check started, in whole microseconds. |
@@ -166,7 +166,8 @@ lines are a call's.
 
 The `committed` and `started` lines follow the order the call took its hops and starts, and come after the commit,
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
-the `committed` lines and the `end` line of the call that triggered it. A cascade is part of the call that runs it: it
+the `committed` lines and the `end` line of the call that triggered it, and so is each automatic attempt, whose lines
+come after those of the reactions. A cascade is part of the call that runs it: it
 logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A request refused
 before it starts, as [observers](commit-and-persistence.md#observers) see it, logs nothing. Each call, and each check, logs
 on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the submission itself logs

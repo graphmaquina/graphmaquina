@@ -250,12 +250,13 @@ class PublishedArtifactSmokeTest {
                             registry.of(KEY).execute(new Entity(), Id.FINISH);
                             throw new AssertionError("the failing hook must fail the call");
                         } catch (CallFailedException failure) {
-                            // No default: this switch compiles only while CallPhase holds exactly these six phases.
+                            // No default: this switch compiles only while CallPhase holds exactly these seven phases.
                             String where = switch (failure.phase()) {
                                 case RESOLVE, GUARD, ACTION -> "before the commit";
                                 case COMMIT -> "during the commit";
                                 case HOOK -> "after the commit";
                                 case REACTIONS -> "in a reaction";
+                                case AUTOMATIC_STEPS -> "in an automatic step";
                             };
                             if (!where.equals("after the commit") || failure.statesWritten() != StatesWritten.ALL
                                     || !(failure instanceof AfterCommitException after) || !after.hook().equals("audit")

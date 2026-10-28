@@ -16,8 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.AutomaticStep;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Outcome;
@@ -323,12 +325,14 @@ class CallLogTest {
         Outcome<Doc, DocStatus, DocTransition> done = new Outcome.Ignored<>(doc, PUBLISHED, IgnoreReason.NO_WATCH);
         applied.end(new Outcome.Applied<>(doc, REVIEW, PUBLISH, PUBLISHED, List.of(hop),
                 List.of(new Reaction.Done(DOCS, doc, done),
-                        new Reaction.Aborted(DOCS, doc, new IllegalStateException("x")))));
+                        new Reaction.Aborted(DOCS, doc, new IllegalStateException("x"))), List.of(), FlowView.empty(),
+                List.of(new AutomaticStep.Done(DOCS, doc, done),
+                        new AutomaticStep.Aborted(DOCS, doc, new IllegalStateException("y")))));
         assertEquals(List.of(
                 "DEBUG call=" + rejected.id() + " end code=NO_TRANSITION state=REVIEW records=0 starts=0 reactions=0"
-                        + " aborted=0 reason=\"a review is published\"",
+                        + " aborted=0 automatic=0 reason=\"a review is published\"",
                 "DEBUG call=" + applied.id() + " end code=APPLIED state=PUBLISHED entity=Doc/DocStatus#1 records=1"
-                        + " starts=0 reactions=2 aborted=1"),
+                        + " starts=0 reactions=2 aborted=1 automatic=2"),
                 backend.lines.stream().map(CallLogTest::withoutElapsed).toList());
     }
 

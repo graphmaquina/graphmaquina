@@ -377,6 +377,12 @@ final class UnitOfWork {
 
     void pop() { inFlight.removeLast(); }
 
+    /**
+     * The frame of the outermost step in flight: the root's own step while it runs. Only the abort of an attempt past
+     * maxAutomaticChain asks for it, from inside that step, as {@link Attempts} builds it.
+     */
+    InFlight rootFrame() { return inFlight.getFirst(); }
+
     Optional<InFlight> inFlight(EntityRef ref) {
         for (InFlight flight : inFlight) {
             if (flight.ref().equals(ref)) {

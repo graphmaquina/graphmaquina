@@ -46,7 +46,7 @@ sequenceDiagram
     Action-->>Machine: a pending CompletionStage
     Note over Machine: waits within the root's and the action's deadlines
     Service-->>Action: response, which completes the stage
-    Note over Machine: commit, hooks and watch reactions
+    Note over Machine: commit, hooks, watch reactions and automatic chains
     Machine-->>Caller: Outcome
     Note over Caller,Service: machine.async: an executor thread runs the operation
     Caller->>Machine: tickets.async(...)

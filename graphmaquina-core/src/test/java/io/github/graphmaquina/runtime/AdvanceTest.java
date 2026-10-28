@@ -44,6 +44,7 @@ import io.github.graphmaquina.fixtures.AccountGraphs.AddressVerifier;
 import io.github.graphmaquina.fixtures.AccountStatus;
 import io.github.graphmaquina.fixtures.AccountTransition;
 import io.github.graphmaquina.fixtures.GuardProbe;
+import io.github.graphmaquina.fixtures.StepTexts;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -159,7 +160,7 @@ class AdvanceTest {
     }
 
     /** {@link #lanes(GuardProbe, GuardProbe, GuardProbe, boolean)} with PREPARE manual and a passing park guard. */
-    private static StateMachine<Lane, LaneStatus, LaneTransition> lanes(
+    static StateMachine<Lane, LaneStatus, LaneTransition> lanes(
             GuardProbe<Lane, LaneStatus, LaneTransition> fast, GuardProbe<Lane, LaneStatus, LaneTransition> slow) {
         return laneMachine(lanes(fast, slow, new GuardProbe<>(), false));
     }
@@ -525,13 +526,15 @@ class AdvanceTest {
         Account account = complete(account(INFO_SET));
         Outcome<Account, AccountStatus, AccountTransition> outcome = machine.async().advance(account).join();
         assertEquals(Optional.of(COMPLETE_ADDRESS), outcome.requestedTransition());
+        assertEquals(ADDRESS_SET, outcome.recordedState());
         assertEquals(List.of("advancer"), threads);
-        assertEquals(ADDRESS_SET, account.status());
+        assertEquals(List.of("Done APPLIED ACTIVATE ACTIVE"), StepTexts.described(outcome.automaticSteps()));
+        assertEquals(ACTIVE, account.status());
     }
 
     /**
      * A new entity has committed nothing: in its initial state, its automatic edge runs when advance asks for it, and
-     * a reevaluation does not run it.
+     * a reevaluation does not run it. Once the advance committed, the lane's chain goes on.
      */
     @Test
     void aNewEntityAtInitialAdvancesOnlyWithAdvance() {
@@ -542,6 +545,8 @@ class AdvanceTest {
         assertEquals(LaneStatus.WAITING, lane.status());
         Outcome<Lane, LaneStatus, LaneTransition> outcome = machine.advance(lane);
         assertEquals(Optional.of(LaneTransition.PREPARE), outcome.requestedTransition());
-        assertEquals(LaneStatus.READY, lane.status());
+        assertEquals(LaneStatus.READY, outcome.recordedState());
+        assertEquals(List.of("Done APPLIED GO_FAST FAST"), StepTexts.described(outcome.automaticSteps()));
+        assertEquals(LaneStatus.FAST, lane.status());
     }
 }

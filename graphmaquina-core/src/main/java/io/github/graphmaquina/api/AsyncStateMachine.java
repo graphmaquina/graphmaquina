@@ -15,9 +15,9 @@ public interface AsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     CompletableFuture<Outcome<E, S, T>> reevaluate(E entity);
 
     /**
-     * {@link StateMachine#advance}, one automatic attempt, run on the machine's executor: the future completes with
-     * its outcome, never {@link Outcome.Rejected}, or fails with what it throws. A null entity throws on the calling
-     * thread.
+     * {@link StateMachine#advance}, one automatic attempt, run on the machine's executor with the automatic chains that
+     * follow it: the future completes with its outcome, never {@link Outcome.Rejected}, or fails with what it throws. A
+     * null entity throws on the calling thread.
      */
     CompletableFuture<Outcome<E, S, T>> advance(E entity);
 

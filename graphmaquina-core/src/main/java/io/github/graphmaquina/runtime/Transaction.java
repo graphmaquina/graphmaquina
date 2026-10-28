@@ -61,10 +61,15 @@ sealed class Transaction permits Transaction.Admission {
      * Where the call stands. The root's own step moves it, to GUARD before its first guard and to ACTION once its
      * guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The body
      * of an advance moves it back to RESOLVE before each automatic edge it tries, as {@link Attempts} says. The root
-     * moves it on to COMMIT, HOOK and REACTIONS.
+     * moves it on to COMMIT, HOOK, REACTIONS and AUTOMATIC_STEPS.
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
+    /**
+     * What the root's own step throws once its guards passed, before the call enters ACTION, as
+     * {@link #checkRootAction} says; empty unless {@link #refuseRootActionWith} set it.
+     */
+    private Optional<Supplier<? extends RuntimeException>> rootActionRefusal = Optional.empty();
     /**
      * The state the root's own step read, its identifier and the destination of the edge it selected, recorded when
      * that step throws or when the clock cannot date its rejection; empty before.
@@ -189,6 +194,25 @@ sealed class Transaction permits Transaction.Admission {
 
     void enter(CallPhase next) { phase = next; }
 
+    /**
+     * Makes the root's own step throw what {@code refusal} supplies once its guards passed, before the call enters
+     * ACTION, as {@link #checkRootAction} says: an advance sets it when its attempt is past maxAutomaticChain, as
+     * {@link Attempts} says, so that its candidates still select but the one admitted runs nothing and writes nothing.
+     */
+    void refuseRootActionWith(Supplier<? extends RuntimeException> refusal) {
+        rootActionRefusal = Optional.of(refusal);
+    }
+
+    /**
+     * Throws what the refusal that {@link #refuseRootActionWith} set supplies, if one is set; returns otherwise. The
+     * root's own step calls it once its guards passed, right before the call enters ACTION, with its frame pushed.
+     */
+    void checkRootAction() {
+        if (rootActionRefusal.isPresent()) {
+            throw rootActionRefusal.get().get();
+        }
+    }
+
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
     void writing() { writing = true; }
 
@@ -202,7 +226,7 @@ sealed class Transaction permits Transaction.Admission {
         if (phase == CallPhase.COMMIT) {
             return writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
         }
-        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS || phase == CallPhase.AUTOMATIC_STEPS) {
             return StatesWritten.ALL;
         }
         return StatesWritten.NONE;
@@ -289,12 +313,12 @@ sealed class Transaction permits Transaction.Admission {
 
     /**
      * The exception the call throws for {@code error}: a failure of this call as it is; anything else, which only
-     * engine code that calls into the application can let through before the commit, an identity's hashCode while
-     * the log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit,
-     * the hooks and the reactions classify every failure of their own where it happens, so a phase after ACTION never
-     * reaches the abort. The abort names what the root's own step recorded when it threw, or when the clock could
-     * not date its rejection: the state it read, the identifier it resolved and the destination of the edge it
-     * selected; before the step read its state, it names the identifier the call requested.
+     * engine code that calls into the application can let through before the commit, an identity's hashCode while the
+     * log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit, the
+     * hooks, the reactions and the automatic steps classify every failure of their own where it happens, so a phase
+     * after ACTION never reaches the abort. The abort names what the root's own step recorded when it threw, or when
+     * the clock could not date its rejection: the state it read, the identifier it resolved and the destination of the
+     * edge it selected; before the step read its state, it names the identifier the call requested.
      */
     CallFailedException classify(Throwable error) {
         if (error instanceof CallFailedException failure && owns(failure)) {
