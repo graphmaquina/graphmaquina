@@ -69,7 +69,7 @@ assertThat(machine.definition())
                 PublicationFailures.Rejected.class,
                 PublicationChange.RECORD_REJECTION,
                 List.of(ProviderRejectedException.class),
-                false))
+                false)))
         .failsOnExactly(InvalidResponseException.class)
         .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
 ```
