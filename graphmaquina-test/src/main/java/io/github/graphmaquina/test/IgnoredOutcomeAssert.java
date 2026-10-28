@@ -7,9 +7,10 @@ import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Ignored}, obtained from {@link
- * OutcomeAssert#isIgnored()}. A reevaluation selected no edge, so no action ran and nothing moved: the
- * recorded state is the origin, no identifier was requested, and {@link #hasReason(IgnoreReason)} says
- * whether the state declared no watch at all or no rule of its watch held.
+ * OutcomeAssert#isIgnored()}. A reevaluation or an advance ran no edge, so no action ran and nothing moved:
+ * the recorded state is the origin, no identifier was requested, and {@link #hasReason(IgnoreReason)} says
+ * whether the state declared no watch at all or no rule of its watch held, for a reevaluation, or whether the
+ * state had no automatic edge or none of them was admitted, for an advance.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine

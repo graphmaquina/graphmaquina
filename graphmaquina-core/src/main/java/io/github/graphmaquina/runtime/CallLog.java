@@ -169,7 +169,7 @@ final class CallLog {
 
     /**
      * {@code start <machine> <request>[ trigger=<id>]}: the identifier execute or an eligibility check was asked for,
-     * or reevaluate.
+     * reevaluate or advance.
      */
     void start(MachineKey<?, ?, ?> machine, String request) {
         debug("start " + machine + " " + request + (trigger.isPresent() ? " trigger=" + trigger.get() : ""));

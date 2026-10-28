@@ -203,6 +203,9 @@ class TypedRecoveryRuntimeTest {
             stateMachine.reevaluate(doc); }
 
                 @Override
+                public Outcome<Doc, DocStatus, DocTransition> advance(Doc doc) { return stateMachine.advance(doc); }
+
+                @Override
                 public Set<DocTransition> transitionsFrom(DocStatus state) { return \
             stateMachine.transitionsFrom(state); }
 

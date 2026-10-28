@@ -118,7 +118,7 @@ constant of another machine's catalogue does not compile inside it.
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
-| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
+| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` |
 | [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
@@ -153,8 +153,8 @@ to confuse, so keep them apart:
 
 `hasTransitionsExactly` takes identifiers, so two edges that reach the same state are two entries.
 
-An `Ignored` outcome says which of the two reevaluation cases it is, through
-`isIgnored().hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED`. It is the only outcome with no
+An `Ignored` outcome says which case it is, through `isIgnored().hasReason(...)`: `NO_WATCH` or `NO_RULE_MATCHED`
+for a reevaluation, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for an advance. It is the only outcome with no
 requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
 every other variant.
 
@@ -420,7 +420,7 @@ A test that needs no properties at all can pass options explicitly —
 - **`hasAsyncAction()` is about the action alone.** An edge whose guard is async but whose action is not still
   satisfies `hasSyncAction()`.
 - **A self-loop is asserted like any other edge.** `transition(REVIEW, RETOUCH).hasTarget(REVIEW)` describes
-  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate`.
+  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate` or `advance`.
 - **Two edges to one state need two expectations.** `transition(from, APPROVE)` and
   `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.

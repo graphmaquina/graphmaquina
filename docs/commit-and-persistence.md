@@ -143,7 +143,8 @@ more than once in a cascade.
 
 ### Observers
 
-An observer sees every call of the set: each operation and each `reevaluate`, watch reactions included. A cascade
+An observer sees every call of the set: each operation, each `reevaluate` and each `advance`, watch reactions
+included. A cascade
 is part of the call that runs it. With the ticket set:
 
 ```java
@@ -169,10 +170,10 @@ before the operation returns or throws. A request refused before it starts, such
 notifies no observer. Nor does an eligibility check, `eligibility(entity, id)` on a `StateMachine`: a check is not a
 call. An observer whose `onStarted` threw still receives its end event, and
 `elapsed` runs from just before `onStarted` until just before that event. Observers belong to a registry: a machine
-built standalone has none. `MachineCall` names the machine, the entity, the `request()` (a `CallRequest`: `EXECUTE`
-or `REEVALUATE`, and `ADVANCE`, which nothing issues yet), the requested identifier (`transition()`, present only for an
+built standalone has none. `MachineCall` names the machine, the entity, the `request()` (a `CallRequest`: `EXECUTE`,
+`REEVALUATE` or `ADVANCE`), the requested identifier (`transition()`, present only for an
 `EXECUTE`) and the `origin()` (a `CallOrigin`: `APPLICATION` or `WATCH_REACTION`). Its `toString()` never prints the
-entity: it reads `<key> <ID>`, or `<key> reevaluate`, followed by ` (watch reaction)` for a reaction. The same instance reaches every event of the call,
+entity: it reads `<key> <ID>`, `<key> reevaluate` or `<key> advance`, followed by ` (watch reaction)` for a reaction. The same instance reaches every event of the call,
 and two calls are equal only when they are the same instance. A reaction starts and ends inside the call that triggered it, so events nest
 like a stack on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
 how far it got in writing states; an `Error` is reported too, then propagates. The phase is one of `CallPhase`'s

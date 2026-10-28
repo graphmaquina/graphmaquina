@@ -339,7 +339,7 @@ one for an identifier of another catalogue (`IllegalArgumentException`), and one
 (`ReentrantTransitionException`, possible when the call runs on the thread of the callback that submitted it, through
 an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A null argument fails the
 future only when the operation you submit receives it: `async(null)` itself, and a null argument of a low-level
-`StateMachine`'s `async().execute(...)` or `async().reevaluate(...)`, throw their `NullPointerException` on the calling
+`StateMachine`'s `async().execute(...)`, `async().reevaluate(...)` or `async().advance(...)`, throw their `NullPointerException` on the calling
 thread before anything is submitted. A callback you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered

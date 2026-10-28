@@ -197,9 +197,10 @@ key; a second `as(...)` and an
 peers and refuses a watch on another machine.
 
 A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)`,
-`eligibility(entity, id)` and `eligibility(entity, id, input)`, `transitionsFrom(state)`, `definition()` and `key()`,
-plus `async()`, an `AsyncStateMachine` whose
-`execute(entity, id)`, `execute(entity, id, input)` and `reevaluate(entity)` return a `CompletableFuture`, and
+`advance(entity)`, `eligibility(entity, id)` and `eligibility(entity, id, input)`, `transitionsFrom(state)`,
+`definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose
+`execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)` and `advance(entity)` return a
+`CompletableFuture`, and
 `supplyAsync(call)`, which runs any call on the machine's executor. The interfaces' default
 `execute(entity, id, input)` refuses an input: `StateMachine`'s throws `UnsupportedOperationException`, and
 `AsyncStateMachine`'s returns a future failed with it; the machines the runtime builds accept one. The two

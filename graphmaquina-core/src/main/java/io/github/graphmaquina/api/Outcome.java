@@ -3,6 +3,7 @@ package io.github.graphmaquina.api;
 import io.github.graphmaquina.internal.FailureTypes;
 import java.util.List;
 import java.util.Optional;
+import java.util.StringJoiner;
 import lombok.NonNull;
 
 /**
@@ -28,14 +29,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     S recordedState();
 
     /**
-     * The identifier the caller asked for, or the one the watch selected in a reevaluation; empty only when a
-     * reevaluation selected no edge.
+     * The identifier the caller asked for, the one the watch selected in a reevaluation, or the automatic edge an
+     * advance admitted; empty only for an ignored outcome, which ran no edge.
      */
     Optional<T> requestedTransition();
 
     /**
      * Why this outcome is what it is: its variant, refined by the kind of a rejection and by the reason a
-     * reevaluation selected nothing.
+     * reevaluation or an advance ran no edge.
      */
     OutcomeCode code();
 
@@ -51,10 +52,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
      * the action returned for a failure. The graph's author writes them all, except the fixed texts the library
      * generates: for a terminal state that declares no policy, and for a {@link RejectionKind#DETACHED} or
-     * {@link RejectionKind#RESERVED_EXIT} rejection. Empty for an applied outcome, for an ignored one, whose
-     * why is its {@link IgnoreReason}, and for a failure that carries a cause because a declared throwable type, of
-     * failsOn or of a recovery rule, routed it from an exception: that reason is composed from the exception and may
-     * carry internal details, so it stays in the failure's {@code reason} and {@code cause}.
+     * {@link RejectionKind#RESERVED_EXIT} rejection. An ignored outcome of {@link IgnoreReason#NO_CANDIDATE_ADMITTED}
+     * gives a text the library composes from the reasons of its rejections, as {@link Ignored#explanation()} says.
+     * Empty for an applied outcome, for any other ignored one, whose why is its {@link IgnoreReason}, and for a
+     * failure that carries a cause because a declared throwable type, of failsOn or of a recovery rule, routed it from
+     * an exception: that reason is composed from the exception and may carry internal details, so it stays in the
+     * failure's {@code reason} and {@code cause}.
      */
     Optional<String> explanation();
 
@@ -178,11 +181,34 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. No step ran, so its
-     * flow is {@link FlowView#empty()}.
+     * A call that requests no identifier and ran no edge, for {@code reason}: a reevaluation with no watch on the
+     * state, or none of whose watch rules held; an advance whose state has no automatic edge, or none of whose
+     * automatic edges was admitted. Nothing was written and no action ran; its flow is {@link FlowView#empty()},
+     * whether or not the call records its trail. {@code rejections} lists, for
+     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED} only, the rejection of each automatic edge the advance tried, in the
+     * order it tried them, which {@link #explanation()} names. The constructor refuses an empty list with that reason
+     * and a non-empty one with any other, and copies the list; the constructor without {@code rejections} lists none.
      */
-    record Ignored<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
-                                                            @NonNull IgnoreReason reason) implements Outcome<E, S, T> {
+    record Ignored<E, S extends Enum<S>, T extends Enum<T>>(
+            @NonNull E entity, @NonNull S from, @NonNull IgnoreReason reason,
+            @NonNull List<Eligibility.Ineligible<E, S, T>> rejections) implements Outcome<E, S, T> {
+        /** Checks that the rejections match the reason, and copies them. */
+        public Ignored {
+            boolean admittedNone = reason == IgnoreReason.NO_CANDIDATE_ADMITTED;
+            if (admittedNone && rejections.isEmpty()) {
+                throw new IllegalArgumentException("a " + reason + " outcome lists the rejection of each candidate");
+            }
+            if (!admittedNone && !rejections.isEmpty()) {
+                throw new IllegalArgumentException("a " + reason + " outcome lists no rejection");
+            }
+            rejections = List.copyOf(rejections);
+        }
+
+        /** Builds an ignored outcome that lists no rejection, as every reason but NO_CANDIDATE_ADMITTED does. */
+        public Ignored(E entity, S from, IgnoreReason reason) {
+            this(entity, from, reason, List.of());
+        }
+
         @Override
         public S recordedState() {
             return from;
@@ -203,12 +229,29 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static
             // initializer, which assembling a registry cannot name to initialise, as
             // MachineRegistry.staticallyInitialized says.
-            return reason == IgnoreReason.NO_WATCH ? OutcomeCode.NO_WATCH : OutcomeCode.NO_RULE_MATCHED;
+            return reason == IgnoreReason.NO_WATCH ? OutcomeCode.NO_WATCH
+                    : reason == IgnoreReason.NO_RULE_MATCHED ? OutcomeCode.NO_RULE_MATCHED
+                    : reason == IgnoreReason.NO_AUTOMATIC_TRANSITION ? OutcomeCode.NO_AUTOMATIC_TRANSITION
+                    : OutcomeCode.NO_CANDIDATE_ADMITTED;
         }
 
+        /**
+         * For {@link IgnoreReason#NO_CANDIDATE_ADMITTED},
+         * {@code no automatic transition was admitted: } followed by one entry per rejection, in order, joined by
+         * {@code "; "}: {@code <T> (<kind>[ <guard>]): <reason>}, the identifier and the kind by {@code name()}, as in
+         * {@code COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete}. Empty for any other reason.
+         */
         @Override
         public Optional<String> explanation() {
-            return Optional.empty();
+            if (rejections.isEmpty()) {
+                return Optional.empty();
+            }
+            StringJoiner entries = new StringJoiner("; ", "no automatic transition was admitted: ", "");
+            for (Eligibility.Ineligible<E, S, T> rejection : rejections) {
+                entries.add(rejection.transition().name() + " (" + rejection.kind().name()
+                        + rejection.guard().map(" "::concat).orElse("") + "): " + rejection.reason());
+            }
+            return Optional.of(entries.toString());
         }
 
         @Override

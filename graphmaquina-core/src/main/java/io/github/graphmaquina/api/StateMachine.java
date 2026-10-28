@@ -53,6 +53,28 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     Outcome<E, S, T> reevaluate(E entity);
 
     /**
+     * Makes one automatic attempt on the entity's current state. Its candidates are the automatic edges of that
+     * state, in the order {@code definition().automaticFrom(state)} lists them. Each one gets the admission of an
+     * execute of its identifier: the binding check of a sub-machine, then its guards in declaration order, with the
+     * context they get in that execute, whose input is empty. A refused candidate passes to the next one, and the
+     * first one admitted runs within the same call as execute runs an edge, without running its guards again.
+     * <ul>
+     *   <li>It never returns {@link Outcome.Rejected}: it requests no identifier.</li>
+     *   <li>It returns {@link Outcome.Ignored} with {@link IgnoreReason#NO_AUTOMATIC_TRANSITION} when the state has no
+     *       automatic edge, terminal states included; then of the callbacks the machine declares, only the state
+     *       getter ran: no identity function, lookup, guard or action.</li>
+     *   <li>It returns {@link Outcome.Ignored} with {@link IgnoreReason#NO_CANDIDATE_ADMITTED} when every candidate was
+     *       refused, by a guard or as {@link RejectionKind#DETACHED}; its {@code rejections()} lists each refusal in
+     *       the order tried, which its {@code explanation()} names. The guards of those candidates ran.</li>
+     *   <li>Neither ignored outcome writes anything.</li>
+     * </ul>
+     * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
+     * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error. A null argument and a
+     * call made where no call may start are refused before the call starts and throw as themselves.
+     */
+    Outcome<E, S, T> advance(E entity);
+
+    /**
      * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; {@link #eligibility}
      * asks whether one entity would be admitted now, its guards included.
      */

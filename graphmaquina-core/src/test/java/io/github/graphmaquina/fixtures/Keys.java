@@ -2,7 +2,7 @@ package io.github.graphmaquina.fixtures;
 
 import io.github.graphmaquina.api.MachineKey;
 
-/** The machine keys of the doc, order and item fixture machines. */
+/** The machine keys of the doc, order, item and account fixture machines. */
 public final class Keys {
 
     public static final MachineKey<Doc, DocStatus, DocTransition> DOCS =
@@ -11,6 +11,8 @@ public final class Keys {
             MachineKey.of(Order.class, OrderStatus.class, OrderTransition.class);
     public static final MachineKey<Item, ItemStatus, ItemTransition> ITEMS =
             MachineKey.of(Item.class, ItemStatus.class, ItemTransition.class);
+    public static final MachineKey<Account, AccountStatus, AccountTransition> ACCOUNTS =
+            MachineKey.of(Account.class, AccountStatus.class, AccountTransition.class);
 
     private Keys() { }
 }

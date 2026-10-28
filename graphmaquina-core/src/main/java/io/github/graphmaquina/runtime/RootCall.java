@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CallRequest;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.Outcome;
@@ -34,7 +35,7 @@ final class RootCall {
      * included. The transaction keeps the phase of the call, which the observers are told when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
-     * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
+     * {@code requested} is the identifier execute was asked for, and empty for a reevaluation or an advance.
      * When {@code machine}, the root's, records its trail, the call's flow is created before the step runs, and every
      * entry the call logs is marked on its clock. Once the reactions ran, the call's flow is frozen into the outcome,
      * its trail ending with the rejection of a rejected outcome, or into the empty view when the call records no
@@ -48,10 +49,10 @@ final class RootCall {
      * The observers hear of the call's start before its log does, and of its end after it: the start line follows
      * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
      * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
-     * its start line here; a reevaluation logged its own before it read the state. Phase 2 moves the call on to HOOK
-     * once its last setter returned, so that whatever fails from then on reports every state written: building the
-     * committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no failed
-     * line. At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its
+     * its start line here; a reevaluation or an advance logged its own before it read the state. Phase 2 moves the
+     * call on to HOOK once its last setter returned, so that whatever fails from then on reports every state written:
+     * building the committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no
+     * failed line. At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its
      * writes to the call's flow as it makes it, and the watch dispatch logs each owner lookup.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> run(
@@ -135,7 +136,8 @@ final class RootCall {
 
     /**
      * The outcome of the call for its own step, {@code step}: the committed {@code records} and {@code starts}, the
-     * {@code reactions}, and the call's flow frozen as the outcome hands it out.
+     * {@code reactions}, and the call's flow frozen as the outcome hands it out; for an advance that admitted no
+     * candidate, the rejections its body listed.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> outcome(
             Transaction tx, E entity, StepResult<S, T> step, List<TransitionRecord<?, ?, ?>> records,
@@ -145,7 +147,7 @@ final class RootCall {
                     new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
                             records, reactions, starts, OutcomeFlows.frozenFlow(tx, records, starts));
             case StepResult.Ignored<S, T> ignored ->
-                    new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
+                    new Outcome.Ignored<>(entity, ignored.from(), ignored.reason(), rejectionsOf(ignored));
             case StepResult.Rejected<S, T> rejected ->
                     new Outcome.Rejected<>(entity, rejected.from(), rejected.transition(), rejected.reason(),
                             rejected.kind(), rejected.guard(), OutcomeFlows.frozenFlow(tx, rejected));
@@ -155,6 +157,16 @@ final class RootCall {
                             records, reactions, failed.failureKind(), starts,
                             OutcomeFlows.frozenFlow(tx, records, starts));
         };
+    }
+
+    /**
+     * The rejections of {@code ignored} for the call's entity. The only cast to the machine's entity type of them:
+     * the body of an advance lists rejections of the call's own entity only, which is an {@code E}.
+     */
+    @SuppressWarnings("unchecked")
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<Eligibility.Ineligible<E, S, T>> rejectionsOf(
+            StepResult.Ignored<S, T> ignored) {
+        return (List<Eligibility.Ineligible<E, S, T>>) (List<?>) ignored.rejections();
     }
 
     /**
@@ -223,7 +235,10 @@ final class RootCall {
                 startNanos));
     }
 
-    /** The call a reevaluation's own failure carries: the observed one, or a new one when nobody observes it. */
+    /**
+     * The call that the own failure of a reevaluation or an advance carries: the observed one, or a new one when
+     * nobody observes it.
+     */
     static <E, S extends Enum<S>, T extends Enum<T>> MachineCall callOf(
             DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallRequest request,
             CallOrigin origin) {
@@ -241,9 +256,9 @@ final class RootCall {
     }
 
     /**
-     * Ends a reevaluation that ran no edge with {@code outcome}: logs its end line, then tells the observers, if any.
-     * An Error the end line throws ends the call instead, in RESOLVE with nothing written: the observers hear of that
-     * Error, and it propagates.
+     * Ends a reevaluation or an advance that ran no step with {@code outcome}: logs its end line, then tells the
+     * observers, if any. An Error the end line throws ends the call instead, in RESOLVE with nothing written: the
+     * observers hear of that Error, and it propagates.
      */
     static <O extends Outcome<?, ?, ?>> O ignored(Optional<Observed> observed, CallLog log, O outcome) {
         if (log.debug()) {

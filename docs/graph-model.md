@@ -95,18 +95,20 @@ resolved from the origin that needs it.
 
 ### Absence, self-loops and reevaluation
 
-Three situations are distinct, and each has its own observable result.
+Four situations are distinct, and each has its own observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
 | No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine whose parent does not hold it is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
+| `advance(entity)` finds no automatic edge from the current state, or admits none of them | Nothing runs when there is none. Otherwise each automatic edge, in its declared order, gets the binding check and the guards of an execute of its identifier, and no action runs. No state write. | `Ignored`, with `IgnoreReason.NO_AUTOMATIC_TRANSITION`, or `NO_CANDIDATE_ADMITTED` and the `rejections()` of the edges it tried |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
 the only exit of a non-terminal state, and it is forbidden on a terminal.
 
-`Ignored` is reserved for reevaluation.
+`Ignored` is reserved for `reevaluate` and `advance`, which request no identifier. A reevaluation whose selected edge
+is refused returns `Rejected`; an `advance` never does.
 
 ### Guards and the reason a request is refused
 
@@ -195,8 +197,9 @@ A typed facade exposes no generic selector: the application's entry points are t
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
 admitted without running it, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
-`async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the structural
-`definition()` and `transitionsFrom(state)`.
+`advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
+declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
+structural `definition()` and `transitionsFrom(state)`.
 
 An operation may accept a second argument: `Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict)`.
 Guards and actions read it through `ctx.input(Verdict.class)`, which returns `Optional<Verdict>`. This lets

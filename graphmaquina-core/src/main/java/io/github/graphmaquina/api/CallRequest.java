@@ -11,6 +11,9 @@ public enum CallRequest {
     /** A {@code reevaluate}: the machine selects the edge its watch picks, if any. */
     REEVALUATE,
 
-    /** An {@code advance}: the machine takes the automatic edge of the entity's state, if any. */
+    /**
+     * An {@code advance}: the machine takes the first automatic edge of the entity's state that is admitted, trying
+     * them in their declared order, if any.
+     */
     ADVANCE
 }

@@ -10,7 +10,7 @@ only needs to know what happened and why reads it without narrowing:
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, `GUARD_REJECTED`, `DETACHED` or `RESERVED_EXIT` | the policy's reason, the guard's, or the library's fixed text for the last two | No |
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
-| `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
+| `Ignored` | `IGNORED` | `NO_WATCH` or `NO_RULE_MATCHED` for `reevaluate`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for `advance` | empty, except for `NO_CANDIDATE_ADMITTED`, which names each candidate's rejection | No |
 
 What each variant adds to the accessors every outcome has:
 
@@ -56,6 +56,7 @@ classDiagram
     }
     class Ignored {
         +reason() IgnoreReason
+        +rejections() List~Ineligible~
     }
     Outcome <|.. Applied : status APPLIED
     Outcome <|.. Rejected : status REJECTED
@@ -68,7 +69,8 @@ root instead. Both are provisional there: their hops are written only if the roo
 
 Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()`,
 `reactions()`, `starts()` and `flow()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for
-the other two. `requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals
+the other two. `requestedTransition()` is the identifier the caller asked for, the one a reevaluation's watch
+selected, or the automatic edge an `advance` ran; it is empty only for `Ignored`, which ran no edge at all. [Records, journals
 and reactions](#records-journals-and-reactions) describes what `records()`, `reactions()`, `starts()` and `flow()`
 return.
 
@@ -79,9 +81,11 @@ Read the classification with its limits in mind:
 - `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
 - `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
   returned with `ActionOutcome.failed(...)`. The only texts the library writes there are the fixed reason of a
-  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, and the fixed reasons
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, the fixed reasons
   of the two refusals of a sub-machine: `DETACHED`, such as `no parent holds it in DEPOSIT`, and `RESERVED_EXIT`, such
-  as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. When `failsOn` or a
+  as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`, and the text of an `advance` that admitted no
+  automatic edge, which joins the rejection of each one it tried, such as
+  `no automatic transition was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete`. When `failsOn` or a
   recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
   details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
@@ -137,9 +141,10 @@ record TransitionResponse(
 
 static int httpStatus(OutcomeCode code) {
     return switch (code) {
-        case APPLIED, FAILURE_ROUTED, NO_WATCH, NO_RULE_MATCHED -> 200;
+        case APPLIED, FAILURE_ROUTED, NO_WATCH, NO_RULE_MATCHED,
+                NO_AUTOMATIC_TRANSITION -> 200;
         case NO_TRANSITION, DETACHED, RESERVED_EXIT -> 409;
-        case GUARD_REJECTED -> 422;
+        case GUARD_REJECTED, NO_CANDIDATE_ADMITTED -> 422;
     };
 }
 ```
@@ -161,6 +166,10 @@ Optional<String> guard = outcome.asRejected().flatMap(Outcome.Rejected::guard);
 Optional<TicketTransition> recovery = outcome.asFailed().map(Outcome.Failed::failureTransition);
 ```
 
+`Ignored.rejections()` lists why an `advance` with the reason `NO_CANDIDATE_ADMITTED` ran no automatic edge: one
+`Eligibility.Ineligible` per edge it tried, in the order it tried them, each with the identifier, the state, the
+`RejectionKind`, the guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
+
 A `switch` over the variants reads all of them at once:
 
 ```java
@@ -175,7 +184,8 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
                 failed.failureTransition() + " moved to " + failed.movedTo() + ": "
                         + failed.reason();
         case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
-                "Unchanged at " + ignored.recordedState() + " (" + ignored.reason() + ")";
+                "Unchanged at " + ignored.recordedState() + " (" + ignored.reason() + ")"
+                        + ignored.explanation().map((String text) -> ": " + text).orElse("");
     };
 }
 ```
@@ -268,6 +278,7 @@ call wrote up to the failure:
 - A `reevaluate` that fails before it runs an edge, while it reads the state, evaluates its watch or exceeds the
   limit of a watch chain, hands out `FlowView.empty()`, unless its machine records its trail: its flow then holds the
   entity, no value, and the `Failed` entry alone, or no entry when the clock threw while it read the entry's instant.
+  So does an `advance` that fails while it reads the state.
 - Only the failure the call throws carries the call's flow: any other failure of the call holds `FlowView.empty()`,
   such as an element of the `errors()` of a `CascadeException` or a `PoisonedUnitOfWorkException` a context threw.
   A call that records no trail and whose steps and hooks wrote

@@ -297,8 +297,8 @@ The trail follows the rollbacks of the call:
 - A failed call keeps what it took up to the failure, then its `Failed` entry, unless the clock threw as the call
   read that entry's instant, as below. An abort undoes nothing, but the engine rolls back the step of an
   `UnhandledFailureException` first, so its trail lacks that step's entries.
-- A `reevaluate` that fails before it runs an edge has the `Failed` entry alone, or no entry when the clock threw,
-  beside the entity and no value.
+- A `reevaluate` that fails before it runs an edge, or an `advance` that fails while it reads the state, has the
+  `Failed` entry alone, or no entry when the clock threw, beside the entity and no value.
 - An `Error` ends the call without an entry and without a flow.
 - An `Ignored` outcome and the outcome a cascade returns have no trail: both answer `FlowView.empty()`.
 

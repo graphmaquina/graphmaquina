@@ -383,7 +383,9 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 ```
 
 A state that declares no watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
-`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
+`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways a `reevaluate` produces an `Ignored`; the other two
+reasons, `NO_AUTOMATIC_TRANSITION` and `NO_CANDIDATE_ADMITTED`, come from `advance`, as
+[handle transition outcomes](outcomes.md) lists. A matching rule can still be
 rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent does not hold it. Rules
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.

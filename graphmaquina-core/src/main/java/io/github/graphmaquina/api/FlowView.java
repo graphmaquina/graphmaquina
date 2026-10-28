@@ -51,15 +51,16 @@ public interface FlowView {
     Set<FlowKey<?>> keys();
 
     /**
-     * The entity of the root call: the instance its caller passed to the operation or to {@code reevaluate}, live and
-     * never a copy. A cascaded step or the exit of a sub-machine reaches the root call's entity here, not its own,
-     * which its context's {@code entity()} gives, and so does the hook of any hop of the call, whose own entity is
-     * its first argument. A change made to it is immediate and never undone, not even when the call fails. Present in
-     * the flow every step and every hook of a call receives, and in the flow a call hands out once a step or a hook
-     * wrote to it or when the call records its trail and runs a step, and in the flow of a reevaluation that records
-     * its trail and failed before it ran an edge; empty in {@link #empty()}, which a call that
-     * records no trail and wrote nothing to its flow hands out, and so does an ignored reevaluation, and in a flow that
-     * belongs to no call, such as the one the five-argument constructor of {@link CommitContext} gives.
+     * The entity of the root call: the instance its caller passed to the operation, to {@code reevaluate} or to
+     * {@code advance}, live and never a copy. A cascaded step or the exit of a sub-machine reaches the root call's
+     * entity here, not its own, which its context's {@code entity()} gives, and so does the hook of any hop of the
+     * call, whose own entity is its first argument. A change made to it is immediate and never undone, not even when
+     * the call fails. Present in the flow every step and every hook of a call receives, and in the flow a call hands
+     * out, unless as an ignored outcome, once a step or a hook wrote to it or when the call records its trail and runs
+     * a step, and in the flow of a reevaluation that records its trail and failed before it ran an edge, or of such an
+     * advance that failed reading the state; empty in {@link #empty()}, which a call that records no trail and wrote
+     * nothing to its flow hands out, and so does every ignored outcome, and in a flow that belongs to no call, such as
+     * the one the five-argument constructor of {@link CommitContext} gives.
      */
     Optional<Object> entity();
 

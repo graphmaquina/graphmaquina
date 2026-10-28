@@ -30,8 +30,9 @@ import lombok.NonNull;
 
 /**
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
- * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none. An eligibility
- * check runs the admission of that root step alone, as {@link Checks} says, and is no call.
+ * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none, and neither does
+ * an advance whose state has no automatic edge. An advance tries the automatic edges of the state as {@link Attempts}
+ * says. An eligibility check runs the admission of that root step alone, as {@link Checks} says, and is no call.
  */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
@@ -181,6 +182,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public Outcome<E, S, T> reevaluate(@NonNull E entity) {
         return Reevaluation.reevaluate(this, entity, 0, Optional.empty());
+    }
+
+    @Override
+    public Outcome<E, S, T> advance(@NonNull E entity) {
+        return Attempts.attempt(this, entity, CallOrigin.APPLICATION, Optional.empty());
     }
 
     @Override

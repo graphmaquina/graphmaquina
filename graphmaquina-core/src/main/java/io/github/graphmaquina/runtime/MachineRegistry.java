@@ -351,10 +351,10 @@ public final class MachineRegistry implements AutoCloseable {
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException, and an
      * InterruptedException interrupts the thread again. Each lookup runs with the reentrancy marker set, so one that
-     * calls execute or reevaluate ends that way too. {@code log} is the log of the call whose commit is dispatched: at
-     * TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner is a target,
-     * the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each reaction's
-     * log names its id as the trigger.
+     * calls execute, reevaluate or advance ends that way too. {@code log} is the log of the call whose commit is
+     * dispatched: at TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner
+     * is a target, the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each
+     * reaction's log names its id as the trigger.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {

@@ -17,6 +17,14 @@ public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
     Outcome<E, S, T> reevaluate(E entity);
 
     /**
+     * Makes one automatic attempt, as {@link StateMachine#advance} says: runs the first automatic edge of the entity's
+     * state that is admitted, trying them in their declared order, or returns {@link Outcome.Ignored}, never
+     * {@link Outcome.Rejected}, with {@link IgnoreReason#NO_AUTOMATIC_TRANSITION} or
+     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED}. A failure throws as it would in an operation.
+     */
+    Outcome<E, S, T> advance(E entity);
+
+    /**
      * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; a check the facade
      * declares asks whether one entity would be admitted now for the operation it checks, its guards included.
      */

@@ -61,7 +61,9 @@ public sealed interface Eligibility<E, S extends Enum<S>, T extends Enum<T>>
      * {@code from} with that identifier, a guard refuses it, the entity is a sub-machine whose parent does not hold
      * it, or the identifier is an exit of the sub-machine bound to {@code from}. {@code guard} names the guard that
      * refuses it, and is empty for every other kind. The constructor refuses a blank reason, and a guard that does not
-     * match the kind, with the messages of {@link Outcome.Rejected}.
+     * match the kind, with the messages of {@link Outcome.Rejected}. An advance that admitted no automatic edge lists
+     * one of these per edge it tried, in {@link Outcome.Ignored#rejections()}: the identifier of that edge, the state
+     * its step read, and the reason, the kind and the guard of its rejection, as execute's step would report them.
      */
     record Ineligible<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull String reason,

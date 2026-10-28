@@ -83,6 +83,34 @@ class MachineTransitionErrorsTest {
     }
 
     /**
+     * Machine declares advance(E), which the companion implements: an operation with that signature would override
+     * it, so it is refused with SG504, as an operation named reevaluate is.
+     */
+    @Test
+    void anAdvanceOperationIsSg504() {
+        Compilation.Result overriding = body(SUBMIT + publish("")
+                + ARCHIVE.replace("archive(Doc doc)", "advance(Doc doc)"));
+        assertEquals(1, overriding.countError(DiagnosticCode.SG504.name()), overriding.describe());
+        assertTrue(overriding.errors().get(0).contains("advance overrides Machine.advance, which the generated"
+                + " companion implements already"), overriding.describe());
+        assertFalse(overriding.hasGenerated("fx.DocsRuntime"), overriding.describe());
+    }
+
+    /**
+     * An operation advance(E, I) overloads Machine.advance(E) without overriding it: it is an operation of its own,
+     * and the companion implements both.
+     */
+    @Test
+    void anAdvanceOverloadWithInputIsAccepted() {
+        Compilation.Result overload = body(SUBMIT + publish("")
+                + ARCHIVE.replace("archive(Doc doc)", "advance(Doc doc, String value)"));
+        assertTrue(overload.success(), overload.describe());
+        String companion = overload.generated("fx.DocsRuntime");
+        assertTrue(companion.contains("return stateMachine.execute(doc, DocTransition.ARCHIVE, value);"), companion);
+        assertTrue(companion.contains("advance(Doc doc) { return stateMachine.advance(doc); }"), companion);
+    }
+
+    /**
      * A symbol implements the category of every role its host declares and no other, so an element that asks
      * for a role the symbol does not export refuses it in the language itself, before any processor runs.
      */

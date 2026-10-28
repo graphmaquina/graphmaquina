@@ -9,11 +9,13 @@ public enum CallPhase {
 
     /**
      * Reading the entity's identity and state, checking the binding of a sub-machine, and selecting the edge; in a
-     * reevaluation, also evaluating the watch. No guard, action or setter of the call has run.
+     * reevaluation, also evaluating the watch. An advance reads the state and its automatic edges, then enters this
+     * phase again for each one it tries. No action or setter of the call has run, nor any guard but those of the
+     * edges an advance tried and refused before.
      */
     RESOLVE,
 
-    /** The guards of the call's own edge. No action of the call has run. */
+    /** The guards of the call's own edge, or of the edge an advance tries. No action of the call has run. */
     GUARD,
 
     /**

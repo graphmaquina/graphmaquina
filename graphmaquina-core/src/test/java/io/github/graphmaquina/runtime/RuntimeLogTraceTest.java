@@ -33,6 +33,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -40,6 +41,10 @@ import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
+import io.github.graphmaquina.fixtures.Account;
+import io.github.graphmaquina.fixtures.AccountGraphs;
+import io.github.graphmaquina.fixtures.AccountStatus;
+import io.github.graphmaquina.fixtures.AccountTransition;
 import io.github.graphmaquina.fixtures.Billing;
 import io.github.graphmaquina.fixtures.Billing.Booking;
 import io.github.graphmaquina.fixtures.Billing.BookingStatus;
@@ -751,6 +756,48 @@ class RuntimeLogTraceTest {
                     "FINE call=A end code=DETACHED state=AUTHORIZING entity=Payment/PaymentStatus#d1 records=0"
                             + " starts=0 reactions=0 aborted=0 reason=\"no parent holds it in DEPOSIT or BALANCE\""
                             + " elapsed=<us>"), lines(log));
+        }
+    }
+
+    /**
+     * An advance logs its start line before it reads the state. Each candidate it tries logs the lines of its step,
+     * and one it does not admit a candidate line after them. A state without automatic edges logs no step, so the end
+     * line names no entity.
+     */
+    @Test
+    void eachRejectedCandidateIsTraced() {
+        StateMachine<Account, AccountStatus, AccountTransition> accounts =
+                AccountGraphs.machine(AccountGraphs.onboarding(new AccountGraphs.AddressVerifier()));
+        try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            accounts.advance(new Account("a1", AccountStatus.ADDRESS_SET));
+            accounts.advance(new Account("a2", AccountStatus.INFO_SET));
+            accounts.advance(new Account("a3", AccountStatus.REVIEW));
+            assertEquals(List.of(
+                    "FINE call=A start Account/AccountStatus advance",
+                    "FINER call=A depth=0 resolved Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE_PREMIUM-> PREMIUM"
+                            + " kind=MOVE",
+                    "FINER call=A depth=0 guard premium REJECT reason=\"the account is not premium\" elapsed=<us>",
+                    "FINER call=A depth=0 candidate ACTIVATE_PREMIUM refused GUARD guard=premium:"
+                            + " the account is not premium",
+                    "FINER call=A depth=0 resolved Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE-> ACTIVE kind=MOVE",
+                    "FINER call=A commit-check entities=1 hops=1",
+                    "FINER call=A setter Account/AccountStatus#a1 ADDRESS_SET -> ACTIVE entries=1",
+                    "FINE call=A committed Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE-> ACTIVE depth=0",
+                    "FINE call=A end code=APPLIED state=ACTIVE entity=Account/AccountStatus#a1 records=1 starts=0"
+                            + " reactions=0 aborted=0 elapsed=<us>",
+                    "FINE call=B start Account/AccountStatus advance",
+                    "FINER call=B depth=0 resolved Account/AccountStatus#a2 INFO_SET -COMPLETE_ADDRESS-> ADDRESS_SET"
+                            + " kind=ACTION",
+                    "FINER call=B depth=0 guard addressComplete REJECT reason=\"address is incomplete\" elapsed=<us>",
+                    "FINER call=B depth=0 candidate COMPLETE_ADDRESS refused GUARD guard=addressComplete:"
+                            + " address is incomplete",
+                    "FINE call=B end code=NO_CANDIDATE_ADMITTED state=INFO_SET entity=Account/AccountStatus#a2"
+                            + " records=0 starts=0 reactions=0 aborted=0 reason=\"no automatic transition was"
+                            + " admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
+                            + " elapsed=<us>",
+                    "FINE call=C start Account/AccountStatus advance",
+                    "FINE call=C end code=NO_AUTOMATIC_TRANSITION state=REVIEW records=0 starts=0 reactions=0"
+                            + " aborted=0 elapsed=<us>"), lines(log));
         }
     }
 

@@ -21,10 +21,10 @@ import lombok.NonNull;
  * @param from the state the entity was in, absent when the abort happened before it was read, because the entity's
  *     identity or state could not be read
  * @param transition the identifier of the step this abort describes, if the abort happened after reading it: the one
- *     the caller requested, the one the watch selected in a reevaluation, whose call requested none, the one an action
- *     cascaded with, the exit that the terminal state of a sub-machine selected, or that of the failure route that took
- *     over a failed step; it can therefore differ from the identifier of the call,
- *     {@link io.github.graphmaquina.api.MachineCall#transition()}
+ *     the caller requested, the one the watch selected in a reevaluation or the automatic edge an advance tried, whose
+ *     calls requested none, the one an action cascaded with, the exit that the terminal state of a sub-machine
+ *     selected, or that of the failure route that took over a failed step; it can therefore differ from the
+ *     identifier of the call, {@link io.github.graphmaquina.api.MachineCall#transition()}
  * @param to the destination of the resolved edge, present only once one was selected
  * @param action the action whose own run caused the abort, when one did; absent for a guard, a rejection, the watch
  *     chain limit and an abort raised for the caller of a cascade or a peer read, even when that caller is a running

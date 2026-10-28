@@ -77,12 +77,13 @@ class OperationInputDefaultsTest {
             throw new UnsupportedOperationException();
         }
     }
-    /** An async machine that implements only its two abstract methods; both answer an Ignored outcome. */
+    /** An async machine that implements only its three abstract methods; all answer an Ignored outcome. */
     static class PlainAsync implements AsyncStateMachine<Object, S, T> {
         public CompletableFuture<Outcome<Object, S, T>> execute(Object e, T t) {
             return CompletableFuture.completedFuture(new Outcome.Ignored<>(e, S.OPEN, IgnoreReason.NO_WATCH));
         }
         public CompletableFuture<Outcome<Object, S, T>> reevaluate(Object e) { return execute(e, T.GO); }
+        public CompletableFuture<Outcome<Object, S, T>> advance(Object e) { return execute(e, T.GO); }
     }
     /**
      * A machine that implements only its abstract methods, so the input overload of {@code execute} and both
@@ -95,6 +96,7 @@ class OperationInputDefaultsTest {
             return new Outcome.Ignored<>(e, S.OPEN, IgnoreReason.NO_WATCH);
         }
         public Outcome<Object, S, T> reevaluate(Object e) { return execute(e, T.GO); }
+        public Outcome<Object, S, T> advance(Object e) { return execute(e, T.GO); }
         public Set<T> transitionsFrom(S s) { return Set.of(); }
         public AsyncStateMachine<Object, S, T> async() { return new PlainAsync(); }
         public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {

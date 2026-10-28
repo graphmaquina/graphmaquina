@@ -3,11 +3,11 @@ package io.github.graphmaquina.api;
 import java.time.Duration;
 
 /**
- * Observes every call of a registry: each {@code execute} and {@code reevaluate}, watch reactions included, but not a
- * cascade, which is part of the call that runs it. A call notifies {@link #onStarted} once, then exactly one of
- * {@link #onCompleted} and {@link #onFailed}, on the thread that runs it and before {@code execute} or
- * {@code reevaluate} returns or throws. A request refused before it starts notifies nothing: a null argument, an
- * identifier of another catalogue, or a call made where no call may start. An eligibility check, which
+ * Observes every call of a registry: each {@code execute}, {@code reevaluate} and {@code advance}, watch reactions
+ * included, but not a cascade, which is part of the call that runs it. A call notifies {@link #onStarted} once, then
+ * exactly one of {@link #onCompleted} and {@link #onFailed}, on the thread that runs it and before {@code execute},
+ * {@code reevaluate} or {@code advance} returns or throws. A request refused before it starts notifies nothing: a null
+ * argument, an identifier of another catalogue, or a call made where no call may start. An eligibility check, which
  * {@link StateMachine#eligibility} answers, is no call and notifies nothing either. Calls nest like a stack on their
  * thread: a watch reaction starts and ends inside the {@link CallPhase#REACTIONS} phase of the call that triggered it.
  * A machine built standalone has no observers.
@@ -24,12 +24,12 @@ import java.time.Duration;
  *   library, and voids these guarantees for that call. So does a VirtualMachineError, a StackOverflowError for one,
  *   that strikes again while the call notifies its observers, as it can when the call ended in one: notifying them
  *   can need the stack or the memory that ran out, so they are notified best effort, and that Error propagates.</li>
- *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute}, a {@code reevaluate} or an
- *   {@code eligibility} check it makes on its own thread throws {@code ReentrantTransitionException}, contained like
- *   any other exception; one submitted through {@code async()} runs as a separate call on the executor's thread,
- *   unless it runs on the observer's own thread, through an executor that runs tasks inline or a wait of the observer
- *   that runs a ForkJoinPool's queued tasks, in which case the returned future fails with that exception as its
- *   cause. To act on a commit, use a hook or a watch.</li>
+ *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute}, a {@code reevaluate}, an
+ *   {@code advance} or an {@code eligibility} check it makes on its own thread throws
+ *   {@code ReentrantTransitionException}, contained like any other exception; one submitted through {@code async()}
+ *   runs as a separate call on the executor's thread, unless it runs on the observer's own thread, through an
+ *   executor that runs tasks inline or a wait of the observer that runs a ForkJoinPool's queued tasks, in which case
+ *   the returned future fails with that exception as its cause. To act on a commit, use a hook or a watch.</li>
  * </ul>
  * Observers are called on the thread of every call, concurrently when calls are, so they must be thread-safe and
  * quick.

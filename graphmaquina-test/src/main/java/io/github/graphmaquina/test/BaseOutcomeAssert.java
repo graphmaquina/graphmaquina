@@ -54,7 +54,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         return self();
     }
 
-    /** No identifier was requested, which is what a reevaluation that selected no edge reports. */
+    /** No identifier was requested, which is what a reevaluation or an advance that ran no edge reports. */
     public SELF hasNoRequestedTransition() {
         Optional<T> wanted = Optional.empty();
         Outcome<E, S, T> outcome = Checks.subject(context, "requested transition", wanted, actual);

@@ -392,7 +392,8 @@ public final class MachineGenerator {
 
     /**
      * The methods of {@code Machine} the companion implements by handing the call to the state machine:
-     * {@code definition()}, {@code reevaluate(...)}, {@code transitionsFrom(...)} and {@code async(...)}.
+     * {@code definition()}, {@code reevaluate(...)}, {@code advance(...)}, {@code transitionsFrom(...)} and
+     * {@code async(...)}.
      */
     private static void delegations(MachineModel model, Names names, Variables variables, SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
@@ -410,6 +411,10 @@ public final class MachineGenerator {
         out.line(override);
         out.line("public " + names.of(OUTCOME) + generics + " reevaluate(" + e + " " + entity + ") { return " + machine
                 + ".reevaluate(" + entity + "); }");
+        out.blank();
+        out.line(override);
+        out.line("public " + names.of(OUTCOME) + generics + " advance(" + e + " " + entity + ") { return " + machine
+                + ".advance(" + entity + "); }");
         out.blank();
         out.line(override);
         out.line("public " + names.of(SET) + "<" + t + "> transitionsFrom(" + s + " " + variables.state()

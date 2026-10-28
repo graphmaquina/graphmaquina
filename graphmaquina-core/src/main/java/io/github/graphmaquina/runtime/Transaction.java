@@ -51,16 +51,17 @@ sealed class Transaction permits Transaction.Admission {
     /** The entity of the root call. */
     @Getter(AccessLevel.PACKAGE)
     private final Object callEntity;
-    /** The identifier the call requested; empty for a reevaluation, which requests none. */
+    /** The identifier the call requested; empty for a reevaluation or an advance, which request none. */
     private final Optional<Enum<?>> requested;
     /** Makes the call when an exception first needs it and no observer brought it. */
     private final Supplier<MachineCall> newCall;
     /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
     private Optional<MachineCall> call;
     /**
-     * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
-     * its guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The
-     * root moves it on to COMMIT, HOOK and REACTIONS.
+     * Where the call stands. The root's own step moves it, to GUARD before its first guard and to ACTION once its
+     * guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The body
+     * of an advance moves it back to RESOLVE before each automatic edge it tries, as {@link Attempts} says. The root
+     * moves it on to COMMIT, HOOK and REACTIONS.
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
@@ -225,8 +226,9 @@ sealed class Transaction permits Transaction.Admission {
 
     /**
      * A step of the call at {@code depth}: the root's own step, which execute requests or a reevaluation's watch
-     * selects, as {@link Steps#transition} runs it; a cascade calls Steps.transition directly. {@code input} is the
-     * operation input of the call, empty when it has none; the contexts hand it out as it is.
+     * selects, as {@link Steps#transition} runs it, as it runs each candidate an advance tries; a cascade calls
+     * Steps.transition directly. {@code input} is the operation input of the call, empty when it has none; the contexts
+     * hand it out as it is.
      */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
                                                                           E entity, T id, int depth,

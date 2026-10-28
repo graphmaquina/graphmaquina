@@ -144,12 +144,12 @@ class PublishedArtifactSmokeTest {
                     assertThat(finished).isApplied().movedTo(State.DONE)
                             .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
-                    // No default: this switch compiles only while OutcomeCode holds exactly these eight codes.
+                    // No default: this switch compiles only while OutcomeCode holds exactly these ten codes.
                     String verdict = switch (finished.code()) {
                         case APPLIED -> "applied";
                         case NO_TRANSITION, GUARD_REJECTED, DETACHED, RESERVED_EXIT -> "rejected";
                         case FAILURE_ROUTED -> "failed";
-                        case NO_WATCH, NO_RULE_MATCHED -> "ignored";
+                        case NO_WATCH, NO_RULE_MATCHED, NO_AUTOMATIC_TRANSITION, NO_CANDIDATE_ADMITTED -> "ignored";
                     };
                     if (!verdict.equals("applied") || finished.status() != OutcomeStatus.APPLIED
                             || finished.explanation().isPresent() || finished.records().size() != 1
