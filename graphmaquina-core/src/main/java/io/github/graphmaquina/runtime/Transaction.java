@@ -53,7 +53,8 @@ sealed class Transaction permits Transaction.Admission {
     private final Object callEntity;
     /** The identifier the call requested; empty for a reevaluation, which requests none. */
     private final Optional<Enum<?>> requested;
-    private final boolean reaction;
+    /** Makes the call when an exception first needs it and no observer brought it. */
+    private final Supplier<MachineCall> newCall;
     /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
     private Optional<MachineCall> call;
     /**
@@ -79,14 +80,14 @@ sealed class Transaction permits Transaction.Admission {
     boolean condemned;
 
     Transaction(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
-                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
-                @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
+                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested,
+                @NonNull Supplier<MachineCall> newCall, @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
         this.registry = registry;
         this.uow = uow;
         this.callKey = callKey;
         this.callEntity = callEntity;
         this.requested = requested;
-        this.reaction = reaction;
+        this.newCall = newCall;
         this.call = call;
         this.log = log;
     }
@@ -98,8 +99,10 @@ sealed class Transaction permits Transaction.Admission {
      * transaction. Its unit of work is its own, and empty, and {@code key} stands in for its entity.
      */
     static Transaction released(MachineRegistry registry, MachineKey<?, ?, ?> key) {
-        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(), false, Optional.empty(),
-                CallLog.OFF);
+        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(),
+                () -> {
+                    throw new IllegalStateException("the transaction of no call has no call");
+                }, Optional.empty(), CallLog.OFF);
     }
 
     /** The log of the call this transaction runs. */
@@ -108,7 +111,7 @@ sealed class Transaction permits Transaction.Admission {
     /** The call this transaction runs: created the first time it is needed, the same instance afterwards. */
     MachineCall call() {
         if (call.isEmpty()) {
-            call = Optional.of(new MachineCall(callKey, callEntity, requested, reaction));
+            call = Optional.of(newCall.get());
         }
         return call.get();
     }
@@ -476,9 +479,10 @@ sealed class Transaction permits Transaction.Admission {
         private Optional<String> abortReason = Optional.empty();
 
         Admission(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
-                  @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
-                  @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
-            super(registry, uow, callKey, callEntity, requested, reaction, call, log);
+                  @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested,
+                  @NonNull Supplier<MachineCall> newCall, @NonNull Optional<MachineCall> call,
+                  @NonNull CallLog log) {
+            super(registry, uow, callKey, callEntity, requested, newCall, call, log);
         }
 
         /**

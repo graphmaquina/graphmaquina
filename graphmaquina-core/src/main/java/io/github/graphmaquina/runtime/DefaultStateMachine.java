@@ -1,6 +1,8 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -160,8 +162,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
         CallLog log = CallLog.open(Optional.empty());
-        Optional<Observed> observed = RootCall.observe(this, entity, requested, false, log);
-        return RootCall.run(this, entity, requested, false, observed, log,
+        Optional<Observed> observed = RootCall.observe(this, entity, CallRequest.EXECUTE, requested,
+                CallOrigin.APPLICATION, log);
+        return RootCall.run(this, entity, CallRequest.EXECUTE, requested, CallOrigin.APPLICATION, observed, log,
                 (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
     }
 

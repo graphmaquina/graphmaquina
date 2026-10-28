@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineCall;
@@ -409,7 +411,8 @@ class ReactionAssertionsTest {
         TransitionRecord<Entity, State, Id> hop = new TransitionRecord<>(TestDomain.KEY, entity, State.NEW, Id.PREPARE,
                 State.READY, TransitionKind.MOVE, Optional.empty(), 0);
         AfterCommitException cause = new AfterCommitException(
-                new MachineCall(TestDomain.KEY, entity, Optional.of(Id.PREPARE), false), List.of(), List.of(hop), hop,
+                new MachineCall(TestDomain.KEY, entity, CallRequest.EXECUTE, Optional.of(Id.PREPARE),
+                        CallOrigin.APPLICATION), List.of(), List.of(hop), hop,
                 "audit", new IllegalStateException("the hook threw"));
         AbortedReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Aborted(TestDomain.KEY, entity, cause), entity).isAborted();

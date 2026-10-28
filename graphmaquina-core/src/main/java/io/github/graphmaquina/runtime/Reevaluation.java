@@ -1,9 +1,12 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StatesWritten;
@@ -51,9 +54,10 @@ final class Reevaluation {
                                                                                E entity, int chain,
                                                                                Optional<Long> trigger) {
         Reentrancy.check(machine.key(), entity);
-        boolean reaction = chain > 0;
+        CallOrigin origin = chain > 0 ? CallOrigin.WATCH_REACTION : CallOrigin.APPLICATION;
         CallLog log = CallLog.open(trigger);
-        Optional<Observed> observed = RootCall.observe(machine, entity, Optional.empty(), reaction, log);
+        Optional<Observed> observed = RootCall.observe(machine, entity, CallRequest.REEVALUATE,
+                Optional.empty(), origin, log);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
@@ -63,11 +67,11 @@ final class Reevaluation {
             }
             boolean[] marker = Reentrancy.enter(machine.key(), entity);
             try {
-                state = stateOf(machine, entity, observed, reaction);
-                requireChain(machine, entity, observed, reaction, state, chain);
+                state = stateOf(machine, entity, observed, origin);
+                requireChain(machine, entity, observed, origin, state, chain);
                 watch = machine.definition().watch(state);
                 if (watch.isPresent()) {
-                    selected = selection(machine, watch.get(), entity, observed, reaction, state);
+                    selected = selection(machine, watch.get(), entity, observed, origin, state);
                 }
             } finally {
                 marker[0] = false;
@@ -83,33 +87,33 @@ final class Reevaluation {
             return RootCall.ignored(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return RootCall.run(machine, entity, Optional.empty(), reaction, observed, log,
+        return RootCall.run(machine, entity, CallRequest.REEVALUATE, Optional.empty(), origin, observed, log,
                 (Transaction tx) -> tx.transition(machine, entity, resolved, 0), chain);
     }
 
     /** The state the reevaluation reads; a getter that throws or answers null aborts it as {@link #unresolved} says. */
     private static <E, S extends Enum<S>, T extends Enum<T>> S stateOf(DefaultStateMachine<E, S, T> machine,
                                                                        E entity, Optional<Observed> observed,
-                                                                       boolean reaction) {
+                                                                       CallOrigin origin) {
         try {
             return machine.readState(entity);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
             Interrupts.keep(e);
-            throw unresolved(machine, entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
+            throw unresolved(machine, entity, observed, origin, Optional.empty(), "reading the entity threw ", e);
         }
     }
 
     /** Refuses a watch reaction past maxWatchChain once the state is read, before any watch function runs. */
     private static <E, S extends Enum<S>, T extends Enum<T>> void requireChain(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, boolean reaction, S state,
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallOrigin origin, S state,
             int chain) {
         if (chain > machine.registry().maxWatchChain()) {
             AbortDetails details = new AbortDetails(machine.key(), entity, Optional.of(state), Optional.empty(),
                     Optional.empty(), Optional.empty(), List.of(), List.of());
-            throw new WatchChainExceededException(RootCall.callOf(machine, entity, observed, reaction), details,
-                    machine.registry().maxWatchChain());
+            MachineCall call = RootCall.callOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
+            throw new WatchChainExceededException(call, details, machine.registry().maxWatchChain());
         }
     }
 
@@ -119,14 +123,14 @@ final class Reevaluation {
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Optional<T> selection(
             DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, ?, ?, ?> watch, E entity,
-            Optional<Observed> observed, boolean reaction, S state) {
+            Optional<Observed> observed, CallOrigin origin, S state) {
         try {
             return firstMatch(machine, watch, entity);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
             Interrupts.keep(e);
-            throw unresolved(machine, entity, observed, reaction, Optional.of(state), "the watch threw ", e);
+            throw unresolved(machine, entity, observed, origin, Optional.of(state), "the watch threw ", e);
         }
     }
 
@@ -167,13 +171,13 @@ final class Reevaluation {
      * thread again for an InterruptedException that the getter or the watch threw.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> TransitionAbortedException unresolved(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, boolean reaction,
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallOrigin origin,
             Optional<Enum<?>> from, String what, Throwable error) {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, from, Optional.empty(), Optional.empty(),
                 Optional.empty(), List.of(), List.of());
-        return new TransitionAbortedException(RootCall.callOf(machine, entity, observed, reaction), CallPhase.RESOLVE,
-                details, what + Texts.shown(cause), cause);
+        MachineCall call = RootCall.callOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
+        return new TransitionAbortedException(call, CallPhase.RESOLVE, details, what + Texts.shown(cause), cause);
     }
 
     /**

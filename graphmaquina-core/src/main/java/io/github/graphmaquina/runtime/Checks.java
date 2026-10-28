@@ -1,6 +1,9 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.Eligibility;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.internal.Interrupts;
@@ -44,7 +47,8 @@ final class Checks {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
         CallLog log = CallLog.openCheck();
         Transaction.Admission tx = new Transaction.Admission(registry, uow, machine.key(), entity,
-                Optional.of(transition), false, Optional.empty(), log);
+                Optional.of(transition), () -> new MachineCall(machine.key(), entity, CallRequest.EXECUTE,
+                        Optional.of(transition), CallOrigin.APPLICATION), Optional.empty(), log);
         if (log.debug()) {
             log.start(machine.key(), transition.name());
         }

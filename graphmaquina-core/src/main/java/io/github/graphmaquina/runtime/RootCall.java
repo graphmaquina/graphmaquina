@@ -1,7 +1,9 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.Outcome;
@@ -53,14 +55,16 @@ final class RootCall {
      * writes to the call's flow as it makes it, and the watch dispatch logs each owner lookup.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> run(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Enum<?>> requested, boolean reaction,
-            Optional<Observed> observed, CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
+            DefaultStateMachine<E, S, T> machine, E entity, CallRequest request, Optional<Enum<?>> requested,
+            CallOrigin origin, Optional<Observed> observed, CallLog log, Function<Transaction, StepResult<S, T>> body,
+            int chain) {
         MachineRegistry registry = machine.registry();
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
         if (machine.trail().isPresent()) {
             uow.recordTrail(entity, machine.trail().get());
         }
-        Transaction tx = new Transaction(registry, uow, machine.key(), entity, requested, reaction,
+        Transaction tx = new Transaction(registry, uow, machine.key(), entity, requested,
+                () -> new MachineCall(machine.key(), entity, request, requested, origin),
                 observed.map(Observed::call), log);
         Outcome<E, S, T> outcome;
         try {
@@ -208,22 +212,24 @@ final class RootCall {
      * way; the clock of a trail is another one.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Optional<Observed> observe(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Enum<?>> requested, boolean reaction,
-            CallLog log) {
+            DefaultStateMachine<E, S, T> machine, E entity, CallRequest request, Optional<Enum<?>> requested,
+            CallOrigin origin, CallLog log) {
         Observers observers = machine.registry().observers();
         if (observers.isEmpty()) {
             return Optional.empty();
         }
         long startNanos = log == CallLog.OFF ? System.nanoTime() : log.startNanos();
-        return Optional.of(observers.started(new MachineCall(machine.key(), entity, requested, reaction), startNanos));
+        return Optional.of(observers.started(new MachineCall(machine.key(), entity, request, requested, origin),
+                startNanos));
     }
 
     /** The call a reevaluation's own failure carries: the observed one, or a new one when nobody observes it. */
     static <E, S extends Enum<S>, T extends Enum<T>> MachineCall callOf(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, boolean reaction) {
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallRequest request,
+            CallOrigin origin) {
         return observed.isPresent()
                 ? observed.get().call()
-                : new MachineCall(machine.key(), entity, Optional.empty(), reaction);
+                : new MachineCall(machine.key(), entity, request, Optional.empty(), origin);
     }
 
     /** Tells the observers, if any, that the call returned {@code outcome}. */

@@ -1,7 +1,9 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
@@ -187,11 +189,12 @@ public final class MachineRegistry implements AutoCloseable {
      * whose synthetic holder class has a static initializer that no source can name.
      */
     static List<Class<?>> staticallyInitialized() {
-        return List.of(ActionStatus.class, CallPhase.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class,
-                OutcomeStatus.class, RejectionKind.class, StatesWritten.class, TransitionKind.class,
-                CallFailedException.class, CallFailureFlows.class, FrozenFlow.class, Await.class, CallLog.class,
-                CommitSummary.class, FlowHandle.Hook.class, Observers.class, Reentrancy.class, Submachines.Hold.class,
-                Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
+        return List.of(ActionStatus.class, CallOrigin.class, CallPhase.class, CallRequest.class,
+                CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class, RejectionKind.class,
+                StatesWritten.class, TransitionKind.class, CallFailedException.class, CallFailureFlows.class,
+                FrozenFlow.class, Await.class, CallLog.class, CommitSummary.class, FlowHandle.Hook.class,
+                Observers.class, Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class,
+                Watcher.NoOwner.class);
     }
 
     /**

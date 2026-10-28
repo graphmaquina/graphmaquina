@@ -356,7 +356,7 @@ returns. Every owner lookup runs before any reaction, and the call's outcome lis
 `Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and
 a `Reaction.Aborted` what ended it, as [records, journals and reactions](outcomes.md#records-journals-and-reactions)
 details. An aborted reevaluation names the owner it reevaluated; an owner lookup that threw names the peer that moved.
-Observers see each reaction as a call of its own, whose `MachineCall.reaction()` is true. A reaction that would exceed
+Observers see each reaction as a call of its own, whose `MachineCall.origin()` is `CallOrigin.WATCH_REACTION` and whose `request()` is `CallRequest.REEVALUATE`. A reaction that would exceed
 the registry's `maxWatchChain` evaluates no rule and ends as a `Reaction.Aborted` whose cause is a
 `WatchChainExceededException`.
 

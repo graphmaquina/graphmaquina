@@ -14,8 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AbortDetails;
@@ -42,7 +45,9 @@ class TransactionClassifyTest {
     @Test
     void aTransactionRefusesAnAbsentRegistryAtConstruction() {
         assertThrows(NullPointerException.class, () -> new Transaction(null, new UnitOfWork(10, Long.MAX_VALUE),
-                DOCS, new Doc("1", DRAFT), Optional.of(SUBMIT), false, Optional.empty(), CallLog.OFF));
+                DOCS, new Doc("1", DRAFT), Optional.of(SUBMIT), () -> {
+                    throw new AssertionError("no call is needed");
+                }, Optional.empty(), CallLog.OFF));
     }
 
     private static Transaction transaction(Doc doc) {
@@ -51,7 +56,8 @@ class TransactionClassifyTest {
 
     private static Transaction transaction(Doc doc, DocTransition requested) {
         return new Transaction(MachineRegistry.builder().build(), new UnitOfWork(10, Long.MAX_VALUE),
-                DOCS, doc, Optional.of(requested), false,
+                DOCS, doc, Optional.of(requested),
+                () -> new MachineCall(DOCS, doc, CallRequest.EXECUTE, Optional.of(requested), CallOrigin.APPLICATION),
                 Optional.empty(), CallLog.OFF);
     }
 

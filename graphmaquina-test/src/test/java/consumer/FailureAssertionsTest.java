@@ -11,7 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatesWritten;
@@ -302,7 +304,8 @@ class FailureAssertionsTest {
     void aReevaluationAbortBeforeTheStateWasReadIsLocatedWithoutAnIdentifier() {
         Entity entity = new Entity("e", State.NEW);
         AbortAssert reevaluated = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new MachineCall(TestDomain.KEY, entity,
+                        CallRequest.REEVALUATE, Optional.empty(), CallOrigin.APPLICATION), CallPhase.RESOLVE,
                 new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), List.of(), List.of()), "reading the entity threw")).isAbort();
         assertSame(reevaluated, reevaluated.atUnreadState(TestDomain.KEY, entity));
@@ -319,13 +322,15 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class, () -> reevaluated.atUnreadState(TestDomain.KEY, twin)),
                 "abort", "entity", twin, entity);
         AbortAssert withState = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new MachineCall(TestDomain.KEY, entity,
+                        CallRequest.REEVALUATE, Optional.empty(), CallOrigin.APPLICATION), CallPhase.RESOLVE,
                 new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.empty(), Optional.empty(),
                         Optional.empty(), List.of(), List.of()), "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> withState.atUnreadState(TestDomain.KEY, entity)),
                 "abort", "from", Optional.empty(), Optional.of(State.NEW));
         AbortAssert withDestination = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new MachineCall(TestDomain.KEY, entity,
+                        CallRequest.REEVALUATE, Optional.empty(), CallOrigin.APPLICATION), CallPhase.RESOLVE,
                 new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(),
                         Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -466,7 +471,8 @@ class FailureAssertionsTest {
                 "call failure", "phase", CallPhase.HOOK, CallPhase.COMMIT);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasStatesWritten(StatesWritten.PARTIAL)),
                 "call failure", "states written", StatesWritten.PARTIAL, StatesWritten.NONE);
-        MachineCall other = new MachineCall(TestDomain.KEY, entity, Optional.of(Id.PREPARE), false);
+        MachineCall other = new MachineCall(TestDomain.KEY, entity,
+                CallRequest.EXECUTE, Optional.of(Id.PREPARE), CallOrigin.APPLICATION);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCallSameAs(other)),
                 "call failure", "call", other, CALL);
         assertThrows(NullPointerException.class, () -> view.hasPhase(null));
@@ -495,8 +501,8 @@ class FailureAssertionsTest {
                 () -> TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
                         details(), "no")).isAbort().hasPhase(CallPhase.GUARD)),
                 "abort", "phase", CallPhase.GUARD, CallPhase.ACTION);
-        MachineCall other = new MachineCall(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(Id.PREPARE),
-                false);
+        MachineCall other = new MachineCall(TestDomain.KEY, new Entity("e", State.NEW),
+                CallRequest.EXECUTE, Optional.of(Id.PREPARE), CallOrigin.APPLICATION);
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(new CascadeException(CALL, details(),
                         List.of(elementAbort(new Other("a"))))).isCascadeAbort().hasCallSameAs(other)),
@@ -803,7 +809,8 @@ class FailureAssertionsTest {
     }
 
     private static final MachineCall CALL =
-            new MachineCall(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(Id.PREPARE), false);
+            new MachineCall(TestDomain.KEY, new Entity("e", State.NEW),
+                    CallRequest.EXECUTE, Optional.of(Id.PREPARE), CallOrigin.APPLICATION);
 
     /** The failure of a hook on the committed hop {@code from -transition-> to}, the only hop of its call. */
     private static <E, S extends Enum<S>, T extends Enum<T>> AfterCommitException afterCommit(

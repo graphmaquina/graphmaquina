@@ -10,7 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
@@ -133,7 +135,8 @@ class ObserversTest {
             }
         };
         Doc entity = new Doc("1", DRAFT);
-        MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
+        MachineCall call = new MachineCall(DOCS, entity,
+                CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION);
         Observed observed = new Observers(List.of(new Failing(new IllegalStateException("observer failed")), next),
                 new BrokenLogger(checking, new IllegalStateException("warning backend failed")))
                 .started(call, System.nanoTime());
@@ -152,7 +155,8 @@ class ObserversTest {
             @Override public void onStarted(MachineCall call) { after.add("started"); }
         };
         Doc entity = new Doc("1", DRAFT);
-        MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
+        MachineCall call = new MachineCall(DOCS, entity,
+                CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION);
         Observers observers = new Observers(List.of(new Failing(new IllegalStateException("observer failed")), next),
                 new BrokenLogger(checking, fatal));
         assertSame(fatal, assertThrows(AssertionError.class, () -> observers.started(call, System.nanoTime())));
@@ -172,7 +176,8 @@ class ObserversTest {
             }
         };
         Doc entity = new Doc("secret", DRAFT);
-        MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
+        MachineCall call = new MachineCall(DOCS, entity,
+                CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION);
         Observed observed = new Observers(List.of(new Failing(boom), next), logger).started(call, System.nanoTime());
         observed.completed(ignored(entity));
         observed.failed(new CallFailure(CallPhase.ACTION, StatesWritten.NONE, new IllegalArgumentException("x")));
@@ -198,7 +203,8 @@ class ObserversTest {
         };
         long startNanos = System.nanoTime() - Duration.ofHours(1).toNanos();
         Observed observed = new Observers(List.of(observer), new RecordingLogger())
-                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), startNanos);
+                .started(new MachineCall(DOCS, entity,
+                        CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION), startNanos);
         observed.completed(ignored(entity));
         assertEquals(startNanos, observed.startNanos());
         assertTrue(elapsed.get(0).compareTo(Duration.ofHours(1)) >= 0, elapsed.toString());
@@ -216,7 +222,8 @@ class ObserversTest {
             }
         };
         new Observers(List.of(probe), new RecordingLogger())
-                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), System.nanoTime());
+                .started(new MachineCall(DOCS, entity,
+                        CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION), System.nanoTime());
         assertEquals(List.of(ReentrantTransitionException.class), during);
         Reentrancy.check(DOCS, entity);
     }
@@ -233,7 +240,8 @@ class ObserversTest {
         };
         RecordingLogger logger = new RecordingLogger();
         Observed observed = new Observers(List.of(observer), logger)
-                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), System.nanoTime());
+                .started(new MachineCall(DOCS, entity,
+                        CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION), System.nanoTime());
         assertSame(broken, assertThrows(AssertionError.class, () -> observed.completed(ignored(entity))));
         assertEquals(List.of(), logger.records);
         Reentrancy.check(DOCS, entity);

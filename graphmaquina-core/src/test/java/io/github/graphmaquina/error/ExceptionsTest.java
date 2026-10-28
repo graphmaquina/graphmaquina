@@ -10,7 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatesWritten;
@@ -29,7 +31,8 @@ class ExceptionsTest {
 
     private static final MachineKey<String, DayOfWeek, Month> KEY =
             MachineKey.of(String.class, DayOfWeek.class, Month.class);
-    private static final MachineCall CALL = new MachineCall(KEY, "e", Optional.of(Month.JANUARY), false);
+    private static final MachineCall CALL = new MachineCall(KEY, "e",
+            CallRequest.EXECUTE, Optional.of(Month.JANUARY), CallOrigin.APPLICATION);
     private static final ActionRecord RAN =
             new ActionRecord(KEY, "e", DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, "A", 0, ActionStatus.OK);
 

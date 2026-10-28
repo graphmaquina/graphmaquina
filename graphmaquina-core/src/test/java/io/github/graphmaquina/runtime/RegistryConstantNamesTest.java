@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineCall;
@@ -234,7 +236,8 @@ class RegistryConstantNamesTest {
         List<String> refusals = new ArrayList<>();
         for (Foreign foreign : Foreign.values()) {
             refusals.add(assertThrows(IllegalArgumentException.class,
-                    () -> new MachineCall(BOXES, new Box(), Optional.of(foreign), false)).getMessage());
+                    () -> new MachineCall(BOXES, new Box(),
+                            CallRequest.EXECUTE, Optional.of(foreign), CallOrigin.APPLICATION)).getMessage());
         }
         assertEquals(List.of("transition must belong to " + Move.class.getName() + ": ELSEWHERE",
                 "transition must belong to " + Move.class.getName() + ": UNPRINTABLE"), refusals);

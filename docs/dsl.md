@@ -131,8 +131,8 @@ asynchronous action, with `IllegalArgumentException`. A definition assembled fro
 checks `build()` runs, such as reachability, cycles or failure routes, so the DSL or the annotations are the way to a
 validated graph. Their constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard
 name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its
-`statesWritten`, a `MachineCall` an identifier of its own catalogue and none for a reaction, a `TransitionSpec` a
-positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
+`statesWritten`, a `MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any other
+request, and a reaction only for a `REEVALUATE`, a `TransitionSpec` a positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
 without `starts`, `failureKind` or `flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec`
 whose `failsOn` holds an interface type can make the order of its entries change the route, which the DSL and the
 annotations never allow. The `TransitionSpec` constructor without `recoveryRules` declares none, and a `SubmachineSpec`

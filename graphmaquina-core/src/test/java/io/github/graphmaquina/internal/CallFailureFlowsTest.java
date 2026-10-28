@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.MachineCall;
@@ -37,7 +39,8 @@ class CallFailureFlowsTest {
     private static TransitionAbortedException abortOf(Doc doc) {
         AbortDetails details = new AbortDetails(DOCS, doc, Optional.of(DRAFT), Optional.of(SUBMIT), Optional.empty(),
                 Optional.empty(), List.of(), List.of());
-        return new TransitionAbortedException(new MachineCall(DOCS, doc, Optional.of(SUBMIT), false),
+        return new TransitionAbortedException(new MachineCall(DOCS, doc,
+                CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION),
                 CallPhase.ACTION, details, "boom");
     }
 
