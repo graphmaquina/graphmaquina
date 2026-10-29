@@ -12,8 +12,9 @@ import java.util.Set;
  * The post-commit of a root call, from its hooks to its automatic chains, as the entities that calls nested in it
  * commit see it, so that the deepest commit that moved an entity is the one that chains it. Each thread keeps the
  * scopes it has open, each linked to the one around it, the innermost in a cell of the thread: every commit reports
- * its entities to all of them before it opens its own, whether the call that committed is a hook's call, a watch
- * reaction or an automatic attempt. A call made on another thread reports to none of them.
+ * its entities to all of them, whether the call that committed is a hook's call, a watch reaction or an automatic
+ * attempt, before it opens its own, which only a registry with an automatic edge does. A call made on another thread
+ * reports to none of them.
  *
  * <p>The scope holds what was reported as a list, which takes no identity's hashCode or equals, so a commit reports
  * without running code of the application. {@link #movedBelow} compares identities as the commit log does: it indexes
@@ -62,6 +63,15 @@ final class PostCommitScope {
     private PostCommitScope(Optional<PostCommitScope>[] innermost, Optional<PostCommitScope> parent) {
         this.innermost = innermost;
         this.parent = parent;
+    }
+
+    /**
+     * Whether this thread keeps a scope, which a commit reports its entities to: a commit lists them only then, so one
+     * that no post-commit surrounds allocates nothing to report. A closed scope that a StackOverflowError left counts
+     * until the next scope opened or closed on the thread drops it.
+     */
+    static boolean anyOpen() {
+        return INNERMOST.get()[0].isPresent();
     }
 
     /** Adds {@code refs}, the entities of a commit, to every scope this thread has open. */

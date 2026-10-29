@@ -38,11 +38,11 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * A GraphDefinition written by hand whose automaticFrom throws. The chain reads the automatic edges of a state before
- * any attempt, outside any call: what that read throws, anything but an Error, ends the chain as an aborted step that
- * carries it, a checked throwable wrapped in UndeclaredThrowableException, and never fails the call that committed.
- * An attempt reads them again under its own call, where what the read throws aborts that attempt in RESOLVE, as it
- * aborts an advance.
+ * A GraphDefinition written by hand whose automaticFrom throws. A registry reads the automatic edges of every state
+ * once as it is built, and what that read throws fails the build. The chain reads them before any attempt, outside any
+ * call: what that read throws, anything but an Error, ends the chain as an aborted step that carries it, a checked
+ * throwable wrapped in UndeclaredThrowableException, and never fails the call that committed. An attempt reads them
+ * again under its own call, where what the read throws aborts that attempt in RESOLVE, as it aborts an advance.
  */
 class AutomaticEdgesReadFailureTest {
 
@@ -123,14 +123,25 @@ class AutomaticEdgesReadFailureTest {
         return account;
     }
 
-    /** The only step of the chain that {@code thrown}, from the first read of PASSWORD_SET on, ends. */
+    /**
+     * The only step of the chain that {@code thrown}, from the first read of PASSWORD_SET after the one of the build
+     * on, ends.
+     */
     private static AutomaticStep.Aborted abortedBy(Throwable thrown) {
         Account account = account();
-        StateMachine<Account, AccountStatus, AccountTransition> accounts = machine(new ThrowingEdges(thrown, 1));
+        StateMachine<Account, AccountStatus, AccountTransition> accounts = machine(new ThrowingEdges(thrown, 2));
         List<AutomaticStep> steps = accounts.execute(account, SET_PASSWORD).automaticSteps();
         assertEquals(PASSWORD_SET, account.status());
         assertEquals(1, steps.size());
         return assertInstanceOf(AutomaticStep.Aborted.class, steps.get(0));
+    }
+
+    /** The read of the build throws: the build fails with what it threw, as it is. */
+    @Test
+    void aGraphWhoseAutomaticEdgesCannotBeReadFailsTheBuild() {
+        IllegalStateException unreadable = new IllegalStateException("the edges are unreadable");
+        assertSame(unreadable, assertThrows(IllegalStateException.class,
+                () -> machine(new ThrowingEdges(unreadable, 1))));
     }
 
     /**
@@ -160,13 +171,13 @@ class AutomaticEdgesReadFailureTest {
     void anAttemptThatCannotReadTheAutomaticEdgesAbortsInResolve() {
         IOException offline = new IOException("the edges are offline");
         Account account = account();
-        List<AutomaticStep> steps = machine(new ThrowingEdges(offline, 2)).execute(account, SET_PASSWORD)
+        List<AutomaticStep> steps = machine(new ThrowingEdges(offline, 3)).execute(account, SET_PASSWORD)
                 .automaticSteps();
         assertEquals(List.of("Aborted TransitionAbortedException"), described(steps));
         TransitionAbortedException cause = (TransitionAbortedException) ((AutomaticStep.Aborted) steps.get(0)).cause();
         assertEquals(List.of(CallPhase.RESOLVE, StatesWritten.NONE), List.of(cause.phase(), cause.statesWritten()));
         assertSame(offline, cause.getCause());
-        StateMachine<Account, AccountStatus, AccountTransition> accounts = machine(new ThrowingEdges(offline, 1));
+        StateMachine<Account, AccountStatus, AccountTransition> accounts = machine(new ThrowingEdges(offline, 2));
         TransitionAbortedException advance = assertThrows(TransitionAbortedException.class,
                 () -> accounts.advance(account));
         assertEquals(CallPhase.RESOLVE, advance.phase());

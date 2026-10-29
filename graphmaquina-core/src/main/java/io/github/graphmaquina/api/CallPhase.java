@@ -45,7 +45,8 @@ public enum CallPhase {
 
     /**
      * The automatic chains of the entities the commit moved, once its watch reactions ran: each attempt is a call of
-     * its own. Only an Error leaves this phase: any other throwable becomes an {@link AutomaticStep.Aborted}.
+     * its own. Only an Error leaves this phase: any other throwable becomes an {@link AutomaticStep.Aborted}. A call of
+     * a registry in which no state has an automatic edge never enters it.
      */
     AUTOMATIC_STEPS
 }

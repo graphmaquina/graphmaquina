@@ -18,18 +18,21 @@ import java.util.Optional;
  * @param reactions the watch reactions of the commit
  * @param steps the automatic steps of the chains the commit triggered
  * @param movedBelow the entities that the commits nested in the post-commit reported, as
- *     {@link PostCommitScope#moved()} lists them
+ *     {@link PostCommitScope#moved()} lists them; empty when the registry has no automatic edge, which opens no
+ *     scope
  */
 record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<EntityRef> movedBelow) {
 
     /**
      * What follows a commit that wrote something, {@code committed}: it reports its entities to the post-commits this
-     * thread runs around it, logs its line and opens its own {@link PostCommitScope}; then the hooks of its hops, then,
-     * in the phase REACTIONS, the watch reactions that {@code summary} triggers, one watch level above
-     * {@code levels}, then, in the phase AUTOMATIC_STEPS, the automatic chains of the entities of the commit but
-     * {@code continuing}, as {@link AutomaticChains#run} says; the scope closes whatever they throw. Nothing runs, and
-     * neither a reaction nor a step comes back, when nothing was committed. A hook that throws ends the call before
-     * its watch dispatch and its chains.
+     * thread runs around it and logs its line; then the hooks of its hops, then, in the phase REACTIONS, the watch
+     * reactions that {@code summary} triggers, one watch level above {@code levels}. In a registry with an automatic
+     * edge, its own {@link PostCommitScope} is open around them, and around the automatic chains that follow, in the
+     * phase AUTOMATIC_STEPS, of the entities of the commit but {@code continuing}, as {@link AutomaticChains#run}
+     * says; the scope closes whatever they throw. A registry without one opens no scope, runs no chain and never
+     * enters AUTOMATIC_STEPS, and no nested call's entity comes back. Nothing runs, and neither a reaction nor a step
+     * comes back, when nothing was committed. A hook that throws ends the call before its watch dispatch and its
+     * chains.
      */
     static PostCommit after(Transaction tx, List<TransitionRecord<?, ?, ?>> records,
                             List<SubmachineStart<?, ?, ?>> starts, List<LogEntry> committed, CommitSummary summary,
@@ -37,17 +40,21 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
         if (committed.isEmpty()) {
             return new PostCommit(List.of(), List.of(), List.of());
         }
-        PostCommitScope.report(summary.refs());
+        if (PostCommitScope.anyOpen()) {
+            PostCommitScope.report(summary.refs());
+        }
         if (tx.log().debug()) {
             tx.log().committed(committed);
+        }
+        if (!tx.registry().hasAutomaticEdges()) {
+            return new PostCommit(hooksAndReactions(tx, records, starts, committed, summary, levels), List.of(),
+                    List.of());
         }
         List<Reaction> reactions;
         List<AutomaticStep> steps;
         PostCommitScope scope = PostCommitScope.open();
         try {
-            AfterCommitHooks.run(tx, records, starts, committed);
-            tx.enter(CallPhase.REACTIONS);
-            reactions = tx.registry().dispatchWatches(summary, levels, tx.log());
+            reactions = hooksAndReactions(tx, records, starts, committed, summary, levels);
             tx.enter(CallPhase.AUTOMATIC_STEPS);
             steps = AutomaticChains.run(tx, summary, levels, continuing, scope);
         } finally {
@@ -55,6 +62,18 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
             scope.close();
         }
         return new PostCommit(reactions, steps, scope.moved());
+    }
+
+    /**
+     * The hooks of the hops of {@code committed}, then, in the phase REACTIONS, the watch reactions that
+     * {@code summary} triggers, one watch level above {@code levels}, which it returns.
+     */
+    private static List<Reaction> hooksAndReactions(Transaction tx, List<TransitionRecord<?, ?, ?>> records,
+                                                    List<SubmachineStart<?, ?, ?>> starts, List<LogEntry> committed,
+                                                    CommitSummary summary, ChainLevels levels) {
+        AfterCommitHooks.run(tx, records, starts, committed);
+        tx.enter(CallPhase.REACTIONS);
+        return tx.registry().dispatchWatches(summary, levels, tx.log());
     }
 
     /**

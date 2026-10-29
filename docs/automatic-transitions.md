@@ -401,7 +401,8 @@ together with `onFailure` is `SG507`. `build()` checks the rules of
 [declare automatic edges](#declare-automatic-edges), and [diagnostics](diagnostics.md) lists their codes. A
 `GraphDefinition` written by hand implements `automaticFrom(state)` itself. The runtime asks only that method, so it
 must agree with the `automatic()` marks of the edges, which the DSL and the annotations guarantee and a hand-written
-definition does not.
+definition does not. A registry asks it for every state once as it is built, and what it throws there propagates from
+the build; when no state has an automatic edge then, none of the registry's calls runs an automatic chain.
 
 ## Inspect and test
 

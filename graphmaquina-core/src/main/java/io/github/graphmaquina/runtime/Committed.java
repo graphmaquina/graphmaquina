@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * What a root call hands back to the engine code that ran it, once its post-commit ran: its outcome, what its commit
  * amounts to per entity, {@link CommitSummary#EMPTY} when it committed nothing, and the entities that the commits of
- * calls nested in its post-commit reported, empty when it committed nothing.
+ * calls nested in its post-commit reported, empty when it committed nothing or its registry has no automatic edge.
  *
  * @param outcome the outcome the call returns
  * @param summary the summary of the call's commit, or {@link CommitSummary#EMPTY}

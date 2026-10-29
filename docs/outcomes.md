@@ -317,7 +317,8 @@ the edge; `GUARD` runs the root edge's guards, and is entered only when it has a
 guards until the step ends, its cascades, failure route, sub-machine starts and exits included, which never change
 the phase; `COMMIT` checks the original states and calls the setters; `HOOK` runs the after-commit hooks;
 `REACTIONS` dispatches the watch reactions; and `AUTOMATIC_STEPS` runs the automatic chains of the entities the commit
-moved. Only an `Error` leaves either of the last two as a failure. The names of `CallPhase` and `StatesWritten` are
+moved, which a call of a registry without automatic edges never enters. Only an `Error` leaves either of the last two
+as a failure. The names of `CallPhase` and `StatesWritten` are
 stable identifiers, safe to log or to use as a metric tag.
 
 `call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that

@@ -134,7 +134,9 @@ every code.
 asynchronous action, with `IllegalArgumentException`. A definition assembled from them by hand gets none of the graph
 checks `build()` runs, such as reachability, cycles or failure routes, so the DSL or the annotations are the way to a
 validated graph. Such a definition implements `automaticFrom(state)` itself: the runtime asks only it for the automatic
-edges of a state, so it must list exactly the edges leaving that state that are marked `automatic`. The records'
+edges of a state, so it must list exactly the edges leaving that state that are marked `automatic`, and always the
+same ones, since a registry reads it for every state once as it is built to learn whether its calls run automatic
+chains at all. The records'
 constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard name only for `GUARD`, a
 `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its `statesWritten`, a
 `MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any other request, a reaction only

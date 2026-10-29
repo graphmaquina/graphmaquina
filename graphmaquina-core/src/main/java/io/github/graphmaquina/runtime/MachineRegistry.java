@@ -48,7 +48,9 @@ import lombok.RequiredArgsConstructor;
  * {@link Builder#build()} or for a standalone machine, and never touched again. Assembling refuses a binding whose
  * child machine is not in the registry, or was built from another {@code GraphDefinition} instance than the one the
  * binding holds, and a machine that declares no asyncTimeout although an edge that its calls can run implicitly is
- * asynchronous, as below.
+ * asynchronous, as below. Assembling also reads the automaticFrom of every state of every machine's graph once, and
+ * what one throws propagates: when no state has an automatic edge, no call of the registry runs an automatic chain or
+ * enters the {@link io.github.graphmaquina.api.CallPhase#AUTOMATIC_STEPS} phase.
  *
  * <p>A cascade runs inside the root's transaction and under the root machine's deadline: a cascaded peer's
  * asynchronous waits are bounded by the asyncTimeout of the machine whose call started the root, not by its own.
@@ -112,6 +114,12 @@ public final class MachineRegistry implements AutoCloseable {
     private final int maxAutomaticChain;
     @Getter(AccessLevel.PACKAGE)
     private final Observers observers;
+    /**
+     * Whether a state of a machine's graph has an automatic edge, as its automaticFrom answered when the registry was
+     * assembled: when none has, no call of the registry runs automatic chains, nor enters their phase.
+     */
+    @Getter(AccessLevel.PACKAGE)
+    private final boolean hasAutomaticEdges;
 
     public static Builder builder() {
         return new Builder();
@@ -161,8 +169,13 @@ public final class MachineRegistry implements AutoCloseable {
                         + edge.get() + " implicitly and does not declare asyncTimeout(...)");
             }
         }
+        boolean automatic = false;
+        for (StateMachines.Builder<?, ?, ?> builder : builders) {
+            automatic |= hasAutomaticEdge(builder.definition());
+        }
         initializeRuntime();
-        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, maxAutomaticChain, observers);
+        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, maxAutomaticChain, observers,
+                automatic);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             registry.register(builder, bindings.getOrDefault(builder.key(), List.of()));
         }
@@ -218,6 +231,19 @@ public final class MachineRegistry implements AutoCloseable {
                 throw new IllegalStateException(unreachable);
             }
         }
+    }
+
+    /**
+     * Whether a state of {@code definition} has an automatic edge: it reads the automaticFrom of every state once, and
+     * what that throws propagates.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean hasAutomaticEdge(
+            GraphDefinition<E, S, T> definition) {
+        boolean automatic = false;
+        for (S state : definition.key().states().getEnumConstants()) {
+            automatic |= !definition.automaticFrom(state).isEmpty();
+        }
+        return automatic;
     }
 
     /** A watch must point to one of the machines being assembled; for a standalone machine, that is itself. */
@@ -521,8 +547,9 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade,
-         * before it consumes any of them; only a build that succeeds marks this builder and its machine builders used.
+         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade, and
+         * reads the automatic edges of every state of its graph, before it consumes any of them; only a build that
+         * succeeds marks this builder and its machine builders used.
          */
         public MachineRegistry build() {
             requireUnused();
