@@ -47,7 +47,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * attempt, moved the entity too, which decided its chain; {@link Outcome#automaticSteps()} lists those attempts,
      * and a failure of one of them, anything but an Error, never throws to the caller: it is listed there, and
      * {@link Outcome#automaticFailure()}, {@link Outcome#automaticAbort()} and {@link Outcome#automaticBlock()} find
-     * it, nested ones included.
+     * it, nested ones included. A call that a hook starts on another thread, through {@link #async()}, even one the
+     * hook waits for, is not made on this thread: this call still chains the entity from the state its own commit left
+     * it in, its attempt reads the live state, and the chain can go on past a failure route that stopped the other
+     * call's chain, so a hook makes its calls synchronously, on its own thread.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 

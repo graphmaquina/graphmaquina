@@ -11,12 +11,21 @@ import io.github.graphmaquina.api.AutomaticStep;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.TransitionAbortedException;
+import io.github.graphmaquina.fixtures.Account;
+import io.github.graphmaquina.fixtures.AccountGraphs;
+import io.github.graphmaquina.fixtures.AccountGraphs.AddressFailures;
+import io.github.graphmaquina.fixtures.AccountGraphs.AddressVerifier;
+import io.github.graphmaquina.fixtures.AccountStatus;
+import io.github.graphmaquina.fixtures.AccountTransition;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,7 +38,9 @@ import org.junit.jupiter.api.Test;
 /**
  * An automatic attempt is a root call of its own, so it waits for an asynchronous action under a deadline of its own,
  * counted from its start from the machine's asyncTimeout, as a watch reaction does: a chain may take longer than one
- * deadline, and an attempt whose wait runs out aborts alone, the steps before it staying applied.
+ * deadline, and an attempt whose wait runs out aborts alone, the steps before it staying applied. A chain runs on the
+ * thread of the call whose commit triggered it, so a call that a hook runs on another thread, through async(), is not
+ * nested in that commit's post-commit.
  */
 class AutomaticChainAsyncTest {
 
@@ -60,6 +71,9 @@ class AutomaticChainAsyncTest {
     /** The stage the action of RUN_n returns, given n. */
     private IntFunction<CompletableFuture<ActionOutcome>> stage =
             (int run) -> CompletableFuture.completedFuture(ActionOutcome.ok());
+
+    /** The onboarding whose SET_PASSWORD hook advances the account through async() and waits for it. */
+    private StateMachine<Account, AccountStatus, AccountTransition> accounts;
 
     @AfterEach
     void closeTheExecutor() {
@@ -132,5 +146,33 @@ class AutomaticChainAsyncTest {
         TransitionAbortedException cause = assertInstanceOf(TransitionAbortedException.class, aborted.cause());
         assertInstanceOf(TimeoutException.class, cause.getCause());
         assertEquals(Leg.S2, runner.leg());
+    }
+
+    /**
+     * The hook of SET_PASSWORD advances the account through async() and joins it. That advance runs on the executor's
+     * thread, so it is not nested in the post-commit of SET_PASSWORD: its chain verifies the address, fails and takes
+     * the route to FLAGGED, which stops the chain. Back on the calling thread, nothing reported the account to the
+     * commit of SET_PASSWORD, which chains it from PASSWORD_SET, the state its log left it in: its attempt reads the
+     * live state, FLAGGED, and runs REQUEST_REVIEW to REVIEW, past the route that stopped the other chain.
+     */
+    @Test
+    void aCallAHookRunsOnAnotherThreadIsNotNested() {
+        AddressVerifier unverifiable = new AddressVerifier();
+        unverifiable.behaviour = (Account target) ->
+                ActionOutcome.failed(AddressFailures.Unverifiable.class, "address cannot be verified");
+        List<Outcome<Account, AccountStatus, AccountTransition>> hooked = new ArrayList<>();
+        accounts = AccountGraphs.machine(AccountGraphs.onboarding(unverifiable,
+                (Account account) -> hooked.add(accounts.async().advance(account).join())));
+        Account account = new Account("a1", AccountStatus.NEW);
+        account.setInfoComplete(true);
+        account.setAddressComplete(true);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                accounts.execute(account, AccountTransition.SET_PASSWORD);
+        assertEquals(List.of(OutcomeCode.APPLIED, Optional.of(AccountTransition.COMPLETE_INFO)),
+                List.of(hooked.get(0).code(), hooked.get(0).requestedTransition()));
+        assertEquals(List.of("Done FAILURE_ROUTED COMPLETE_ADDRESS FLAGGED"),
+                described(hooked.get(0).automaticSteps()));
+        assertEquals(List.of("Done APPLIED REQUEST_REVIEW REVIEW"), described(outcome.automaticSteps()));
+        assertEquals(AccountStatus.REVIEW, account.status());
     }
 }

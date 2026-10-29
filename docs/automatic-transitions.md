@@ -156,7 +156,10 @@ assertEquals(PREMIUM, premium.status());
 
 The deepest commit that moved an entity chains it. When a call made on the same thread inside the post-commit, a
 hook's call, a watch reaction or an attempt, moved an entity, that call ran or stopped the entity's chain, and the
-commit around it does not chain the entity again.
+commit around it does not chain the entity again. A call that a hook starts on another thread, through `async()`,
+even one the hook waits for with `join()`, is not nested: the commit around it chains the entity from the state its
+own log left it in, its attempt reads the live state, and the chain can go on past a failure route that stopped the
+other call's chain. Start calls from a hook with the synchronous facade.
 [Records, journals and reactions](outcomes.md#records-journals-and-reactions) says in which outcome each chain is
 listed. A new entity has committed nothing, so the automatic edges of its initial state run only when `advance` asks
 for them; a child that its parent starts is the exception, since a start counts.

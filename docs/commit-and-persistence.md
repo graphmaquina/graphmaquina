@@ -123,7 +123,10 @@ gets a handle of its own on the flow, so a later hook cannot use the one an earl
 entity alone does not see the flow. A hook can start a new call: that call has a flow of its own, and once it returns,
 the hook's flow still reads and writes the flow of the call that ran the hook. That call is a new root, which neither
 `maxWatchChain` nor `maxAutomaticChain` counts: the watch reactions and the automatic attempts it triggers begin chains
-of their own. A hook whose call runs that same hook again, directly or through other calls, watch reactions and
+of their own. Start it with the synchronous facade: a call that a hook starts on another thread, through `async()`,
+even one the hook waits for with `join()`, is not nested in the post-commit, so the commit whose hook ran still chains
+the entity from the state its own log left it in, its attempt reads the live state, and the chain can go on past a
+failure route that stopped the other call's chain. A hook whose call runs that same hook again, directly or through other calls, watch reactions and
 automatic attempts included, therefore recurs until the thread's stack overflows, each call having committed before its
 hooks ran, as [build and manage machine sets](coordination.md#build-and-manage-machine-sets) says of a
 `StackOverflowError`.

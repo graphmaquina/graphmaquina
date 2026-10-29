@@ -31,6 +31,8 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -82,13 +84,19 @@ public final class AccountGraphs {
 
     /** The onboarding, whose Unverifiable route to FLAGGED does not continue the automatic chain. */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboarding(AddressVerifier verifier) {
-        return graph(verifier, false);
+        return graph(verifier, false, Optional.empty());
+    }
+
+    /** {@link #onboarding} whose SET_PASSWORD runs {@code passwordSet} as its after-commit hook, named passwordSet. */
+    public static GraphDefinition<Account, AccountStatus, AccountTransition> onboarding(
+            AddressVerifier verifier, Consumer<Account> passwordSet) {
+        return graph(verifier, false, Optional.of(passwordSet));
     }
 
     /** {@link #onboarding} whose Unverifiable route to FLAGGED continues the automatic chain. */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingContinuing(
             AddressVerifier verifier) {
-        return graph(verifier, true);
+        return graph(verifier, true, Optional.empty());
     }
 
     /** A standalone machine over {@code graph}, whose identity is the account's id. */
@@ -97,9 +105,9 @@ public final class AccountGraphs {
         return StateMachines.from(graph).state(Account::status, Account::setStatus).identity(Account::id).build();
     }
 
-    private static GraphDefinition<Account, AccountStatus, AccountTransition> graph(AddressVerifier verifier,
-                                                                                   boolean continuing) {
-        TransitionBuilder<Account, AccountStatus, AccountTransition> address = StateGraph.define(ACCOUNTS)
+    private static GraphDefinition<Account, AccountStatus, AccountTransition> graph(
+            AddressVerifier verifier, boolean continuing, Optional<Consumer<Account>> passwordSet) {
+        TransitionBuilder<Account, AccountStatus, AccountTransition> password = StateGraph.define(ACCOUNTS)
                 .initial(NEW).terminal(ACTIVE).terminal(PREMIUM).terminal(CLOSED).allowsCycle(PASSWORD_SET)
                 .statePolicy(NEW, "a new account sets its password")
                 .statePolicy(PASSWORD_SET, "an account completes its personal info")
@@ -107,7 +115,9 @@ public final class AccountGraphs {
                 .statePolicy(ADDRESS_SET, "an account is activated")
                 .statePolicy(FLAGGED, "a flagged account is reviewed")
                 .statePolicy(REVIEW, "a reviewed account is closed")
-                .transition(SET_PASSWORD, NEW, PASSWORD_SET).endTransition()
+                .transition(SET_PASSWORD, NEW, PASSWORD_SET);
+        TransitionBuilder<Account, AccountStatus, AccountTransition> address = hooked(password, passwordSet)
+                .endTransition()
                 .transition(TOUCH, PASSWORD_SET, PASSWORD_SET).endTransition()
                 .transition(COMPLETE_INFO, PASSWORD_SET, INFO_SET).automatic()
                     .guard("infoComplete", (GuardContext<Account, AccountStatus, AccountTransition> ctx) ->
@@ -133,5 +143,11 @@ public final class AccountGraphs {
                 .transition(ACTIVATE, ADDRESS_SET, ACTIVE).automatic().endTransition()
                 .automaticOrder(ADDRESS_SET, List.of(ACTIVATE_PREMIUM, ACTIVATE))
                 .build();
+    }
+
+    /** {@code edge} with {@code hook} as its after-commit hook, named passwordSet, when there is one. */
+    private static TransitionBuilder<Account, AccountStatus, AccountTransition> hooked(
+            TransitionBuilder<Account, AccountStatus, AccountTransition> edge, Optional<Consumer<Account>> hook) {
+        return hook.isPresent() ? edge.afterCommit("passwordSet", hook.get()) : edge;
     }
 }
