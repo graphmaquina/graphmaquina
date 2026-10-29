@@ -1,9 +1,10 @@
-# Testing samples: recovery, sub-machines and the call's flow
+# Testing samples: recovery, sub-machines, automatic transitions and the call's flow
 
 ## Contents
 
 - [Failure kinds and recovery rules](#failure-kinds-and-recovery-rules)
 - [Sub-machines](#sub-machines)
+- [Automatic transitions](#automatic-transitions)
 - [The call's flow and its trail](#the-calls-flow-and-its-trail)
 
 ## Failure kinds and recovery rules
@@ -325,6 +326,35 @@ assertThat(order, (Order value) -> value.charge).isIn(PaymentState.CAPTURED);
 ```
 
 Each key reads its own field, so `changes()` reports a moved state under its own key, even for one entity.
+
+## Automatic transitions
+
+The graph declares an edge automatic, and an `advance`, or the chain that a commit triggers, takes it without a
+request for its identifier. These are the views that assert on that, none of which runs an action, a guard or a
+hook.
+
+On the graph, `assertThat(definition).automaticFrom(state).containsExactly(...)` compares the identifiers of the
+automatic edges that leave a state, in the order an advance tries them, which a state with two or more automatic edges
+declares; with no argument it says the state has none. On an edge, `isAutomatic()` and `isManual()` read the mark,
+`onFailureContinues()` says that its `onFailure` route continues the chain, and `recoveryContinues(kind)` that the
+recovery rule it declares for that failure kind does.
+
+On an outcome, `automaticSteps()` has the shape of `reactions()`: `hasSize`, `isEmpty`, `hasNoAborted()` for the list
+alone, `hasNoAbortedRecursively()` for the steps of the attempts as well, and `forEntity(key, entity)`, which selects by
+key and by entity identity, then `single()` or `atIndex(i)` and `isDone().outcome()` or `isAborted().hasCause(...)`.
+The searches follow `Outcome.automaticFailure()`, `automaticAbort()` and `automaticBlock()` through the attempts of
+the call, the nested ones included, and fail when they find nothing:
+
+| Expectation | Returns |
+| --- | --- |
+| `automaticFailure()` | The view of a failed outcome: `hasFailureTransition`, `movedTo`, `hasFailureKind` and the rest |
+| `automaticAbort()` | The view of an aborted step: `hasCause` and `hasCauseSameAs` |
+| `automaticBlock()` | The view of an ignored outcome, whose `rejections()` has `hasSize`, `single()` and `atIndex(i)`, each an eligibility view of the edge that was refused |
+| `hasNoAutomaticFailure()`, `hasNoAutomaticAbort()`, `hasNoAutomaticBlock()` | The outcome view; they fail with what the search found |
+
+The three searches take the attempt to belong to the machine of the outcome and check its entity and its enums, so an
+attempt of another machine raises `IllegalArgumentException`; read it with `automaticSteps().forEntity(key, entity)`
+instead.
 
 ## The call's flow and its trail
 

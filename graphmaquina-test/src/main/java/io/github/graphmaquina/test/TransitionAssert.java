@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.ActionRef;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.HookRef;
 import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.TransitionKind;
@@ -171,6 +172,48 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         Optional<String> wanted = Optional.empty();
         TransitionSpec<E, S, T> spec = Checks.subject(context, "hook", wanted, actual);
         Checks.equal(context, "hook", wanted, spec.afterCommit().map(HookRef::name));
+        return this;
+    }
+
+    /** The graph declares the edge as automatic: an advance of an entity in its origin may take it. */
+    public TransitionAssert<E, S, T> isAutomatic() {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "automatic", Boolean.TRUE, actual);
+        Checks.equal(context, "automatic", Boolean.TRUE, spec.automatic());
+        return this;
+    }
+
+    /** The mirror of {@link #isAutomatic()}: only a request for its identifier takes the edge. */
+    public TransitionAssert<E, S, T> isManual() {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "automatic", Boolean.FALSE, actual);
+        Checks.equal(context, "automatic", Boolean.FALSE, spec.automatic());
+        return this;
+    }
+
+    /**
+     * The edge's fallback {@code onFailure} route is a continuing one, so a chain of automatic attempts goes on after
+     * its recovery edge. An edge without a fallback route does not satisfy it.
+     */
+    public TransitionAssert<E, S, T> onFailureContinues() {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "failure route continues", Boolean.TRUE, actual);
+        Checks.equal(context, "failure route continues", Boolean.TRUE,
+                spec.onFailure().isPresent() && spec.onFailureContinues());
+        return this;
+    }
+
+    /**
+     * The edge declares a recovery rule for {@code kind} and that rule is a continuing one. The kind is compared by
+     * identity, and a failure names the kinds the edge's rules do declare when it declares none for {@code kind}.
+     */
+    public TransitionAssert<E, S, T> recoveryContinues(@NonNull Class<? extends FailureKind> kind) {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "recovery continues", kind, actual);
+        Optional<RecoveryRule<T>> rule = spec.recoveryRules().stream()
+                .filter((RecoveryRule<T> candidate) -> candidate.kind() == kind)
+                .findFirst();
+        if (rule.isEmpty()) {
+            Checks.fail(context, "recovery rule", kind, spec.recoveryRules().stream().map(RecoveryRule::kind).toList());
+        }
+        Checks.equal(context, "recovery continues for " + kind.getName(), Boolean.TRUE,
+                rule.orElseThrow().continueChain());
         return this;
     }
 

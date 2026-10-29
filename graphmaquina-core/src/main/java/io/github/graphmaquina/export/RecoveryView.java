@@ -12,8 +12,10 @@ import lombok.NonNull;
  * @param transition name of the recovery identifier, resolved from the edge's origin
  * @param failsOn binary names of the throwable types the rule admits, in declaration order; empty when only a
  *     returned failure of {@code kind} selects the rule
+ * @param continues the rule is a continuing one: the chain of automatic attempts goes on after its recovery edge
  */
-public record RecoveryView(@NonNull String kind, @NonNull String transition, @NonNull List<String> failsOn) {
+public record RecoveryView(@NonNull String kind, @NonNull String transition, @NonNull List<String> failsOn,
+                           boolean continues) {
 
     /** Copies the throwable names so later changes to the source list cannot change this view. */
     public RecoveryView {

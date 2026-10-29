@@ -76,7 +76,7 @@ time; each page links the next one in that order.
 | --- | --- |
 | [Testing GraphMaquina machines](testing.md) | `graphmaquina-test`: entry points, identity checks, goldens, snapshots, what a check does not prove |
 | [Testing samples: graphs, outcomes, probes and async](testing-samples.md) | Verified samples for graph, outcome, failure, recorder, probe, input and controlled async assertions |
-| [Testing samples: recovery, sub-machines and the call's flow](testing-advanced.md) | Verified samples for recovery rules, sub-machines and the flow and trail of a call |
+| [Testing samples: recovery, sub-machines, automatic transitions and the call's flow](testing-advanced.md) | Verified samples for recovery rules, sub-machines and the flow and trail of a call, and the assertions on automatic transitions |
 
 ## Build tooling reference
 

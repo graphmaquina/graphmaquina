@@ -81,10 +81,11 @@ One static import, `io.github.graphmaquina.test.GraphAssertions.assertThat`, rea
 subject a test holds directly: a definition, an outcome, an action or guard result, a recorded guard or action call,
 a throwable or an `InvalidGraphException`, an entity, the flow
 of a call, an eligibility answer.
-A bare list of transition records, of reactions, of sub-machine starts, of journal entries or of trail entries would
-need overloads with the same erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`,
-`ReactionsAssert.assertThat`, `StartsAssert.assertThat`, `JournalAssert.assertThat` and `TrailAssert.assertThat`;
-inside a chain they are reached as `records()`, `reactions()`, `starts()`, `journal()` and `trail()`. The overload
+A bare list of transition records, of reactions, of automatic steps, of sub-machine starts, of journal entries or of
+trail entries would need overloads with the same erasure, so each keeps its own factory,
+`TransitionRecordsAssert.assertThat`, `ReactionsAssert.assertThat`, `AutomaticStepsAssert.assertThat`,
+`StartsAssert.assertThat`, `JournalAssert.assertThat` and `TrailAssert.assertThat`; inside a chain they are reached as
+`records()`, `reactions()`, `automaticSteps()`, `starts()`, `journal()` and `trail()`. The overload
 is chosen from the subject's static type, and the chain keeps the entity, state and transition types of that
 subject, so the two enums of the machine under test are the only ones the compiler accepts along it:
 
@@ -108,20 +109,21 @@ constant of another machine's catalogue does not compile inside it.
 
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
-| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine |
-| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook |
+| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine, and `automaticFrom(state)`: the automatic identifiers of a state in the order they are tried |
+| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook, `isAutomatic()` or `isManual()`, and whether the `onFailure` route or a recovery rule continues the chain |
 | One node's policy | `assertThat(definition).policy(state)` | `hasDefaultReason`, and `rejects(id, reason)`: the reason that identifier gets, its own or the default, which also requires that no edge is keyed by it |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
-| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()`, `starts()` and `flow()` |
+| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the searches `automaticFailure()`, `automaticAbort()` and `automaticBlock()` with their `hasNoAutomatic…` counterparts |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
-| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` |
+| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per edge the advance tried |
 | [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
+| Automatic steps | `.automaticSteps()`, or `AutomaticStepsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause; [details](testing-advanced.md#automatic-transitions) |
 | Sub-machine starts | `.starts()`, or `StartsAssert.assertThat(list)` | size, and per child: the state it started at, its state before, the parent and the bound state that started it, and the depth |
 | The call's flow | `.flow()`, or `assertThat(flow)` | the root entity by reference, the value of a key by equality, the absence of a value, the keys in the order of their writes, plus `trail()` |
 | The call's trail | `.trail()`, or `TrailAssert.assertThat(list)` | size, the class of every entry in order, the identifier of every hop in order, that no instant goes back, and the kind of the final rejection or the phase of the final failure, plus `hops()`, the records of its hops |
@@ -239,7 +241,10 @@ version line comes one `path TAB value` line per field, each ending in a line fe
 carriage return escaped; `GraphSnapshot.fields()` returns the path-to-value map in that canonical order. Fields live
 under `/machine/…`, `/states/<i>`, `/catalog/<i>`, `/transitions/<from>/<id>/…`, with recovery rules under
 `recoveries/<i>/kind`, `transition` and `failsOn`, `/policies/…`, `/watches/…` and
-`/submachines/<state>/{child/…, exits/<terminal>}`; a missing edge has no path at all.
+`/submachines/<state>/{child/…, exits/<terminal>}`; a missing edge has no path at all. An automatic edge adds
+`/transitions/<from>/<id>/automatic`, a continuing `onFailure` route `onFailureContinues` and a continuing rule
+`recoveries/<i>/continues`, each `true` and written only when set, and a state with two or more automatic edges the
+order they are tried in, at `/automaticOrder/<state>/count` and `/automaticOrder/<state>/<i>`.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 
@@ -382,7 +387,7 @@ A test that needs no properties at all can pass options explicitly —
 | The check establishes | It does not establish |
 | --- | --- |
 | `topology().hasPath(...)`: the graph permits this walk | that any run took it. Only an outcome or a transition record shows a hop that happened. |
-| `isApplied()`: the root transition committed | that everything it triggered did. A watch reaction inside an applied outcome may have aborted; `reactions().hasNoAbortedRecursively()` is the expectation that rules that out. |
+| `isApplied()`: the root transition committed | that everything it triggered did. A watch reaction inside an applied outcome may have aborted; `reactions().hasNoAbortedRecursively()` is the expectation that rules that out, and `hasNoAutomaticAbort()` and `hasNoAutomaticFailure()` do the same for the automatic attempts. |
 | `hasStatus(APPLIED)` or `hasCode(...)`: what the root call reported | that its reactions committed, or where the entity is now. Read `reactions()` and `hasEntityState(...)` for those. |
 | `movedTo(...)` and `hasRecordedState(...)`: the state the outcome recorded | where the entity is now. `hasEntityState(getter, ...)` reads the live entity, and the entity can move again right after. |
 | `hasTransitionsExactly(from, ids...)`: which identifiers the state declares | that any of them would succeed for a given entity. It is structural; guards are not evaluated. |

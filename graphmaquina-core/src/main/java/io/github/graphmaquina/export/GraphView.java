@@ -93,9 +93,23 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             }
             transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(),
                     spec.kind(), spec.action().map(ActionRef::name), guards, spec.isAsync(),
-                    spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules())));
+                    spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules()),
+                    spec.automatic(), automaticPosition(definition, spec), spec.onFailureContinues()));
         }
         return transitions;
+    }
+
+    /**
+     * The 1-based place of {@code spec} among the automatic edges of its origin, as {@code automaticFrom} lists them,
+     * when there are two or more of them and so the state declares an order; empty otherwise.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<Integer> automaticPosition(
+            GraphDefinition<E, S, T> definition, TransitionSpec<E, S, T> spec) {
+        if (!spec.automatic()) {
+            return Optional.empty();
+        }
+        List<TransitionSpec<E, S, T>> ordered = definition.automaticFrom(spec.from());
+        return ordered.size() < 2 ? Optional.empty() : Optional.of(ordered.indexOf(spec) + 1);
     }
 
     /** The policy of each state of {@code definition}, in node order, with its rejections by names. */
@@ -153,7 +167,8 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             for (Class<? extends Throwable> type : rule.failsOn()) {
                 failsOn.add(type.getName());
             }
-            views.add(new RecoveryView(rule.kind().getName(), rule.transition().name(), failsOn));
+            views.add(new RecoveryView(rule.kind().getName(), rule.transition().name(), failsOn,
+                    rule.continueChain()));
         }
         return views;
     }

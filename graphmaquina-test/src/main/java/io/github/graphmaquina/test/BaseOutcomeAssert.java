@@ -1,8 +1,10 @@
 package io.github.graphmaquina.test;
 
+import io.github.graphmaquina.api.AutomaticStep;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
+import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Optional;
 import java.util.function.Function;
@@ -29,6 +31,14 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         SELF extends BaseOutcomeAssert<E, S, T, SELF>> {
+
+    private static final String AUTOMATIC_FAILURE = "automatic failure";
+    private static final String AUTOMATIC_ABORT = "automatic abort";
+    private static final String AUTOMATIC_BLOCK = "automatic block";
+    private static final String FAILED_ATTEMPT = "a failed automatic attempt";
+    private static final String ABORTED_STEP = "an aborted automatic step";
+    private static final String BLOCKED_ATTEMPT = "a blocked automatic attempt";
+    private static final String NONE = "none";
 
     /** Prefix of every failure message raised by this view. */
     final String context;
@@ -138,6 +148,76 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      */
     public ReactionsAssert reactions() {
         return new ReactionsAssert(context + ".reactions", actual == null ? null : actual.reactions());
+    }
+
+    /**
+     * The automatic attempts the outcome's commit triggered; one that threw is reported here as an aborted step instead
+     * of propagating, while an {@link Error} is not caught. Empty for an outcome that committed nothing and for one a
+     * cascade returned.
+     */
+    public AutomaticStepsAssert automaticSteps() {
+        return new AutomaticStepsAssert(context + ".automaticSteps", actual == null ? null : actual.automaticSteps());
+    }
+
+    /**
+     * The first automatic attempt of the call that ended in a failure, as {@link Outcome#automaticFailure()} searches
+     * for it, whether its route stopped the chain or let it go on. It fails when no attempt failed. The attempt is
+     * taken to belong to the machine of this outcome, which is checked by its entity and its enums: one of another
+     * machine raises {@link IllegalArgumentException}, and {@link #automaticSteps()} with {@code forEntity} is what
+     * reads it.
+     */
+    public FailedOutcomeAssert<E, S, T> automaticFailure() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_FAILURE, FAILED_ATTEMPT, actual);
+        Outcome.Failed<?, ?, ?> found = Checks.present(context, AUTOMATIC_FAILURE, FAILED_ATTEMPT,
+                outcome.automaticFailure());
+        return new FailedOutcomeAssert<>(context + ".automaticFailure (failed)", CheckedTypes.failedOf(outcome, found));
+    }
+
+    /**
+     * The first automatic attempt of the call that aborted, as {@link Outcome#automaticAbort()} searches for it. It
+     * fails when no step aborted.
+     */
+    public AbortedAutomaticStepAssert<E, S, T> automaticAbort() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_ABORT, ABORTED_STEP, actual);
+        AutomaticStep.Aborted found = Checks.present(context, AUTOMATIC_ABORT, ABORTED_STEP, outcome.automaticAbort());
+        return new AbortedAutomaticStepAssert<>(context + ".automaticAbort", found);
+    }
+
+    /**
+     * The first automatic attempt of the call that admitted none of its candidates, as {@link Outcome#automaticBlock()}
+     * searches for it, whose {@link IgnoredOutcomeAssert#rejections()} say why. It fails when no attempt was blocked,
+     * and it takes the attempt to belong to the machine of this outcome as {@link #automaticFailure()} does.
+     */
+    public IgnoredOutcomeAssert<E, S, T> automaticBlock() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_BLOCK, BLOCKED_ATTEMPT, actual);
+        Outcome.Ignored<?, ?, ?> found = Checks.present(context, AUTOMATIC_BLOCK, BLOCKED_ATTEMPT,
+                outcome.automaticBlock());
+        return new IgnoredOutcomeAssert<>(context + ".automaticBlock (ignored)",
+                CheckedTypes.ignoredOf(outcome, found));
+    }
+
+    /** No automatic attempt of the call failed; the failure names the outcome of the first one that did. */
+    public SELF hasNoAutomaticFailure() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_FAILURE, NONE, actual);
+        outcome.automaticFailure().ifPresent((Outcome.Failed<?, ?, ?> failed) ->
+                Checks.fail(context, AUTOMATIC_FAILURE, NONE, failed));
+        return self();
+    }
+
+    /** No automatic step of the call aborted; the failure carries the cause of the first one that did. */
+    public SELF hasNoAutomaticAbort() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_ABORT, NONE, actual);
+        outcome.automaticAbort().ifPresent((AutomaticStep.Aborted aborted) ->
+                Checks.fail(context, AUTOMATIC_ABORT, NONE, aborted.cause()));
+        return self();
+    }
+
+    /** No automatic attempt of the call was blocked; the failure carries the outcome of the first one that was. */
+    public SELF hasNoAutomaticBlock() {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_BLOCK, NONE, actual);
+        outcome.automaticBlock().ifPresent((Outcome.Ignored<?, ?, ?> blocked) ->
+                Checks.fail(context, AUTOMATIC_BLOCK, NONE, blocked));
+        return self();
     }
 
     /**

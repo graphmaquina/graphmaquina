@@ -3,8 +3,8 @@
  * AssertJ dependency.
  *
  * <p>{@link io.github.graphmaquina.test.GraphAssertions} is the main entry point to the assertion views,
- * with the lists of transition records, reactions, sub-machine starts, journal entries and trail entries keeping
- * their own {@code assertThat} factories; {@link io.github.graphmaquina.test.AsyncAssertions} turns an asynchronous
+ * with the lists of transition records, reactions, automatic steps, sub-machine starts, journal entries and trail
+ * entries keeping their own {@code assertThat} factories; {@link io.github.graphmaquina.test.AsyncAssertions} turns an asynchronous
  * transition into the same views inside a budget the test owns; {@link io.github.graphmaquina.test.GraphGoldens} and
  * {@link io.github.graphmaquina.test.GraphSnapshots} compare a graph against a checked-in resource.
  * The {@code probe} package scripts guards, actions, hooks, the state setter and asynchronous callbacks.

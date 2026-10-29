@@ -15,6 +15,7 @@ import io.github.graphmaquina.test.GraphAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.GuardExpectation;
 import io.github.graphmaquina.test.TransitionAssert;
+import io.github.graphmaquina.test.fixtures.AutomaticDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
@@ -468,6 +469,104 @@ class TransitionAssertionsTest {
     @Test
     void nullDefinitionFailsHasNoHookWithContext() {
         assertNullEdge("hook", Optional.empty(), TransitionAssert::hasNoHook);
+    }
+
+    // --- the automatic vocabulary ------------------------------------------------------------------
+
+    private static final String READY_FINISH = GRAPH + " READY -FINISH->";
+
+    @Test
+    void anAutomaticEdgeMatchesIsAutomaticAndRefusesIsManual() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.PREPARE);
+        assertSame(edge, edge.isAutomatic());
+        assertFailure(assertThrows(GraphAssertionError.class, edge::isManual), PREPARE, "automatic",
+                Boolean.FALSE, Boolean.TRUE);
+    }
+
+    @Test
+    void aManualEdgeMatchesIsManualAndRefusesIsAutomatic() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.RECOVER);
+        assertSame(edge, edge.isManual());
+        assertFailure(assertThrows(GraphAssertionError.class, edge::isAutomatic), GRAPH + " NEW -RECOVER->",
+                "automatic", Boolean.TRUE, Boolean.FALSE);
+    }
+
+    @Test
+    void aContinuingFallbackMatchesOnFailureContinuesAndAPlainOneDoesNot() {
+        TransitionAssert<Entity, State, Id> continuing =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.READY, Id.FINISH);
+        assertSame(continuing, continuing.hasFailureTransition(Id.RECOVER).onFailureContinues());
+        TransitionAssert<Entity, State, Id> plain =
+                GraphAssert.assertThat(TestDomain.graph(TIMEOUT)).transition(State.NEW, Id.PREPARE);
+        assertFailure(assertThrows(GraphAssertionError.class, plain::onFailureContinues), PREPARE,
+                "failure route continues", Boolean.TRUE, Boolean.FALSE);
+    }
+
+    @Test
+    void anEdgeWithoutAFallbackDoesNotContinueOnFailure() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.PREPARE);
+        assertFailure(assertThrows(GraphAssertionError.class, edge::onFailureContinues), PREPARE,
+                "failure route continues", Boolean.TRUE, Boolean.FALSE);
+    }
+
+    @Test
+    void aContinuingRecoveryRuleMatchesByItsKind() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.PREPARE);
+        assertSame(edge, edge.recoveryContinues(AutomaticDomain.Declined.class));
+    }
+
+    @Test
+    void aStoppingRuleOrAnUndeclaredKindDoesNotContinue() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.PREPARE);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> edge.recoveryContinues(AutomaticDomain.Refused.class)), PREPARE,
+                "recovery continues for " + AutomaticDomain.Refused.class.getName(), Boolean.TRUE, Boolean.FALSE);
+        TransitionAssert<Entity, State, Id> other =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.READY, Id.FINISH);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> other.recoveryContinues(AutomaticDomain.Declined.class)), READY_FINISH,
+                "recovery rule", AutomaticDomain.Declined.class, List.of());
+    }
+
+    @Test
+    void theMarksAreReadOffTheSpecAndNeverRunAnyCallback() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(graphWhoseCallbacksFail()).transition(State.NEW, Id.PREPARE);
+        assertSame(edge, edge.isManual());
+    }
+
+    @Test
+    void aNullRequiredKindIsAnArgumentErrorNotAnAssertionFailure() {
+        TransitionAssert<Entity, State, Id> edge =
+                GraphAssert.assertThat(AutomaticDomain.graph()).transition(State.NEW, Id.PREPARE);
+        assertEquals("kind is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> edge.recoveryContinues(null)).getMessage());
+    }
+
+    @Test
+    void nullDefinitionFailsIsAutomaticWithContext() {
+        assertNullEdge("automatic", Boolean.TRUE, TransitionAssert::isAutomatic);
+    }
+
+    @Test
+    void nullDefinitionFailsIsManualWithContext() {
+        assertNullEdge("automatic", Boolean.FALSE, TransitionAssert::isManual);
+    }
+
+    @Test
+    void nullDefinitionFailsOnFailureContinuesWithContext() {
+        assertNullEdge("failure route continues", Boolean.TRUE, TransitionAssert::onFailureContinues);
+    }
+
+    @Test
+    void nullDefinitionFailsRecoveryContinuesWithContext() {
+        assertNullEdge("recovery continues", AutomaticDomain.Declined.class,
+                (TransitionAssert<Entity, State, Id> edge) -> edge.recoveryContinues(AutomaticDomain.Declined.class));
     }
 
     // --- helpers -----------------------------------------------------------------------------------

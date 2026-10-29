@@ -13,6 +13,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.test.GraphAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
+import io.github.graphmaquina.test.fixtures.AutomaticDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
@@ -313,6 +314,69 @@ class GraphAssertionsTest {
         IllegalArgumentException watched = assertThrows(IllegalArgumentException.class,
                 () -> raw.hasNoWatch(Foreign.OTHER));
         assertTrue(watched.getMessage().startsWith("state OTHER is not a state of "), watched.getMessage());
+    }
+
+    // --- automatic edges ---------------------------------------------------------------------------
+
+    @Test
+    void theAutomaticEdgesOfAStateAreListedInTheOrderTheyAreTried() {
+        GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(AutomaticDomain.graph());
+        graph.automaticFrom(State.NEW).containsExactly(Id.PREPARE);
+        graph.automaticFrom(State.READY).containsExactly(Id.FINISH, Id.ABANDON);
+        graph.automaticFrom(State.FAILED).containsExactly(Id.FINISH);
+    }
+
+    @Test
+    void aStateWithoutAutomaticEdgesMatchesAnEmptyExpectationOnly() {
+        GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(AutomaticDomain.graph());
+        graph.automaticFrom(State.DONE).containsExactly();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> graph.automaticFrom(State.DONE).containsExactly(Id.FINISH)),
+                GRAPH + " DONE automatic", "automatic transitions", List.of(Id.FINISH), List.of());
+    }
+
+    @Test
+    void theOrderAndTheMembersAreBothPartOfTheExpectation() {
+        GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(AutomaticDomain.graph());
+        String context = GRAPH + " READY automatic";
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> graph.automaticFrom(State.READY).containsExactly(Id.ABANDON, Id.FINISH)),
+                context, "automatic transitions", List.of(Id.ABANDON, Id.FINISH), List.of(Id.FINISH, Id.ABANDON));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> graph.automaticFrom(State.READY).containsExactly(Id.FINISH)),
+                context, "automatic transitions", List.of(Id.FINISH), List.of(Id.FINISH, Id.ABANDON));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> graph.automaticFrom(State.NEW).containsExactly(Id.PREPARE, Id.PREPARE)),
+                GRAPH + " NEW automatic", "automatic transitions", List.of(Id.PREPARE, Id.PREPARE),
+                List.of(Id.PREPARE));
+    }
+
+    @Test
+    void aManualEdgeIsNotListedAsAutomatic() {
+        GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(AutomaticDomain.graph());
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> graph.automaticFrom(State.NEW).containsExactly(Id.PREPARE, Id.RECOVER)),
+                GRAPH + " NEW automatic", "automatic transitions", List.of(Id.PREPARE, Id.RECOVER),
+                List.of(Id.PREPARE));
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void automaticFromRefusesAForeignStateAndANullOne() {
+        GraphAssert raw = GraphAssert.assertThat(AutomaticDomain.graph());
+        IllegalArgumentException state = assertThrows(IllegalArgumentException.class,
+                () -> raw.automaticFrom(Foreign.OTHER));
+        assertTrue(state.getMessage().startsWith("state OTHER is not a state of "), state.getMessage());
+        assertEquals("state is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> raw.automaticFrom(null)).getMessage());
+    }
+
+    @Test
+    void nullDefinitionFailsAutomaticFromWithContext() {
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> GraphAssert.<Entity, State, Id>assertThat(null).automaticFrom(State.NEW)
+                        .containsExactly(Id.PREPARE));
+        assertFailure(error, "graph NEW automatic", "automatic transitions", List.of(Id.PREPARE), null);
     }
 
     // --- messages and required arguments -----------------------------------------------------------

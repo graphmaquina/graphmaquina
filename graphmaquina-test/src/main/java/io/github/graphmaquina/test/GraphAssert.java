@@ -19,8 +19,9 @@ import lombok.RequiredArgsConstructor;
  * declared structure, so a graph whose actions, guards, hooks or sub-machine lookups would fail if invoked
  * can be inspected without running any of them. {@link #transition(Enum, Enum)} narrows to the single edge
  * keyed by an origin and an identifier, {@link #policy(Enum)} to the rejection policy of a state,
- * {@link #watch(Enum)} to the watch declared on a state, {@link #submachine(Enum, MachineKey)} to the
- * sub-machine bound to a state, and {@link #topology()} to the reachability graph.
+ * {@link #automaticFrom(Enum)} to the automatic edges that leave a state, {@link #watch(Enum)} to the watch declared
+ * on a state, {@link #submachine(Enum, MachineKey)} to the sub-machine bound to a state, and {@link #topology()} to
+ * the reachability graph.
  *
  * <p>There is no expectation over destinations alone: an identifier is what selects an edge, and two
  * identifiers may well reach the same state from the same origin.
@@ -149,6 +150,21 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         requireDeclaredState(actual, from, "from");
         requireDeclaredTransition(actual.key().transitions(), transition);
         return new TransitionAssert<>(context, actual.findTransition(from, transition).orElse(null));
+    }
+
+    /**
+     * Narrows to the identifiers of the automatic edges that leave {@code state}, in the order an advance tries them.
+     * The state must belong to the definition's own state enum. A definition under test that is null yields a view
+     * without a subject, and the first expectation on it reports that as an assertion failure.
+     */
+    public AutomaticEdgesAssert<T> automaticFrom(@NonNull S state) {
+        String context = context() + " " + state.name() + " automatic";
+        if (actual == null) {
+            return new AutomaticEdgesAssert<>(context, null);
+        }
+        requireDeclaredState(actual, state, "state");
+        return new AutomaticEdgesAssert<>(context,
+                actual.automaticFrom(state).stream().map(TransitionSpec::transition).toList());
     }
 
     /**
