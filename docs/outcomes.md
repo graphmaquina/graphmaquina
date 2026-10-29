@@ -29,6 +29,9 @@ classDiagram
         +records() List~TransitionRecord~
         +reactions() List~Reaction~
         +automaticSteps() List~AutomaticStep~
+        +automaticFailure() Optional~Failed~
+        +automaticAbort() Optional~Aborted~
+        +automaticBlock() Optional~Ignored~
         +starts() List~SubmachineStart~
         +flow() FlowView
         +asApplied() Optional~Applied~
@@ -69,11 +72,13 @@ A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`
 root instead. Both are provisional there: their hops are written only if the root commits.
 
 Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()`,
-`reactions()`, `automaticSteps()`, `starts()` and `flow()`. `recordedState()` is `to` for `Applied`, `movedTo` for
+`reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the three searches of its automatic steps,
+`automaticFailure()`, `automaticAbort()` and `automaticBlock()`. `recordedState()` is `to` for `Applied`, `movedTo` for
 `Failed` and `from` for the other two. `requestedTransition()` is the identifier the caller asked for, the one a reevaluation's watch
 selected, or the automatic edge an `advance` ran; it is empty only for `Ignored`, which ran no edge at all. [Records, journals
 and reactions](#records-journals-and-reactions) describes what `records()`, `reactions()`, `automaticSteps()`,
-`starts()` and `flow()` return.
+`starts()` and `flow()` return, and [find what the automatic steps did](#find-what-the-automatic-steps-did) what the
+three searches return.
 
 Read the classification with its limits in mind:
 
@@ -108,6 +113,7 @@ static String describe(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 - [Map an outcome to a response](#map-an-outcome-to-a-response)
 - [Read what only one variant carries](#read-what-only-one-variant-carries)
 - [Records, journals and reactions](#records-journals-and-reactions)
+- [Find what the automatic steps did](#find-what-the-automatic-steps-did)
 - [Handle a failed call](#handle-a-failed-call)
 
 ## Map an outcome to a response
@@ -235,19 +241,58 @@ read them.
   to the caller whose commit triggered the reaction.
 - `automaticSteps()` answers on every outcome too. A root `Applied` or `Failed` returns the automatic attempts its
   commit triggered once its reactions ran; `Rejected`, `Ignored` and a nested `cascade` result return an empty list.
-  Each entity with a hop or a sub-machine start in the commit, a self-loop included, runs its chain, in log order,
-  unless its last hop there is a failure route that does not continue: from the state the commit left it in, while
-  that state has an automatic edge, one `advance` of the entity after another, each a call of its own with its own
-  outcome and flow. The list holds each chain whole, flat and in order. A chain stops after an attempt that admits no
-  candidate, which the list still holds as `AutomaticStep.Done` with its `Ignored`, whose `rejections()` say why;
-  after one whose failure takes a route that does not continue; and after one that aborts, which the list holds as
-  `AutomaticStep.Aborted`, with the attempt's `CallFailedException`, whose `statesWritten()` says whether the attempt
-  wrote anything. A chain that reaches a state without automatic edges makes no further attempt. An attempt past
-  the registry's `maxAutomaticChain` that admits a candidate aborts with `AutomaticChainExceededException` before its
-  action runs. The attempts that an attempt's own commit triggers for other entities are in that attempt's outcome. The outcome of an
-  `advance` is its first attempt, so the chain of its entity in the list starts with the attempt that followed. Like a
-  reaction's, an attempt's failure never reaches the caller: inspect the steps even when the call succeeded. An
-  `Error` is not caught: it propagates to the caller whose commit triggered the attempt.
+  Each entity with a hop or a sub-machine start in the commit, a self-loop or a round trip included, runs its chain,
+  in log order, unless its last hop there is a failure route that does not continue: from the state the commit left
+  it in, while that state has an automatic edge, one `advance` of the entity after another, each a call of its own
+  with its own outcome and flow. The list holds each chain whole, flat and in order. A chain stops after an attempt
+  that admits no candidate, which the list still holds as `AutomaticStep.Done` with its `Ignored`, whose
+  `rejections()` say why; after one whose failure takes a route that does not continue; and after one that aborts,
+  which the list holds as `AutomaticStep.Aborted`, with the attempt's `CallFailedException`, whose `statesWritten()`
+  says whether the attempt wrote anything. A chain that reaches a state without automatic edges makes no further
+  attempt. An attempt past the registry's `maxAutomaticChain` that admits a candidate aborts with
+  `AutomaticChainExceededException` before its action runs. The outcome of an `advance` is its first attempt, so the
+  chain of its entity in the list starts with the attempt that followed. Like a reaction's, an attempt's failure
+  never reaches the caller: inspect the steps even when the call succeeded. An `Error` is not caught: it propagates
+  to the caller whose commit triggered the attempt.
+- The deepest commit that moved an entity chains it. When a call made on the same thread inside the post-commit, a
+  hook's call, a watch reaction or an attempt, committed a hop or a start of an entity before that entity's chain
+  began, that call decided the chain, so the commit around it does not chain the entity again; and a chain stops
+  after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
+  triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
+  reaction's outcome. Entities compare as the commit log compares them, by machine and identity.
+- Before each attempt, outside any call, the chain reads the automatic edges of the entity's state and compares the
+  entity with those that nested calls moved. A `GraphDefinition` written by hand whose `automaticFrom` throws there,
+  or an identity whose `hashCode` or `equals` throws there, ends the chain as `AutomaticStep.Aborted` with what it
+  threw: a `RuntimeException` as it is, any other throwable but an `Error` wrapped in
+  `UndeclaredThrowableException`, with the thread interrupted again for an `InterruptedException`. The same
+  `automaticFrom` throwing inside an attempt or an `advance` aborts that call in `RESOLVE`.
+
+## Find what the automatic steps did
+
+A call's automatic attempts can fail, abort or stop at a guard after the call itself committed, in its own chains or
+in chains nested in its reactions and in other attempts. Three methods of every outcome search all of them and return
+the first one that matches:
+
+| Method | Returns | Present when |
+| --- | --- | --- |
+| `automaticFailure()` | `Optional<Outcome.Failed<?, ?, ?>>` | an attempt ended in `Failed`, whether its route stopped the chain or let it go on |
+| `automaticAbort()` | `Optional<AutomaticStep.Aborted>` | an attempt aborted, on a domain failure that no route takes, a technical failure, any other exception or `maxAutomaticChain`, or a chain could not make its next attempt |
+| `automaticBlock()` | `Optional<Outcome.Ignored<?, ?, ?>>` | an attempt admitted none of its candidates, `NO_CANDIDATE_ADMITTED`; its `rejections()` say why |
+
+They search in the order the attempts ran. First come the `reactions()`, each `Reaction.Done` searched the same way
+through its outcome; then the `automaticSteps()`, in order, each step looked at itself and then searched through its
+outcome, its reactions and its steps. So an attempt nested in a reaction comes before the call's own steps. Only
+`AutomaticStep` entries count: a `Reaction.Done` whose outcome is `Failed`, or a `Reaction.Aborted`, is the result of a
+watch, which `reactions()` holds. The types carry wildcards because the attempts can be of other machines: peers,
+children and parents. A failure and a block can happen in one call: with a route that continues, the chain goes on
+from the recovery state, and `automaticFailure()` still returns the failure. `Rejected` and `Ignored` have neither
+steps nor reactions, so the three are empty; the outcome of an `advance` is its own first attempt, which you read
+directly.
+
+`advance(entity)` goes on from where the entity stands: after a `Failed`, from the recovery state; after an abort
+before any write, from the state the attempt started in. An aborted attempt's cause is its `CallFailedException`,
+whose `statesWritten()` says whether it wrote: after a setter or a hook threw, the entity may have moved, and
+`advance` goes on from whatever state it has.
 
 ## Handle a failed call
 
@@ -296,7 +341,8 @@ call wrote up to the failure:
 - A `reevaluate` that fails before it runs an edge, while it reads the state, evaluates its watch or exceeds the
   limit of a watch chain, hands out `FlowView.empty()`, unless its machine records its trail: its flow then holds the
   entity, no value, and the `Failed` entry alone, or no entry when the clock threw while it read the entry's instant.
-  So does an `advance` that fails while it reads the state.
+  So does an `advance` that fails while it reads the state or, from a `GraphDefinition` written by hand, its
+  automatic edges.
 - Only the failure the call throws carries the call's flow: any other failure of the call holds `FlowView.empty()`,
   such as an element of the `errors()` of a `CascadeException` or a `PoisonedUnitOfWorkException` a context threw.
   A call that records no trail and whose steps and hooks wrote

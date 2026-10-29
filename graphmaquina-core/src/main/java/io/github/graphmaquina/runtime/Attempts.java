@@ -9,10 +9,10 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AutomaticChainExceededException;
+import io.github.graphmaquina.internal.Interrupts;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * An automatic attempt on an entity of a machine, which {@code advance} makes, and each step of an automatic chain as
@@ -27,9 +27,9 @@ final class Attempts {
     /**
      * One attempt on {@code entity}. It refuses a call made where no call may start before it starts, then logs its
      * start line, and reads the state and its candidates under the reentrancy marker, as a reevaluation reads its
-     * state and its watch: a getter that throws or answers null ends the call in RESOLVE, as
-     * {@link Reevaluation#unresolvedEnd} says. A state without automatic edges ends it with an Ignored of
-     * NO_AUTOMATIC_TRANSITION, which ran no step. Otherwise the candidates run as a root call, as
+     * state and its watch: a getter that throws or answers null, or a graph whose automaticFrom throws, ends the call
+     * in RESOLVE, as {@link Reevaluation#unresolvedEnd} says. A state without automatic edges ends it with an Ignored
+     * of NO_AUTOMATIC_TRANSITION, which ran no step. Otherwise the candidates run as a root call, as
      * {@link #firstAdmitted} says. {@code origin} says who made the call and {@code trigger} is the id the start line
      * names, empty for an advance the application made. {@code levels} is where the attempt stands in the watch and
      * automatic chains: an attempt whose automatic level is above maxAutomaticChain still tries its candidates, and the
@@ -56,7 +56,7 @@ final class Attempts {
             boolean[] marker = Reentrancy.enter(machine.key(), entity);
             try {
                 state = Reevaluation.stateOf(machine, entity, observed, CallRequest.ADVANCE, origin);
-                candidates = machine.definition().automaticFrom(state);
+                candidates = candidatesOf(machine, entity, observed, origin, state);
             } finally {
                 marker[0] = false;
             }
@@ -67,7 +67,7 @@ final class Attempts {
         if (candidates.isEmpty()) {
             Outcome<E, S, T> ignored = RootCall.ignored(observed, log,
                     new Outcome.Ignored<>(entity, state, IgnoreReason.NO_AUTOMATIC_TRANSITION));
-            return new Attempt<>(ignored, Set.of(), false, state);
+            return new Attempt<>(ignored, List.of(), false, state);
         }
         boolean limited = levels.automatic() > machine.registry().maxAutomaticChain();
         Committed<E, S, T> committed = RootCall.run(machine, entity, CallRequest.ADVANCE, Optional.empty(), origin,
@@ -78,6 +78,24 @@ final class Attempts {
                     return firstAdmitted(tx, machine, entity, state, candidates);
                 }, levels, continuing);
         return attemptOf(machine, entity, state, committed);
+    }
+
+    /**
+     * The automatic edges of {@code state}, the attempt's candidates, as the graph lists them; a graph whose
+     * automaticFrom throws anything but an Error aborts the attempt in RESOLVE, as a state getter that throws does,
+     * with what it threw as the cause. An Error propagates.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<TransitionSpec<E, S, T>> candidatesOf(
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallOrigin origin, S state) {
+        try {
+            return machine.definition().automaticFrom(state);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Interrupts.keep(e);
+            throw Reevaluation.unresolved(machine, entity, observed, CallRequest.ADVANCE, origin, Optional.of(state),
+                    "reading the automatic edges threw ", e);
+        }
     }
 
     /**

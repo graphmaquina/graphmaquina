@@ -63,6 +63,15 @@ final class CommitSummary {
         return List.copyOf(moved);
     }
 
+    /** The entity of each change, in order of first appearance: one per entity with an entry in the log. */
+    List<EntityRef> refs() {
+        List<EntityRef> refs = new ArrayList<>(changes.size());
+        for (Change change : changes) {
+            refs.add(change.ref());
+        }
+        return refs;
+    }
+
     /**
      * One entry per entity of the log, in order of first appearance, round trips and self-loops included, which
      * {@link #movedEntities} leaves out. The state is where the entity's last entry leaves it, the destination of a

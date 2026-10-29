@@ -174,11 +174,11 @@ final class Reevaluation {
 
     /**
      * A reevaluation that could not read its entity's state or evaluate its watch, or an advance that could not read
-     * its entity's state, as {@code request} says: an abort in RESOLVE that carries the failure, unwrapped from
-     * CompletionException and ExecutionException. Its caller has already interrupted the thread again for an
-     * InterruptedException that the getter or the watch threw.
+     * its entity's state or the automatic edges of that state, as {@code request} says: an abort in RESOLVE that
+     * carries the failure, unwrapped from CompletionException and ExecutionException. Its caller has already
+     * interrupted the thread again for an InterruptedException that the getter, the watch or the graph threw.
      */
-    private static <E, S extends Enum<S>, T extends Enum<T>> TransitionAbortedException unresolved(
+    static <E, S extends Enum<S>, T extends Enum<T>> TransitionAbortedException unresolved(
             DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallRequest request,
             CallOrigin origin, Optional<Enum<?>> from, String what, Throwable error) {
         Throwable cause = Unwrap.unwrap(error);

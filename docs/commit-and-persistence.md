@@ -26,8 +26,10 @@ The runtime's normal root execution follows this sequence:
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
 8. Run the automatic chain of each entity with a hop or a sub-machine start in the commit, in log order, unless its
-   last hop there is a failure route that does not continue: while its state has an automatic edge, one `advance` of
-   it after another, each a call of its own, which `automaticSteps()` lists, as
+   last hop there is a failure route that does not continue, or a call made on the same thread in steps 6 to 8, by a
+   hook, a watch reaction or an earlier attempt, already committed a hop or a start of it: the deepest commit that
+   moved an entity chains it. While its state has an automatic edge, one `advance` of it after another, each a call
+   of its own, which `automaticSteps()` lists, as
    [records, journals and reactions](outcomes.md#records-journals-and-reactions) describes.
 9. Freeze the call's flow, notify the observers that the call completed, and return its outcome, which carries the
    frozen flow.
@@ -189,9 +191,9 @@ reaction or an automatic attempt starts and ends inside the call whose commit tr
 on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
 how far it got in writing states; an `Error` is reported too, then propagates. The phase is one of `CallPhase`'s
 `RESOLVE`, `GUARD`, `ACTION`, `COMMIT`, `HOOK`, `REACTIONS` and `AUTOMATIC_STEPS`. Only an `Error` reaches `onFailed`
-in `REACTIONS`, one thrown by a reaction, or in `AUTOMATIC_STEPS`, one thrown by an automatic attempt or by the `end`
-line of a call that committed, since any other throwable there becomes a `Reaction.Aborted` or an
-`AutomaticStep.Aborted`. So an observer reads
+in `REACTIONS`, one thrown by a reaction, or in `AUTOMATIC_STEPS`, one thrown by an automatic attempt, by the reads
+a chain makes before an attempt or by the `end` line of a call that committed, since any other throwable there
+becomes a `Reaction.Aborted` or an `AutomaticStep.Aborted`. So an observer reads
 the call's flow as the caller does: `outcome.flow()` in `onCompleted`, and the `flow()` of the `CallFailedException` in `onFailed`, which
 the call attached before it told the observers.
 

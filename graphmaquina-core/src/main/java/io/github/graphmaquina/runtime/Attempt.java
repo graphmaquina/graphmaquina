@@ -1,7 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.Outcome;
-import java.util.Set;
+import java.util.List;
 
 /**
  * What one automatic attempt hands back to the chain, or the advance, that made it. When the attempt committed, the
@@ -15,5 +15,5 @@ import java.util.Set;
  * @param stopsChain true when the commit's last entry for the entity is a failure route that does not continue
  * @param state the state the commit's last entry for the entity leaves it in, or the state the attempt read
  */
-record Attempt<E, S extends Enum<S>, T extends Enum<T>>(Outcome<E, S, T> outcome, Set<EntityRef> movedBelow,
+record Attempt<E, S extends Enum<S>, T extends Enum<T>>(Outcome<E, S, T> outcome, List<EntityRef> movedBelow,
                                                         boolean stopsChain, S state) { }

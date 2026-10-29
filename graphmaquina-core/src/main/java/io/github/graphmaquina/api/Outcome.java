@@ -90,19 +90,60 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The automatic attempts this root call's commit triggered once its watch reactions ran. Each entity with a hop or
-     * a sub-machine start in the commit, a self-loop included, runs its chain, in the order of the commit's log, unless
-     * its last hop there is a failure route that does not continue the chain: from the state the commit left it in,
-     * while that state has an automatic edge, one attempt after another, each a call of its own, an
+     * a sub-machine start in the commit, a self-loop or a round trip included, runs its chain, in the order of the
+     * commit's log, unless its last hop there is a failure route that does not continue the chain: from the state the
+     * commit left it in, while that state has an automatic edge, one attempt after another, each a call of its own, an
      * {@link AutomaticStep.Done} with its outcome or an {@link AutomaticStep.Aborted}. The chain stops after an attempt
      * that admits no candidate, which is listed with its rejections, after one whose failure takes a route that does
-     * not continue, and after one that aborts. The list holds each chain whole, flat and in order. The attempts that
-     * the commit of an attempt triggers for other entities are in that attempt's own outcome. The outcome of an
-     * advance is its first attempt, so the chain of its entity here starts with the attempt that followed. Empty for a
-     * rejected or ignored outcome and for any outcome a cascade returned. An applied outcome may still end in an
-     * aborted step, so inspect them whatever the status.
+     * not continue, and after one that aborts. The list holds each chain whole, flat and in order. The deepest commit
+     * that moved an entity chains it: when a call made on this thread inside this call's post-commit, a hook's call,
+     * a watch reaction or an attempt, committed a hop or a start of the entity before its chain began here, that call
+     * decided the chain, which is not here; and a chain stops after an attempt whose own post-commit ran such a call
+     * for its entity. So the attempts that the commit of an attempt triggers for other entities are in that attempt's
+     * own outcome, and those of a chain that a watch reaction decided are in that reaction's outcome, in
+     * {@link #reactions()}. The outcome of an advance is its first attempt, so the chain of its entity here starts with
+     * the attempt that followed. Empty for a rejected or ignored outcome and for any outcome a cascade returned. An
+     * applied outcome may still end in an aborted step, so inspect them whatever the status, or search them with
+     * {@link #automaticFailure()}, {@link #automaticAbort()} and {@link #automaticBlock()}.
      */
     default List<AutomaticStep> automaticSteps() {
         return List.of();
+    }
+
+    /**
+     * The outcome of the first automatic attempt of this call that ended in {@link Failed}, whether its route stopped
+     * the chain or let it go on, among every attempt that ran for this call, nested ones included. The search follows
+     * the order the attempts ran: first the {@link #reactions()}, each {@link Reaction.Done} searched through its
+     * outcome the same way, then the {@link #automaticSteps()}, each step looked at itself and then searched through
+     * its outcome, its reactions and its steps. A watch reaction's own result never counts: a
+     * {@link Reaction.Done} whose outcome is Failed is the result of a watch, which {@link #reactions()} holds.
+     * Empty when no attempt failed, and for a rejected or ignored outcome, which has neither steps nor reactions; the
+     * outcome of an {@code advance} is its own first attempt, which this does not return.
+     */
+    default Optional<Failed<?, ?, ?>> automaticFailure() {
+        return AutomaticSearch.failure(this);
+    }
+
+    /**
+     * The first automatic step of this call that aborted, in the order {@link #automaticFailure()} searches, nested
+     * steps included; a {@link Reaction.Aborted} never counts. Its {@link AutomaticStep.Aborted#cause()} says why: a
+     * domain failure that no route takes, a technical failure, any other exception, or an attempt past
+     * maxAutomaticChain. When the attempt ran, its cause is its {@code CallFailedException}, whose
+     * {@code statesWritten()} says how far it got: an attempt that aborted before writing left its entity where it
+     * was, and one whose setter or hook threw may have moved it. Empty when no step aborted.
+     */
+    default Optional<AutomaticStep.Aborted> automaticAbort() {
+        return AutomaticSearch.abort(this);
+    }
+
+    /**
+     * The outcome of the first automatic attempt of this call that admitted none of its candidates, an
+     * {@link Ignored} of {@link IgnoreReason#NO_CANDIDATE_ADMITTED} whose {@link Ignored#rejections()} say why, in the
+     * order {@link #automaticFailure()} searches, nested attempts included. An attempt whose state had no automatic
+     * edge left, {@link IgnoreReason#NO_AUTOMATIC_TRANSITION}, does not count. Empty when no attempt was blocked.
+     */
+    default Optional<Ignored<?, ?, ?>> automaticBlock() {
+        return AutomaticSearch.block(this);
     }
 
     /**

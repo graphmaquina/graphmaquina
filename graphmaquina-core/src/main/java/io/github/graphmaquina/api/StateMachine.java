@@ -43,8 +43,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
      * asynchronous edge. Once the call committed and its hooks and watch reactions ran, it runs the automatic chain of
      * each entity it moved, unless the last hop it committed for that entity is a failure route that does not
-     * continue; {@link Outcome#automaticSteps()} lists those attempts, and a failure of one of them, anything but an
-     * Error, never throws to the caller: it is listed there.
+     * continue, or a call made on this thread inside its post-commit, a hook's call, a watch reaction or an earlier
+     * attempt, moved the entity too, which decided its chain; {@link Outcome#automaticSteps()} lists those attempts,
+     * and a failure of one of them, anything but an Error, never throws to the caller: it is listed there, and
+     * {@link Outcome#automaticFailure()}, {@link Outcome#automaticAbort()} and {@link Outcome#automaticBlock()} find
+     * it, nested ones included.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
@@ -73,7 +76,8 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * </ul>
      * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
      * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error. A null argument and a
-     * call made where no call may start are refused before the call starts and throw as themselves. Once the attempt
+     * call made where no call may start are refused before the call starts and throw as themselves; so does a
+     * {@link GraphDefinition} written by hand whose automaticFrom throws, as an abort in RESOLVE. Once the attempt
      * committed, it runs the automatic chain of each entity it moved, as execute does, its own entity's included
      * unless the attempt's failure took a route that does not continue: the attempts that follow are each a call of
      * their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an Error, never throw

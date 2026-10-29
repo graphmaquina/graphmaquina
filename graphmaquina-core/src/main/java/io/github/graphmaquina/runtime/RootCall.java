@@ -14,7 +14,6 @@ import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -39,7 +38,8 @@ final class RootCall {
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation or an advance;
      * {@code levels} is where the call stands in the watch and automatic chains, and {@code continuing} the entity
      * whose chain made this call an attempt of it, which its own commit chains no further, empty for any other call.
-     * It returns the outcome with the summary of the commit.
+     * It returns the outcome with the summary of the commit and the entities that the commits nested in its
+     * post-commit reported, as {@link PostCommit} says.
      * When {@code machine}, the root's, records its trail, the call's flow is created before the step runs, and every
      * entry the call logs is marked on its clock. Once the reactions and the chains ran, the call's flow is frozen into
      * the outcome, its trail ending with the rejection of a rejected outcome, or into the empty view when the call
@@ -87,7 +87,7 @@ final class RootCall {
     /**
      * The step and phase 2 under the reentrancy marker, released, with the contexts invalidated, whatever they throw;
      * then, once something was committed, its line, its hooks, its watch reactions and its automatic chains; then the
-     * outcome, with the summary of the commit.
+     * outcome, with the summary of the commit and what the commits nested in its post-commit reported.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> stepAndCommit(
             DefaultStateMachine<E, S, T> machine, Transaction tx, E entity,
@@ -117,8 +117,8 @@ final class RootCall {
             marker[0] = false;
             tx.invalidate();
         }
-        return new Committed<>(PostCommit.after(tx, records, starts, committed, summary, levels, continuing)
-                .outcome(tx, entity, step, records, starts), summary, Set.of());
+        PostCommit post = PostCommit.after(tx, records, starts, committed, summary, levels, continuing);
+        return new Committed<>(post.outcome(tx, entity, step, records, starts), summary, post.movedBelow());
     }
 
     /**

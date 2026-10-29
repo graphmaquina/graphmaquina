@@ -243,6 +243,7 @@ class AutomaticChainFailureTest {
         Outcome<AdvanceTest.Lane, AdvanceTest.LaneStatus, AdvanceTest.LaneTransition> outcome =
                 AdvanceTest.lanes(fast, slow).execute(lane, AdvanceTest.LaneTransition.PREPARE);
         assertEquals(List.of("Aborted TransitionAbortedException"), described(outcome.automaticSteps()));
+        assertSame(outcome.automaticSteps().get(0), outcome.automaticAbort().orElseThrow());
         TransitionAbortedException cause = assertInstanceOf(TransitionAbortedException.class,
                 ((AutomaticStep.Aborted) outcome.automaticSteps().get(0)).cause());
         assertEquals(List.of(CallPhase.GUARD, Optional.of(AdvanceTest.LaneTransition.GO_SLOW)),
