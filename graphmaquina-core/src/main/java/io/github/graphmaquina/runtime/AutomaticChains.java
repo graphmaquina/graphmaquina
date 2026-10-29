@@ -54,13 +54,13 @@ final class AutomaticChains {
     /**
      * The chain of the entity of {@code start}, added to {@code steps}: while its state has an automatic edge and no
      * call nested in the post-commit before it moved the entity, an attempt, one automatic level above the one before
-     * it, listed as a {@link AutomaticStep.Done} with its outcome. Before its first attempt and after each one, it
-     * reads the automatic edges of the state first, and compares the entity with those that the nested calls moved,
-     * the post-commit of {@code scope}'s or the attempt's own, only when that state has one. So a state without an
+     * it, listed as a {@link AutomaticStep.Done} with its outcome. The chain stops after an attempt that ended Ignored
+     * and after one whose commit took a failure route that stops the chain, without reading anything more. Before its
+     * first attempt and after any other, it reads the automatic edges of the state first, and compares the entity with
+     * those that the nested calls moved, in the post-commit of {@code scope} or in the attempt's own, only when that
+     * state has one; it stops when one of them moved the entity, which decided its chain. So a state without an
      * automatic edge ends the chain having run, of the application's code, only the automaticFrom of a
-     * GraphDefinition written by hand: no state getter and no identity's hashCode or equals. The chain stops after an
-     * attempt that ended Ignored and after one whose commit took a failure route that stops the chain, without reading
-     * anything more, and after one whose own post-commit ran a call that moved the entity, which decided its chain.
+     * GraphDefinition written by hand: no state getter and no identity's hashCode or equals.
      * Anything but an Error that an attempt throws, or that the chain's own reads throw before its first attempt or
      * after one, the graph's automaticFrom or the hashCode or equals of the entity's identity as the scope and the
      * attempt's list compare it, stops the chain as an {@link AutomaticStep.Aborted} with it as the cause, a throwable

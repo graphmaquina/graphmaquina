@@ -127,10 +127,10 @@ the hook's flow still reads and writes the flow of the call that ran the hook. T
 of their own. Start it with the synchronous facade: a call that a hook starts on another thread, through `async()`,
 even one the hook waits for with `join()`, is not nested in the post-commit, so the commit whose hook ran still chains
 the entity from the state its own log left it in, its attempt reads the live state, and the chain can go on past a
-failure route that stopped the other call's chain. A hook whose call runs that same hook again, directly or through other calls, watch reactions and
-automatic attempts included, therefore recurs until the thread's stack overflows, each call having committed before its
-hooks ran, as [build and manage machine sets](coordination.md#build-and-manage-machine-sets) says of a
-`StackOverflowError`.
+failure route that stopped the other call's chain. A hook whose call runs that same hook again, directly or through
+other calls, watch reactions and automatic attempts included, therefore recurs until the thread's stack overflows, each
+call having committed before its hooks ran, as
+[build and manage machine sets](coordination.md#build-and-manage-machine-sets) says of a `StackOverflowError`.
 
 To call a contextual hook by hand, in a unit test, build its context with the five-argument constructor,
 `new CommitContext<>(from, transition, to, kind, isTerminal)`. Its flow belongs to no call: it starts empty, has no

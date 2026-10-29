@@ -136,20 +136,20 @@ checks `build()` runs, such as reachability, cycles or failure routes, so the DS
 validated graph. Such a definition implements `automaticFrom(state)` itself: the runtime asks only it for the automatic
 edges of a state, so it must list exactly the edges leaving that state that are marked `automatic`, and always the
 same ones, since a registry reads it for every state once as it is built to learn whether its calls run automatic
-chains at all. The records'
-constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard name only for `GUARD`, a
-`Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its `statesWritten`, a
-`MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any other request, a reaction only
-for a `REEVALUATE` and an automatic step only for an `ADVANCE`, a `TransitionSpec` a positive timeout, a `WatchSpec` at
-least one rule, and named references a non-blank name. The outcome constructors without `starts`, `failureKind` or
-`flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec` whose `failsOn` holds an interface type
-can make the order of its entries change the route, which the DSL and the annotations never allow. The `TransitionSpec`
-constructor without `recoveryRules`, `automatic` and `onFailureContinues` declares no rule and neither flag, and a
-`SubmachineSpec` copies its exits, in order, into an unmodifiable map and refuses a null terminal or identifier with
-`NullPointerException`. The `dsl` package also holds the outline records and `MachineOutlineValidator` that the DSL and
-the annotation processor share to check a graph by names; building a graph does not need them.
-`MachineOutlineValidator.validate(outline)` returns the problems sorted by code, origin state and identifier, and the
-outline records refuse empty or repeated states, repeated identifiers and unknown names with `IllegalArgumentException`.
+chains at all. The records' constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a
+guard name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that
+matches its `statesWritten`, a `MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any
+other request, a reaction only for a `REEVALUATE` and an automatic step only for an `ADVANCE`, a `TransitionSpec` a
+positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
+without `starts`, `failureKind` or `flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec` whose
+`failsOn` holds an interface type can make the order of its entries change the route, which the DSL and the annotations
+never allow. The `TransitionSpec` constructor without `recoveryRules`, `automatic` and `onFailureContinues` declares no
+rule and neither flag, and a `SubmachineSpec` copies its exits, in order, into an unmodifiable map and refuses a null
+terminal or identifier with `NullPointerException`. The `dsl` package also holds the outline records and
+`MachineOutlineValidator` that the DSL and the annotation processor share to check a graph by names; building a graph
+does not need them. `MachineOutlineValidator.validate(outline)` returns the problems sorted by code, origin state and
+identifier, and the outline records refuse empty or repeated states, repeated identifiers and unknown names with
+`IllegalArgumentException`.
 
 ## Watches and sub-machines
 

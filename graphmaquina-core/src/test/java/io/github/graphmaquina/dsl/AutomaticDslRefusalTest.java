@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 /**
- * What the automatic vocabulary of the DSL refuses at the call, as the rest of the DSL does: a null argument or element,
- * a state or an identifier of another catalogue, an {@code automaticOrder} once the graph was built, and the
+ * What the automatic vocabulary of the DSL refuses at the call, as the rest of the DSL does: a null argument or
+ * element, a state or an identifier of another catalogue, an {@code automaticOrder} once the graph was built, and the
  * {@code automatic()} mark and the continuing failure routes on a stage already closed.
  */
 class AutomaticDslRefusalTest {

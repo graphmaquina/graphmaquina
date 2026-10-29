@@ -318,8 +318,8 @@ guards until the step ends, its cascades, failure route, sub-machine starts and 
 the phase; `COMMIT` checks the original states and calls the setters; `HOOK` runs the after-commit hooks;
 `REACTIONS` dispatches the watch reactions; and `AUTOMATIC_STEPS` runs the automatic chains of the entities the commit
 moved, which a call of a registry without automatic edges never enters. Only an `Error` leaves either of the last two
-as a failure. The names of `CallPhase` and `StatesWritten` are
-stable identifiers, safe to log or to use as a metric tag.
+as a failure. The names of `CallPhase` and `StatesWritten` are stable identifiers, safe to log or to use as a metric
+tag.
 
 `call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
 ran. Any other exception involved is the cause, a failure of another call included, which keeps the flow of its own
