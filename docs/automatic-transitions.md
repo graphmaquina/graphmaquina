@@ -7,10 +7,11 @@ for an entity whose data changed without a transition. The guards already say wh
 application writes no loop of its own: no list of operations to try, no rejections to ignore and no bound against a
 loop that never ends.
 
-The library reports and the caller decides. What goes wrong in a chain never throws to the caller whose call
-committed: its outcome carries the failure, the abort or the guard that stopped the chain, and the application answers
-with its own error or calls `advance` later. The examples come from the onboarding of the example module, whose tests
-are in [OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java).
+The library reports and the caller decides. What goes wrong in a chain never throws, an `Error` aside, to the caller
+whose call committed: its outcome carries the failure, the abort or the guard that stopped the chain, and the
+application answers with its own error or calls `advance` later. The examples come from the onboarding of the
+example module, whose tests are in
+[OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java).
 
 ## Contents
 
@@ -58,12 +59,12 @@ self-loop, and `CLOSE` are operations, and `FLAG` is a plain failure route.
 
 A state with one automatic edge declares nothing more. A state with two or more declares the order they are tried in,
 with the repeatable `AutomaticOrder`, which names each of them once: `ADDRESS_SET` tries `ACTIVATE_PREMIUM` before
-`ACTIVATE`. An edge without guards is always admitted, so it comes last. The automatic edges, together with the jumps
-of their continuing failure routes, form no cycle, whatever `allowsCycle` says, so a chain never comes back to a state
-on its own. A state that holds a sub-machine has no automatic edge, and an automatic edge executes no operation that
-takes an input, since an attempt carries none. The build checks each of these, as the graph's
-[structural rules](graph-model.md#structural-rules) list, and `definition().automaticFrom(state)` returns the automatic
-edges of a state in the order they are tried.
+`ACTIVATE`. An edge without guards is admitted unless the entity is a child that no parent holds, so it comes last. The
+automatic edges, together with the jumps of their continuing failure routes, form no cycle, whatever `allowsCycle` says,
+so a chain never comes back to a state on its own. A state that holds a sub-machine has no automatic edge, and an
+automatic edge executes no operation that takes an input, since an attempt carries none. The build checks each of these,
+as the graph's [structural rules](graph-model.md#structural-rules) list, and `definition().automaticFrom(state)` returns
+the automatic edges of a state in the order they are tried.
 
 ## One attempt
 
@@ -92,11 +93,12 @@ public GuardResult addressComplete(GuardContext<Account, AccountStatus, AccountT
 }
 ```
 
-A guard of a candidate runs once per attempt, and one that throws fails the attempt as it fails an `execute`. The
-guards of a refused candidate did run, so keep them free of side effects, as every guard should be. An automatic edge
-without guards is admitted whenever an attempt reaches it: an account never stays in `FLAGGED`, because
-`REQUEST_REVIEW` takes it on to `REVIEW` in the same chain. That holds for an edge that also serves as a failure route
-or as the target of a watch rule: marked automatic, it is a candidate of every attempt from its origin.
+A guard of a candidate runs once per attempt, and one that throws fails the attempt as it fails an `execute`. The guards
+of a refused candidate did run, so keep them free of side effects, as every guard should be. An automatic edge without
+guards is admitted whenever an attempt reaches it, unless the entity is a sub-machine that no parent holds, which
+refuses every candidate as `DETACHED`: an account never stays in `FLAGGED`, because `REQUEST_REVIEW` takes it on to
+`REVIEW` in the same chain. That holds for an edge that also serves as a failure route or as the target of a watch rule:
+marked automatic, it is a candidate of every attempt from its origin.
 
 ## When the chain runs
 
@@ -110,8 +112,9 @@ entity back where it started: a self-loop often means that data changed.
 The chain starts from the state the commit left the entity in, read from the commit's log, not from the entity. While
 that state has an automatic edge, it makes an attempt, a root call of its own, which reads the entity's state as any
 call does, and goes on from the state that attempt's commit left. It stops after an attempt that admits no candidate,
-after one whose failure takes a route that does not continue and after one that aborts, and it ends without an
-attempt in a state that has no automatic edge.
+after one whose failure takes a route that does not continue, after one that aborts, and after one whose own
+post-commit ran a call that moved the entity, such as a watch reaction, since that call decided the entity's chain. It
+ends without an attempt in a state that has no automatic edge.
 
 ![After setPassword commits the account from NEW to PASSWORD_SET, and once any hooks and watch reactions of that commit
 ran, the account runs its automatic chain as step 8: COMPLETE_INFO to INFO_SET, COMPLETE_ADDRESS to

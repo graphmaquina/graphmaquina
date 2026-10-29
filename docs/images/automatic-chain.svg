@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="860" viewBox="0 0 1440 860" role="img" aria-labelledby="title desc">
-<title id="title">Automatic chain: the account goes on by itself</title><desc id="desc">After setPassword commits the account from NEW to PASSWORD_SET, and once any hooks and watch reactions of that commit ran, the account runs its automatic chain as step 8: COMPLETE_INFO to INFO_SET, COMPLETE_ADDRESS to ADDRESS_SET and, once ACTIVATE_PREMIUM is refused, ACTIVATE to ACTIVE. Each attempt is a call of its own, which automaticSteps() lists. The chain stops when no edge is admitted, when a failure takes a route that does not continue, when an attempt aborts, the limit included, or when no automatic edge is left; automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="890" viewBox="0 0 1440 890" role="img" aria-labelledby="title desc">
+<title id="title">Automatic chain: the account goes on by itself</title><desc id="desc">After setPassword commits the account from NEW to PASSWORD_SET, and once any hooks and watch reactions of that commit ran, the account runs its automatic chain as step 8: COMPLETE_INFO to INFO_SET, COMPLETE_ADDRESS to ADDRESS_SET and, once ACTIVATE_PREMIUM is refused, ACTIVATE to ACTIVE. Each attempt is a call of its own, which automaticSteps() lists. The chain stops when no edge is admitted, when a failure takes a route that does not continue, when an attempt aborts, the limit included, when a call nested in an attempt's post-commit moved the entity, or when no automatic edge is left; automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
 </defs>
-<rect x="0" y="0" width="1440" height="860" rx="24" fill="url(#back)" />
-<rect x="0" y="0" width="1440" height="860" rx="24" fill="url(#grid)" />
+<rect x="0" y="0" width="1440" height="890" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="890" rx="24" fill="url(#grid)" />
 <text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / AUTOMATIC TRANSITIONS</text>
 <text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Set the password. The account goes on by itself.</text>
 <text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Once any hooks and watch reactions of the commit ran, the account it moved runs its chain.</text>
@@ -56,9 +56,10 @@
 <rect x="78" y="542" width="1284" height="92" rx="12" fill="url(#glow)" stroke="#2b3c54" stroke-width="2" />
 <text x="104" y="580" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#f2f6fc" text-anchor="start">Each attempt is a call of its own: it tries the state's automatic edges in their order, runs the first</text>
 <text x="104" y="612" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#f2f6fc" text-anchor="start">one admitted, commits, runs its own hooks and reactions, and automaticSteps() lists it.</text>
-<rect x="52" y="690" width="1336" height="71" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
-<text x="78" y="734" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">THE CHAIN STOPS</text>
-<text x="296" y="734" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">no edge admitted · a route that does not continue · an abort, the limit included · no automatic edge left</text>
-<path d="M 52 788 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="825" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">The library reports, the caller decides: automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</text>
+<rect x="52" y="690" width="1336" height="101" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="748" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">THE CHAIN STOPS</text>
+<text x="296" y="732" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">no edge admitted · a route that does not continue · an abort, the limit included</text>
+<text x="296" y="766" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">a call nested in an attempt's post-commit moved the entity · no automatic edge left</text>
+<path d="M 52 818 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="855" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">The library reports, the caller decides: automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</text>
 </svg>

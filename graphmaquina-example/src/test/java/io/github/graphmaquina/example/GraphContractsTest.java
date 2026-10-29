@@ -30,7 +30,7 @@ class GraphContractsTest {
         return ItemsRuntime.graph(new ItemActions());
     }
 
-    /** The onboarding's graph, with a verifier that verifies every address: a diagram never runs it. */
+    /** The onboarding's graph, with a verifier that verifies every address: a snapshot reads it and never runs it. */
     private static GraphDefinition<Account, AccountStatus, AccountTransition> accountGraph() {
         return AccountsRuntime.graph(new AccountActions((Account account) -> true));
     }

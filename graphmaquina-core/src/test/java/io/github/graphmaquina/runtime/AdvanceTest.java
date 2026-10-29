@@ -512,23 +512,51 @@ class AdvanceTest {
         }
     }
 
-    @Test
-    void asyncAdvanceRunsOnTheExecutor() {
-        List<String> threads = new ArrayList<>();
+    /** A machine over the onboarding whose executor runs each call on a new thread named advancer. */
+    private StateMachine<Account, AccountStatus, AccountTransition> onAdvancer() {
+        return StateMachines.from(onboarding(verifier))
+                .state(Account::status, Account::setStatus).identity(Account::id)
+                .asyncExecutor((Runnable task) -> new Thread(task, "advancer").start())
+                .build();
+    }
+
+    /** Makes the verifier record the name of the thread each address check runs on, in {@code threads}. */
+    private void recordThreads(List<String> threads) {
         verifier.behaviour = (Account target) -> {
             threads.add(Thread.currentThread().getName());
             return ActionOutcome.ok();
         };
-        StateMachine<Account, AccountStatus, AccountTransition> machine = StateMachines.from(onboarding(verifier))
-                .state(Account::status, Account::setStatus).identity(Account::id)
-                .asyncExecutor((Runnable task) -> new Thread(task, "advancer").start())
-                .build();
+    }
+
+    @Test
+    void asyncAdvanceRunsOnTheExecutor() {
+        List<String> threads = new ArrayList<>();
+        recordThreads(threads);
+        StateMachine<Account, AccountStatus, AccountTransition> machine = onAdvancer();
         Account account = complete(account(INFO_SET));
         Outcome<Account, AccountStatus, AccountTransition> outcome = machine.async().advance(account).join();
         assertEquals(Optional.of(COMPLETE_ADDRESS), outcome.requestedTransition());
         assertEquals(ADDRESS_SET, outcome.recordedState());
         assertEquals(List.of("advancer"), threads);
         assertEquals(List.of("Done APPLIED ACTIVATE ACTIVE"), StepTexts.described(outcome.automaticSteps()));
+        assertEquals(ACTIVE, account.status());
+    }
+
+    /**
+     * The chain of an async advance runs on the executor too: the advance's own attempt runs COMPLETE_INFO, which has
+     * no action, and the chained attempt that follows runs the action of COMPLETE_ADDRESS on the executor's thread.
+     */
+    @Test
+    void theChainOfAnAsyncAdvanceRunsOnTheExecutor() {
+        List<String> threads = new ArrayList<>();
+        recordThreads(threads);
+        Account account = complete(account(PASSWORD_SET));
+        account.setInfoComplete(true);
+        Outcome<Account, AccountStatus, AccountTransition> outcome = onAdvancer().async().advance(account).join();
+        assertEquals(Optional.of(COMPLETE_INFO), outcome.requestedTransition());
+        assertEquals(List.of("Done APPLIED COMPLETE_ADDRESS ADDRESS_SET", "Done APPLIED ACTIVATE ACTIVE"),
+                StepTexts.described(outcome.automaticSteps()));
+        assertEquals(List.of("advancer"), threads);
         assertEquals(ACTIVE, account.status());
     }
 

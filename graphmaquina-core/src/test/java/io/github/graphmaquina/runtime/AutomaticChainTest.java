@@ -29,6 +29,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.Account;
 import io.github.graphmaquina.fixtures.AccountGraphs.AddressFailures;
@@ -63,6 +64,26 @@ class AutomaticChainTest {
 
     /** Identifiers of the receipt machine; its graph declares no edge. */
     enum ReceiptTransition { RESEND }
+
+    /** States of a task: a finished task is done, and a blocked one is escalated. */
+    enum TaskStatus { OPEN, DONE, BLOCKED, ESCALATED }
+
+    /** Identifiers of the task machine. */
+    enum TaskTransition { FINISH, BLOCK, ESCALATE }
+
+    static final MachineKey<Task, TaskStatus, TaskTransition> TASKS =
+            MachineKey.of(Task.class, TaskStatus.class, TaskTransition.class);
+
+    /** A task: an id and its status. */
+    @Getter(AccessLevel.PACKAGE)
+    @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
+    static final class Task {
+
+        private final String id;
+        private TaskStatus status = TaskStatus.OPEN;
+
+        void setStatus(TaskStatus status) { this.status = status; }
+    }
 
     static final MachineKey<Parcel, ParcelStatus, ParcelTransition> PARCELS =
             MachineKey.of(Parcel.class, ParcelStatus.class, ParcelTransition.class);
@@ -199,6 +220,35 @@ class AutomaticChainTest {
         assertEquals(FLAGGED, outcome.recordedState());
         assertEquals(List.of("Done APPLIED REQUEST_REVIEW REVIEW"), described(outcome.automaticSteps()));
         assertEquals(REVIEW, account.status());
+    }
+
+    /**
+     * A route that continues may be declared on a manual edge too: the application's FINISH, which is not automatic,
+     * fails into BLOCKED by its continuing onFailure, and the task's chain goes on from there through ESCALATE.
+     */
+    @Test
+    void aManualEdgeFailedByAContinuingRouteChainsFromTheRecoveryState() {
+        GraphDefinition<Task, TaskStatus, TaskTransition> tasks = StateGraph.define(TASKS)
+                .initial(TaskStatus.OPEN).terminal(TaskStatus.DONE).terminal(TaskStatus.ESCALATED)
+                .statePolicy(TaskStatus.OPEN, "an open task is finished")
+                .statePolicy(TaskStatus.BLOCKED, "a blocked task is escalated")
+                .transition(TaskTransition.FINISH, TaskStatus.OPEN, TaskStatus.DONE)
+                    .action("finish", (TransitionContext<Task, TaskStatus, TaskTransition> ctx) ->
+                            ActionOutcome.failed("the task is blocked"))
+                    .onFailureAndContinue(TaskTransition.BLOCK)
+                    .endTransition()
+                .transition(TaskTransition.BLOCK, TaskStatus.OPEN, TaskStatus.BLOCKED).endTransition()
+                .transition(TaskTransition.ESCALATE, TaskStatus.BLOCKED, TaskStatus.ESCALATED).automatic()
+                    .endTransition()
+                .build();
+        Task task = new Task("t1");
+        Outcome<Task, TaskStatus, TaskTransition> outcome = StateMachines.from(tasks)
+                .state(Task::status, Task::setStatus).identity(Task::id).build()
+                .execute(task, TaskTransition.FINISH);
+        assertEquals(OutcomeCode.FAILURE_ROUTED, outcome.code());
+        assertEquals(TaskStatus.BLOCKED, outcome.recordedState());
+        assertEquals(List.of("Done APPLIED ESCALATE ESCALATED"), described(outcome.automaticSteps()));
+        assertEquals(TaskStatus.ESCALATED, task.status());
     }
 
     /**
