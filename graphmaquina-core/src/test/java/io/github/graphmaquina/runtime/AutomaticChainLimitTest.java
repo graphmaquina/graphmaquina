@@ -142,6 +142,24 @@ class AutomaticChainLimitTest {
         assertEquals(Rung.R11, climber.rung());
     }
 
+    /**
+     * A candidate without guards is admitted while the call is still in RESOLVE, so the attempt one past the limit
+     * aborts in RESOLVE, before the action of CLIMB_11 and without writing.
+     */
+    @Test
+    void limitPlusOneOnACandidateWithoutGuardsAbortsInResolve() {
+        Climber climber = new Climber("c1", Rung.R6);
+        Outcome<Climber, Rung, Climb> outcome = ladder(3).execute(climber, Climb.CLIMB_7);
+        assertEquals(List.of("Done APPLIED CLIMB_8 R8", "Done APPLIED CLIMB_9 R9", "Done APPLIED CLIMB_10 R10",
+                "Aborted AutomaticChainExceededException"), described(outcome.automaticSteps()));
+        AutomaticChainExceededException cause = exceeded(outcome);
+        assertEquals(List.of(CallPhase.RESOLVE, StatesWritten.NONE, CallOrigin.AUTOMATIC_STEP),
+                List.of(cause.phase(), cause.statesWritten(), cause.call().origin()));
+        assertEquals(List.of(Optional.of(Rung.R10), Optional.of(Climb.CLIMB_11), Optional.of(Rung.R11)),
+                List.of(cause.from(), cause.transition(), cause.to()));
+        assertEquals(Rung.R10, climber.rung());
+    }
+
     /** The first attempt of an advance is at level 1, so its chain reaches the limit one attempt sooner. */
     @Test
     void theFirstAttemptOfAdvanceCounts() {

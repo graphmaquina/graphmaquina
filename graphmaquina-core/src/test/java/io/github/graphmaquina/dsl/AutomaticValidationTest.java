@@ -108,6 +108,28 @@ class AutomaticValidationTest {
                 problems(twoAutomaticFromDraft().automaticOrder(DRAFT, List.of(SUBMIT, DISCARD, SUBMIT))));
     }
 
+    /**
+     * One order can break the rule three ways at once: it names an identifier that is not an automatic edge of the
+     * state, leaves an automatic edge out and names an identifier twice. Each is reported, at the state.
+     */
+    @Test
+    void sg108OneOrderReportsEachWayItBreaksTheRule() {
+        assertEquals(List.of(
+                new InvalidGraphException.Problem(DiagnosticCode.SG108.name(),
+                        "the automaticOrder of DRAFT names RETOUCH, which is not an automatic transition from DRAFT"),
+                new InvalidGraphException.Problem(DiagnosticCode.SG108.name(),
+                        "the automaticOrder of DRAFT does not name DISCARD"),
+                new InvalidGraphException.Problem(DiagnosticCode.SG108.name(),
+                        "the automaticOrder of DRAFT names SUBMIT twice")),
+                problems(twoAutomaticFromDraft().automaticOrder(DRAFT, List.of(SUBMIT, RETOUCH, SUBMIT))));
+        assertEquals(List.of(
+                new InvalidGraphException.Problem(DiagnosticCode.SG108.name(),
+                        "the automaticOrder of DRAFT names RETOUCH, which is not an automatic transition from DRAFT"),
+                new InvalidGraphException.Problem(DiagnosticCode.SG108.name(),
+                        "the automaticOrder of DRAFT does not name DISCARD")),
+                problems(twoAutomaticFromDraft().automaticOrder(DRAFT, List.of(SUBMIT, RETOUCH))));
+    }
+
     @Test
     void sg108OrderOnAStateWithOneAutomaticTransition() {
         GraphBuilder<Doc, DocStatus, DocTransition> graph = docs()

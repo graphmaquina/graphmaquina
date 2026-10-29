@@ -7,13 +7,16 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * The structural rules about the automatic edges of a state, over a {@link MachineOutline}: its
  * {@code automaticOrder} (SG108), the guards inside that order (SG109) and the sub-machine a state may hold (SG807).
- * Each rule reports at most one problem per state, positioned at that state, and the problems of one code come in
- * the order of the states, then of the cases of the rule. The rules of the continuing failure routes are in
+ * Each rule reports at most one problem per state, positioned at that state, but the one that an order names exactly
+ * the automatic edges of its state, which reports up to three: the first identifier it names that is not one of them,
+ * the first of them it leaves out, and the first identifier it names twice. The problems of one code come in the
+ * order of the states, then of the cases of the rule. The rules of the continuing failure routes are in
  * {@link ContinuationRules}.
  */
 final class AutomaticRules {
@@ -85,7 +88,7 @@ final class AutomaticRules {
             automaticIds.add(edge.transition());
         }
         Set<String> seen = new HashSet<>();
-        String repeated = null;
+        Optional<String> repeated = Optional.empty();
         boolean exact = true;
         for (String named : order.transitions()) {
             if (!automaticIds.contains(named) && exact) {
@@ -93,16 +96,16 @@ final class AutomaticRules {
                         + ", which is not an automatic transition from " + state);
                 exact = false;
             }
-            if (!seen.add(named) && repeated == null) {
-                repeated = named;
+            if (!seen.add(named) && repeated.isEmpty()) {
+                repeated = Optional.of(named);
             }
         }
         exact &= reportMissing(state, automaticIds, seen, node, problems);
-        if (repeated != null) {
+        if (repeated.isPresent()) {
             problems.add(DiagnosticCode.SG108, node, -1,
-                    "the automaticOrder of " + state + " names " + repeated + " twice");
+                    "the automaticOrder of " + state + " names " + repeated.get() + " twice");
         }
-        return exact && repeated == null;
+        return exact && repeated.isEmpty();
     }
 
     /** SG108 for the first automatic identifier of {@code automaticIds} that {@code named} lacks. */
