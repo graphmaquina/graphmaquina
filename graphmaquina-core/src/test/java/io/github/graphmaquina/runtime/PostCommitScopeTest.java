@@ -6,9 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.dsl.GraphBuilder;
+import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.fixtures.CellChains;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
+import io.github.graphmaquina.fixtures.DocTransition;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +24,8 @@ import org.junit.jupiter.api.Test;
  * closes as the innermost open one; and a scope whose closing a StackOverflowError interrupted after its first store,
  * which marks it closed, takes no more reports and is dropped by the next scope the thread opens or closes, so it
  * neither grows nor makes the closing of the scope around it throw. A real overflow, wherever it strikes while scopes
- * open and close, leaves none open.
+ * open and close, leaves none open. A registry whose graphs have no automatic edge opens none for a call, and one with
+ * an automatic edge opens one, which a hook of the call sees open.
  */
 class PostCommitScopeTest {
 
@@ -66,6 +73,40 @@ class PostCommitScopeTest {
                 outer.movedBelow(ref("d2"))));
         assertEquals(List.of(ref("d1"), ref("d2")), outer.moved());
         assertFalse(outer.movedBelow(ref("d3")));
+    }
+
+    /**
+     * The doc machine with a hook on SUBMIT, in a registry of its own; {@code withAutomaticEdge} marks ARCHIVE
+     * automatic, an edge the test never reaches, which is enough for the registry to open a scope for each call.
+     */
+    private static StateMachine<Doc, DocStatus, DocTransition> docsWatchedBy(
+            List<Boolean> seen, boolean withAutomaticEdge) {
+        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DocStatus.DRAFT)
+                .terminal(DocStatus.ARCHIVED)
+                .statePolicy(DocStatus.DRAFT, "a draft is submitted")
+                .statePolicy(DocStatus.REVIEW, "a review is published")
+                .statePolicy(DocStatus.PUBLISHED, "a publication is archived")
+                .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW)
+                    .afterCommit("seen", (Doc doc) -> seen.add(PostCommitScope.anyOpen())).endTransition()
+                .transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED).endTransition();
+        TransitionBuilder<Doc, DocStatus, DocTransition> archive =
+                graph.transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED);
+        graph = (withAutomaticEdge ? archive.automatic() : archive).endTransition();
+        return MachineRegistry.builder()
+                .add(StateMachines.from(graph.build()).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                .build()
+                .of(DOCS);
+    }
+
+    /** The scope is skipped when no graph of the registry has an automatic edge, and opened when one has. */
+    @Test
+    void aHookSeesAScopeOnlyInARegistryWithAnAutomaticEdge() {
+        List<Boolean> without = new ArrayList<>();
+        List<Boolean> with = new ArrayList<>();
+        docsWatchedBy(without, false).execute(new Doc("d1", DocStatus.DRAFT), DocTransition.SUBMIT);
+        docsWatchedBy(with, true).execute(new Doc("d2", DocStatus.DRAFT), DocTransition.SUBMIT);
+        assertEquals(List.of(List.of(false), List.of(true)), List.of(without, with));
+        assertFalse(PostCommitScope.anyOpen());
     }
 
     /** Closing a scope while another one is open inside it is a misuse. */

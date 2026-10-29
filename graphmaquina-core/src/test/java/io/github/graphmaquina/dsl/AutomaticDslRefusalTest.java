@@ -64,7 +64,8 @@ class AutomaticDslRefusalTest {
         assertEquals(List.of("from is marked non-null but is null", "transitions is marked non-null but is null"),
                 List.of(nullRefusal(() -> base().automaticOrder(null, List.of(SUBMIT))),
                         nullRefusal(() -> base().automaticOrder(DRAFT, null))));
-        assertThrows(NullPointerException.class, () -> base().automaticOrder(DRAFT, withNull));
+        assertEquals("transitions contains a null element",
+                nullRefusal(() -> base().automaticOrder(DRAFT, withNull)));
     }
 
     @Test

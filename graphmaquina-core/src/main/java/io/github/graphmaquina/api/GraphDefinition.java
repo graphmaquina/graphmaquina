@@ -14,9 +14,9 @@ import java.util.Set;
  * aborts in ACTION with a {@code TransitionAbortedException}. So does a call whose child reaches a terminal state that
  * its binding maps to no exit, or to an identifier with no edge leaving the bound state. A registry reads
  * {@link #automaticFrom} of every state once as it is built, and what it throws there propagates from the build; when
- * no state has an automatic edge then, no call of the registry runs an automatic chain. Later, an automaticFrom that
- * throws aborts an advance, or an automatic attempt, in RESOLVE, and ends an automatic chain that reads it before an
- * attempt, or after one, as an {@link AutomaticStep.Aborted}.
+ * no state of any graph in the registry has an automatic edge then, no call of the registry runs an automatic chain.
+ * Later, an automaticFrom that throws aborts an advance, or an automatic attempt, in RESOLVE, and ends an automatic
+ * chain that reads it before an attempt, or after one, as an {@link AutomaticStep.Aborted}.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 

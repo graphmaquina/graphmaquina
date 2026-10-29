@@ -144,7 +144,7 @@ class AutomaticChainLimitTest {
 
     /**
      * A candidate without guards is admitted while the call is still in RESOLVE, so the attempt one past the limit
-     * aborts in RESOLVE, before the action of CLIMB_11 and without writing.
+     * aborts in RESOLVE, before CLIMB_11 runs and without writing.
      */
     @Test
     void limitPlusOneOnACandidateWithoutGuardsAbortsInResolve() {

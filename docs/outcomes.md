@@ -259,7 +259,9 @@ read them.
   began, that call decided the chain, so the commit around it does not chain the entity again; and a chain stops
   after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
   triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
-  reaction's outcome. Entities compare as the commit log compares them, by machine and identity.
+  reaction's outcome. A hook's call on another thread is not made inside the post-commit and decides nothing, as
+  [when the chain runs](automatic-transitions.md#when-the-chain-runs) says. Entities compare as the commit log
+  compares them, by machine and identity.
 - Outside any call, the chain decides whether an attempt follows. After an attempt that ended `Ignored`, or whose
   failure took a route that stops the chain, it stops. Before its first attempt and after any other, it reads the
   automatic edges of the state the commit or the attempt left the entity in: a state without one ends the chain there,

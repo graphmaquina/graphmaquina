@@ -101,7 +101,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * decided the chain, which is not here; and a chain stops after an attempt whose own post-commit ran such a call
      * for its entity. So the attempts that the commit of an attempt triggers for other entities are in that attempt's
      * own outcome, and those of a chain that a watch reaction decided are in that reaction's outcome, in
-     * {@link #reactions()}. The outcome of an advance is its first attempt, so the chain of its entity here starts with
+     * {@link #reactions()}. A call that a hook starts on another thread is not made inside the post-commit and decides
+     * no chain. The outcome of an advance is its first attempt, so the chain of its entity here starts with
      * the attempt that followed. Empty for a rejected or ignored outcome and for any outcome a cascade returned. An
      * applied outcome may still end in an aborted step, so inspect them whatever the status, or search them with
      * {@link #automaticFailure()}, {@link #automaticAbort()} and {@link #automaticBlock()}.

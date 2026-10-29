@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -152,11 +153,12 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     public GraphBuilder<E, S, T> automaticOrder(@NonNull S from, @NonNull List<T> transitions) {
         requireUnbuilt();
         requireState(from);
-        List<T> order = List.copyOf(transitions);
+        List<T> order = new ArrayList<>(transitions);
         for (T transition : order) {
+            Objects.requireNonNull(transition, "transitions contains a null element");
             requireTransition(transition);
         }
-        automaticOrders.add(new OrderDeclaration<>(from, order));
+        automaticOrders.add(new OrderDeclaration<>(from, List.copyOf(order)));
         return this;
     }
 
