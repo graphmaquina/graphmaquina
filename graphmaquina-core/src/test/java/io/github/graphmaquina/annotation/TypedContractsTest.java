@@ -116,7 +116,8 @@ class TypedContractsTest {
                 VocabularyKind.DEFINITION, VocabularyKind.STATE_POLICY, VocabularyKind.STATE_POLICIES,
                 VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS, VocabularyKind.RECOVERY, VocabularyKind.REJECT,
                 VocabularyKind.REJECTS, VocabularyKind.WATCH, VocabularyKind.WATCHES, VocabularyKind.WHEN,
-                VocabularyKind.SUBMACHINE, VocabularyKind.SUBMACHINES, VocabularyKind.EXIT, VocabularyKind.CHECK
+                VocabularyKind.SUBMACHINE, VocabularyKind.SUBMACHINES, VocabularyKind.EXIT, VocabularyKind.CHECK,
+                VocabularyKind.AUTOMATIC_ORDER, VocabularyKind.AUTOMATIC_ORDERS
         }, VocabularyKind.values());
     }
 

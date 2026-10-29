@@ -6,6 +6,11 @@ import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
 import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.ItemsRuntime;
+import io.github.graphmaquina.example.onboarding.Account;
+import io.github.graphmaquina.example.onboarding.AccountActions;
+import io.github.graphmaquina.example.onboarding.AccountStatus;
+import io.github.graphmaquina.example.onboarding.AccountTransition;
+import io.github.graphmaquina.example.onboarding.AccountsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
@@ -25,6 +30,11 @@ class GraphContractsTest {
         return ItemsRuntime.graph(new ItemActions());
     }
 
+    /** The onboarding's graph, with a verifier that verifies every address: a snapshot reads it and never runs it. */
+    private static GraphDefinition<Account, AccountStatus, AccountTransition> accountGraph() {
+        return AccountsRuntime.graph(new AccountActions((Account account) -> true));
+    }
+
     @Test
     void orderContractMatchesSnapshot() {
         GraphSnapshots.assertMatches(orderGraph(), "contracts/order.graph");
@@ -33,5 +43,10 @@ class GraphContractsTest {
     @Test
     void itemContractMatchesSnapshot() {
         GraphSnapshots.assertMatches(itemGraph(), "contracts/item.graph");
+    }
+
+    @Test
+    void accountContractMatchesSnapshot() {
+        GraphSnapshots.assertMatches(accountGraph(), "contracts/account.graph");
     }
 }

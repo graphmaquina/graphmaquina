@@ -14,11 +14,14 @@ import lombok.NonNull;
  * terminals use double circles, and watches use notes with dashed connections. Only declared edges are
  * drawn; a rejection policy is a tooltip on its node, never an arrow.
  *
- * <p>An edge's label is its identifier, then its action, {@code [async]}, {@code [if <guards>]}, one
- * {@code [recover <kind> -> <transition>]} per recovery rule in declaration order, {@code [onFailure <transition>]}
- * and {@code [watches <rules>]}, leaving out the parts the edge does not have. A rule's kind is its binary name
- * without the package, such as {@code PublicationFailures$Unavailable}. The throwable types of failsOn and of the
- * rules are not drawn, and a rule adds no arrow and no node.
+ * <p>An edge's label is its identifier, then {@code [auto]} when it is automatic, or {@code [auto n]} when its state
+ * declares an order among two or more automatic edges, with {@code n} counted from 1 in that order, then its action,
+ * {@code [async]}, {@code [if <guards>]}, one {@code [recover <kind> -> <transition>]} per recovery rule in
+ * declaration order, {@code [onFailure <transition>]} and {@code [watches <rules>]}, leaving out the parts the edge
+ * does not have. A route that continues the chain of automatic attempts ends its fragment with {@code continues}, as
+ * in {@code [recover <kind> -> <transition> continues]} and {@code [onFailure <transition> continues]}. A rule's kind
+ * is its binary name without the package, such as {@code PublicationFailures$Unavailable}. The throwable types of
+ * failsOn and of the rules are not drawn, and a rule adds no arrow and no node.
  *
  * <p>A state that holds a sub-machine is drawn as a cluster instead of a node, labelled {@code <STATE>: <child>} after
  * the child's view name, with the state's policy as its tooltip. The cluster holds an invisible anchor and the child's
@@ -252,6 +255,9 @@ public final class GraphvizExporter {
     private static String label(TransitionView transition) {
         List<String> parts = new ArrayList<>();
         parts.add(transition.transition());
+        if (transition.automatic()) {
+            parts.add(transition.automaticPosition().map((Integer n) -> "[auto " + n + "]").orElse("[auto]"));
+        }
         transition.action().ifPresent(parts::add);
         if (transition.async()) {
             parts.add("[async]");
@@ -260,11 +266,18 @@ public final class GraphvizExporter {
             parts.add("[if " + String.join(", ", transition.guards()) + "]");
         }
         for (RecoveryView recovery : transition.recoveries()) {
-            parts.add("[recover " + withoutPackage(recovery.kind()) + " -> " + recovery.transition() + "]");
+            parts.add("[recover " + withoutPackage(recovery.kind()) + " -> " + recovery.transition()
+                    + continuation(recovery.continues()) + "]");
         }
-        transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id + "]"));
+        transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id
+                + continuation(transition.failureContinues()) + "]"));
         transition.watch().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
         return String.join(" ", parts);
+    }
+
+    /** The word that ends the fragment of a route that continues the chain of automatic attempts. */
+    private static String continuation(boolean continues) {
+        return continues ? " continues" : "";
     }
 
     /** A binary name without its package: the text after the last dot, nested names still joined by {@code $}. */

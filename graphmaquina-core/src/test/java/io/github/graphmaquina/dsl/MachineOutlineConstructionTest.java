@@ -39,7 +39,7 @@ class MachineOutlineConstructionTest {
     private static TransitionOutline edgeWithRecoveries(String from, String transition, String to,
             String... recoveries) {
         return new TransitionOutline(from, transition, to, TransitionKind.ACTION, Optional.empty(),
-                List.of(recoveries));
+                List.of(recoveries), false, false, false, List.of());
     }
 
     private static void assertRejected(String expectedMessage, Executable call) {
@@ -111,6 +111,28 @@ class MachineOutlineConstructionTest {
         assertRejected("M: transition.recovery NOPE is not one of [Z, X]", () -> new MachineOutline(NAME, STATES,
                 CATALOG, "A", Set.of(), Set.of(), List.of(edgeWithRecoveries("A", "Z", "B", "X", "NOPE")), List.of(),
                 List.of()));
+    }
+
+    @Test
+    void unknownContinuingRecoveryIsRejected() {
+        TransitionOutline edge = new TransitionOutline("A", "Z", "B", TransitionKind.ACTION, Optional.empty(),
+                List.of("X"), false, false, false, List.of("NOPE"));
+        assertRejected("M: transition.continuingRecovery NOPE is not one of [Z, X]", () -> new MachineOutline(NAME,
+                STATES, CATALOG, "A", Set.of(), Set.of(), List.of(edge), List.of(), List.of()));
+    }
+
+    @Test
+    void unknownAutomaticOrderStateIsRejected() {
+        assertRejected("M: automaticOrder.state NOPE is not one of [A, B]", () -> new MachineOutline(NAME, STATES,
+                CATALOG, "A", Set.of(), Set.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new AutomaticOrderOutline("NOPE", List.of("Z")))));
+    }
+
+    @Test
+    void unknownAutomaticOrderTransitionIsRejected() {
+        assertRejected("M: automaticOrder.transition NOPE is not one of [Z, X]", () -> new MachineOutline(NAME, STATES,
+                CATALOG, "A", Set.of(), Set.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new AutomaticOrderOutline("A", List.of("Z", "NOPE")))));
     }
 
     @Test
@@ -215,7 +237,7 @@ class MachineOutlineConstructionTest {
         assertRejected("M: transition.onFailure NOPE_FAIL is not one of [Z, X]", () -> new MachineOutline(NAME,
                 STATES, CATALOG, "A", Set.of(), Set.of(),
                 List.of(new TransitionOutline("A", "Z", "B", TransitionKind.ACTION, Optional.of("NOPE_FAIL"),
-                        List.of("NOPE_RECOVERY"))),
+                        List.of("NOPE_RECOVERY"), false, false, false, List.of())),
                 List.of(), List.of()));
     }
 

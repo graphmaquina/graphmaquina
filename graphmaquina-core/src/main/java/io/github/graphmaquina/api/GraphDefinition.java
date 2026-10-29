@@ -12,7 +12,11 @@ import java.util.Set;
  * through the DSL. The runtime does not validate an implementation built otherwise. When a failure selects a recovery
  * identifier, through a recovery rule or onFailure, that names no edge leaving the failing edge's origin, the call
  * aborts in ACTION with a {@code TransitionAbortedException}. So does a call whose child reaches a terminal state that
- * its binding maps to no exit, or to an identifier with no edge leaving the bound state.
+ * its binding maps to no exit, or to an identifier with no edge leaving the bound state. A registry reads
+ * {@link #automaticFrom} of every state once as it is built, and what it throws there propagates from the build; when
+ * no state of any graph in the registry has an automatic edge then, no call of the registry runs an automatic chain.
+ * Later, an automaticFrom that throws aborts an advance, or an automatic attempt, in RESOLVE, and ends an automatic
+ * chain that reads it before an attempt, or after one, as an {@link AutomaticStep.Aborted}.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -30,6 +34,13 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
     /** The edges leaving {@code state}, in the same order. */
     List<TransitionSpec<E, S, T>> outgoingFrom(S state);
+
+    /**
+     * The immutable list of the automatic edges leaving {@code state}, in the order the graph declares them; empty when
+     * the state has none. It holds exactly the edges leaving {@code state} whose {@link TransitionSpec#automatic()} is
+     * true.
+     */
+    List<TransitionSpec<E, S, T>> automaticFrom(S state);
 
     /** The single edge keyed by {@code (from, transition)}, if it was declared. Runs no effects. */
     Optional<TransitionSpec<E, S, T>> findTransition(S from, T transition);

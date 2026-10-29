@@ -15,11 +15,15 @@ import javax.lang.model.type.TypeMirror;
  * edge the fallback recovers through, and {@code recoveries} are the recovery rules the edge declares, in
  * declaration order, each naming the identifier of the edge it recovers through. Every one of those identifiers is
  * resolved from this edge's origin, and none is a destination state.</p>
+ *
+ * <p>{@code automatic} marks an edge the engine attempts by itself, and {@code onFailureContinues} an
+ * {@code onFailure} route that continues the chain of automatic attempts; it is only read together with an
+ * {@code onFailure}.</p>
  */
 public record TransitionModel(String transitionId, List<String> from, String to, TransitionKind kind, String name,
                               Optional<Binding> action, List<Binding> guards, Optional<String> onFailure,
                               List<TypeMirror> failsOn, Optional<Duration> timeout, Optional<Binding> afterCommit,
-                              List<RecoveryModel> recoveries) {
+                              List<RecoveryModel> recoveries, boolean automatic, boolean onFailureContinues) {
 
     public TransitionModel {
         from = List.copyOf(from);

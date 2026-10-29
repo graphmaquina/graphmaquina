@@ -562,7 +562,7 @@ class FlowHookTest {
                     "FINER call=A hook-flow-remove Persist batch:String",
                     "FINER call=A hook-flow-put Persist odd:Odd=<toString threw java.lang.IllegalStateException>",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
     }
 
@@ -583,7 +583,7 @@ class FlowHookTest {
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=0"
-                            + " aborted=0 elapsed=<us>"), lines(log));
+                            + " aborted=0 automatic=0 elapsed=<us>"), lines(log));
         }
         assertEquals(0, counted.printed.get());
     }

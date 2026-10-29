@@ -1,0 +1,95 @@
+graphmaquina-snapshot-v1
+/automaticOrder/ADDRESS_SET/0	ACTIVATE_PREMIUM
+/automaticOrder/ADDRESS_SET/1	ACTIVATE
+/automaticOrder/ADDRESS_SET/count	2
+/catalog/0	SET_PASSWORD
+/catalog/1	TOUCH
+/catalog/2	COMPLETE_INFO
+/catalog/3	COMPLETE_ADDRESS
+/catalog/4	FLAG
+/catalog/5	REQUEST_REVIEW
+/catalog/6	ACTIVATE_PREMIUM
+/catalog/7	ACTIVATE
+/catalog/8	CLOSE
+/catalog/count	9
+/hasAsync	false
+/initial	NEW
+/machine/entity	io.github.graphmaquina.example.onboarding.Account
+/machine/states	io.github.graphmaquina.example.onboarding.AccountStatus
+/machine/transitions	io.github.graphmaquina.example.onboarding.AccountTransition
+/policies/ACTIVE/otherwise	terminal state ACTIVE accepts no transitions
+/policies/ADDRESS_SET/otherwise	an account is activated
+/policies/CLOSED/otherwise	terminal state CLOSED accepts no transitions
+/policies/FLAGGED/otherwise	a flagged account is reviewed
+/policies/INFO_SET/otherwise	an account completes its address
+/policies/NEW/otherwise	a new account sets its password
+/policies/PASSWORD_SET/otherwise	an account completes its personal info
+/policies/PREMIUM/otherwise	terminal state PREMIUM accepts no transitions
+/policies/REVIEW/otherwise	a reviewed account is closed
+/states/0	NEW
+/states/1	PASSWORD_SET
+/states/2	INFO_SET
+/states/3	ADDRESS_SET
+/states/4	ACTIVE
+/states/5	PREMIUM
+/states/6	FLAGGED
+/states/7	REVIEW
+/states/8	CLOSED
+/states/count	9
+/terminals/ACTIVE	true
+/terminals/CLOSED	true
+/terminals/PREMIUM	true
+/transitions/ADDRESS_SET/ACTIVATE/automatic	true
+/transitions/ADDRESS_SET/ACTIVATE/failsOn/count	0
+/transitions/ADDRESS_SET/ACTIVATE/guards/count	0
+/transitions/ADDRESS_SET/ACTIVATE/kind	MOVE
+/transitions/ADDRESS_SET/ACTIVATE/to	ACTIVE
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/automatic	true
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/failsOn/count	0
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/guards/0/async	false
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/guards/0/name	premium
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/guards/count	1
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/kind	MOVE
+/transitions/ADDRESS_SET/ACTIVATE_PREMIUM/to	PREMIUM
+/transitions/FLAGGED/REQUEST_REVIEW/automatic	true
+/transitions/FLAGGED/REQUEST_REVIEW/failsOn/count	0
+/transitions/FLAGGED/REQUEST_REVIEW/guards/count	0
+/transitions/FLAGGED/REQUEST_REVIEW/kind	MOVE
+/transitions/FLAGGED/REQUEST_REVIEW/to	REVIEW
+/transitions/INFO_SET/COMPLETE_ADDRESS/action/async	false
+/transitions/INFO_SET/COMPLETE_ADDRESS/action/name	verifyAddress
+/transitions/INFO_SET/COMPLETE_ADDRESS/automatic	true
+/transitions/INFO_SET/COMPLETE_ADDRESS/failsOn/count	0
+/transitions/INFO_SET/COMPLETE_ADDRESS/guards/0/async	false
+/transitions/INFO_SET/COMPLETE_ADDRESS/guards/0/name	addressComplete
+/transitions/INFO_SET/COMPLETE_ADDRESS/guards/count	1
+/transitions/INFO_SET/COMPLETE_ADDRESS/kind	ACTION
+/transitions/INFO_SET/COMPLETE_ADDRESS/recoveries/0/continues	true
+/transitions/INFO_SET/COMPLETE_ADDRESS/recoveries/0/failsOn/count	0
+/transitions/INFO_SET/COMPLETE_ADDRESS/recoveries/0/kind	io.github.graphmaquina.example.onboarding.AddressFailures$Unverifiable
+/transitions/INFO_SET/COMPLETE_ADDRESS/recoveries/0/transition	FLAG
+/transitions/INFO_SET/COMPLETE_ADDRESS/recoveries/count	1
+/transitions/INFO_SET/COMPLETE_ADDRESS/to	ADDRESS_SET
+/transitions/INFO_SET/FLAG/failsOn/count	0
+/transitions/INFO_SET/FLAG/guards/count	0
+/transitions/INFO_SET/FLAG/kind	MOVE
+/transitions/INFO_SET/FLAG/to	FLAGGED
+/transitions/NEW/SET_PASSWORD/failsOn/count	0
+/transitions/NEW/SET_PASSWORD/guards/count	0
+/transitions/NEW/SET_PASSWORD/kind	MOVE
+/transitions/NEW/SET_PASSWORD/to	PASSWORD_SET
+/transitions/PASSWORD_SET/COMPLETE_INFO/automatic	true
+/transitions/PASSWORD_SET/COMPLETE_INFO/failsOn/count	0
+/transitions/PASSWORD_SET/COMPLETE_INFO/guards/0/async	false
+/transitions/PASSWORD_SET/COMPLETE_INFO/guards/0/name	infoComplete
+/transitions/PASSWORD_SET/COMPLETE_INFO/guards/count	1
+/transitions/PASSWORD_SET/COMPLETE_INFO/kind	MOVE
+/transitions/PASSWORD_SET/COMPLETE_INFO/to	INFO_SET
+/transitions/PASSWORD_SET/TOUCH/failsOn/count	0
+/transitions/PASSWORD_SET/TOUCH/guards/count	0
+/transitions/PASSWORD_SET/TOUCH/kind	MOVE
+/transitions/PASSWORD_SET/TOUCH/to	PASSWORD_SET
+/transitions/REVIEW/CLOSE/failsOn/count	0
+/transitions/REVIEW/CLOSE/guards/count	0
+/transitions/REVIEW/CLOSE/kind	MOVE
+/transitions/REVIEW/CLOSE/to	CLOSED

@@ -26,7 +26,8 @@ class SubmachineRejectionsTest {
                 RejectionKind.RESERVED_EXIT), List.of(RejectionKind.values()));
         assertEquals(List.of(OutcomeCode.APPLIED, OutcomeCode.NO_TRANSITION, OutcomeCode.GUARD_REJECTED,
                         OutcomeCode.DETACHED, OutcomeCode.RESERVED_EXIT, OutcomeCode.FAILURE_ROUTED,
-                        OutcomeCode.NO_WATCH, OutcomeCode.NO_RULE_MATCHED),
+                        OutcomeCode.NO_WATCH, OutcomeCode.NO_RULE_MATCHED, OutcomeCode.NO_AUTOMATIC_TRANSITION,
+                        OutcomeCode.NO_CANDIDATE_ADMITTED),
                 List.of(OutcomeCode.values()));
         assertEquals(OutcomeStatus.REJECTED, OutcomeCode.DETACHED.status());
         assertEquals(OutcomeStatus.REJECTED, OutcomeCode.RESERVED_EXIT.status());

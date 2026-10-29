@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
@@ -218,7 +220,8 @@ class ObserverTest {
                 "started Order/OrderStatus reevaluate (watch reaction)",
                 "completed Order/OrderStatus reevaluate (watch reaction) APPLIED",
                 "completed Item/ItemStatus PACK APPLIED"), recorder.events);
-        assertTrue(recorder.calls.get(1).reaction());
+        assertEquals(CallRequest.REEVALUATE, recorder.calls.get(1).request());
+        assertEquals(CallOrigin.WATCH_REACTION, recorder.calls.get(1).origin());
         assertEquals(Optional.empty(), recorder.calls.get(1).transition());
     }
 
@@ -369,7 +372,8 @@ class ObserverTest {
             Outcome.Applied<?, ?, ?> sentBack = assertInstanceOf(Outcome.Applied.class, first.outcome());
             Reaction.Aborted second = assertInstanceOf(Reaction.Aborted.class, sentBack.reactions().get(0));
             WatchChainExceededException cause = assertInstanceOf(WatchChainExceededException.class, second.cause());
-            assertTrue(recorder.calls.get(2).reaction());
+            assertEquals(CallRequest.REEVALUATE, recorder.calls.get(2).request());
+            assertEquals(CallOrigin.WATCH_REACTION, recorder.calls.get(2).origin());
             assertEquals("failed Doc/DocStatus reevaluate (watch reaction) RESOLVE NONE WatchChainExceededException",
                     recorder.events.get(3));
             assertSame(cause, recorder.delivered.get(3));

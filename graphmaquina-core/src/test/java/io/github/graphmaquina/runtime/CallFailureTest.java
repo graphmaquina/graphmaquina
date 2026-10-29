@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -119,7 +121,8 @@ class CallFailureTest {
         assertEquals(DOCS, guard.call().key());
         assertSame(first, guard.call().entity());
         assertEquals(Optional.of(SUBMIT), guard.call().transition());
-        assertFalse(guard.call().reaction());
+        assertEquals(CallRequest.EXECUTE, guard.call().request());
+        assertEquals(CallOrigin.APPLICATION, guard.call().origin());
         assertEquals(CallPhase.GUARD, guard.phase());
         assertEquals(StatesWritten.NONE, guard.statesWritten());
         assertEquals(List.of(), guard.journal());
@@ -292,7 +295,8 @@ class CallFailureTest {
             assertEquals(CallPhase.RESOLVE, error.phase());
             assertEquals(StatesWritten.NONE, error.statesWritten());
             assertSame(doc, error.call().entity());
-            assertTrue(error.call().reaction());
+            assertEquals(CallRequest.REEVALUATE, error.call().request());
+            assertEquals(CallOrigin.WATCH_REACTION, error.call().origin());
             assertEquals(Optional.empty(), error.call().transition());
             assertEquals(1, error.maxChain());
         }
@@ -512,7 +516,8 @@ class CallFailureTest {
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> standalone(graph, Doc::setStatus).reevaluate(new Doc("1", PUBLISHED)));
         assertEquals(Optional.empty(), error.call().transition());
-        assertFalse(error.call().reaction());
+        assertEquals(CallRequest.REEVALUATE, error.call().request());
+        assertEquals(CallOrigin.APPLICATION, error.call().origin());
         assertEquals(Optional.of(ARCHIVE), error.details().transition());
         assertEquals(CallPhase.ACTION, error.phase());
     }

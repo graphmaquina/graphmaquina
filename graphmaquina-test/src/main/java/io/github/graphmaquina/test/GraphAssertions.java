@@ -19,10 +19,11 @@ import java.util.function.Function;
  * <p>Entity and state views keep the entity and state types of their subjects, which is what makes a chain typed:
  * the state enum of the machine under test is the only one the compiler accepts anywhere along it.
  *
- * <p>Five shapes are deliberately absent. A list of transition records, a list of reactions, a list of sub-machine
- * starts, a journal of action records and the trail of a call all erase to the same parameter, so one facade cannot
- * carry all five; every one of them keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
- * {@link ReactionsAssert#assertThat(java.util.List)}, {@link StartsAssert#assertThat(java.util.List)},
+ * <p>Six shapes are deliberately absent. A list of transition records, a list of reactions, a list of automatic steps,
+ * a list of sub-machine starts, a journal of action records and the trail of a call all erase to the same parameter, so
+ * one facade cannot carry all six; every one of them keeps its own factory,
+ * {@link TransitionRecordsAssert#assertThat(java.util.List)}, {@link ReactionsAssert#assertThat(java.util.List)},
+ * {@link AutomaticStepsAssert#assertThat(java.util.List)}, {@link StartsAssert#assertThat(java.util.List)},
  * {@link JournalAssert#assertThat(java.util.List)} and {@link TrailAssert#assertThat(java.util.List)}.
  * Probes, snapshots, goldens and bounded waits are not subjects to assert over but tools to build one, and
  * stay where they are — {@link AsyncAssertions}, {@link GraphSnapshots}, {@link GraphGoldens} and the

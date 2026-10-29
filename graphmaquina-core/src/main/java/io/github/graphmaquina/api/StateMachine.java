@@ -17,10 +17,10 @@ import lombok.NonNull;
  * wait. Within a registry, a machine must declare one when an edge that its calls can run implicitly is asynchronous:
  * the exit of a binding in which it is the child, a failure route of such an edge, an exit it leads to, or an exit
  * selected by a terminal initial descendant of a binding its own edge enters.
- * The watch reactions a call triggers are not part of it: each runs as a new root, bounded by the
- * asyncTimeout of the machine that reacts, counted from the moment that root starts. A machine built standalone runs
- * in a registry of its own that is internal and unreachable, so nothing can close it, and its default executor is
- * never closed.
+ * The watch reactions and the automatic attempts a call triggers are not part of it: each runs as a new root, bounded
+ * by the asyncTimeout of the machine that reacts or attempts, counted from the moment that root starts. A machine
+ * built standalone runs in a registry of its own that is internal and unreachable, so nothing can close it, and its
+ * default executor is never closed.
  * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
  */
 public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
@@ -41,7 +41,16 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * step moved it out of the bound state or entered it again, and the outcome is still this step's; an exit that is
      * rejected or fails without a route aborts the call. A null argument, an identifier of another catalogue and a call
      * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
-     * asynchronous edge.
+     * asynchronous edge. Once the call committed and its hooks and watch reactions ran, it runs the automatic chain of
+     * each entity it moved, unless the last hop it committed for that entity is a failure route that does not
+     * continue, or a call made on this thread inside its post-commit, a hook's call, a watch reaction or an earlier
+     * attempt, moved the entity too, which decided its chain; {@link Outcome#automaticSteps()} lists those attempts,
+     * and a failure of one of them, anything but an Error, never throws to the caller: it is listed there, and
+     * {@link Outcome#automaticFailure()}, {@link Outcome#automaticAbort()} and {@link Outcome#automaticBlock()} find
+     * it, nested ones included. A call that a hook starts on another thread, through {@link #async()}, even one the
+     * hook waits for, is not made on this thread: this call still chains the entity from the state its own commit left
+     * it in, its attempt reads the live state, and the chain can go on past a failure route that stopped the other
+     * call's chain, so a hook makes its calls synchronously, on its own thread.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
@@ -51,6 +60,33 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * may start are refused before the call starts and throw as themselves.
      */
     Outcome<E, S, T> reevaluate(E entity);
+
+    /**
+     * Makes one automatic attempt on the entity's current state. Its candidates are the automatic edges of that
+     * state, in the order {@code definition().automaticFrom(state)} lists them. Each one gets the admission of an
+     * execute of its identifier: the binding check of a sub-machine, then its guards in declaration order, with the
+     * context they get in that execute, whose input is empty. A refused candidate passes to the next one, and the
+     * first one admitted runs within the same call as execute runs an edge, without running its guards again.
+     * <ul>
+     *   <li>It never returns {@link Outcome.Rejected}: it requests no identifier.</li>
+     *   <li>It returns {@link Outcome.Ignored} with {@link IgnoreReason#NO_AUTOMATIC_TRANSITION} when the state has no
+     *       automatic edge, terminal states included; then of the callbacks the machine declares, only the state
+     *       getter ran: no identity function, lookup, guard or action.</li>
+     *   <li>It returns {@link Outcome.Ignored} with {@link IgnoreReason#NO_CANDIDATE_ADMITTED} when every candidate was
+     *       refused, by a guard or as {@link RejectionKind#DETACHED}; its {@code rejections()} lists each refusal in
+     *       the order tried, which its {@code explanation()} names. The guards of those candidates ran.</li>
+     *   <li>Neither ignored outcome writes anything.</li>
+     * </ul>
+     * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
+     * {@code UnhandledFailureException} of a domain failure that no route takes or, for a {@link GraphDefinition}
+     * written by hand whose automaticFrom throws, a {@code TransitionAbortedException} in RESOLVE; or an Error. A null
+     * argument and a call made where no call may start are refused before the call starts and throw as themselves.
+     * Once the attempt committed, it runs the automatic chain of each entity it moved, as execute does, its own
+     * entity's included unless the attempt's failure took a route that does not continue: the attempts that follow
+     * are each a call of their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an
+     * Error, never throw to the caller.
+     */
+    Outcome<E, S, T> advance(E entity);
 
     /**
      * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; {@link #eligibility}
@@ -100,12 +136,12 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * after it: the binding check of a sub-machine, the edge lookup, the refusal of a reserved exit, then the guards
      * in declaration order until one rejects, each with the context it gets in execute; asynchronous guards are awaited
      * under this machine's asyncTimeout, counted from the start of the check. A check is no call: whatever it answers
-     * or throws, it writes no state, runs no action, hook or watch reaction, starts no sub-machine, runs no exit and
-     * tells no observer, and a context its guards got is stale once it ends. It answers for any identifier of the
-     * catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a check made where
-     * no call may start, such as from a guard, an action or an observer, are refused before the check starts and
-     * throw as themselves; while a check runs, no call or check may start on its thread either. A check that cannot
-     * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
+     * or throws, it writes no state, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine,
+     * runs no exit and tells no observer, and a context its guards got is stale once it ends. It answers for any
+     * identifier of the catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a
+     * check made where no call may start, such as from a guard, an action or an observer, are refused before the check
+     * starts and throw as themselves; while a check runs, no call or check may start on its thread either. A check that
+     * cannot reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
      * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
      * {@code check=<id>} in place of {@code call=<id>}.
      *

@@ -140,7 +140,7 @@ class CheckVocabularyTest {
 
     /** The inventory names the annotations in the order the vocabulary declares them, with Check after Rejects. */
     @Test
-    void checkComesLastInTheInventory() {
+    void checkFollowsTheRejectsInTheInventory() {
         GenerationModel model = inspect("sources", ORIGINALS);
         List<String> inventory = ApiEmitter.annotationTypes(model);
         List<String> declared = content(ApiEmitter.emit(model, "sources"), "fx.DocsGraph").lines()
@@ -150,8 +150,10 @@ class CheckVocabularyTest {
                         + line.substring("public @interface ".length(), line.indexOf(" {")))
                 .toList();
 
-        assertEquals("fx.DocsGraph.Check", inventory.get(inventory.size() - 1));
-        assertEquals("fx.DocsGraph.Rejects", inventory.get(inventory.size() - 2));
+        assertEquals("fx.DocsGraph.AutomaticOrders", inventory.get(inventory.size() - 1));
+        assertEquals("fx.DocsGraph.AutomaticOrder", inventory.get(inventory.size() - 2));
+        assertEquals("fx.DocsGraph.Check", inventory.get(inventory.size() - 3));
+        assertEquals("fx.DocsGraph.Rejects", inventory.get(inventory.size() - 4));
         assertEquals(inventory, declared);
     }
 

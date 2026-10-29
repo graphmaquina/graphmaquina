@@ -79,9 +79,10 @@ public abstract class CallFailedException extends StateMachineException {
      * instant, which fails the call, followed by a {@link io.github.graphmaquina.api.FlowEntry.Failed}
      * entry with this failure, read when the root caught it, unless the trail's clock throws or answers null then,
      * which leaves the entry out; a reevaluation that failed before it ran an edge, reading the state, a chain of watch
-     * reactions over its limit, or a watch function that threw, has the entity, no value and at most that entry.
-     * Without the trail, the flow is {@link FlowView#empty()}, without an entity, when no step or hook of the call
-     * wrote to it, since reading never creates it, and for such a reevaluation. A failure of another call that is the
+     * reactions over its limit, or a watch function that threw, has the entity, no value and at most that entry, and
+     * so does an advance that failed reading the state. Without the trail, the flow is {@link FlowView#empty()},
+     * without an entity, when no step or hook of the call wrote to it, since reading never creates it, and for such a
+     * reevaluation or advance. A failure of another call that is the
      * cause of this one keeps the flow of its own call. Only the failure the call throws carries the call's flow: any
      * other failure of the call holds {@link FlowView#empty()}, such as an element of the {@code errors()} of a
      * {@code CascadeException} or a {@code PoisonedUnitOfWorkException} a context threw. An Error that ends a call

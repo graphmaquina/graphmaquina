@@ -426,4 +426,4 @@ That deadline is the engine's; the budgets above are the test's, and the two are
 
 ---
 
-Next: [Testing samples: recovery, sub-machines and the call's flow](testing-advanced.md). Back to the [documentation index](README.md).
+Next: [Testing samples: recovery, sub-machines, automatic transitions and the call's flow](testing-advanced.md). Back to the [documentation index](README.md).

@@ -10,6 +10,7 @@ import io.github.graphmaquina.internal.FailureTypes;
 import java.io.IOException;
 import java.time.DayOfWeek;
 import java.time.Month;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +50,8 @@ class OutcomeAccessorsTest {
         assertEquals(OutcomeCode.FAILURE_ROUTED, failed(Optional.of(new IOException("down"))).code());
         assertEquals(OutcomeCode.NO_WATCH, ignored(IgnoreReason.NO_WATCH).code());
         assertEquals(OutcomeCode.NO_RULE_MATCHED, ignored(IgnoreReason.NO_RULE_MATCHED).code());
+        assertEquals(OutcomeCode.NO_AUTOMATIC_TRANSITION, ignored(IgnoreReason.NO_AUTOMATIC_TRANSITION).code());
+        assertEquals(OutcomeCode.NO_CANDIDATE_ADMITTED, ignored(IgnoreReason.NO_CANDIDATE_ADMITTED).code());
     }
 
     @Test
@@ -59,6 +62,8 @@ class OutcomeAccessorsTest {
         assertEquals(OutcomeStatus.FAILED, failed(Optional.empty()).status());
         assertEquals(OutcomeStatus.IGNORED, ignored(IgnoreReason.NO_WATCH).status());
         assertEquals(OutcomeStatus.IGNORED, ignored(IgnoreReason.NO_RULE_MATCHED).status());
+        assertEquals(OutcomeStatus.IGNORED, ignored(IgnoreReason.NO_AUTOMATIC_TRANSITION).status());
+        assertEquals(OutcomeStatus.IGNORED, ignored(IgnoreReason.NO_CANDIDATE_ADMITTED).status());
     }
 
     @Test
@@ -69,6 +74,8 @@ class OutcomeAccessorsTest {
         assertEquals(OutcomeStatus.FAILED, OutcomeCode.FAILURE_ROUTED.status());
         assertEquals(OutcomeStatus.IGNORED, OutcomeCode.NO_WATCH.status());
         assertEquals(OutcomeStatus.IGNORED, OutcomeCode.NO_RULE_MATCHED.status());
+        assertEquals(OutcomeStatus.IGNORED, OutcomeCode.NO_AUTOMATIC_TRANSITION.status());
+        assertEquals(OutcomeStatus.IGNORED, OutcomeCode.NO_CANDIDATE_ADMITTED.status());
     }
 
     /** A variant added without its status, or a status without a variant, breaks the one-to-one naming. */
@@ -120,12 +127,43 @@ class OutcomeAccessorsTest {
         assertEquals(Optional.of("declined"), failed(Optional.empty()).explanation());
     }
 
-    /** Nothing is fabricated: an applied or an ignored outcome carries no text of its own. */
+    /**
+     * Nothing is fabricated: an applied outcome carries no text of its own, nor does an ignored one, but for the
+     * advance that admitted no candidate, whose explanation names each rejection, in order.
+     */
     @Test
-    void appliedAndIgnoredOutcomesExplainNothing() {
+    void appliedAndIgnoredOutcomesExplainNothingButTheRejectionsOfTheCandidates() {
         assertEquals(Optional.empty(), applied().explanation());
         assertEquals(Optional.empty(), ignored(IgnoreReason.NO_WATCH).explanation());
         assertEquals(Optional.empty(), ignored(IgnoreReason.NO_RULE_MATCHED).explanation());
+        assertEquals(Optional.empty(), ignored(IgnoreReason.NO_AUTOMATIC_TRANSITION).explanation());
+        assertEquals(Optional.of("no automatic transition was admitted: JANUARY (GUARD gate): gate closed;"
+                + " MARCH (DETACHED): no parent holds it in MONDAY"),
+                ignored(IgnoreReason.NO_CANDIDATE_ADMITTED).explanation());
+    }
+
+    /**
+     * Only an advance that admitted no candidate lists rejections, and it lists at least one: the constructor refuses
+     * a list that does not match the reason, and the three-argument constructor lists none. The list is a copy.
+     */
+    @Test
+    void ignoredRejectionsMatchTheReason() {
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, IgnoreReason.NO_CANDIDATE_ADMITTED));
+        assertEquals("a NO_CANDIDATE_ADMITTED outcome lists the rejection of each candidate", missing.getMessage());
+        for (IgnoreReason reason : List.of(IgnoreReason.NO_WATCH, IgnoreReason.NO_RULE_MATCHED,
+                IgnoreReason.NO_AUTOMATIC_TRANSITION)) {
+            IllegalArgumentException listed = assertThrows(IllegalArgumentException.class,
+                    () -> new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, reason, candidates()));
+            assertEquals("a " + reason + " outcome lists no rejection", listed.getMessage());
+            assertEquals(List.of(), ignored(reason).asIgnored().orElseThrow().rejections());
+        }
+        List<Eligibility.Ineligible<String, DayOfWeek, Month>> given = new ArrayList<>(candidates());
+        Outcome.Ignored<String, DayOfWeek, Month> blocked =
+                new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, IgnoreReason.NO_CANDIDATE_ADMITTED, given);
+        given.clear();
+        assertEquals(candidates(), blocked.rejections());
+        assertThrows(UnsupportedOperationException.class, () -> blocked.rejections().clear());
     }
 
     /**
@@ -268,7 +306,19 @@ class OutcomeAccessorsTest {
                 DayOfWeek.SUNDAY, "declined", Optional.empty(), List.of(), List.of(), kind);
     }
 
+    /** An ignored outcome; the one of an advance that admitted no candidate lists {@link #candidates()}. */
     private static Outcome<String, DayOfWeek, Month> ignored(IgnoreReason reason) {
-        return new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, reason);
+        return reason == IgnoreReason.NO_CANDIDATE_ADMITTED
+                ? new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, reason, candidates())
+                : new Outcome.Ignored<>(ENTITY, DayOfWeek.MONDAY, reason);
+    }
+
+    /** Two candidates of an advance, refused by a guard and as detached, in that order. */
+    private static List<Eligibility.Ineligible<String, DayOfWeek, Month>> candidates() {
+        return List.of(
+                new Eligibility.Ineligible<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY, "gate closed",
+                        RejectionKind.GUARD, Optional.of("gate")),
+                new Eligibility.Ineligible<>(ENTITY, DayOfWeek.MONDAY, Month.MARCH, "no parent holds it in MONDAY",
+                        RejectionKind.DETACHED, Optional.empty()));
     }
 }

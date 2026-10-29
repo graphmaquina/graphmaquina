@@ -100,12 +100,12 @@ public final class SnapshotGraphs {
     /** The example's first rule: an unavailable provider schedules a retry. */
     public static final RecoveryRule<TicketChange> UNAVAILABLE_RULE = new RecoveryRule<>(
             PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-            List.of(ServiceUnavailableException.class));
+            List.of(ServiceUnavailableException.class), false);
 
     /** The example's second rule: a rejection is recorded. */
     public static final RecoveryRule<TicketChange> REJECTED_RULE = new RecoveryRule<>(
             PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-            List.of(ProviderRejectedException.class));
+            List.of(ProviderRejectedException.class), false);
 
     private static final MachineKey<String, State, Id> KEY =
             MachineKey.of(String.class, State.class, Id.class);

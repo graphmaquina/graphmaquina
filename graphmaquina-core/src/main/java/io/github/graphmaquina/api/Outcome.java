@@ -3,6 +3,7 @@ package io.github.graphmaquina.api;
 import io.github.graphmaquina.internal.FailureTypes;
 import java.util.List;
 import java.util.Optional;
+import java.util.StringJoiner;
 import lombok.NonNull;
 
 /**
@@ -28,14 +29,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     S recordedState();
 
     /**
-     * The identifier the caller asked for, or the one the watch selected in a reevaluation; empty only when a
-     * reevaluation selected no edge.
+     * The identifier the caller asked for, the one the watch selected in a reevaluation, or the automatic edge an
+     * advance admitted; empty only for an ignored outcome, which ran no edge.
      */
     Optional<T> requestedTransition();
 
     /**
      * Why this outcome is what it is: its variant, refined by the kind of a rejection and by the reason a
-     * reevaluation selected nothing.
+     * reevaluation or an advance ran no edge.
      */
     OutcomeCode code();
 
@@ -51,10 +52,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
      * the action returned for a failure. The graph's author writes them all, except the fixed texts the library
      * generates: for a terminal state that declares no policy, and for a {@link RejectionKind#DETACHED} or
-     * {@link RejectionKind#RESERVED_EXIT} rejection. Empty for an applied outcome, for an ignored one, whose
-     * why is its {@link IgnoreReason}, and for a failure that carries a cause because a declared throwable type, of
-     * failsOn or of a recovery rule, routed it from an exception: that reason is composed from the exception and may
-     * carry internal details, so it stays in the failure's {@code reason} and {@code cause}.
+     * {@link RejectionKind#RESERVED_EXIT} rejection. An ignored outcome of {@link IgnoreReason#NO_CANDIDATE_ADMITTED}
+     * gives a text the library composes from the reasons of its rejections, as {@link Ignored#explanation()} says.
+     * Empty for an applied outcome, for any other ignored one, whose why is its {@link IgnoreReason}, and for a
+     * failure that carries a cause because a declared throwable type, of failsOn or of a recovery rule, routed it from
+     * an exception: that reason is composed from the exception and may carry internal details, so it stays in the
+     * failure's {@code reason} and {@code cause}.
      */
     Optional<String> explanation();
 
@@ -86,7 +89,68 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * The flow of the root call that returned this outcome, frozen once its hooks and its watch reactions ran: the
+     * The automatic attempts this root call's commit triggered once its watch reactions ran. Each entity with a hop or
+     * a sub-machine start in the commit, a self-loop or a round trip included, runs its chain, in the order of the
+     * commit's log, unless its last hop there is a failure route that does not continue the chain: from the state the
+     * commit left it in, while that state has an automatic edge, one attempt after another, each a call of its own, an
+     * {@link AutomaticStep.Done} with its outcome or an {@link AutomaticStep.Aborted}. The chain stops after an attempt
+     * that admits no candidate, which is listed with its rejections, after one whose failure takes a route that does
+     * not continue, and after one that aborts. The list holds each chain whole, flat and in order. The deepest commit
+     * that moved an entity chains it: when a call made on this thread inside this call's post-commit, a hook's call,
+     * a watch reaction or an attempt, committed a hop or a start of the entity before its chain began here, that call
+     * decided the chain, which is not here; and a chain stops after an attempt whose own post-commit ran such a call
+     * for its entity. So the attempts that the commit of an attempt triggers for other entities are in that attempt's
+     * own outcome, and those of a chain that a watch reaction decided are in that reaction's outcome, in
+     * {@link #reactions()}. A call that a hook starts on another thread is not made inside the post-commit and decides
+     * no chain. The outcome of an advance is its first attempt, so the chain of its entity here starts with
+     * the attempt that followed. Empty for a rejected or ignored outcome and for any outcome a cascade returned. An
+     * applied outcome may still end in an aborted step, so inspect them whatever the status, or search them with
+     * {@link #automaticFailure()}, {@link #automaticAbort()} and {@link #automaticBlock()}.
+     */
+    default List<AutomaticStep> automaticSteps() {
+        return List.of();
+    }
+
+    /**
+     * The outcome of the first automatic attempt of this call that ended in {@link Failed}, whether its route stopped
+     * the chain or let it go on, among every attempt that ran for this call, nested ones included. A chain that a call
+     * started by a hook decided is in that call's own outcome, which only the hook receives, so it is not searched
+     * here. The search follows the order the attempts ran: first the {@link #reactions()}, each {@link Reaction.Done}
+     * searched through its outcome the same way, then the {@link #automaticSteps()}, each step looked at itself and
+     * then searched through its outcome, its reactions and its steps. A watch reaction's own result never counts: a
+     * {@link Reaction.Done} whose outcome is Failed is the result of a watch, which {@link #reactions()} holds.
+     * Empty when no attempt failed, and for a rejected or ignored outcome, which has neither steps nor reactions; the
+     * outcome of an {@code advance} is its own first attempt, which this does not return.
+     */
+    default Optional<Failed<?, ?, ?>> automaticFailure() {
+        return AutomaticSearch.failure(this);
+    }
+
+    /**
+     * The first automatic step of this call that aborted, in the order {@link #automaticFailure()} searches, nested
+     * steps included; a {@link Reaction.Aborted} never counts. Its {@link AutomaticStep.Aborted#cause()} says why: a
+     * domain failure that no route takes, a technical failure, any other exception, or an attempt past
+     * maxAutomaticChain. When the attempt ran, its cause is its {@code CallFailedException}, whose
+     * {@code statesWritten()} says how far it got: an attempt that aborted before writing left its entity where it
+     * was, and one whose setter or hook threw may have moved it. Empty when no step aborted.
+     */
+    default Optional<AutomaticStep.Aborted> automaticAbort() {
+        return AutomaticSearch.abort(this);
+    }
+
+    /**
+     * The outcome of the first automatic attempt of this call that admitted none of its candidates, an
+     * {@link Ignored} of {@link IgnoreReason#NO_CANDIDATE_ADMITTED} whose {@link Ignored#rejections()} say why, in the
+     * order {@link #automaticFailure()} searches, nested attempts included. An attempt whose state had no automatic
+     * edge left, {@link IgnoreReason#NO_AUTOMATIC_TRANSITION}, does not count. Empty when no attempt was blocked.
+     */
+    default Optional<Ignored<?, ?, ?>> automaticBlock() {
+        return AutomaticSearch.block(this);
+    }
+
+    /**
+     * The flow of the root call that returned this outcome, frozen once its hooks, its watch reactions and its
+     * automatic steps ran: the
      * root call's entity and the values present then, each under the key that put it, in the order of
      * {@link FlowView#keys()}. They are what the call's steps and hooks put and no failure route dropped, so a failed
      * outcome holds the recovery action's writes and none of the failed action's. When the root machine records its
@@ -99,7 +163,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * trail and none of whose steps or hooks wrote to it, a rejected outcome included, since only its guards ran and
      * a guard cannot write; for an ignored outcome; and for any outcome a cascade returned, whose flow belongs to its
      * root. A watch reaction is a call of its own: the outcome in {@link Reaction.Done} hands out the reaction's own
-     * flow, whose trail its own machine decides.
+     * flow, whose trail its own machine decides; and so is an automatic attempt, whose outcome in
+     * {@link AutomaticStep.Done} hands out the attempt's own flow.
      */
     FlowView flow();
 
@@ -122,33 +187,40 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
      * committed, cascaded ones included, in log order, {@code reactions} the watch reactions of that commit,
-     * {@code starts} the sub-machines it started, and {@code flow} the call's flow, as {@link Outcome#flow()} says.
-     * Returned by a cascade, it is written only if its root commits, the three lists are empty and the flow is
+     * {@code starts} the sub-machines it started, {@code flow} the call's flow, as {@link Outcome#flow()} says, and
+     * {@code automaticSteps} the automatic attempts that commit triggered, as {@link Outcome#automaticSteps()} says.
+     * Returned by a cascade, it is written only if its root commits, the four lists are empty and the flow is
      * {@link FlowView#empty()}. The constructor without {@code starts} reports none, and the constructors without
-     * {@code flow} give {@link FlowView#empty()}.
+     * {@code flow} give {@link FlowView#empty()} and report no automatic step.
      */
     record Applied<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
             @NonNull List<Reaction> reactions,
             @NonNull List<SubmachineStart<?, ?, ?>> starts,
-            @NonNull FlowView flow) implements Outcome<E, S, T> {
+            @NonNull FlowView flow,
+            @NonNull List<AutomaticStep> automaticSteps) implements Outcome<E, S, T> {
+        /** Copies the committed records, reactions, starts and automatic steps. */
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
             starts = List.copyOf(starts);
+            automaticSteps = List.copyOf(automaticSteps);
         }
 
-        /** Builds an applied outcome whose flow is {@link FlowView#empty()}. */
+        /** Builds an applied outcome whose flow is {@link FlowView#empty()} and that lists no automatic step. */
         public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
                        List<Reaction> reactions, List<SubmachineStart<?, ?, ?>> starts) {
-            this(entity, from, transition, to, records, reactions, starts, FlowView.empty());
+            this(entity, from, transition, to, records, reactions, starts, FlowView.empty(), List.of());
         }
 
-        /** Builds an applied outcome that started no sub-machine and whose flow is {@link FlowView#empty()}. */
+        /**
+         * Builds an applied outcome that started no sub-machine, whose flow is {@link FlowView#empty()} and that lists
+         * no automatic step.
+         */
         public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
                        List<Reaction> reactions) {
-            this(entity, from, transition, to, records, reactions, List.of(), FlowView.empty());
+            this(entity, from, transition, to, records, reactions, List.of(), FlowView.empty(), List.of());
         }
 
         @Override
@@ -178,11 +250,34 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. No step ran, so its
-     * flow is {@link FlowView#empty()}.
+     * A call that requests no identifier and ran no edge, for {@code reason}: a reevaluation with no watch on the
+     * state, or none of whose watch rules held; an advance whose state has no automatic edge, or none of whose
+     * automatic edges was admitted. Nothing was written and no action ran; its flow is {@link FlowView#empty()},
+     * whether or not the call records its trail. {@code rejections} lists, for
+     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED} only, the rejection of each automatic edge the advance tried, in the
+     * order it tried them, which {@link #explanation()} names. The constructor refuses an empty list with that reason
+     * and a non-empty one with any other, and copies the list; the constructor without {@code rejections} lists none.
      */
-    record Ignored<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
-                                                            @NonNull IgnoreReason reason) implements Outcome<E, S, T> {
+    record Ignored<E, S extends Enum<S>, T extends Enum<T>>(
+            @NonNull E entity, @NonNull S from, @NonNull IgnoreReason reason,
+            @NonNull List<Eligibility.Ineligible<E, S, T>> rejections) implements Outcome<E, S, T> {
+        /** Checks that the rejections match the reason, and copies them. */
+        public Ignored {
+            boolean admittedNone = reason == IgnoreReason.NO_CANDIDATE_ADMITTED;
+            if (admittedNone && rejections.isEmpty()) {
+                throw new IllegalArgumentException("a " + reason + " outcome lists the rejection of each candidate");
+            }
+            if (!admittedNone && !rejections.isEmpty()) {
+                throw new IllegalArgumentException("a " + reason + " outcome lists no rejection");
+            }
+            rejections = List.copyOf(rejections);
+        }
+
+        /** Builds an ignored outcome that lists no rejection, as every reason but NO_CANDIDATE_ADMITTED does. */
+        public Ignored(E entity, S from, IgnoreReason reason) {
+            this(entity, from, reason, List.of());
+        }
+
         @Override
         public S recordedState() {
             return from;
@@ -203,12 +298,29 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static
             // initializer, which assembling a registry cannot name to initialise, as
             // MachineRegistry.staticallyInitialized says.
-            return reason == IgnoreReason.NO_WATCH ? OutcomeCode.NO_WATCH : OutcomeCode.NO_RULE_MATCHED;
+            return reason == IgnoreReason.NO_WATCH ? OutcomeCode.NO_WATCH
+                    : reason == IgnoreReason.NO_RULE_MATCHED ? OutcomeCode.NO_RULE_MATCHED
+                    : reason == IgnoreReason.NO_AUTOMATIC_TRANSITION ? OutcomeCode.NO_AUTOMATIC_TRANSITION
+                    : OutcomeCode.NO_CANDIDATE_ADMITTED;
         }
 
+        /**
+         * For {@link IgnoreReason#NO_CANDIDATE_ADMITTED},
+         * {@code no automatic transition was admitted: } followed by one entry per rejection, in order, joined by
+         * {@code "; "}: {@code <T> (<kind>[ <guard>]): <reason>}, the identifier and the kind by {@code name()}, as in
+         * {@code COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete}. Empty for any other reason.
+         */
         @Override
         public Optional<String> explanation() {
-            return Optional.empty();
+            if (rejections.isEmpty()) {
+                return Optional.empty();
+            }
+            StringJoiner entries = new StringJoiner("; ", "no automatic transition was admitted: ", "");
+            for (Eligibility.Ineligible<E, S, T> rejection : rejections) {
+                entries.add(rejection.transition().name() + " (" + rejection.kind().name()
+                        + rejection.guard().map(" "::concat).orElse("") + "): " + rejection.reason());
+            }
+            return Optional.of(entries.toString());
         }
 
         @Override
@@ -294,12 +406,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
      * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
      * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
-     * call, it committed, with {@code records}, {@code reactions}, {@code starts} and {@code flow} as in
-     * {@link Applied}; returned by a cascade, it is written only if its root commits, the three lists are empty and the
-     * flow is {@link FlowView#empty()}. The constructor refuses a blank reason, and a present failure kind that
-     * {@link ActionOutcome#failed(Class, String)} would refuse; the constructors without {@code failureKind} report
-     * none, those without {@code starts} report none either, and those without {@code flow} give
-     * {@link FlowView#empty()}.
+     * call, it committed, with {@code records}, {@code reactions}, {@code starts}, {@code flow} and
+     * {@code automaticSteps} as in {@link Applied}; returned by a cascade, it is written only if its root commits, the
+     * four lists are empty and the flow is {@link FlowView#empty()}. The constructor refuses a blank reason, and a
+     * present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the constructors without
+     * {@code failureKind} report none, those without {@code starts} report none either, and those without
+     * {@code flow} give {@link FlowView#empty()} and report no automatic step.
      * When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
      * {@link #explanation()} leaves that reason out.
      */
@@ -311,8 +423,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull List<Reaction> reactions,
             @NonNull Optional<Class<? extends FailureKind>> failureKind,
             @NonNull List<SubmachineStart<?, ?, ?>> starts,
-            @NonNull FlowView flow) implements Outcome<E, S, T> {
-        /** Validates the reason and failure kind, and copies the committed records, reactions and starts. */
+            @NonNull FlowView flow,
+            @NonNull List<AutomaticStep> automaticSteps) implements Outcome<E, S, T> {
+        /**
+         * Validates the reason and failure kind, and copies the committed records, reactions, starts and automatic
+         * steps.
+         */
         public Failed {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
@@ -321,32 +437,36 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
             starts = List.copyOf(starts);
+            automaticSteps = List.copyOf(automaticSteps);
         }
 
-        /** Builds a routed failure whose flow is {@link FlowView#empty()}. */
+        /** Builds a routed failure whose flow is {@link FlowView#empty()} and that lists no automatic step. */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
                       Optional<Class<? extends FailureKind>> failureKind, List<SubmachineStart<?, ?, ?>> starts) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    failureKind, starts, FlowView.empty());
+                    failureKind, starts, FlowView.empty(), List.of());
         }
 
-        /** Builds a routed failure that started no sub-machine and whose flow is {@link FlowView#empty()}. */
+        /**
+         * Builds a routed failure that started no sub-machine, whose flow is {@link FlowView#empty()} and that lists
+         * no automatic step.
+         */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
                       Optional<Class<? extends FailureKind>> failureKind) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    failureKind, List.of(), FlowView.empty());
+                    failureKind, List.of(), FlowView.empty(), List.of());
         }
 
         /**
-         * Builds a routed failure without a failure kind that started no sub-machine and whose flow is
-         * {@link FlowView#empty()}.
+         * Builds a routed failure without a failure kind that started no sub-machine, whose flow is
+         * {@link FlowView#empty()} and that lists no automatic step.
          */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    Optional.empty(), List.of(), FlowView.empty());
+                    Optional.empty(), List.of(), FlowView.empty(), List.of());
         }
 
         @Override

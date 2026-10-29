@@ -17,20 +17,28 @@ import lombok.NonNull;
  * @param onFailure the identifier its {@code onFailure} names, when it declares one
  * @param recoveryTransitions the identifiers its recovery rules name, copied in declaration order; an identifier
  *     appears once per rule that names it
+ * @param guarded whether the edge declares at least one guard
+ * @param automatic whether the edge is declared as automatic
+ * @param onFailureContinues whether the {@code onFailure} route is declared as a continuing one; it only counts
+ *     when {@code onFailure} is present
+ * @param continuingRecoveries the identifiers that at least one continuing recovery rule of the edge names, in
+ *     declaration order and without repeats; each one is also in {@code recoveryTransitions}
  */
 public record TransitionOutline(@NonNull String from, @NonNull String transition, @NonNull String to,
                                 @NonNull TransitionKind kind, @NonNull Optional<String> onFailure,
-                                @NonNull List<String> recoveryTransitions) {
+                                @NonNull List<String> recoveryTransitions, boolean guarded, boolean automatic,
+                                boolean onFailureContinues, @NonNull List<String> continuingRecoveries) {
 
-    /** Copies {@code recoveryTransitions}, keeping its order and its repeats. */
+    /** Copies {@code recoveryTransitions}, keeping its order and its repeats, and {@code continuingRecoveries}. */
     public TransitionOutline {
         recoveryTransitions = List.copyOf(recoveryTransitions);
+        continuingRecoveries = List.copyOf(continuingRecoveries);
     }
 
-    /** An edge that declares no recovery rule. */
+    /** An edge that declares no recovery rule, no guard, and is not automatic. */
     public TransitionOutline(String from, String transition, String to, TransitionKind kind,
                              Optional<String> onFailure) {
-        this(from, transition, to, kind, onFailure, List.of());
+        this(from, transition, to, kind, onFailure, List.of(), false, false, false, List.of());
     }
 
     /**

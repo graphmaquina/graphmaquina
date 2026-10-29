@@ -1,7 +1,9 @@
 package io.github.graphmaquina.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.internal.FailureTypes;
@@ -34,31 +36,31 @@ class RecoveryRuleTest {
     @Test
     void aRuleKeepsItsKindItsTransitionAndAReadOnlyCopyOfItsTypes() {
         List<Class<? extends Throwable>> source = new ArrayList<>(List.of(IOException.class));
-        RecoveryRule<Month> rule = new RecoveryRule<>(Unavailable.class, Month.MARCH, source);
+        RecoveryRule<Month> rule = new RecoveryRule<>(Unavailable.class, Month.MARCH, source, false);
         source.add(UncheckedIOException.class);
         assertEquals(Unavailable.class, rule.kind());
         assertEquals(Month.MARCH, rule.transition());
         assertEquals(List.of(IOException.class), rule.failsOn());
         assertThrows(UnsupportedOperationException.class, () -> rule.failsOn().add(UncheckedIOException.class));
-        assertEquals(new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(IOException.class)), rule);
+        assertEquals(new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(IOException.class), false), rule);
     }
 
     @Test
     void aRuleMayDeclareNoThrowableType() {
-        assertEquals(List.of(), new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of()).failsOn());
+        assertEquals(List.of(), new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(), false).failsOn());
     }
 
     /** Only the same class twice is a repetition: a supertype and its subtype may share a rule. */
     @Test
     void aSupertypeAndItsSubtypeMayShareARule() {
         assertEquals(List.of(IOException.class, SocketTimeoutException.class), new RecoveryRule<>(Unavailable.class,
-                Month.MARCH, List.of(IOException.class, SocketTimeoutException.class)).failsOn());
+                Month.MARCH, List.of(IOException.class, SocketTimeoutException.class), false).failsOn());
     }
 
     @Test
     void anInvalidKindIsRefused() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new RecoveryRule<>(OpenKind.class, Month.MARCH, List.of()));
+                () -> new RecoveryRule<>(OpenKind.class, Month.MARCH, List.of(), false));
         assertEquals(FailureTypes.invalidKindMessage(OpenKind.class), error.getMessage());
     }
 
@@ -68,7 +70,7 @@ class RecoveryRuleTest {
     void aRawClassThatIsNotAKindIsRefused() {
         Class raw = String.class;
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new RecoveryRule<Month>(raw, Month.MARCH, List.of()));
+                () -> new RecoveryRule<Month>(raw, Month.MARCH, List.of(), false));
         assertEquals(FailureTypes.invalidKindMessage(String.class), error.getMessage());
     }
 
@@ -79,7 +81,7 @@ class RecoveryRuleTest {
                 CompletionException.class, ExecutionException.class);
         for (Class<? extends Throwable> type : forbidden) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                    () -> new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(type)));
+                    () -> new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(type), false));
             assertEquals(WHERE + " does not allow " + type.getName() + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE,
                     error.getMessage());
         }
@@ -91,7 +93,7 @@ class RecoveryRuleTest {
     void aClassThatIsNotAThrowableIsRefused() {
         List raw = List.of(String.class);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new RecoveryRule<Month>(Unavailable.class, Month.MARCH, raw));
+                () -> new RecoveryRule<Month>(Unavailable.class, Month.MARCH, raw, false));
         assertEquals(WHERE + " does not allow java.lang.String; " + FailureTypes.FORBIDDEN_THROWABLE_RULE,
                 error.getMessage());
     }
@@ -100,24 +102,31 @@ class RecoveryRuleTest {
     void aTypeDeclaredTwiceWithinTheRuleIsRefused() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> new RecoveryRule<>(
                 Unavailable.class, Month.MARCH, List.of(IOException.class, UncheckedIOException.class,
-                        IOException.class)));
+                        IOException.class), false));
         assertEquals(WHERE + " declares java.io.IOException more than once", error.getMessage());
     }
 
     @Test
     void aNullArgumentOrTypeIsRefused() {
         NullPointerException kind = assertThrows(NullPointerException.class,
-                () -> new RecoveryRule<Month>(null, Month.MARCH, List.of()));
+                () -> new RecoveryRule<Month>(null, Month.MARCH, List.of(), false));
         assertEquals("kind is marked non-null but is null", kind.getMessage());
         NullPointerException transition = assertThrows(NullPointerException.class,
-                () -> new RecoveryRule<Month>(Unavailable.class, null, List.of()));
+                () -> new RecoveryRule<Month>(Unavailable.class, null, List.of(), false));
         assertEquals("transition is marked non-null but is null", transition.getMessage());
         NullPointerException failsOn = assertThrows(NullPointerException.class,
-                () -> new RecoveryRule<Month>(Unavailable.class, Month.MARCH, null));
+                () -> new RecoveryRule<Month>(Unavailable.class, Month.MARCH, null, false));
         assertEquals("failsOn is marked non-null but is null", failsOn.getMessage());
         List<Class<? extends Throwable>> withNull = Arrays.asList(IOException.class, null);
-        assertThrows(NullPointerException.class, () -> new RecoveryRule<>(Unavailable.class, Month.MARCH, withNull));
         assertThrows(NullPointerException.class,
-                () -> new RecoveryRule<Month>(OpenKind.class, Month.MARCH, withNull));
+                () -> new RecoveryRule<>(Unavailable.class, Month.MARCH, withNull, false));
+        assertThrows(NullPointerException.class,
+                () -> new RecoveryRule<Month>(OpenKind.class, Month.MARCH, withNull, false));
+    }
+
+    @Test
+    void continueChainIsAComponent() {
+        assertTrue(new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(), true).continueChain());
+        assertFalse(new RecoveryRule<>(Unavailable.class, Month.MARCH, List.of(), false).continueChain());
     }
 }

@@ -16,8 +16,10 @@ import java.util.function.Consumer;
  * Stage of one edge. Every combination of actions, guards, {@code onFailure}, {@code failsOn}, {@code recover} and
  * {@code timeout} is accepted here and validated when the edge is closed: an edge with no action is a plain move,
  * {@code onFailure}, {@code failsOn} and {@code recover} require an action, and {@code timeout} an asynchronous one.
- * An edge runs at most one action and declares at most one {@code onFailure} and one {@code timeout}: a second one is
- * reported as SG507 rather than swapped in. It declares any number of recovery rules, one per {@code recover} call.
+ * An edge runs at most one action and declares at most one {@code onFailure} (through {@code onFailure} or
+ * {@code onFailureAndContinue}), one {@code timeout} and one {@code automatic} mark: a second one is reported as
+ * SG507 rather than swapped in. It declares any number of recovery rules, one per {@code recover} or
+ * {@code recoverAndContinue} call.
  * Its guards run in declaration order, each under a name of its own, which a rejection reports: the name given or,
  * without one, the simple name of the guard's class. A guard declared twice, and a second guard of one name, are
  * reported as SG105.
@@ -49,6 +51,19 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * edge runs without its guards and without a failure route of its own.
      */
     TransitionBuilder<E, S, T> onFailure(T transition);
+
+    /**
+     * The same fallback recovery edge as {@link #onFailure(Enum)}, declared as a continuing route: the edge records
+     * {@code onFailureContinues}. It counts as this edge's one {@code onFailure}, so declaring it together with
+     * {@code onFailure} is SG507.
+     */
+    TransitionBuilder<E, S, T> onFailureAndContinue(T transition);
+
+    /**
+     * Marks this edge as automatic. At most one mark per edge: a second one is SG507. The mark is recorded on the
+     * edge's {@code TransitionSpec} and listed by {@code GraphDefinition.automaticFrom(state)}.
+     */
+    TransitionBuilder<E, S, T> automatic();
 
     /**
      * One per call, chainable: a throwable type whose instances take {@code onFailure}, without a failure kind, unless
@@ -136,6 +151,32 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      */
     TransitionBuilder<E, S, T> recover(Class<? extends FailureKind> kind, T transition,
                                        List<Class<? extends Throwable>> failsOn);
+
+    /**
+     * A continuing recovery rule that lists no throwable type: the same as
+     * {@code recoverAndContinue(kind, transition, List.of())}.
+     */
+    default TransitionBuilder<E, S, T> recoverAndContinue(Class<? extends FailureKind> kind, T transition) {
+        return recoverAndContinue(kind, transition, List.of());
+    }
+
+    /**
+     * A continuing recovery rule that lists one throwable type: the same as
+     * {@code recoverAndContinue(kind, transition, List.of(failsOn))}. A null {@code failsOn} throws
+     * {@link NullPointerException} at the call.
+     */
+    default TransitionBuilder<E, S, T> recoverAndContinue(Class<? extends FailureKind> kind, T transition,
+                                                          Class<? extends Throwable> failsOn) {
+        return recoverAndContinue(kind, transition, List.of(Objects.requireNonNull(failsOn, "failsOn")));
+    }
+
+    /**
+     * Declares one recovery rule exactly as {@link #recover(Class, Enum, List)} does, and records the rule as a
+     * continuing one: its {@code RecoveryRule#continueChain()} is true. Every check and every diagnostic of
+     * {@code recover} applies to it, and the two kinds of rule share the same failure kinds and throwable types.
+     */
+    TransitionBuilder<E, S, T> recoverAndContinue(Class<? extends FailureKind> kind, T transition,
+                                                  List<Class<? extends Throwable>> failsOn);
 
     TransitionBuilder<E, S, T> timeout(Duration timeout);
 

@@ -1,6 +1,9 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.Eligibility;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.error.EligibilityCheckException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.internal.Interrupts;
@@ -11,9 +14,10 @@ import java.util.Optional;
  * The eligibility check of a machine, which {@link DefaultStateMachine#eligibility} runs: the admission of a root step
  * as {@link Steps#admit} runs it, in a transaction of its own that never commits, without the call around it. A check
  * is no call: it records no trail, logs no line of a call and tells no observer, and, whatever it answers or throws, it
- * writes no state, logs no hop, runs no action, hook or watch reaction, starts no sub-machine and runs no exit. It
- * logs lines of its own instead, under {@code check=<id>} in place of {@code call=<id>}, as {@link CallLog} says: at
- * DEBUG a start line and a verdict line, or a failed one, and at TRACE the lines of the step it admits.
+ * writes no state, logs no hop, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine and
+ * runs no exit. It logs lines of its own instead, under {@code check=<id>} in place of {@code call=<id>}, as
+ * {@link CallLog} says: at DEBUG a start line and a verdict line, or a failed one, and at TRACE the lines of the step
+ * it admits.
  */
 final class Checks {
 
@@ -44,7 +48,8 @@ final class Checks {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
         CallLog log = CallLog.openCheck();
         Transaction.Admission tx = new Transaction.Admission(registry, uow, machine.key(), entity,
-                Optional.of(transition), false, Optional.empty(), log);
+                Optional.of(transition), () -> new MachineCall(machine.key(), entity, CallRequest.EXECUTE,
+                        Optional.of(transition), CallOrigin.APPLICATION), Optional.empty(), log);
         if (log.debug()) {
             log.start(machine.key(), transition.name());
         }

@@ -37,6 +37,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final DirectedGraph<S, T> graph;
     private final Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index;
     private final Map<S, List<TransitionSpec<E, S, T>>> outgoing;
+    private final Map<S, List<TransitionSpec<E, S, T>>> automatic;
     private final Map<S, StatePolicy<S, T>> policies;
     private final Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches;
     private final Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines;
@@ -46,7 +47,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     DslGraphDefinition(MachineKey<E, S, T> key, S[] states, S initial, Set<S> terminals,
                        List<TransitionSpec<E, S, T>> ordered, Map<S, StatePolicy<S, T>> policies,
                        Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches,
-                       Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines) {
+                       Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines, Map<S, List<T>> automaticOrders) {
         this.key = key;
         this.initial = initial;
         EnumSet<S> terminalCopy = EnumSet.noneOf(key.states());
@@ -67,11 +68,8 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
             async = async || spec.isAsync();
         }
         this.index = Collections.unmodifiableMap(byKey);
-        Map<S, List<TransitionSpec<E, S, T>>> frozen = new EnumMap<>(key.states());
-        for (Map.Entry<S, List<TransitionSpec<E, S, T>>> entry : leaving.entrySet()) {
-            frozen.put(entry.getKey(), List.copyOf(entry.getValue()));
-        }
-        this.outgoing = Collections.unmodifiableMap(frozen);
+        this.outgoing = frozen(key, leaving);
+        this.automatic = automaticEdges(key, this.outgoing, automaticOrders);
         this.graph = DirectedGraph.of(Arrays.asList(states), edges);
         this.policies = Collections.unmodifiableMap(new EnumMap<>(policies));
         this.watches = Collections.unmodifiableMap(new LinkedHashMap<>(watches));
@@ -81,9 +79,59 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
         this.hasAsync = async;
     }
 
+    /** The same lists, each made immutable, under the same states. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Map<S, List<TransitionSpec<E, S, T>>> frozen(
+            MachineKey<E, S, T> key, Map<S, List<TransitionSpec<E, S, T>>> leaving) {
+        Map<S, List<TransitionSpec<E, S, T>>> frozen = new EnumMap<>(key.states());
+        for (Map.Entry<S, List<TransitionSpec<E, S, T>>> entry : leaving.entrySet()) {
+            frozen.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(frozen);
+    }
+
     @Override
     public List<TransitionSpec<E, S, T>> outgoingFrom(@NonNull S state) {
         return required(outgoing, state);
+    }
+
+    @Override
+    public List<TransitionSpec<E, S, T>> automaticFrom(@NonNull S state) {
+        return required(automatic, state);
+    }
+
+    /**
+     * The automatic edges of each state: in the order {@code orders} declares for the state, which {@code build()}
+     * accepted only once it named each of them exactly once and nothing else; for a state without an order, which has
+     * at most one, as {@code outgoing} lists it.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Map<S, List<TransitionSpec<E, S, T>>> automaticEdges(
+            MachineKey<E, S, T> key, Map<S, List<TransitionSpec<E, S, T>>> outgoing, Map<S, List<T>> orders) {
+        Map<S, List<TransitionSpec<E, S, T>>> result = new EnumMap<>(key.states());
+        for (Map.Entry<S, List<TransitionSpec<E, S, T>>> entry : outgoing.entrySet()) {
+            List<TransitionSpec<E, S, T>> marked = new ArrayList<>();
+            for (TransitionSpec<E, S, T> spec : entry.getValue()) {
+                if (spec.automatic()) {
+                    marked.add(spec);
+                }
+            }
+            List<T> order = orders.getOrDefault(entry.getKey(), List.of());
+            result.put(entry.getKey(), List.copyOf(order.isEmpty() ? marked : inOrder(marked, order)));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** The edges of {@code marked}, one per identifier of {@code order}, in that order. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<TransitionSpec<E, S, T>> inOrder(
+            List<TransitionSpec<E, S, T>> marked, List<T> order) {
+        List<TransitionSpec<E, S, T>> sorted = new ArrayList<>();
+        for (T named : order) {
+            for (TransitionSpec<E, S, T> spec : marked) {
+                if (spec.transition() == named) {
+                    sorted.add(spec);
+                }
+            }
+        }
+        return sorted;
     }
 
     @Override

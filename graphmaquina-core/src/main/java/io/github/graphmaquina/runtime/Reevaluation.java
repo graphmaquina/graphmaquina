@@ -1,9 +1,12 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StatesWritten;
@@ -25,16 +28,18 @@ import java.util.Optional;
 
 /**
  * A reevaluation of an entity of a machine: under the reentrancy marker, the state read and the watch of that state,
- * which selects the edge that then runs as a root call, or none.
+ * which selects the edge that then runs as a root call, or none. Its state read, and the end of a call that failed
+ * before it ran an edge, serve an advance too, as {@link Attempts} runs it.
  */
 final class Reevaluation {
 
     private Reevaluation() { }
 
     /**
-     * chain counts reaction -> transition -> reaction, so a chain above 0 is a watch reaction. Exceeding
-     * maxWatchChain throws WatchChainExceededException after the reentrancy check and the state read, before any
-     * watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
+     * The watch level of {@code levels} counts reaction -> transition -> reaction, so a level above 0 is a watch
+     * reaction; the automatic level passes on to the commit of the selected edge, whose chains start above it.
+     * Exceeding maxWatchChain throws WatchChainExceededException after the reentrancy check and the state read, before
+     * any watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
      * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
@@ -48,12 +53,13 @@ final class Reevaluation {
      * application made.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> reevaluate(DefaultStateMachine<E, S, T> machine,
-                                                                               E entity, int chain,
+                                                                               E entity, ChainLevels levels,
                                                                                Optional<Long> trigger) {
         Reentrancy.check(machine.key(), entity);
-        boolean reaction = chain > 0;
+        CallOrigin origin = levels.watch() > 0 ? CallOrigin.WATCH_REACTION : CallOrigin.APPLICATION;
         CallLog log = CallLog.open(trigger);
-        Optional<Observed> observed = RootCall.observe(machine, entity, Optional.empty(), reaction, log);
+        Optional<Observed> observed = RootCall.observe(machine, entity, CallRequest.REEVALUATE,
+                Optional.empty(), origin, log);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
@@ -63,11 +69,11 @@ final class Reevaluation {
             }
             boolean[] marker = Reentrancy.enter(machine.key(), entity);
             try {
-                state = stateOf(machine, entity, observed, reaction);
-                requireChain(machine, entity, observed, reaction, state, chain);
+                state = stateOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
+                requireChain(machine, entity, observed, origin, state, levels.watch());
                 watch = machine.definition().watch(state);
                 if (watch.isPresent()) {
-                    selected = selection(machine, watch.get(), entity, observed, reaction, state);
+                    selected = selection(machine, watch.get(), entity, observed, origin, state);
                 }
             } finally {
                 marker[0] = false;
@@ -83,33 +89,37 @@ final class Reevaluation {
             return RootCall.ignored(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return RootCall.run(machine, entity, Optional.empty(), reaction, observed, log,
-                (Transaction tx) -> tx.transition(machine, entity, resolved, 0), chain);
+        return RootCall.run(machine, entity, CallRequest.REEVALUATE, Optional.empty(), origin, observed, log,
+                (Transaction tx) -> tx.transition(machine, entity, resolved, 0), levels, Optional.empty()).outcome();
     }
 
-    /** The state the reevaluation reads; a getter that throws or answers null aborts it as {@link #unresolved} says. */
-    private static <E, S extends Enum<S>, T extends Enum<T>> S stateOf(DefaultStateMachine<E, S, T> machine,
-                                                                       E entity, Optional<Observed> observed,
-                                                                       boolean reaction) {
+    /**
+     * The state a reevaluation or an advance, as {@code request} says, reads before it runs an edge; a getter that
+     * throws or answers null aborts the call as {@link #unresolved} says.
+     */
+    static <E, S extends Enum<S>, T extends Enum<T>> S stateOf(DefaultStateMachine<E, S, T> machine, E entity,
+                                                               Optional<Observed> observed, CallRequest request,
+                                                               CallOrigin origin) {
         try {
             return machine.readState(entity);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
             Interrupts.keep(e);
-            throw unresolved(machine, entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
+            throw unresolved(machine, entity, observed, request, origin, Optional.empty(), "reading the entity threw ",
+                    e);
         }
     }
 
     /** Refuses a watch reaction past maxWatchChain once the state is read, before any watch function runs. */
     private static <E, S extends Enum<S>, T extends Enum<T>> void requireChain(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, boolean reaction, S state,
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallOrigin origin, S state,
             int chain) {
         if (chain > machine.registry().maxWatchChain()) {
             AbortDetails details = new AbortDetails(machine.key(), entity, Optional.of(state), Optional.empty(),
                     Optional.empty(), Optional.empty(), List.of(), List.of());
-            throw new WatchChainExceededException(RootCall.callOf(machine, entity, observed, reaction), details,
-                    machine.registry().maxWatchChain());
+            MachineCall call = RootCall.callOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
+            throw new WatchChainExceededException(call, details, machine.registry().maxWatchChain());
         }
     }
 
@@ -119,24 +129,25 @@ final class Reevaluation {
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Optional<T> selection(
             DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, ?, ?, ?> watch, E entity,
-            Optional<Observed> observed, boolean reaction, S state) {
+            Optional<Observed> observed, CallOrigin origin, S state) {
         try {
             return firstMatch(machine, watch, entity);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
             Interrupts.keep(e);
-            throw unresolved(machine, entity, observed, reaction, Optional.of(state), "the watch threw ", e);
+            throw unresolved(machine, entity, observed, CallRequest.REEVALUATE, origin, Optional.of(state),
+                    "the watch threw ", e);
         }
     }
 
     /**
-     * Ends a reevaluation that {@code thrown} ended before an edge ran, in RESOLVE with nothing written: attaches its
-     * own flow to a failure of the call when the machine records its trail, logs its failed line, unless it is an
-     * Error, and tells the observers. An Error that the trail's clock or the failed line throws is thrown in its place,
-     * once the observers heard of it.
+     * Ends a reevaluation, or an advance, that {@code thrown} ended before an edge ran, in RESOLVE with nothing
+     * written: attaches its own flow to a failure of the call when the machine records its trail, logs its failed
+     * line, unless it is an Error, and tells the observers. An Error that the trail's clock or the failed line throws
+     * is thrown in its place, once the observers heard of it.
      */
-    private static <E, S extends Enum<S>, T extends Enum<T>> void unresolvedEnd(
+    static <E, S extends Enum<S>, T extends Enum<T>> void unresolvedEnd(
             DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallLog log,
             Throwable thrown) {
         if (machine.trail().isPresent() && thrown instanceof CallFailedException own) {
@@ -162,18 +173,19 @@ final class Reevaluation {
     }
 
     /**
-     * A reevaluation that could not read its entity's state or evaluate its watch: an abort in RESOLVE that carries
-     * the failure, unwrapped from CompletionException and ExecutionException. Its caller has already interrupted the
-     * thread again for an InterruptedException that the getter or the watch threw.
+     * A reevaluation that could not read its entity's state or evaluate its watch, or an advance that could not read
+     * its entity's state or the automatic edges of that state, as {@code request} says: an abort in RESOLVE that
+     * carries the failure, unwrapped from CompletionException and ExecutionException. Its caller has already
+     * interrupted the thread again for an InterruptedException that the getter, the watch or the graph threw.
      */
-    private static <E, S extends Enum<S>, T extends Enum<T>> TransitionAbortedException unresolved(
-            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, boolean reaction,
-            Optional<Enum<?>> from, String what, Throwable error) {
+    static <E, S extends Enum<S>, T extends Enum<T>> TransitionAbortedException unresolved(
+            DefaultStateMachine<E, S, T> machine, E entity, Optional<Observed> observed, CallRequest request,
+            CallOrigin origin, Optional<Enum<?>> from, String what, Throwable error) {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, from, Optional.empty(), Optional.empty(),
                 Optional.empty(), List.of(), List.of());
-        return new TransitionAbortedException(RootCall.callOf(machine, entity, observed, reaction), CallPhase.RESOLVE,
-                details, what + Texts.shown(cause), cause);
+        MachineCall call = RootCall.callOf(machine, entity, observed, request, origin);
+        return new TransitionAbortedException(call, CallPhase.RESOLVE, details, what + Texts.shown(cause), cause);
     }
 
     /**

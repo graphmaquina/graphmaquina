@@ -68,7 +68,8 @@ class ManifestDiscoveryTest {
     private static final Set<String> GENERATED = Set.of(
             "fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
             "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery",
-            "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects", "fx.DocsGraph.Check");
+            "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.AutomaticOrder",
+            "fx.DocsGraph.AutomaticOrders");
 
     @Test
     void claimsTheFixedSetAndEveryAnnotationTheManifestLists() {

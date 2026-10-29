@@ -44,7 +44,7 @@ class PendingStateIndexTest {
     static LogEntry.Hop hop(EntityRef ref, S from, S to) {
         return new LogEntry.Hop(ref, new TransitionSpec<Object, S, T>(from, T.GO, to,
                 Optional.empty(), List.of(), Optional.empty(), List.of(),
-                Optional.empty(), Optional.empty()), 0);
+                Optional.empty(), Optional.empty()), 0, false);
     }
 
     /**

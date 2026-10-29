@@ -37,6 +37,14 @@ import lombok.Getter;
  * specific declared type. Two definitions that only reorder the rules of an edge therefore route every failure
  * alike and still differ here, at the index paths.
  *
+ * <p>Whether an edge is automatic, and whether a route continues the chain of automatic attempts, is recorded only
+ * when it is: {@code /transitions/<from>/<id>/automatic}, {@code /transitions/<from>/<id>/onFailureContinues} and
+ * {@code /transitions/<from>/<id>/recoveries/<i>/continues} hold {@code true} and are absent otherwise, so a graph that
+ * declares none of them captures what it always did. A state with two or more automatic edges also records the order
+ * an advance tries them in, at {@code /automaticOrder/<state>/count} and {@code /automaticOrder/<state>/<i>}, the
+ * identifier at position {@code <i>}; the order is a different graph when it changes, whatever the declaration order of
+ * the edges.
+ *
  * <p>The sub-machine bound to a state lives under {@code /submachines/<state>}: its child machine at
  * {@code child/entity}, {@code child/states} and {@code child/transitions}, as a watch records its peer, and at
  * {@code exits/<terminal>} the identifier that each terminal state of the child exits through. A state without one
@@ -96,20 +104,28 @@ public final class GraphSnapshot {
             fields.put("/terminals/" + terminal.name(), "true");
         }
         for (TransitionSpec<E, S, T> transition : definition.transitions()) {
-            String path = "/transitions/" + transition.from().name() + "/" + transition.transition().name();
-            fields.put(path + "/to", transition.to().name());
-            fields.put(path + "/kind", transition.kind().name());
-            transition.onFailure().ifPresent(id -> fields.put(path + "/onFailure", id.name()));
-            captureCallbacks(fields, transition, path);
-            captureRecoveries(fields, transition.recoveryRules(), path);
+            captureTransition(fields, transition);
         }
         for (S state : states) {
+            captureAutomaticOrder(fields, definition, state);
             capturePolicy(fields, definition.policy(state));
             definition.watch(state).ifPresent(watch -> captureWatch(fields, watch));
             definition.submachine(state).ifPresent(
                     (SubmachineSpec<E, S, T, ?, ?, ?> submachine) -> captureSubmachine(fields, submachine));
         }
         return new GraphSnapshot(fields);
+    }
+
+    /** One declared edge under {@code /transitions/<from>/<id>}: its destination, kind, fallback, callbacks and marks. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void captureTransition(
+            Map<String, String> fields, TransitionSpec<E, S, T> transition) {
+        String path = "/transitions/" + transition.from().name() + "/" + transition.transition().name();
+        fields.put(path + "/to", transition.to().name());
+        fields.put(path + "/kind", transition.kind().name());
+        transition.onFailure().ifPresent(id -> fields.put(path + "/onFailure", id.name()));
+        captureCallbacks(fields, transition, path);
+        captureRecoveries(fields, transition.recoveryRules(), path);
+        captureMarks(fields, transition, path);
     }
 
     /**
@@ -136,6 +152,40 @@ public final class GraphSnapshot {
         transition.afterCommit().ifPresent(value -> fields.put(path + "/afterCommit", value.name()));
     }
 
+    /**
+     * The marks an edge declares: {@code automatic} and {@code onFailureContinues}, each written as {@code true} only
+     * when it is set, so a graph that declares none has the paths it always had.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void captureMarks(
+            Map<String, String> fields, TransitionSpec<E, S, T> transition, String path) {
+        if (transition.automatic()) {
+            fields.put(path + "/automatic", "true");
+        }
+        if (transition.onFailureContinues()) {
+            fields.put(path + "/onFailureContinues", "true");
+        }
+    }
+
+    /**
+     * The order in which an advance tries the automatic edges of {@code state}, which the state declares only when
+     * it has two or more: their count at {@code /automaticOrder/<state>/count} and the identifier at each index. The
+     * edges are counted from {@code outgoingFrom}, and {@code automaticFrom} is asked only for a state with two or
+     * more, so a graph without such a state never calls it.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void captureAutomaticOrder(
+            Map<String, String> fields, GraphDefinition<E, S, T> definition, S state) {
+        long marked = definition.outgoingFrom(state).stream().filter(TransitionSpec::automatic).count();
+        if (marked < 2) {
+            return;
+        }
+        List<TransitionSpec<E, S, T>> automatic = definition.automaticFrom(state);
+        String path = "/automaticOrder/" + state.name();
+        fields.put(path + "/count", Integer.toString(automatic.size()));
+        for (int index = 0; index < automatic.size(); index++) {
+            fields.put(path + "/" + index, automatic.get(index).transition().name());
+        }
+    }
+
     /** The recovery rules of an edge, indexed in declaration order; an edge without rules records nothing here. */
     private static <T extends Enum<T>> void captureRecoveries(
             Map<String, String> fields, List<RecoveryRule<T>> rules, String path) {
@@ -148,6 +198,9 @@ public final class GraphSnapshot {
             String rulePath = path + "/recoveries/" + index;
             fields.put(rulePath + "/kind", rule.kind().getName());
             fields.put(rulePath + "/transition", rule.transition().name());
+            if (rule.continueChain()) {
+                fields.put(rulePath + "/continues", "true");
+            }
             fields.put(rulePath + "/failsOn/count", Integer.toString(rule.failsOn().size()));
             for (int type = 0; type < rule.failsOn().size(); type++) {
                 fields.put(rulePath + "/failsOn/" + type, rule.failsOn().get(type).getName());

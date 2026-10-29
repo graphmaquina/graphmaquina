@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CheckModel;
 import io.github.graphmaquina.processor.model.MachineModel;
@@ -77,10 +78,11 @@ final class TypedMachineModelBuilder {
     private final Diagnostics diagnostics;
     private final Annotations annotations;
     private final TypedChecks checks;
+    private final AutomaticChecks automaticChecks;
 
     TypedMachineModelBuilder(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
             TypedTransitions transitions, TypedPairs pairs, TypedWatchReader watches, TypedSubmachineReader submachines,
-            Signatures signatures, Diagnostics diagnostics) {
+            Signatures signatures, AutomaticChecks automaticChecks, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
         this.structure = structure;
         this.properties = properties;
@@ -89,6 +91,7 @@ final class TypedMachineModelBuilder {
         this.watches = watches;
         this.submachines = submachines;
         this.signatures = signatures;
+        this.automaticChecks = automaticChecks;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
         this.checks = new TypedChecks(vocabulary, signatures, diagnostics);
@@ -199,6 +202,8 @@ final class TypedMachineModelBuilder {
         List<ExecutableElement> checkMethods = new ArrayList<>();
         List<OperationModel> operations = operations(type, types, defaultAfterCommit, checkMethods);
         List<CheckModel> declaredChecks = checks.read(type, types, checkMethods, operations);
+        automaticChecks.checkTypeLevelInput(type, declared, operations);
+        List<AutomaticOrderModel> orders = automaticOrders(type, types);
         structure.checkInheritedOperations(type);
         TypedPairs.Peers peers = pairs.peers(type);
         Set<String> used = new LinkedHashSet<>();
@@ -206,12 +211,11 @@ final class TypedMachineModelBuilder {
         List<WatchModel> watched = watches.read(type, types, peers, used);
         pairs.checkUsed(type, peers, used);
         checkDuplicateKeys(type, declared, operations);
-        if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
-            return Optional.empty();
-        }
-        return Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
-                cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies, rejections,
-                declared, operations, watched, bound, declaredChecks));
+        return state.isEmpty() || id.isEmpty() || diagnostics.errors() > before
+                ? Optional.empty()
+                : Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
+                        cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies,
+                        rejections, declared, operations, watched, bound, declaredChecks, orders));
     }
 
     /** The policy of each state: the reason every identifier it declares no edge for is refused with. */
@@ -241,6 +245,29 @@ final class TypedMachineModelBuilder {
             policies.add(new StatePolicyModel(state.get(), reason));
         }
         return policies;
+    }
+
+    /**
+     * The orders the facade declares, each with the state it orders and the identifiers it names. An order javac
+     * left a value out of is skipped: javac has already refused it. Whether an order is the one its state needs is a
+     * question about the whole graph, which its outline answers.
+     */
+    private List<AutomaticOrderModel> automaticOrders(TypeElement type, MachineTypes types) {
+        List<AutomaticOrderModel> orders = new ArrayList<>();
+        for (AnnotationMirror order : own(type, VocabularyKind.AUTOMATIC_ORDER, type)) {
+            Optional<AnnotationValue> declaredFrom = annotations.find(order, "from");
+            Optional<AnnotationValue> declaredTransitions = annotations.find(order, "transitions");
+            if (declaredFrom.isEmpty() || declaredTransitions.isEmpty()) {
+                continue;
+            }
+            Optional<String> from = TypedValues.constantName(declaredFrom.get(), types.statesElement());
+            Optional<List<String>> identifiers = TypedValues.constantNames(annotations.array(order, "transitions"),
+                    types.transitionsElement());
+            if (from.isPresent() && identifiers.isPresent()) {
+                orders.add(new AutomaticOrderModel(from.get(), identifiers.get(), order));
+            }
+        }
+        return orders;
     }
 
     /** The identifiers the facade refuses from a state, each with the reason it is refused for. */
@@ -358,6 +385,7 @@ final class TypedMachineModelBuilder {
         if (edges.size() != mirrors.size()) {
             return Optional.empty();
         }
+        automaticChecks.checkOperationInput(method, input, mirrors, edges);
         return Optional.of(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
                 inputParameter));
     }

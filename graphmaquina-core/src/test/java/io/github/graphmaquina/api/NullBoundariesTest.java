@@ -57,6 +57,9 @@ class NullBoundariesTest {
                         new Outcome.Ignored<String, DayOfWeek, Month>(null, DayOfWeek.MONDAY, IgnoreReason.NO_WATCH)),
                 Arguments.of("reason", (Executable) () ->
                         new Outcome.Ignored<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, null)),
+                Arguments.of("rejections", (Executable) () ->
+                        new Outcome.Ignored<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, IgnoreReason.NO_WATCH,
+                                null)),
                 Arguments.of("records", (Executable) () -> new Outcome.Applied<String, DayOfWeek, Month>("e",
                         DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.MONDAY, null, List.of())),
                 Arguments.of("key", (Executable) () -> new ActionRecord(null, "e", DayOfWeek.MONDAY, Month.JANUARY,

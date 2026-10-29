@@ -38,7 +38,7 @@ class UnitOfWorkRecordsTest {
         EntityRef ref = new EntityRef(key, depth, entity);
         TransitionSpec<Object, State, Transition> spec = new TransitionSpec<>(State.A, Transition.GO, State.B,
                 Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.empty());
-        return new LogEntry.Hop(ref, spec, depth);
+        return new LogEntry.Hop(ref, spec, depth, false);
     }
 
     /** Empty, small and larger snapshots retain entry order and reject mutation. */
@@ -82,7 +82,7 @@ class UnitOfWorkRecordsTest {
         TransitionSpec<String, OtherState, OtherTransition> spec = new TransitionSpec<>(
                 OtherState.BEFORE, OtherTransition.RUN, OtherState.AFTER, Optional.of(action), List.of(),
                 Optional.empty(), List.of(), Optional.empty(), Optional.empty());
-        work.append(new LogEntry.Hop(new EntityRef(key, "id", second), spec, 7));
+        work.append(new LogEntry.Hop(new EntityRef(key, "id", second), spec, 7, false));
 
         List<TransitionRecord<?, ?, ?>> records = work.records();
         assertEquals(2, records.size());
@@ -133,13 +133,13 @@ class UnitOfWorkRecordsTest {
         MachineKey<String, State, Transition> key = MachineKey.of(String.class, State.class, Transition.class);
         LogEntry.Hop validEnums = move(new Object(), 0);
         UnitOfWork wrongEntity = new UnitOfWork(100, Long.MAX_VALUE);
-        wrongEntity.append(new LogEntry.Hop(new EntityRef(key, 1, new Object()), validEnums.spec(), 0));
+        wrongEntity.append(new LogEntry.Hop(new EntityRef(key, 1, new Object()), validEnums.spec(), 0, false));
         assertThrows(ClassCastException.class, wrongEntity::records);
 
         MachineKey<Object, OtherState, OtherTransition> otherKey =
                 MachineKey.of(Object.class, OtherState.class, OtherTransition.class);
         UnitOfWork wrongEnums = new UnitOfWork(100, Long.MAX_VALUE);
-        wrongEnums.append(new LogEntry.Hop(new EntityRef(otherKey, 1, new Object()), validEnums.spec(), 0));
+        wrongEnums.append(new LogEntry.Hop(new EntityRef(otherKey, 1, new Object()), validEnums.spec(), 0, false));
         assertThrows(ClassCastException.class, wrongEnums::records);
     }
 

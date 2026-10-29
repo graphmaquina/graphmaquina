@@ -1,6 +1,8 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -28,8 +30,9 @@ import lombok.NonNull;
 
 /**
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
- * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none. An eligibility
- * check runs the admission of that root step alone, as {@link Checks} says, and is no call.
+ * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none, and neither does
+ * an advance whose state has no automatic edge. An advance tries the automatic edges of the state as {@link Attempts}
+ * says. An eligibility check runs the admission of that root step alone, as {@link Checks} says, and is no call.
  */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
@@ -160,9 +163,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
         CallLog log = CallLog.open(Optional.empty());
-        Optional<Observed> observed = RootCall.observe(this, entity, requested, false, log);
-        return RootCall.run(this, entity, requested, false, observed, log,
-                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
+        Optional<Observed> observed = RootCall.observe(this, entity, CallRequest.EXECUTE, requested,
+                CallOrigin.APPLICATION, log);
+        return RootCall.run(this, entity, CallRequest.EXECUTE, requested, CallOrigin.APPLICATION, observed, log,
+                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), new ChainLevels(0, 0),
+                Optional.empty()).outcome();
     }
 
     @Override
@@ -177,7 +182,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Outcome<E, S, T> reevaluate(@NonNull E entity) {
-        return Reevaluation.reevaluate(this, entity, 0, Optional.empty());
+        return Reevaluation.reevaluate(this, entity, new ChainLevels(0, 0), Optional.empty());
+    }
+
+    @Override
+    public Outcome<E, S, T> advance(@NonNull E entity) {
+        return Attempts.attempt(this, entity, CallOrigin.APPLICATION, Optional.empty(), new ChainLevels(0, 1),
+                Optional.empty()).outcome();
     }
 
     @Override

@@ -144,12 +144,12 @@ class PublishedArtifactSmokeTest {
                     assertThat(finished).isApplied().movedTo(State.DONE)
                             .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
-                    // No default: this switch compiles only while OutcomeCode holds exactly these eight codes.
+                    // No default: this switch compiles only while OutcomeCode holds exactly these ten codes.
                     String verdict = switch (finished.code()) {
                         case APPLIED -> "applied";
                         case NO_TRANSITION, GUARD_REJECTED, DETACHED, RESERVED_EXIT -> "rejected";
                         case FAILURE_ROUTED -> "failed";
-                        case NO_WATCH, NO_RULE_MATCHED -> "ignored";
+                        case NO_WATCH, NO_RULE_MATCHED, NO_AUTOMATIC_TRANSITION, NO_CANDIDATE_ADMITTED -> "ignored";
                     };
                     if (!verdict.equals("applied") || finished.status() != OutcomeStatus.APPLIED
                             || finished.explanation().isPresent() || finished.records().size() != 1
@@ -250,12 +250,13 @@ class PublishedArtifactSmokeTest {
                             registry.of(KEY).execute(new Entity(), Id.FINISH);
                             throw new AssertionError("the failing hook must fail the call");
                         } catch (CallFailedException failure) {
-                            // No default: this switch compiles only while CallPhase holds exactly these six phases.
+                            // No default: this switch compiles only while CallPhase holds exactly these seven phases.
                             String where = switch (failure.phase()) {
                                 case RESOLVE, GUARD, ACTION -> "before the commit";
                                 case COMMIT -> "during the commit";
                                 case HOOK -> "after the commit";
                                 case REACTIONS -> "in a reaction";
+                                case AUTOMATIC_STEPS -> "in an automatic step";
                             };
                             if (!where.equals("after the commit") || failure.statesWritten() != StatesWritten.ALL
                                     || !(failure instanceof AfterCommitException after) || !after.hook().equals("audit")
@@ -439,9 +440,9 @@ class PublishedArtifactSmokeTest {
                     List<Class<? extends Throwable>> rejectedTypes = List.of(ProviderRejectedException.class);
                     List<RecoveryRule<TicketChange>> rules = List.of(
                             new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                                    unavailableTypes),
+                                    unavailableTypes, false),
                             new RecoveryRule<>(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-                                    rejectedTypes));
+                                    rejectedTypes, false));
                     GraphAssertions.assertThat(definition)
                             .transition(TicketState.READY, TicketChange.PUBLISH)
                             .isAction()

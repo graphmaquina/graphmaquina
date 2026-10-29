@@ -46,7 +46,7 @@ sequenceDiagram
     Action-->>Machine: a pending CompletionStage
     Note over Machine: waits within the root's and the action's deadlines
     Service-->>Action: response, which completes the stage
-    Note over Machine: commit, hooks and watch reactions
+    Note over Machine: commit, hooks, watch reactions and automatic chains
     Machine-->>Caller: Outcome
     Note over Caller,Service: machine.async: an executor thread runs the operation
     Caller->>Machine: tickets.async(...)
@@ -292,7 +292,7 @@ An unexpected exception, such as `IllegalStateException`, completes the operatio
 There are two layers of result. A future that completes normally does not imply `Outcome.Applied`:
 `Rejected`, `Ignored` and a handled `Failed` are normal values too.
 
-![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions must also be inspected.](images/async-future-results.svg)
+![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions and automatic steps must also be inspected.](images/async-future-results.svg)
 
 With the `tickets` and `ticket` from the example, this fragment reacts to completion without joining:
 
@@ -339,7 +339,7 @@ one for an identifier of another catalogue (`IllegalArgumentException`), and one
 (`ReentrantTransitionException`, possible when the call runs on the thread of the callback that submitted it, through
 an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A null argument fails the
 future only when the operation you submit receives it: `async(null)` itself, and a null argument of a low-level
-`StateMachine`'s `async().execute(...)` or `async().reevaluate(...)`, throw their `NullPointerException` on the calling
+`StateMachine`'s `async().execute(...)`, `async().reevaluate(...)` or `async().advance(...)`, throw their `NullPointerException` on the calling
 thread before anything is submitted. A callback you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered

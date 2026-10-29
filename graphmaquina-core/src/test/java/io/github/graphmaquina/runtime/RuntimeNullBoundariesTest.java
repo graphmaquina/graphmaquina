@@ -23,10 +23,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Runtime entry points refuse a null argument with a NullPointerException whose message names the parameter, bare or,
- * where Lombok checks it, as {@code <name> is marked non-null but is null}: the machine builder, a machine's {@code execute}, its input included, {@code transitionsFrom} and {@code supplyAsync},
- * the {@code execute}, its input included, and {@code reevaluate} of its {@code async()} view, all on the calling
- * thread, and the registry builder and its lookup. An operation that a submitted call runs refuses its null argument
- * on the executor's thread instead, which fails the future.
+ * where Lombok checks it, as {@code <name> is marked non-null but is null}: the machine builder, a machine's
+ * {@code execute}, its input included, {@code advance}, {@code transitionsFrom} and {@code supplyAsync}, the
+ * {@code execute}, its input included, {@code reevaluate} and {@code advance} of its {@code async()} view, all on the
+ * calling thread, and the registry builder and its lookup. An operation that a submitted call runs refuses its null
+ * argument on the executor's thread instead, which fails the future.
  */
 class RuntimeNullBoundariesTest {
 
@@ -67,7 +68,10 @@ class RuntimeNullBoundariesTest {
                 Arguments.of("input is marked non-null but is null", (Executable) () ->
                         machine.async().execute(new Doc("1", DocStatus.DRAFT), DocTransition.SUBMIT, null)),
                 Arguments.of("entity is marked non-null but is null", (Executable) () ->
-                        machine.async().reevaluate(null)));
+                        machine.async().reevaluate(null)),
+                Arguments.of("entity is marked non-null but is null", (Executable) () -> machine.advance(null)),
+                Arguments.of("entity is marked non-null but is null", (Executable) () ->
+                        machine.async().advance(null)));
     }
 
     @ParameterizedTest

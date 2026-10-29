@@ -226,7 +226,7 @@ static ButtonState buttonFor(
 }
 ```
 
-[Runtime exceptions](diagnostics.md#runtime-exceptions) lists `EligibilityCheckException` with the others.
+[Runtime exceptions](runtime-exceptions.md) lists `EligibilityCheckException` with the others.
 
 ## What a check runs and never does
 
@@ -349,8 +349,8 @@ a call, where the call runs code of yours on its thread, such as a guard, an act
 observer, a check is refused before it starts with `ReentrantTransitionException`, as `execute` is, and logs
 nothing.
 
-While a check runs, the code it calls may not start a call or a check on its thread either: `execute`, `reevaluate`
-or `eligibility` called from a guard, the state getter or a `parentOf` of the check throws
+While a check runs, the code it calls may not start a call or a check on its thread either: `execute`, `reevaluate`,
+`advance` or `eligibility` called from a guard, the state getter or a `parentOf` of the check throws
 `ReentrantTransitionException`. When that code lets the exception through, the check fails with an
 `EligibilityCheckException` whose cause it is.
 

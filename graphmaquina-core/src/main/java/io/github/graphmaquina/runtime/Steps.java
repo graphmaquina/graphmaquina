@@ -272,7 +272,9 @@ final class Steps {
      * guards, annotate, execute, failure route. The hop is logged as {@link #appendHop} says. When
      * {@code admitOnly}, the guards alone: each is noted as the guard in flight, as {@link Transaction#guarding}
      * says, right before it is evaluated, and once every guard passed the step returns {@link StepResult.Applied}
-     * before the call enters ACTION, with nothing run; a step that executes notes no guard.
+     * before the call enters ACTION, with nothing run; a step that executes notes no guard. Once the guards of the
+     * root's own step passed, it throws the refusal its transaction holds, if any, as
+     * {@link Transaction#checkRootAction} says, before the call enters ACTION.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runEdge(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from,
@@ -301,10 +303,11 @@ final class Steps {
             // keeps this method's bytecode under 325 bytes, C2's FreqInlineSize, as it was without the mode.
             if (!admitOnly) {
                 if (depth == 0) {
+                    tx.checkRootAction();
                     tx.enter(CallPhase.ACTION);
                 }
                 int savepoint = uow.savepoint();
-                appendHop(tx, machine, ref, entity, transition, depth, Optional.empty());
+                appendHop(tx, machine, ref, entity, transition, depth, false, Optional.empty());
                 if (transition.action().isPresent()) {
                     return Actions.runAction(tx, machine, ref, entity, transition, depth, savepoint, input);
                 }
@@ -333,7 +336,8 @@ final class Steps {
      * Logs the hop of {@code entity} along {@code edge}. When the edge enters a state of the machine's own graph that
      * holds a sub-machine, the start of that child follows right after it, as {@link Submachines#start} says; a
      * machine whose graph binds no sub-machine pays one field read. Both entries sit after the savepoint the caller
-     * took, so a rollback to it drops them together. {@code recovery} is present only on the hop of a failure route in
+     * took, so a rollback to it drops them together. {@code stopsChain} is true only on the hop of a failure route that
+     * does not continue the automatic chain. {@code recovery} is present only on the hop of a failure route in
      * a call that records its trail: it goes on the hop's mark as soon as the hop is marked, before the child starts,
      * so a start that aborts leaves the hop in the trail with what it recovered from.
      */
@@ -341,9 +345,10 @@ final class Steps {
                                                                     DefaultStateMachine<E, S, T> machine,
                                                                     EntityRef ref, E entity,
                                                                     TransitionSpec<E, S, T> edge, int depth,
+                                                                    boolean stopsChain,
                                                                     Optional<FlowEntry.Recovery> recovery) {
         UnitOfWork uow = tx.uow();
-        uow.append(new LogEntry.Hop(ref, edge, depth));
+        uow.append(new LogEntry.Hop(ref, edge, depth, stopsChain));
         if (recovery.isPresent()) {
             uow.flow().orElseThrow().recovery(uow.savepoint() - 1, recovery.get());
         }

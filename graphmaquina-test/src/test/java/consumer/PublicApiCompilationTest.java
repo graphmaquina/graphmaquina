@@ -114,7 +114,7 @@ class PublicApiCompilationTest {
                     GraphAssertions.assertThat(declined).hasFailureKind(Declined.class);
                     GraphAssertions.assertThat(outcome).isFailed().hasFailureKind(Declined.class);
                     GraphAssertions.assertThat(definition).transition(State.NEW, Id.PREPARE)
-                            .recoversExactly(List.of(new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())));
+                            .recoversExactly(List.of(new RecoveryRule<>(Declined.class, Id.PREPARE, List.of(), false)));
                 }
 
                 public static void submachine(GraphDefinition<String, State, Id> definition) {
@@ -185,8 +185,8 @@ class PublicApiCompilationTest {
 
     @Test
     void aForeignIdentifierIsRejectedInAnExpectedRecoveryRule(@TempDir Path workDir) throws IOException {
-        assertRejected(workDir, "new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())",
-                "new RecoveryRule<>(Declined.class, OtherId.PREPARE, List.of())");
+        assertRejected(workDir, "new RecoveryRule<>(Declined.class, Id.PREPARE, List.of(), false)",
+                "new RecoveryRule<>(Declined.class, OtherId.PREPARE, List.of(), false)");
     }
 
     @Test

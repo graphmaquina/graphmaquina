@@ -34,6 +34,11 @@ final class DefaultAsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> im
         return submit(() -> machine.reevaluate(entity));
     }
 
+    @Override
+    public CompletableFuture<Outcome<E, S, T>> advance(@NonNull E entity) {
+        return submit(() -> machine.advance(entity));
+    }
+
     private CompletableFuture<Outcome<E, S, T>> submit(Supplier<Outcome<E, S, T>> body) {
         return machine.submit(body);
     }

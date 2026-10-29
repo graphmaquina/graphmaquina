@@ -207,7 +207,7 @@ class AnnotationSourcesTest {
             List<AnnotationValue> ruleValues = annotations.array(rule, "failsOn");
             AnnotationValue kind = annotations.value(rule, "kind");
             RecoveryModel recovery = new RecoveryModel((TypeMirror) kind.getValue(), "RETRY",
-                    annotations.types(rule, "failsOn"), rule, kind, ruleValues);
+                    annotations.types(rule, "failsOn"), rule, kind, ruleValues, false);
             for (AnnotationValue value : ruleValues) {
                 assertTrue(diagnostics.sourceStart(DiagnosticAnchor.of(carrier, rule, value)).isEmpty());
             }
@@ -260,7 +260,8 @@ class AnnotationSourcesTest {
             for (AnnotationMirror rule : annotations.annotations(edge, "recoveries")) {
                 AnnotationValue kind = annotations.value(rule, "kind");
                 recoveries.add(new RecoveryModel((TypeMirror) kind.getValue(), "RETRY",
-                        annotations.types(rule, "failsOn"), rule, kind, annotations.array(rule, "failsOn")));
+                        annotations.types(rule, "failsOn"), rule, kind, annotations.array(rule, "failsOn"),
+                        false));
             }
             new StructuralChecks(new Signatures(environment.getElementUtils(), environment.getTypeUtils()), diagnostics)
                     .checkRecoveries(recoveries, annotations.types(edge, "failsOn"),

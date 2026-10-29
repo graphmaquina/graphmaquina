@@ -29,25 +29,28 @@ final class RecoverySelector {
     private RecoverySelector() { }
 
     /**
-     * Where an admitted throwable goes: the recovery identifier, empty when the edge has none for it, and the failure
-     * kind the outcome reports.
+     * Where a failure goes: the recovery identifier, empty when the edge has none for it, the failure kind the outcome
+     * reports, and whether the hop of that recovery lets an automatic chain go on, which is the flag of the rule that
+     * routed it, or the edge's {@code onFailureContinues} when {@code onFailure} did.
      */
-    record Route<T extends Enum<T>>(Optional<T> recovery, Optional<Class<? extends FailureKind>> failureKind) { }
+    record Route<T extends Enum<T>>(Optional<T> recovery, Optional<Class<? extends FailureKind>> failureKind,
+                                    boolean continueChain) { }
 
     /**
-     * The recovery identifier a failure returned with {@code failureKind} takes on {@code edge}: the transition of
-     * the rule that declares that kind, or else the edge's onFailure, empty when it declares none.
+     * The route a failure returned with {@code failureKind} takes on {@code edge}: the transition of the rule that
+     * declares that kind, with that rule's continue flag, or else the edge's onFailure, empty when it declares none,
+     * with the edge's {@code onFailureContinues}. It reports {@code failureKind} as it came.
      */
-    static <T extends Enum<T>> Optional<T> returned(TransitionSpec<?, ?, T> edge,
-                                                    Optional<Class<? extends FailureKind>> failureKind) {
+    static <T extends Enum<T>> Route<T> returned(TransitionSpec<?, ?, T> edge,
+                                                 Optional<Class<? extends FailureKind>> failureKind) {
         if (failureKind.isPresent()) {
             for (RecoveryRule<T> rule : edge.recoveryRules()) {
                 if (rule.kind() == failureKind.get()) {
-                    return Optional.of(rule.transition());
+                    return new Route<>(Optional.of(rule.transition()), failureKind, rule.continueChain());
                 }
             }
         }
-        return edge.onFailure();
+        return new Route<>(edge.onFailure(), failureKind, edge.onFailureContinues());
     }
 
     /**
@@ -76,7 +79,7 @@ final class RecoverySelector {
     /**
      * The route of a throwable that {@link #admits} admitted: that of the most specific type {@code edge} declares
      * that accepts {@code cause}. A type of a rule routes to the rule's recovery with the rule's kind, and a type of
-     * the edge's own failsOn to onFailure without a kind.
+     * the edge's own failsOn to onFailure without a kind; each carries its continue flag, as {@link #returned} says.
      */
     static <T extends Enum<T>> Route<T> thrown(TransitionSpec<?, ?, T> edge, Throwable cause) {
         Class<? extends Throwable> winner = null;
@@ -95,8 +98,8 @@ final class RecoverySelector {
             }
         }
         if (owner == null) {
-            return new Route<>(edge.onFailure(), Optional.empty());
+            return new Route<>(edge.onFailure(), Optional.empty(), edge.onFailureContinues());
         }
-        return new Route<>(Optional.of(owner.transition()), Optional.of(owner.kind()));
+        return new Route<>(Optional.of(owner.transition()), Optional.of(owner.kind()), owner.continueChain());
     }
 }

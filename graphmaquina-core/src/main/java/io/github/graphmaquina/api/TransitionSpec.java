@@ -12,7 +12,8 @@ import lombok.NonNull;
  * the runtime needs to execute it. The constructor checks what one edge can check alone: onFailure, failsOn and
  * recovery rules need an action; no failure kind is declared by two recovery rules; no throwable type is declared by
  * two rules, or by a rule and also in failsOn, though failsOn may list one of its own types twice; and a timeout
- * needs an asynchronous action and must be positive. The constructor without {@code recoveryRules} declares none.
+ * needs an asynchronous action and must be positive; onFailureContinues needs an onFailure. The constructor without
+ * {@code recoveryRules}, {@code automatic} and {@code onFailureContinues} declares no rules and neither flag.
  * That onFailure and every recovery rule name another edge leaving {@code from}, and that no two guards share a name,
  * are checked by the DSL when it builds the graph.
  *
@@ -48,6 +49,10 @@ import lombok.NonNull;
  *     type that accepts it, among the types of every rule and of failsOn, is one of the rule's; for the types the DSL
  *     and RecoveryRule admit, declaration order plays no part, while an interface type in a hand-built failsOn can keep
  *     the win over a more specific rule type, so that the order of its entries can change the route
+ * @param automatic whether the graph declares this edge as automatic, as {@code automatic()} does in the DSL;
+ *     {@link GraphDefinition#automaticFrom(Enum)} lists the automatic edges leaving a state
+ * @param onFailureContinues whether the graph declares the {@code onFailure} route as a continuing one, as
+ *     {@code onFailureAndContinue} does in the DSL; it needs an {@code onFailure}
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull S from, @NonNull T transition, @NonNull S to,
@@ -57,7 +62,8 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull List<Class<? extends Throwable>> failsOn,
         @NonNull Optional<Duration> timeout,
         @NonNull Optional<HookRef<E, S, T>> afterCommit,
-        @NonNull List<RecoveryRule<T>> recoveryRules) {
+        @NonNull List<RecoveryRule<T>> recoveryRules,
+        boolean automatic, boolean onFailureContinues) {
 
     public TransitionSpec {
         guards = List.copyOf(guards);
@@ -66,6 +72,9 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         String where = from.name() + " -" + transition.name() + "-> " + to.name();
         if (action.isEmpty() && (onFailure.isPresent() || !failsOn.isEmpty())) {
             throw new IllegalArgumentException(where + ": onFailure and failsOn are only allowed with an action");
+        }
+        if (onFailureContinues && onFailure.isEmpty()) {
+            throw new IllegalArgumentException(where + ": onFailureContinues needs an onFailure");
         }
         if (action.isEmpty() && !recoveryRules.isEmpty()) {
             throw new IllegalArgumentException(where + ": recovery rules are only allowed with an action");
@@ -103,7 +112,7 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
     }
 
     /**
-     * Constructs an edge with no recovery rules.
+     * Constructs an edge with no recovery rules that is not automatic and whose onFailure does not continue.
      *
      * @param from origin state
      * @param transition identifier that selects this edge from {@code from}
@@ -120,7 +129,8 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
                           List<GuardRef<E, S, T>> guards, Optional<T> onFailure,
                           List<Class<? extends Throwable>> failsOn, Optional<Duration> timeout,
                           Optional<HookRef<E, S, T>> afterCommit) {
-        this(from, transition, to, action, guards, onFailure, failsOn, timeout, afterCommit, List.of());
+        this(from, transition, to, action, guards, onFailure, failsOn, timeout, afterCommit, List.of(), false,
+                false);
     }
 
     public TransitionKind kind() {

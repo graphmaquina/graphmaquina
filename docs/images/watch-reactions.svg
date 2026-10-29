@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="774" viewBox="0 0 1440 774" role="img" aria-labelledby="title desc">
-<title id="title">Watch reactions: items trigger an order shipment</title><desc id="desc">After the last item commits PACKED, its PAID order is reevaluated in a new transaction. If all items are PACKED, the normal PAID to SHIPPED edge executes. A reaction failure does not undo the item commit. Both machine APIs must be generated in the same compilation.</desc>
+<title id="title">Watch reactions: items trigger an order shipment</title><desc id="desc">After the last item commits PACKED, its PAID order is reevaluated in a new transaction. If all items are PACKED, the normal PAID to SHIPPED edge executes. A reaction failure does not undo the item commit. The peer can be a machine of the same compilation or of a dependency whose artifact carries the export index its build published.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -37,5 +37,5 @@
 <text x="78" y="654" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#c3a2ff" text-anchor="start">NEW TRANSACTION</text>
 <text x="319" y="654" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="400" fill="#a9b8ce" text-anchor="start">Reaction.Done or Reaction.Aborted · the item commit is already complete</text>
 <path d="M 52 710 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="745" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">First matching rule wins. Both machine APIs must be generated in the same compilation; cross-JAR watches are pending.</text>
+<text x="52" y="745" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">First matching rule wins. The peer can be a machine of this compilation or of a dependency with an export index.</text>
 </svg>

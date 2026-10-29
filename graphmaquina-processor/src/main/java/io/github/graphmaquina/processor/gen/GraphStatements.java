@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.gen.MachineGenerator.Variables;
+import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -151,8 +152,8 @@ final class GraphStatements {
     /**
      * The declarations the companion makes on the graph's builder, in the order the DSL takes them: the initial
      * state, the terminals, the cycle allowances, the policies, the rejections, each edge from each of its origins,
-     * the watches and the sub-machines. Each declaration is the lines of its chain, the first starting with the call
-     * that opens it and every other with a call it makes on what the previous one returned.
+     * the automatic orders, the watches and the sub-machines. Each declaration is the lines of its chain, the first
+     * starting with the call that opens it and every other with a call it makes on what the previous one returned.
      */
     private static List<List<String>> statements(MachineModel model, Names names, Variables variables,
                                                  BoundInvocation invocations) {
@@ -180,6 +181,10 @@ final class GraphStatements {
                 statements.add(List.of(transition(model, names, variables, invocations, transition, from)));
             }
         }
+        for (AutomaticOrderModel order : model.automaticOrders()) {
+            statements.add(List.of(".automaticOrder(" + MachineGenerator.constant(names, states, order.from()) + ", "
+                    + identifiers(names, transitions, order.transitions()) + ")"));
+        }
         for (WatchModel watch : model.watches()) {
             statements.add(watch(model, names, variables, invocations, watch));
         }
@@ -192,7 +197,8 @@ final class GraphStatements {
     /** How many declarations {@link #statements} makes for {@code model}, counted before any of them is written. */
     static int declarations(MachineModel model) {
         int declarations = 1 + model.terminals().size() + model.cycleAllowed().size() + model.policies().size()
-                + model.rejections().size() + model.watches().size() + model.submachines().size();
+                + model.rejections().size() + model.automaticOrders().size() + model.watches().size()
+                + model.submachines().size();
         for (TransitionModel transition : model.allTransitions()) {
             declarations += transition.from().size();
         }
@@ -210,6 +216,9 @@ final class GraphStatements {
                 + MachineGenerator.constant(names, transitions, transition.transitionId()) + ", "
                 + MachineGenerator.constant(names, states, from) + ", "
                 + MachineGenerator.constant(names, states, transition.to()) + ")");
+        if (transition.automatic()) {
+            line.append(".automatic()");
+        }
         if (transition.kind() == TransitionKind.ACTION) {
             Binding action = transition.action().orElseThrow();
             line.append(action.async() ? ".asyncAction(" : ".action(").append(MachineGenerator.quote(transition.name()))
@@ -222,16 +231,7 @@ final class GraphStatements {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(MachineGenerator.quote(guard.methodName()))
                     .append(", ").append(lambda(guard, context, true, variables, names, invocations)).append(')');
         }
-        transition.onFailure().ifPresent((String recovery) -> line.append(".onFailure(")
-                .append(MachineGenerator.constant(names, transitions, recovery)).append(')'));
-        for (TypeMirror type : transition.failsOn()) {
-            line.append(".failsOn(").append(TypeSource.render(type)).append(".class)");
-        }
-        for (RecoveryModel recovery : transition.recoveries()) {
-            line.append(".recover(").append(TypeSource.render(recovery.kind())).append(".class, ")
-                    .append(MachineGenerator.constant(names, transitions, recovery.transition()))
-                    .append(recoveryTypes(names, recovery.failsOn())).append(')');
-        }
+        failureRoutes(line, names, transitions, transition);
         transition.afterCommit().ifPresent((Binding hook) -> {
             boolean contextual = hook.arguments().size() == 2;
             line.append(contextual ? ".afterCommitWith(" : ".afterCommit(")
@@ -241,6 +241,39 @@ final class GraphStatements {
                     .append(')');
         });
         return line.append(".endTransition()").toString();
+    }
+
+    /**
+     * The calls that name the routes a failure of {@code transition} takes: its {@code onFailure}, which continues the
+     * chain of automatic attempts when the edge says so, its {@code failsOn} types and its recovery rules, each of
+     * which continues the chain when it says so.
+     */
+    private static void failureRoutes(StringBuilder line, Names names, TypeElement transitions,
+                                      TransitionModel transition) {
+        transition.onFailure().ifPresent((String recovery) -> line
+                .append(transition.onFailureContinues() ? ".onFailureAndContinue(" : ".onFailure(")
+                .append(MachineGenerator.constant(names, transitions, recovery)).append(')'));
+        for (TypeMirror type : transition.failsOn()) {
+            line.append(".failsOn(").append(TypeSource.render(type)).append(".class)");
+        }
+        for (RecoveryModel recovery : transition.recoveries()) {
+            line.append(recovery.continueChain() ? ".recoverAndContinue(" : ".recover(")
+                    .append(TypeSource.render(recovery.kind())).append(".class, ")
+                    .append(MachineGenerator.constant(names, transitions, recovery.transition()))
+                    .append(recoveryTypes(names, recovery.failsOn())).append(')');
+        }
+    }
+
+    /**
+     * {@code List.of(A, B)} over the identifiers {@code ids} of {@code transitions}, in their order, with
+     * {@code List} written as the file writes the type it claimed.
+     */
+    private static String identifiers(Names names, TypeElement transitions, List<String> ids) {
+        List<String> constants = new ArrayList<>();
+        for (String id : ids) {
+            constants.add(MachineGenerator.constant(names, transitions, id));
+        }
+        return names.qualifier(MachineGenerator.LIST) + ".of(" + String.join(", ", constants) + ")";
     }
 
     /**

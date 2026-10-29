@@ -85,7 +85,9 @@ public final class SetGenerator {
             + " that clock read right after the call took it, then the rejection or the failure that ended the call,"
             + " at the instant it ended. A call that records its trail creates its flow when its step starts, so it"
             + " hands out its flow, with the root entity and the trail, even when none of its steps or hooks wrote to"
-            + " it; a reevaluation that selects no edge runs no step, and its ignored outcome hands out the empty flow."
+            + " it; an ignored outcome hands out the empty flow: a reevaluation that selects no edge and an advance"
+            + " whose state has no automatic edge run no step, and an advance whose automatic edges were all refused"
+            + " wrote nothing."
             + " The clock is read on the thread running the call, once per entry the call appends, an entry a rollback"
             + " later drops included, so a clock that advances on each read leaves a gap for each dropped entry; a"
             + " test can pass a clock it controls, such as a java.time.Clock. Anything but an Error that the clock"
@@ -411,7 +413,7 @@ public final class SetGenerator {
 
     /**
      * The settings the {@code Builder} hands to the registry's builder: the deepest cascade, the longest chain of
-     * watch reactions, and the observers.
+     * watch reactions, the longest chain of automatic attempts, and the observers.
      */
     private static void registrySettings(Names names, Variables variables, SourceWriter out) {
         String registry = variables.registryBuilder();
@@ -430,6 +432,13 @@ public final class SetGenerator {
                 "int " + setters.get("chain"),
                 "@param " + setters.get("chain") + " how many watch reactions may follow one another, at least 1",
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
+        forward(out, "Bounds how many automatic attempts that commit something may follow one another on one path of"
+                + " continuations from a call of the application; the default is 10, and a value below 1 is refused."
+                + " The attempt past the bound that admits a candidate aborts before its action, writing nothing, with"
+                + " an AutomaticChainExceededException. A call that an after-commit hook starts is a new root, which"
+                + " this bound never counts.", "maxAutomaticChain", "int " + setters.get("chain"),
+                "@param " + setters.get("chain") + " how many automatic attempts may follow one another, at least 1",
+                registry + ".maxAutomaticChain(" + setters.get("chain") + ");");
         forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
                 + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
                 "@param " + setters.get("observer") + " the observer to add",

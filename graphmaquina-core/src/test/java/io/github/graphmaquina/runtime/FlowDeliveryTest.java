@@ -138,7 +138,7 @@ class FlowDeliveryTest {
         FlowView expected = frozen(doc, BATCH, "b-1", LINES, lines, NOTE, "n-1");
         assertEquals(expected, flow);
         assertEquals(new Outcome.Applied<>(doc, DRAFT, SUBMIT, REVIEW, outcome.records(), outcome.reactions(),
-                outcome.starts(), expected), outcome);
+                outcome.starts(), expected, List.of()), outcome);
         assertNotEquals(new Outcome.Applied<>(doc, DRAFT, SUBMIT, REVIEW, outcome.records(), outcome.reactions(),
                 outcome.starts()), outcome);
     }

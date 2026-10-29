@@ -1,5 +1,6 @@
 package io.github.graphmaquina.test.internal;
 
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionRecord;
@@ -56,6 +57,52 @@ public final class CheckedTypes {
         @SuppressWarnings("unchecked")
         Outcome<E, S, T> typed = (Outcome<E, S, T>) outcome;
         return typed;
+    }
+
+    /**
+     * A failed outcome found by a search through the attempts of {@code owner}, narrowed to the machine of {@code
+     * owner}. A search publishes its result untyped because the attempts can be of other machines, and the result
+     * carries no key, so the machine is recognised by what it does carry: see {@link #sameMachine}. An outcome of
+     * another machine is a programming error in the calling test and raises {@link IllegalArgumentException}.
+     */
+    public static <E, S extends Enum<S>, T extends Enum<T>> Outcome.Failed<E, S, T> failedOf(
+            @NonNull Outcome<E, S, T> owner, @NonNull Outcome.Failed<?, ?, ?> found) {
+        sameMachine(owner, found, List.of(found.failureTransition()));
+        // Safe: the entity, the origin and the identifiers the failure carries belong to the owner's classes.
+        @SuppressWarnings("unchecked")
+        Outcome.Failed<E, S, T> typed = (Outcome.Failed<E, S, T>) found;
+        return typed;
+    }
+
+    /** An ignored outcome found by a search through the attempts of {@code owner}, narrowed like {@link #failedOf}. */
+    public static <E, S extends Enum<S>, T extends Enum<T>> Outcome.Ignored<E, S, T> ignoredOf(
+            @NonNull Outcome<E, S, T> owner, @NonNull Outcome.Ignored<?, ?, ?> found) {
+        List<Enum<?>> identifiers = new ArrayList<>();
+        found.rejections().forEach((Eligibility.Ineligible<?, ?, ?> rejection) ->
+                identifiers.add(rejection.transition()));
+        sameMachine(owner, found, identifiers);
+        // Safe: the entity, the origin and the identifiers of every rejection belong to the owner's classes.
+        @SuppressWarnings("unchecked")
+        Outcome.Ignored<E, S, T> typed = (Outcome.Ignored<E, S, T>) found;
+        return typed;
+    }
+
+    /**
+     * The entity of {@code found} and the owner's are instances of one another's class, their origins belong to one
+     * state enum and the identifiers of {@code found}, with the one the owner requested if it requested any, to one
+     * transition enum.
+     */
+    private static void sameMachine(Outcome<?, ?, ?> owner, Outcome<?, ?, ?> found, List<Enum<?>> identifiers) {
+        require("outcome", owner.entity().getClass().isInstance(found.entity())
+                || found.entity().getClass().isInstance(owner.entity()),
+                "entity", owner.entity().getClass(), found.entity());
+        require("outcome", owner.from().getDeclaringClass() == found.from().getDeclaringClass(),
+                "states", owner.from().getDeclaringClass(), found.from());
+        List<Enum<?>> all = new ArrayList<>(identifiers);
+        owner.requestedTransition().ifPresent(all::add);
+        Class<?> transitions = all.isEmpty() ? null : all.get(0).getDeclaringClass();
+        require("outcome", all.stream().allMatch((Enum<?> id) -> id.getDeclaringClass() == transitions),
+                "transitions", transitions, all);
     }
 
     /** Origin and recorded state always, plus the destination, which only an applied and a failed outcome report. */

@@ -19,12 +19,18 @@ import lombok.NonNull;
  * @param failureTransition the edge's fallback recovery identifier, its onFailure, when it declares one
  * @param watch the watch rules of {@code from} that execute this identifier, rendered
  * @param recoveries the edge's recovery rules, in declaration order; empty when it declares none
+ * @param automatic the edge is automatic
+ * @param automaticPosition the 1-based place of an automatic edge in the declared order of its state, which a
+ *     state has only when it holds two or more automatic edges; empty for a manual edge and for the only automatic
+ *     edge of a state
+ * @param failureContinues the edge's {@code onFailure} route is a continuing one
  */
 public record TransitionView(@NonNull String from, @NonNull String transition, @NonNull String to,
                              @NonNull TransitionKind kind, @NonNull Optional<String> action,
                              @NonNull List<String> guards, boolean async,
                              @NonNull Optional<String> failureTransition, @NonNull Optional<String> watch,
-                             @NonNull List<RecoveryView> recoveries) {
+                             @NonNull List<RecoveryView> recoveries, boolean automatic,
+                             @NonNull Optional<Integer> automaticPosition, boolean failureContinues) {
 
     /** Copies guard names and recovery rules while keeping their declaration order. */
     public TransitionView {
@@ -32,10 +38,11 @@ public record TransitionView(@NonNull String from, @NonNull String transition, @
         recoveries = List.copyOf(recoveries);
     }
 
-    /** The view of an edge that declares no recovery rule. */
+    /** The view of a manual edge that declares no recovery rule. */
     public TransitionView(String from, String transition, String to, TransitionKind kind, Optional<String> action,
                           List<String> guards, boolean async, Optional<String> failureTransition,
                           Optional<String> watch) {
-        this(from, transition, to, kind, action, guards, async, failureTransition, watch, List.of());
+        this(from, transition, to, kind, action, guards, async, failureTransition, watch, List.of(), false,
+                Optional.empty(), false);
     }
 }

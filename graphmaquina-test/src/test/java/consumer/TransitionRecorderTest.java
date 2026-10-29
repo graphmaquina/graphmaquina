@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallOrigin;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -65,7 +67,8 @@ class TransitionRecorderTest {
 
     /** What the engine does when a call completes: it hands the recorder that call and its outcome. */
     private static void complete(TransitionRecorder recorder, MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) {
-        recorder.onCompleted(new MachineCall(key, outcome.entity(), Optional.empty(), false), outcome, Duration.ZERO);
+        recorder.onCompleted(new MachineCall(key, outcome.entity(),
+                CallRequest.REEVALUATE, Optional.empty(), CallOrigin.APPLICATION), outcome, Duration.ZERO);
     }
 
     // --- the premise of this task: the projection freezes what the entity was then -------------------
@@ -161,7 +164,8 @@ class TransitionRecorderTest {
     void nullCallbackArgumentsAreRejected() {
         TransitionRecorder recorder = TransitionRecorder.create();
         Entity entity = new Entity("e", State.NEW);
-        MachineCall call = new MachineCall(TestDomain.KEY, entity, Optional.empty(), false);
+        MachineCall call = new MachineCall(TestDomain.KEY, entity,
+                CallRequest.REEVALUATE, Optional.empty(), CallOrigin.APPLICATION);
         assertThrows(NullPointerException.class, () -> recorder.onCompleted(null, applied(entity), Duration.ZERO));
         assertThrows(NullPointerException.class, () -> recorder.onCompleted(call, null, Duration.ZERO));
         assertThrows(NullPointerException.class, () -> recorder.onCompleted(call, applied(entity), null));

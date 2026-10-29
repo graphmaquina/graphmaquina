@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="890" viewBox="0 0 1440 890" role="img" aria-labelledby="title desc">
+<title id="title">Automatic chain: the account goes on by itself</title><desc id="desc">After setPassword commits the account from NEW to PASSWORD_SET, and once any hooks and watch reactions of that commit ran, the account runs its automatic chain as step 8: COMPLETE_INFO to INFO_SET, COMPLETE_ADDRESS to ADDRESS_SET and, once ACTIVATE_PREMIUM is refused, ACTIVATE to ACTIVE. Each attempt is a call of its own, which automaticSteps() lists. The chain stops when no edge is admitted, when a failure takes a route that does not continue, when an attempt aborts, the limit included, when a call nested in an attempt's post-commit moved the entity, or when no automatic edge is left; automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="890" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="890" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / AUTOMATIC TRANSITIONS</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Set the password. The account goes on by itself.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Once any hooks and watch reactions of the commit ran, the account it moved runs its chain.</text>
+<rect x="52" y="205" width="300" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="74" y="244" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#7aafff" text-anchor="start">setPassword</text>
+<text x="74" y="278" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">NEW → PASSWORD_SET</text>
+<path d="M 360 254 L 404 254" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 394 247 L 404 254 L 394 261" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="412" y="205" width="300" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="434" y="244" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#ffc77a" text-anchor="start">Hooks</text>
+<text x="434" y="278" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Step 6</text>
+<path d="M 720 254 L 764 254" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 754 247 L 764 254 L 754 261" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="772" y="205" width="300" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="794" y="244" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#c3a2ff" text-anchor="start">Watch reactions</text>
+<text x="794" y="278" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Step 7 · new root calls</text>
+<path d="M 1080 254 L 1124 254" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1114 247 L 1124 254 L 1114 261" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1132" y="205" width="256" height="99" rx="14" fill="#131f32" stroke="#55e0c0" stroke-width="2" />
+<text x="1154" y="244" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#55e0c0" text-anchor="start">Automatic chains</text>
+<text x="1154" y="278" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Step 8 · one per entity</text>
+<rect x="52" y="350" width="1336" height="310" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="393" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">THE ACCOUNT'S CHAIN</text>
+<path d="M 1260 304 V 346" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1253 336 L 1260 346 L 1267 336" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="104" y="428" width="200" height="46" rx="23" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="204.0" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="600" fill="#f2f6fc" text-anchor="middle">PASSWORD_SET</text>
+<path d="M 312 451 L 446 451" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 436 444 L 446 451 L 436 458" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="379.0" y="414" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">COMPLETE_INFO</text>
+<text x="379.0" y="490" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="middle">attempt 1</text>
+<rect x="454" y="428" width="200" height="46" rx="23" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="554.0" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="600" fill="#f2f6fc" text-anchor="middle">INFO_SET</text>
+<path d="M 662 451 L 796 451" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 786 444 L 796 451 L 786 458" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="729.0" y="414" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">COMPLETE_ADDRESS</text>
+<text x="729.0" y="490" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="middle">attempt 2</text>
+<rect x="804" y="428" width="200" height="46" rx="23" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="904.0" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="600" fill="#f2f6fc" text-anchor="middle">ADDRESS_SET</text>
+<path d="M 1012 451 L 1146 451" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1136 444 L 1146 451 L 1136 458" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1079.0" y="414" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">ACTIVATE</text>
+<text x="1079.0" y="490" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="middle">attempt 3</text>
+<text x="1079.0" y="516" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#ffc77a" text-anchor="middle">ACTIVATE_PREMIUM refused first</text>
+<rect x="1154" y="428" width="200" height="46" rx="23" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="1254.0" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="600" fill="#55e0c0" text-anchor="middle">ACTIVE</text>
+<rect x="78" y="542" width="1284" height="92" rx="12" fill="url(#glow)" stroke="#2b3c54" stroke-width="2" />
+<text x="104" y="580" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#f2f6fc" text-anchor="start">Each attempt is a call of its own: it tries the state's automatic edges in their order, runs the first</text>
+<text x="104" y="612" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#f2f6fc" text-anchor="start">one admitted, commits, runs its own hooks and reactions, and automaticSteps() lists it.</text>
+<rect x="52" y="690" width="1336" height="101" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="748" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">THE CHAIN STOPS</text>
+<text x="296" y="732" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">no edge admitted · a route that does not continue · an abort, the limit included</text>
+<text x="296" y="766" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">a call nested in an attempt's post-commit moved the entity · no automatic edge left</text>
+<path d="M 52 818 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="855" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">The library reports, the caller decides: automaticFailure(), automaticBlock() and automaticAbort() find what stopped it.</text>
+</svg>

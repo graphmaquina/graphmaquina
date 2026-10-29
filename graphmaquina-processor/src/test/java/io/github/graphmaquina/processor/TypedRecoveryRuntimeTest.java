@@ -203,6 +203,9 @@ class TypedRecoveryRuntimeTest {
             stateMachine.reevaluate(doc); }
 
                 @Override
+                public Outcome<Doc, DocStatus, DocTransition> advance(Doc doc) { return stateMachine.advance(doc); }
+
+                @Override
                 public Set<DocTransition> transitionsFrom(DocStatus state) { return \
             stateMachine.transitionsFrom(state); }
 
@@ -227,6 +230,9 @@ class TypedRecoveryRuntimeTest {
                  * resolved from the origin the entity is in, so an edge with that identifier must leave every
                  * origin of the declaring edge. Entered as a recovery, that edge runs without its guards and
                  * applies no rule or fallback of its own: a recovery never chains.</p>
+                 *
+                 * <p>With {@code continueChain} the rule also continues the chain of automatic attempts: the chain goes on
+                 * from the state the transition enters, which must have an automatic edge.</p>
                  */
             """;
 

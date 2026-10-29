@@ -11,8 +11,11 @@ import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.Doc;
@@ -57,7 +60,8 @@ class CommitPhaseTest {
                 }).identity(Doc::id))
                 .build();
         Transaction tx = new Transaction(registry, new UnitOfWork(10, Long.MAX_VALUE), DOCS, doc, Optional.of(SUBMIT),
-                false, Optional.empty(), CallLog.OFF);
+                () -> new MachineCall(DOCS, doc, CallRequest.EXECUTE, Optional.of(SUBMIT), CallOrigin.APPLICATION),
+                Optional.empty(), CallLog.OFF);
         running.add(tx);
         tx.transition(registry.machineFor(DOCS), doc, SUBMIT, 0);
         tx.enter(CallPhase.COMMIT);

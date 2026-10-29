@@ -127,8 +127,8 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
     FlowContext flow();
 
     /**
-     * The value passed as this operation's second argument, if any; empty when called without one, and always empty
-     * in a cascaded step, the exit of a sub-machine or a reevaluation, which carry none. A {@code null} second
+     * The value passed as this operation's second argument, if any; empty when called without one, and always empty in
+     * a cascaded step, the exit of a sub-machine, a reevaluation or an advance, which carry none. A {@code null} second
      * argument is refused before the call starts, so it never reads as empty. Scoped to this invocation only, never a
      * value left over from an earlier call.
      */

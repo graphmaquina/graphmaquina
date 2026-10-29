@@ -6,6 +6,11 @@ import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
 import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.ItemsRuntime;
+import io.github.graphmaquina.example.onboarding.Account;
+import io.github.graphmaquina.example.onboarding.AccountActions;
+import io.github.graphmaquina.example.onboarding.AccountStatus;
+import io.github.graphmaquina.example.onboarding.AccountTransition;
+import io.github.graphmaquina.example.onboarding.AccountsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
@@ -25,6 +30,11 @@ class DiagramsTest {
         return ItemsRuntime.graph(new ItemActions());
     }
 
+    /** The onboarding's graph, with a verifier that verifies every address: a diagram never runs it. */
+    private static GraphDefinition<Account, AccountStatus, AccountTransition> accountGraph() {
+        return AccountsRuntime.graph(new AccountActions((Account account) -> true));
+    }
+
     @Test
     void orderDiagramMatchesGolden() {
         GraphGoldens.assertMatches(orderGraph(), "golden/order.dot");
@@ -33,6 +43,11 @@ class DiagramsTest {
     @Test
     void itemDiagramMatchesGolden() {
         GraphGoldens.assertMatches(itemGraph(), "golden/item.dot");
+    }
+
+    @Test
+    void accountDiagramMatchesGolden() {
+        GraphGoldens.assertMatches(accountGraph(), "golden/account.dot");
     }
 
 }

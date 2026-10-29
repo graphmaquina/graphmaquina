@@ -15,11 +15,12 @@ annotations in their container instead, such as `@DocsGraph.StatePolicies({...})
 GraphMaquina does not own are left to javac, so an annotation of your own on a facade may even name the machine's
 companion.
 
+The exceptions the library throws at runtime are on their own page, [Runtime exceptions](runtime-exceptions.md).
+
 ## Contents
 
 - [Graph and declaration diagnostics](#graph-and-declaration-diagnostics)
 - [Generation and typed binding diagnostics](#generation-and-typed-binding-diagnostics)
-- [Runtime exceptions](#runtime-exceptions)
 - [Common build problems](#common-build-problems)
 
 ## Graph and declaration diagnostics
@@ -31,15 +32,19 @@ companion.
 | `SG105` | Duplicate guard: list each guard once per transition, and give the guards of one transition distinct names, which a rejection reports. A generated guard takes its member's simple name, so one transition cannot ask for two hosts' guards whose members share a name; a DSL guard takes the name given or, without one, its class's simple name. |
 | `SG106` | DSL callback has no inferable name: provide the explicit name overload for a lambda. |
 | `SG107` | Blank DSL callback or condition name: supply a nonblank label. |
+| `SG108` | Invalid automatic order. A state with two or more automatic edges must declare exactly one `automaticOrder`, which names each of those edges once and nothing else. Refused: no order; an order that names an identifier that is not an automatic edge of that state, or leaves one out, or names one twice; an order on a state with fewer than two automatic edges; and more than one order on a state. A state with more than one order reports only that. This code and `SG109`, `SG206`, `SG305` and `SG807` are reported only once the graph has no other problem. |
+| `SG109` | An edge without guards comes before another edge in an automatic order. An edge without guards is always chosen, so the edges after it could never be: put it last. |
 | `SG201` | Missing or repeated DSL initial declaration. |
 | `SG202` | A terminal declares an outgoing edge, including a self-loop, or a non-terminal declares none. |
 | `SG203` | Unreachable state: add a real path from initial or remove the state. |
-| `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. |
+| `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. `allowsCycle` does not authorise a cycle of automatic edges: once the graph has no other problem, such a cycle is `SG206`, so fixing an `SG204` can reveal an `SG206`. |
 | `SG205` | Unused cycle allowance: the named state belongs to no cycle. |
+| `SG206` | The automatic edges form a cycle, directly or through a continuing failure route (`onFailureAndContinue` or `recoverAndContinue`), which jumps from the origin of the edge that failed to the destination of its recovery edge. `allowsCycle` does not authorise it, and an automatic self-loop is one. A cycle that also holds a manual edge is not this code: `SG204` covers it. One witness is reported per cyclic component. |
 | `SG301` | Invalid failure route: `onFailure` or a recovery rule names this edge's own key, or no edge with that identifier leaves the same origin. Each origin of an identifier is checked on its own. |
 | `SG302` | Forbidden throwable type in `failsOn` or in a recovery rule: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. In the DSL, also a class that is not a `Throwable`, which only a raw type lets through. Use a specific foreign throwable type, usually an exception, or the type of the wrapped cause. |
 | `SG303` | A recovery rule names a class that is not a failure kind. A failure kind is a named final class or record that implements `FailureKind` and is not an interface, an enum, a local or anonymous class, or a `Throwable`: declare one as `public record Unavailable() implements FailureKind { }`. |
 | `SG304` | Ambiguous recovery rules: two rules of one edge name the same failure kind, or one throwable type is declared twice in a rule, in two rules, or in a rule and in the edge's `failsOn`. A type that only `failsOn` repeats is accepted. |
+| `SG305` | A continuing failure route leads to a state with no automatic edge, so continuing has no effect: remove the continuation, or declare an automatic edge from that state. With annotations, also `onFailureContinues` on an edge that declares no `onFailure`: there is no route to continue, so declare the `onFailure` or drop the flag. |
 | `SG401` | A watch rule names an identifier with no edge from the watched state. |
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |
@@ -57,6 +62,7 @@ companion.
 | `SG512` | A `Check` names an identifier no operation of its facade executes: one that only edges declared on the facade itself use, such as a failure route or a cascade-only or watch-only edge, the exit of a sub-machine, or one without an edge. Name the identifier of one of the facade's operations. When a method of the facade declares a `Transition` of that identifier but is refused, as `SG504`, `SG703` or an error of one of its edges, only that refusal is reported. |
 | `SG513` | A check does not repeat the parameters of the operation it checks. It is declared as `Eligibility<E, S, T> check(E)`, or as `check(E, I)` when that operation takes an input of type `I`, with the same entity and input types, without varargs or method type parameters. |
 | `SG514` | Two checks name the same operation, or one method carries both a `Transition` and a `Check`. An operation has one check at most, declared on a method of its own. |
+| `SG515` | An automatic edge, written on an operation or as a branch of its identifier on the interface, runs an operation that takes an input. An automatic attempt carries no input to hand it: drop `automatic`, or give the operation no input. |
 | `SG701` | A non-terminal state declares no rejection policy. A terminal state without one refuses every request with `terminal state <NAME> accepts no transitions`. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |
 | `SG703` | Two annotations of one method name different identifiers, or two methods claim the same identifier. A type-level `Transition` may add branches of an identifier a method owns while their keys stay disjoint. |
@@ -66,6 +72,7 @@ companion.
 | `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. With annotations, an operation of the facade may not execute an exit either: it requests its identifier from whichever state the machine is in, the bound state included. |
 | `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. The processor follows the sub-machines each child declares in turn, and reports one shortest path at the binding it starts with, on every machine of the cycle. |
 | `SG806` | A sub-machine declared with annotations does not declare the ways between its entities that it needs: a child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup`, and a child over the parent's own entity takes none of the three. Also a set that holds a machine but not the machine bound to one of its states, which the set could not build, whether the parent was generated by this compilation or comes from a dependency jar. |
+| `SG807` | An automatic edge leaves a state that holds a sub-machine, whether or not the edge is one of the sub-machine's exits. An exit is reserved for the terminal state of the child, and any other automatic edge would detach the child before its own chain runs. |
 
 ## Generation and typed binding diagnostics
 
@@ -80,115 +87,6 @@ companion.
 | `SG606` | Graph vocabulary or the vocabulary of a pair belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract methods. On a default, static or private method of its own facade it is `SG504`. |
 | `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit`, `When.condition`, `When.allIn`, `When.anyIn` or `When.noneIn`, which hold one state each, the `child`, `parent` or `parentLookup` of a `Submachine`, or the `owner` or `ownerLookup` of a `Watch`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
 | `SG608` | Invalid or duplicated peer, a peer that no watch or sub-machine of the machine uses, a watch or a sub-machine of a peer the machine does not declare, a peer that is neither a `@GenerateGraphApi` machine of this compilation, nor one the export index of a dependency describes, nor a class marked `@GenerateGraphApi` that a dependency on the classpath carries (that one is `SG602`), or a peer whose types the owner's package cannot name. |
-
-## Runtime exceptions
-
-Every exception the library defines extends `StateMachineException`, an unchecked exception; misuse also raises JDK
-exceptions such as `NullPointerException`, `IllegalArgumentException`, `IllegalStateException` and
-`WrongThreadException`. The failures of a call
-extend `CallFailedException`, which reports the call's `phase()`, `statesWritten()`, `journal()` and `flow()`: they
-are `TransitionAbortedException`, `CommitFailedException` and `AfterCommitException`. `UnhandledFailureException`,
-`CascadeException`, `CascadeCycleException`, `CascadeDepthExceededException`, `PoisonedUnitOfWorkException` and
-`WatchChainExceededException` are `TransitionAbortedException`s, whose `details()` also report the machine key, the
-entity, the action and the cascade path.
-
-```mermaid
-classDiagram
-    direction LR
-    RuntimeException <|-- StateMachineException
-    StateMachineException <|-- CallFailedException
-    CallFailedException <|-- TransitionAbortedException
-    CallFailedException <|-- CommitFailedException
-    CallFailedException <|-- AfterCommitException
-    TransitionAbortedException <|-- UnhandledFailureException
-    TransitionAbortedException <|-- CascadeException
-    TransitionAbortedException <|-- CascadeCycleException
-    TransitionAbortedException <|-- CascadeDepthExceededException
-    TransitionAbortedException <|-- PoisonedUnitOfWorkException
-    TransitionAbortedException <|-- WatchChainExceededException
-    StateMachineException <|-- InvalidGraphException
-    StateMachineException <|-- UninitializedStateException
-    StateMachineException <|-- ReentrantTransitionException
-    StateMachineException <|-- StaleContextException
-    StateMachineException <|-- AmbiguousIdentityException
-    StateMachineException <|-- AmbiguousParentException
-    StateMachineException <|-- UnknownFacadeException
-    StateMachineException <|-- UnknownPeerMachineException
-    StateMachineException <|-- EligibilityCheckException
-    class CallFailedException {
-        <<abstract>>
-    }
-```
-
-| Exception | What to investigate |
-| --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade or an exit. A peer's state read through a `PeerView`, such as `ctx.peer(Items.class).stateOf(item)`, throws it into the guard or action that read it, and a watch's owner lookup reports it in `Reaction.Aborted`. |
-| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
-| `UnhandledFailureException` | The action returned a failure, or threw a type that its `failsOn` or one of its recovery rules declares; no recovery rule took it, and its edge has no `onFailure` route. Any other throwable aborts the call with a `TransitionAbortedException` whose cause it is, except an `Error` thrown as itself, which propagates, and a failure of the call itself, which the engine throws as itself or, when the transaction is poisoned, as the failure that poisoned it. The step was rolled back first, so its `flow()` lacks what that step and the steps it cascaded to wrote. |
-| `CascadeException` | Thrown into the action by `cascadeAll` under `CascadePolicy.COLLECT`, after its last element ran, when the transitions of some elements aborted; it poisons the transaction. Inspect `errors()`, in element order, and the journal. |
-| `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
-| `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth, which `maxDepth()` reports. |
-| `WatchChainExceededException` | A watch chain exceeded its limit, which `maxChain()` reports; inspect reaction cycles. Neither `execute` nor `reevaluate` throws it to its caller: it arrives as the cause of a `Reaction.Aborted`, of phase `RESOLVE`, and the observers hear of it as a failed call. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. A sub-machine whose `childOf` answers another instance with the identity of the child being called raises it too, and so does one whose `parentOf` answers another instance with the identity of a parent already in the call. |
-| `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. A parent that leaves one bound node for another that binds the same child is not two: it holds the child only in the node it enters. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade or an exit. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute`, `reevaluate` or `eligibility`; so did a guard, a state accessor, an identity function, or a `childOf` or `parentOf` that an eligibility check runs. An action moves peers through `ctx.cascade(...)`; hooks may start transitions and checks; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. Inside a check it arrives as the cause of its `EligibilityCheckException`. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
-| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
-| `StaleContextException` | A context or context-derived view was used after invalidation, or the flow of a hook after that hook returned or threw. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
-| `java.lang.WrongThreadException` | Context peer/cascade/flow access, a derived peer view, or an operation of a context's flow or of a hook's flow was used from another thread; it can appear as the cause of an abort or of an `AfterCommitException`. |
-| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. `MachineRegistry.of(key)` throws `UnknownPeerMachineException` too, outside any call. |
-| `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
-| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()`, `records()` and `starts()` say what. |
-| `EligibilityCheckException` | An eligibility check could not answer: reading the entity's identity or state failed, a sub-machine's binding check failed, or a guard threw, returned null, or returned a stage that was null, failed or answered null, or whose wait timed out against the machine's `asyncTimeout`, counted from the start of the check, was interrupted, or was refused by the thread's `ForkJoinPool`. Its cause is what the application threw, unwrapped from `CompletionException` and `ExecutionException`, or the engine's own exception: `UninitializedStateException`, a `NullPointerException` for an identity that returned null, `AmbiguousParentException`, `AmbiguousIdentityException`, `TimeoutException`, `InterruptedException`, after which the thread is still interrupted, or `RejectedExecutionException`; there is none when a guard returned null as a verdict or as a stage, when a stage answered null, or when a `parentOf` or a `childOf` returned null. It is no `CallFailedException`: a check is not a call, so it has no call, phase, states written, journal or flow. Its message reads `eligibility of <ID> for <key>#<identity> <FROM> could not be decided: <reason>`, with the key alone when the identity could not be read and `?` for a state not read. An `Error` propagates as itself. |
-| `InvalidGraphException` | Programmatic DSL definition failed validation; inspect `problems()`, each a code and a message, or `codes()`. |
-
-A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer
-when no edge carries the requested identifier from the entity's current state. These are not HTTP status
-codes either: map rejected transitions, business failures and technical failures to your application's own
-API contract.
-
-Every `CallFailedException` reports `call()`, `phase()`, `statesWritten()`, `journal()` and `flow()`. Besides that,
-each exception exposes what identifies its cause:
-
-| Exception | Accessors |
-| --- | --- |
-| `TransitionAbortedException` and its subtypes | `key()`, `entity()`, `from()`, `transition()`, `to()`, `action()`, `cascadePath()`, and `details()`, an `AbortDetails` whose `describeEdge()` prints `FROM -ID-> TO` |
-| `UnhandledFailureException` | `reason()`, the reason of the failure no route took |
-| `CascadeException` | `errors()`, the aborts of the elements, in element order |
-| `CascadeCycleException` | `route()`, `inFlightTransition()`, `requestedTransition()` |
-| `CascadeDepthExceededException` / `WatchChainExceededException` | `maxDepth()` / `maxChain()` |
-| `PoisonedUnitOfWorkException` | `original()`, the failure that poisoned the transaction |
-| `CommitFailedException` | `applied()`, `failedEntity()`, `pending()` |
-| `AfterCommitException` | `hook()`, `hop()`, `records()`, `starts()` |
-| `AmbiguousIdentityException` | `key()`, `id()`, `first()`, `second()` |
-| `AmbiguousParentException` | `child()`, `parents()`, `nodes()` |
-| `UnknownFacadeException` / `UnknownPeerMachineException` | `requested()`, `registered()` |
-| `EligibilityCheckException` | `key()`, `entity()`, `transition()`, and the `Optional`s `from()` and `guard()` |
-| `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
-| `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
-
-An abort describes one step. The aborts raised for the caller of a cascade or a peer read describe the cascading
-caller's own step, so their `key()`, `entity()`, `from()`, `transition()` and `to()` are the action's, not the peer's:
-a cycle, the depth limit, the abort that names a failed cascade (`the cascade to <key> failed: …`, raised when the
-failure is not one of the call's own), `COLLECT`'s `CascadeException` and a `PoisonedUnitOfWorkException`. An abort of
-the peer's own step, such as a rejection inside the cascade, reaches the action as it is and describes the peer's step.
-An abort raised because a terminal state maps to no exit, or because the exit would run deeper than `maxCascadeDepth`,
-describes the step that ended: the child's step whose terminal state selected the exit or, when the child already
-stood in a terminal state as its parent entered the bound state, the step that entered it. An abort of the exit's own
-step, such as a rejection inside the exit, describes the parent's exit step. In `AbortDetails`, `transition()` is the identifier of the step the abort describes, which can be a cascaded
-identifier, a recovery, an exit or the identifier a watch selected rather than the call's own; `action()` is empty for
-a guard, a rejection, the watch-chain limit and an abort raised for the caller of a cascade or a peer read; and
-`cascadePath()` lists the entities in flight, outermost first, as `key#identity`. A call failure's message names states
-and identifiers by `name()` and entities as `key#identity`, never through an entity's `toString()`. `InvalidGraphException`
-lists `problems()`, and `codes()`, by code, then origin state, then identifier, and its message reads
-`the graph <key> has <n> problem(s):` followed by one `[code] message` line per problem.
-
-A throwable from application code that the engine does not classify where it happens, such as an identity's
-`hashCode` that throws while the log is rolled back, ends the call in a `TransitionAbortedException` of the current
-phase, `the engine could not go on: …`, with that throwable as cause.
-
-A peer read stages nothing, so `ctx.peer(...)` with a key or a facade the registry does not hold throws
-`UnknownPeerMachineException` or `UnknownFacadeException` into the guard or action without poisoning the call: an action
-that catches it can still commit. A cascade to an unknown machine does poison the call.
 
 ## Common build problems
 
@@ -212,4 +110,4 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 
 ---
 
-Next: [Testing GraphMaquina machines](testing.md). Back to the [documentation index](README.md).
+Next: [Runtime exceptions](runtime-exceptions.md). Back to the [documentation index](README.md).

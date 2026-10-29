@@ -26,7 +26,8 @@ System.out.println(graph.policy(TicketState.OPEN).reasonFor(TicketTransition.APP
 
 `toString()` prints the machine's key and its counts, such as `Ticket/TicketState[4 states, 6 transitions]`.
 `transitionsFrom` returns the identifiers declared from a state, `outgoingFrom` the `TransitionSpec`s themselves,
-`transitions()` every declared edge, ordered by origin, then identifier, then destination, and `findTransition` the
+`transitions()` every declared edge, ordered by origin, then identifier, then destination, `automaticFrom` the
+automatic edges that leave a state, in the order an advance tries them, and `findTransition` the
 single spec keyed by `(from, id)`, as an `Optional` that is empty when no edge is declared. `key()`, `initial()`,
 `terminals()` and `hasAsync()`, true when some edge is asynchronous, describe the machine as a whole.
 
@@ -39,6 +40,7 @@ classDiagram
         +terminals() Set
         +transitions() List~TransitionSpec~
         +outgoingFrom(state) List~TransitionSpec~
+        +automaticFrom(state) List~TransitionSpec~
         +findTransition(from, id) Optional~TransitionSpec~
         +policy(state) StatePolicy
         +watch(state) Optional~WatchSpec~
@@ -60,6 +62,14 @@ classDiagram
         +timeout() Optional~Duration~
         +afterCommit() Optional~HookRef~
         +isAsync() boolean
+        +automatic() boolean
+        +onFailureContinues() boolean
+    }
+    class RecoveryRule {
+        +kind() Class
+        +transition() T
+        +failsOn() List
+        +continueChain() boolean
     }
     class StatePolicy {
         +state() S
@@ -79,19 +89,22 @@ classDiagram
         +exits() Map
     }
     GraphDefinition --> TransitionSpec : edges
+    TransitionSpec --> RecoveryRule : rules
     GraphDefinition --> StatePolicy : one per state
     GraphDefinition --> WatchSpec : at most one per state
     GraphDefinition --> SubmachineSpec : at most one per state
 ```
 
 A `TransitionSpec` is one edge: its endpoints and identifier, its `kind()`, `ACTION` or `MOVE`, its `key()`, the
-`TransitionKey` `(from, transition)`, which prints as `FROM/TRANSITION`, the `ActionRef` and `GuardRef`s that name its action and guards, its
-`onFailure`, `failsOn`, `recoveryRules()`, `timeout` and `afterCommit` hook, and `isAsync()`, true when the action
-or any guard is asynchronous. `policy(state)` is never null: a `StatePolicy` holds the state's `otherwise` reason
-and its `rejectionReasons()` per identifier, and `reasonFor(id)` picks the one a request gets. `watch(state)`
-returns the state's `WatchSpec`, with the peer machine's key and its ordered `WatchRule`s, each a named condition and
-the identifier it executes, and `submachine(state)` the `SubmachineSpec` that binds a child, with its `child()`
-definition, `childKey()` and `exits()`.
+`TransitionKey` `(from, transition)`, which prints as `FROM/TRANSITION`, the `ActionRef` and `GuardRef`s that name its
+action and guards, its `onFailure`, `failsOn`, `recoveryRules()`, `timeout` and `afterCommit` hook, and `isAsync()`,
+true when the action or any guard is asynchronous. `automatic()` says the graph declares the edge
+[automatic](automatic-transitions.md), and `onFailureContinues()` that its `onFailure` route continues the chain of
+automatic attempts; so does a `RecoveryRule` whose `continueChain()` is true. `policy(state)` is never null: a
+`StatePolicy` holds the state's `otherwise` reason and its `rejectionReasons()` per identifier, and `reasonFor(id)`
+picks the one a request gets. `watch(state)` returns the state's `WatchSpec`, with the peer machine's key and its
+ordered `WatchRule`s, each a named condition and the identifier it executes, and `submachine(state)` the
+`SubmachineSpec` that binds a child, with its `child()` definition, `childKey()` and `exits()`.
 
 An `ActionRef` and a `GuardRef` are either `Sync` or `Async` records, with their `name()` and `isAsync()`; a `HookRef`
 is a named hook that takes the entity and its `CommitContext`, which `run(entity, context)` calls, and
@@ -141,8 +154,11 @@ transitions or evaluate guards, and there is no detail mode: the exporter draws 
 other, because an edge nobody declared does not exist.
 
 The export is deterministic DOT text with LF line endings. Each edge label begins with its identifier,
-followed by the action name, `[async]` when the action or any guard is asynchronous, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in
-declaration order, `[onFailure ID]` and any watch label. `Kind` is the failure kind's binary name without its
+followed by `[auto]` when the edge is automatic, or `[auto n]` when its state declares an order among two or more
+automatic edges, with `n` counted from 1 in that order, then the action name, `[async]` when the action or any guard
+is asynchronous, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in
+declaration order, `[onFailure ID]` and any watch label. A route that continues the chain ends its fragment with
+`continues`, as in `[recover Kind -> ID continues]` and `[onFailure ID continues]`. `Kind` is the failure kind's binary name without its
 package, such as `PublicationFailures$Unavailable`. The throwable types of `failsOn` and of the rules are not
 drawn, and a rule adds no arrow. Parallel edges appear as separate arrows with different labels, and a
 self-loop is an arrow back to its own node. The initial state has an incoming arrow from a point, terminal
@@ -198,8 +214,9 @@ The Java exporter needs no external library or native executable. Image renderin
 can read the same data, and its public constructors build a view by hand. States come in node order, edges in definition order, rules and exits in declaration order,
 with one policy per state, and each `SubmachineView` carries the child's whole `GraphView`. A `TransitionView` holds the
 edge's endpoints, identifier, kind, action, guards, whether it is asynchronous, its `onFailure`, its rendered watch rule
-and its recovery rules; a `RecoveryView` the failure kind and the `failsOn` types as binary names and the recovery
-identifier; a `PolicyView` the state, its `otherwise` reason and its rejections rendered as `ID: reason`; and a
+and its recovery rules, whether it is `automatic`, its `automaticPosition` in the order of its state when that
+state declares one, and whether its `onFailure` route continues (`failureContinues`); a `RecoveryView` the failure
+kind and the `failsOn` types as binary names, the recovery identifier and whether the rule `continues`; a `PolicyView` the state, its `otherwise` reason and its rejections rendered as `ID: reason`; and a
 `WatchView` the state, the simple name of the peer's entity class and the rendered rules. The DOT text starts with
 `digraph "<name>"` and `rankdir=LR`. Inside a cluster, node ids carry the prefix `s<j>_`, one per nesting level, where
 `j` counts the view's bound states in node order. An edge that a watch rule executes gets

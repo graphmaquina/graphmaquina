@@ -7,7 +7,7 @@ that call alone: nothing of it is persisted, and the next call starts with an em
 caller receives a frozen copy, as [read the flow after the call](#read-the-flow-after-the-call) shows. Every step of
 the call reaches the same flow, whatever entity the step moves: the root's own step, each cascaded step and the exit
 of each sub-machine, and so does the hook of every hop the call commits. A watch reaction is a call of its own, with
-its own flow, and so is a call that a hook starts.
+its own flow, and so are each [automatic attempt](automatic-transitions.md) and a call that a hook starts.
 
 ![The shop cancels an order of two items on a set that records its trail. The order's step puts the batch in the
 flow and cascades CANCEL to the items, whose steps put their restocks; each write comes after its step's hop, and
@@ -32,7 +32,7 @@ sequenceDiagram
     Restock->>Flow: put(restockOf(item), new Restock(batch, order))
     Note over Cancel,Flow: the commit writes CANCELLED to the order and to the item
     Hook->>Flow: get(restockOf(item)), then restock the item in that batch
-    Note over Flow: once the hooks and reactions ran, the flow is frozen
+    Note over Flow: once the hooks, reactions and automatic chains ran, the flow is frozen
     Flow-->>Caller: outcome.flow(), with the writes and, with recordTrail(), the trail
 ```
 
@@ -177,8 +177,8 @@ the same values: that is why the shop gives each item's restock a key of its own
 
 ## Read the flow after the call
 
-A call that returns freezes its flow once its hooks and its watch reactions ran, and one that fails freezes it as
-it stood when the call failed. The caller reads it as `flow()` on the outcome the call returns, or `flow()` on the
+A call that returns freezes its flow once its hooks, its watch reactions and its automatic chains ran, and one that
+fails freezes it as it stood when the call failed. The caller reads it as `flow()` on the outcome the call returns, or `flow()` on the
 `CallFailedException` it throws. Both are a `FlowView`, which prints as `FrozenFlow[keys=...]`, its keys alone, and is read with `get`,
 `keys()`, `entity()` and `trail()` as a guard reads it. For instance, a REST handler that cancels an order can answer
 with the cancellation the call recorded, whether the call returned or failed:
@@ -211,7 +211,8 @@ immutable. Nothing reaches the call's flow any more: the handles of its steps an
   answer `FlowView.empty()` too, whatever the machine records: a cascade's flow belongs to its root call.
 - A watch reaction is a call of its own: the outcome in `Reaction.Done` hands out the reaction's flow, and the
   failure of an aborted reaction its own, unless what aborted it was an owner lookup that threw, which carries no
-  flow.
+  flow. So is an automatic attempt: the outcome in `AutomaticStep.Done` hands out the attempt's flow, and the
+  `CallFailedException` of an aborted attempt its own.
 - A failure holds what the call wrote up to it, as [handle a failed call](outcomes.md#handle-a-failed-call) details.
 
 ## Record the call's trail
@@ -239,16 +240,17 @@ The machine of the root call decides for the whole call, as its `asyncTimeout` b
 order through this registry records the order's hop and the hop of each item its `cancel` action cascades to,
 although the item machine was built without `recordTrail`, while a call started on an item records nothing, whatever
 its steps reach. A watch reaction is a call of its own: its machine decides its trail, which `Reaction.Done` hands out
-with the reaction's outcome, never in the trail of the call that triggered it.
+with the reaction's outcome, never in the trail of the call that triggered it. So does an automatic attempt's machine,
+whose trail `AutomaticStep.Done` hands out with the attempt's outcome.
 
 The generated builder of a [machine set](coordination.md#build-and-manage-machine-sets) offers `recordTrail()` and
 `recordTrail(InstantSource clock)` as well, and hands them to the `StateMachines.Builder` of every machine of the set.
 Since the root machine decides and every machine of the set records, every call made through the set records its
-trail, the peers it cascades to and the exits of sub-machines its steps run included, and so does each watch reaction,
-whose machine is one of the set. The set has no variant for one of its machines: a registry built with
-`StateMachines.Builder`, as above, chooses machine by machine. The shop's
-[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java) builds its
-set with `recordTrail()`, and reads in the trail of a cancellation the order's hop, then the hop of each item.
+trail, the peers it cascades to and the exits of sub-machines its steps run included, and so do each watch reaction
+and each automatic attempt, whose machine is one of the set. The set has no variant for one of its machines: a registry
+built with `StateMachines.Builder`, as above, chooses machine by machine. The shop's
+[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java) builds its set
+with `recordTrail()`, and reads in the trail of a cancellation the order's hop, then the hop of each item.
 
 `flow().trail()` lists `FlowEntry` values, in the order the call took them, cascaded steps, the exits of sub-machines
 and sub-machine starts included:
@@ -297,8 +299,8 @@ The trail follows the rollbacks of the call:
 - A failed call keeps what it took up to the failure, then its `Failed` entry, unless the clock threw as the call
   read that entry's instant, as below. An abort undoes nothing, but the engine rolls back the step of an
   `UnhandledFailureException` first, so its trail lacks that step's entries.
-- A `reevaluate` that fails before it runs an edge has the `Failed` entry alone, or no entry when the clock threw,
-  beside the entity and no value.
+- A `reevaluate` that fails before it runs an edge, or an `advance` that fails while it reads the state, has the
+  `Failed` entry alone, or no entry when the clock threw, beside the entity and no value.
 - An `Error` ends the call without an entry and without a flow.
 - An `Ignored` outcome and the outcome a cascade returns have no trail: both answer `FlowView.empty()`.
 

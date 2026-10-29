@@ -167,7 +167,7 @@ public Optional<Subscription> subscriptionOf(Payment payment) {
 An empty `Optional` means that this binding finds no parent. Lookups and the `child` and `parent` properties are
 synchronous and run inside the call. One that returns `null` instead of an `Optional` aborts the call, so does one
 that throws, with what it threw as the cause, and so does a parent or a child whose identity or state cannot be read;
-`execute`, `reevaluate` or `eligibility` called from one of them throws `ReentrantTransitionException`, which aborts
+`execute`, `reevaluate`, `advance` or `eligibility` called from one of them throws `ReentrantTransitionException`, which aborts
 the call too. An eligibility check that meets any of these fails with an `EligibilityCheckException` instead.
 
 ## Build the set

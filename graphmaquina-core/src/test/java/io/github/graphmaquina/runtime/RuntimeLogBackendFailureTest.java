@@ -201,6 +201,24 @@ class RuntimeLogBackendFailureTest {
                 (StateMachine<Doc, DocStatus, DocTransition> machine) -> machine.reevaluate(new Doc("6", DRAFT))));
     }
 
+    /**
+     * The end line of a call that committed comes once its post-commit ran, in the last phase it entered: REACTIONS in
+     * a registry whose graphs have no automatic edge, which runs no automatic chain, and AUTOMATIC_STEPS in one whose
+     * graph has one, here SUBMIT, although the doc's chain from REVIEW makes no attempt.
+     */
+    @Test
+    void theEndLineOfACommittedCallFailsInTheLastPhaseItEntered() {
+        Doc plainDoc = new Doc("1", DRAFT);
+        assertEquals(List.of("failed with the backend's Error in REACTIONS, ALL"), terminalEvents(" end code=",
+                readable(plain()), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(plainDoc, SUBMIT)));
+        Doc automaticDoc = new Doc("2", DRAFT);
+        assertEquals(List.of("failed with the backend's Error in AUTOMATIC_STEPS, ALL"), terminalEvents(" end code=",
+                readable(docs(TransitionBuilder::automatic)), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(automaticDoc, SUBMIT)));
+        assertEquals(List.of(REVIEW, REVIEW), List.of(plainDoc.status(), automaticDoc.status()));
+    }
+
     /** A new builder of the documents machine over {@code graph}, which reads and writes the status. */
     private static StateMachines.Builder<Doc, DocStatus, DocTransition> readable(
             GraphDefinition<Doc, DocStatus, DocTransition> graph) {

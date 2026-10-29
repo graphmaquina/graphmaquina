@@ -410,6 +410,11 @@ class ReturnedFailureRoutingTest {
         }
 
         @Override
+        public List<TransitionSpec<Ticket, TicketState, TicketChange>> automaticFrom(TicketState state) {
+            return delegate.automaticFrom(state).stream().filter(this::kept).toList();
+        }
+
+        @Override
         public Optional<TransitionSpec<Ticket, TicketState, TicketChange>> findTransition(TicketState from,
                                                                                          TicketChange transition) {
             return delegate.findTransition(from, transition).filter(this::kept);

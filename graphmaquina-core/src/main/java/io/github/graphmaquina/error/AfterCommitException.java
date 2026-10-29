@@ -17,11 +17,11 @@ import lombok.NonNull;
  * runs only for committed hops, so it fails after phase 2 had written every state of the call: its phase is HOOK and
  * its states written ALL. Nothing is rolled back: the caller's transaction decides. {@link #hop()} is the committed hop
  * whose hook threw, {@link #records()} every hop the call committed, in log order, and {@link #starts()} every
- * sub-machine it started; a start runs no hook. The hooks of the hops before {@link #hop()} ran; the later hooks and
- * the watch reactions of the call did not. {@link #flow()} holds what the steps wrote and what the hooks that ran
- * wrote, the failing hook's writes before it threw included, and, when the call records its trail, every hop and start
- * the call committed, wrapping the very records and starts this exception lists, then the entry of this failure when
- * the trail's clock could read its instant.
+ * sub-machine it started; a start runs no hook. The hooks of the hops before {@link #hop()} ran; the later hooks, the
+ * watch reactions and the automatic chains of the call did not. {@link #flow()} holds what the steps wrote and what the
+ * hooks that ran wrote, the failing hook's writes before it threw included, and, when the call records its trail, every
+ * hop and start the call committed, wrapping the very records and starts this exception lists, then the entry of this
+ * failure when the trail's clock could read its instant.
  */
 @Getter
 public final class AfterCommitException extends CallFailedException {

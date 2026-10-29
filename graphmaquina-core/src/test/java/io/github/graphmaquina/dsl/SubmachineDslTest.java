@@ -575,6 +575,11 @@ class SubmachineDslTest {
         }
 
         @Override
+        public List<TransitionSpec<Payment, PaymentStatus, PaymentTransition>> automaticFrom(PaymentStatus state) {
+            return delegate.automaticFrom(state);
+        }
+
+        @Override
         public Optional<TransitionSpec<Payment, PaymentStatus, PaymentTransition>> findTransition(
                 PaymentStatus from, PaymentTransition transition) {
             return delegate.findTransition(from, transition);
@@ -695,6 +700,11 @@ class SubmachineDslTest {
         }
 
         @Override
+        public List<TransitionSpec<E, Rung, RungMove>> automaticFrom(Rung state) {
+            return delegate.automaticFrom(state);
+        }
+
+        @Override
         public Optional<TransitionSpec<E, Rung, RungMove>> findTransition(Rung from, RungMove transition) {
             return delegate.findTransition(from, transition);
         }
@@ -762,6 +772,11 @@ class SubmachineDslTest {
         @Override
         public List<TransitionSpec<E, Rung, RungMove>> outgoingFrom(Rung state) {
             return delegate.outgoingFrom(state);
+        }
+
+        @Override
+        public List<TransitionSpec<E, Rung, RungMove>> automaticFrom(Rung state) {
+            return delegate.automaticFrom(state);
         }
 
         @Override

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
@@ -13,6 +14,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -267,12 +269,12 @@ class GraphvizExporterTest {
     /** The example's first rule, by the names the view keeps. */
     private static final RecoveryView UNAVAILABLE_RULE = new RecoveryView(
             "io.github.graphmaquina.fixtures.RecoveryFixtures$PublicationFailures$Unavailable", "SCHEDULE_RETRY",
-            List.of("io.github.graphmaquina.fixtures.RecoveryFixtures$ServiceUnavailableException"));
+            List.of("io.github.graphmaquina.fixtures.RecoveryFixtures$ServiceUnavailableException"), false);
 
     /** The example's second rule, by the names the view keeps. */
     private static final RecoveryView REJECTED_RULE = new RecoveryView(
             "io.github.graphmaquina.fixtures.RecoveryFixtures$PublicationFailures$Rejected", "RECORD_REJECTION",
-            List.of("io.github.graphmaquina.fixtures.RecoveryFixtures$ProviderRejectedException"));
+            List.of("io.github.graphmaquina.fixtures.RecoveryFixtures$ProviderRejectedException"), false);
 
     private static final String UNAVAILABLE_FRAGMENT =
             "[recover RecoveryFixtures$PublicationFailures$Unavailable -> SCHEDULE_RETRY]";
@@ -286,7 +288,7 @@ class GraphvizExporterTest {
         GraphView view = GraphView.of(RecoveryFixtures.graph(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", PUBLISHES)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY)));
-        assertEquals(List.of(new RecoveryView(UNAVAILABLE_RULE.kind(), "SCHEDULE_RETRY", List.of())),
+        assertEquals(List.of(new RecoveryView(UNAVAILABLE_RULE.kind(), "SCHEDULE_RETRY", List.of(), false)),
                 edge(view, "READY", "PUBLISH").recoveries());
         String rendered = GraphvizExporter.render(view);
         assertTrue(rendered.contains("    n0 -> n1 [label=\"PUBLISH publish " + UNAVAILABLE_FRAGMENT + "\"];\n"),
@@ -353,7 +355,7 @@ class GraphvizExporterTest {
     void eachOriginOfAnIdentifierShowsOnlyItsOwnRules() {
         GraphView view = GraphView.of(publishedFromThreeOrigins());
         assertEquals(List.of(UNAVAILABLE_RULE, REJECTED_RULE), edge(view, "READY", "PUBLISH").recoveries());
-        assertEquals(List.of(new RecoveryView(REJECTED_RULE.kind(), "RECORD_REJECTION", List.of())),
+        assertEquals(List.of(new RecoveryView(REJECTED_RULE.kind(), "RECORD_REJECTION", List.of(), false)),
                 edge(view, "RETRY_PENDING", "PUBLISH").recoveries());
         assertEquals(List.of(), edge(view, "INTEGRATION_FAILED", "PUBLISH").recoveries());
         String rendered = GraphvizExporter.render(view);
@@ -365,8 +367,8 @@ class GraphvizExporterTest {
     }
 
     static Stream<Arguments> recoveryLabels() {
-        List<RecoveryView> rules = List.of(new RecoveryView("a.b.First", "R1", List.of("a.b.Thrown")),
-                new RecoveryView("Outer$Second", "R2", List.of()));
+        List<RecoveryView> rules = List.of(new RecoveryView("a.b.First", "R1", List.of("a.b.Thrown"), false),
+                new RecoveryView("Outer$Second", "R2", List.of(), false));
         String fragments = "[recover First -> R1] [recover Outer$Second -> R2]";
         return Stream.of(
                 Arguments.of("every part", labeled(List.of("g1", "g2"), true, Optional.of("F"),
@@ -382,7 +384,21 @@ class GraphvizExporterTest {
                         Optional.of("Peer: c"), rules), "GO act " + fragments + " [watches Peer: c]"),
                 Arguments.of("no rules", labeled(List.of("g1", "g2"), true, Optional.of("F"),
                         Optional.of("Peer: c"), List.of()),
-                        "GO act [async] [if g1, g2] [onFailure F] [watches Peer: c]"));
+                        "GO act [async] [if g1, g2] [onFailure F] [watches Peer: c]"),
+                Arguments.of("aContinuingRouteIsMarked", continuing(true, true),
+                        "GO act [recover First -> R1 continues] [recover Outer$Second -> R2] [onFailure F continues]"),
+                Arguments.of("a continuing rule alone", continuing(true, false),
+                        "GO act [recover First -> R1 continues] [recover Outer$Second -> R2] [onFailure F]"),
+                Arguments.of("a continuing fallback alone", continuing(false, true),
+                        "GO act [recover First -> R1] [recover Outer$Second -> R2] [onFailure F continues]"));
+    }
+
+    /** GO with two rules, the first one continuing or not, and the fallback F, continuing or not. */
+    private static TransitionView continuing(boolean rule, boolean fallback) {
+        return new TransitionView("A", "GO", "B", TransitionKind.ACTION, Optional.of("act"), List.of(), false,
+                Optional.of("F"), Optional.empty(), List.of(new RecoveryView("a.b.First", "R1", List.of(), rule),
+                        new RecoveryView("Outer$Second", "R2", List.of(), false)), false, Optional.empty(),
+                fallback);
     }
 
     /**
@@ -404,7 +420,7 @@ class GraphvizExporterTest {
     @MethodSource("dotEscapingCorpus")
     void aRecoveryFragmentIsEscapedLikeTheRestOfTheLabel(String caseName, String text) {
         TransitionView transition = labeled(List.of(), false, Optional.empty(), Optional.empty(),
-                List.of(new RecoveryView("some.pkg." + text, text, List.of("some.pkg.Hidden" + text))));
+                List.of(new RecoveryView("some.pkg." + text, text, List.of("some.pkg.Hidden" + text), false)));
         assertEquals(singleEdgeDot(baseQuote("GO act [recover " + text + " -> " + text + "]")),
                 GraphvizExporter.render(singleEdgeView(transition)));
     }
@@ -429,25 +445,114 @@ class GraphvizExporterTest {
     @Test
     void theViewsCopyTheirRulesAndRefuseNulls() {
         List<String> types = new ArrayList<>(List.of("a.b.Thrown"));
-        RecoveryView rule = new RecoveryView("a.b.Kind", "R", types);
+        RecoveryView rule = new RecoveryView("a.b.Kind", "R", types, false);
         List<RecoveryView> rules = new ArrayList<>(List.of(rule));
         TransitionView transition = labeled(List.of(), false, Optional.empty(), Optional.empty(), rules);
         types.add("a.b.Other");
         rules.clear();
         assertEquals(List.of("a.b.Thrown"), rule.failsOn());
         assertEquals(List.of(rule), transition.recoveries());
-        assertThrows(NullPointerException.class, () -> new RecoveryView(null, "R", List.of()));
+        assertThrows(NullPointerException.class, () -> new RecoveryView(null, "R", List.of(), false));
         assertThrows(NullPointerException.class,
-                () -> new RecoveryView("a.b.Kind", "R", Arrays.asList("a.b.Thrown", null)));
+                () -> new RecoveryView("a.b.Kind", "R", Arrays.asList("a.b.Thrown", null), false));
         assertThrows(NullPointerException.class,
                 () -> labeled(List.of(), false, Optional.empty(), Optional.empty(), null));
+    }
+
+    /** A failure kind of this test's own. */
+    record Declined() implements FailureKind { }
+
+    private static final TransitionAction<Doc, DocStatus, DocTransition> SUCCEEDS =
+            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok();
+
+    private static final TransitionGuard<Doc, DocStatus, DocTransition> OPEN =
+            (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.pass();
+
+    /** DRAFT is initial and ARCHIVED terminal; the other states reject by policy. */
+    private static GraphBuilder<Doc, DocStatus, DocTransition> docs() {
+        return StateGraph.define(Keys.DOCS).initial(DocStatus.DRAFT).terminal(DocStatus.ARCHIVED)
+                .statePolicy(DocStatus.DRAFT, "a draft is submitted or discarded")
+                .statePolicy(DocStatus.REVIEW, "a review is published or sent back")
+                .statePolicy(DocStatus.PUBLISHED, "a publication is archived");
+    }
+
+    /** The only automatic edge of its state is marked {@code [auto]} right after its identifier, with no number. */
+    @Test
+    void anAutomaticEdgeIsMarkedAuto() {
+        GraphView view = GraphView.of(docs()
+                .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).automatic()
+                    .action("submit", SUCCEEDS).endTransition()
+                .transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)
+                    .action("publish", SUCCEEDS).endTransition()
+                .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED).automatic()
+                    .endTransition()
+                .build());
+        TransitionView submit = edge(view, "DRAFT", "SUBMIT");
+        assertTrue(submit.automatic());
+        assertEquals(Optional.empty(), submit.automaticPosition());
+        assertFalse(edge(view, "REVIEW", "PUBLISH").automatic());
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("[label=\"SUBMIT [auto] submit\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"PUBLISH publish\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"ARCHIVE [auto]\"]"), rendered);
+        assertFalse(rendered.contains("[auto "), rendered);
+    }
+
+    /**
+     * A state with two automatic edges numbers them from 1 in its declared order, which is neither the order the
+     * edges were declared in nor the order of the identifiers; a manual edge of that state gets no mark.
+     */
+    @Test
+    void orderedAutomaticEdgesAreNumbered() {
+        GraphView view = GraphView.of(docs()
+                .transition(DocTransition.DISCARD, DocStatus.DRAFT, DocStatus.ARCHIVED).automatic().endTransition()
+                .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).automatic()
+                    .guard("open", OPEN).endTransition()
+                .transition(DocTransition.RETOUCH, DocStatus.DRAFT, DocStatus.PUBLISHED).endTransition()
+                .transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED).automatic()
+                    .endTransition()
+                .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED).endTransition()
+                .automaticOrder(DocStatus.DRAFT, List.of(DocTransition.SUBMIT, DocTransition.DISCARD))
+                .build());
+        assertEquals(Optional.of(1), edge(view, "DRAFT", "SUBMIT").automaticPosition());
+        assertEquals(Optional.of(2), edge(view, "DRAFT", "DISCARD").automaticPosition());
+        assertEquals(Optional.empty(), edge(view, "DRAFT", "RETOUCH").automaticPosition());
+        assertEquals(Optional.empty(), edge(view, "REVIEW", "PUBLISH").automaticPosition());
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("[label=\"SUBMIT [auto 1] [if open]\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"DISCARD [auto 2]\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"RETOUCH\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"PUBLISH [auto]\"]"), rendered);
+    }
+
+    /** A graph's continuing recovery rule and continuing {@code onFailure} reach the view and the label. */
+    @Test
+    void aContinuingRouteOfAGraphReachesTheLabel() {
+        GraphView view = GraphView.of(docs()
+                .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).automatic()
+                    .action("submit", SUCCEEDS).recoverAndContinue(Declined.class, DocTransition.RETOUCH)
+                    .endTransition()
+                .transition(DocTransition.RETOUCH, DocStatus.DRAFT, DocStatus.PUBLISHED).endTransition()
+                .transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)
+                    .action("publish", SUCCEEDS).onFailureAndContinue(DocTransition.SEND_BACK).endTransition()
+                .transition(DocTransition.SEND_BACK, DocStatus.REVIEW, DocStatus.PUBLISHED).endTransition()
+                .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED).automatic()
+                    .endTransition()
+                .build());
+        assertTrue(edge(view, "DRAFT", "SUBMIT").recoveries().get(0).continues());
+        assertFalse(edge(view, "DRAFT", "SUBMIT").failureContinues());
+        assertTrue(edge(view, "REVIEW", "PUBLISH").failureContinues());
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("[label=\"SUBMIT [auto] submit [recover GraphvizExporterTest$Declined"
+                + " -> RETOUCH continues]\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"PUBLISH publish [onFailure SEND_BACK continues]\"]"), rendered);
     }
 
     /** The action edge GO from A to B with the given parts and the action {@code act}. */
     private static TransitionView labeled(List<String> guards, boolean async, Optional<String> failureTransition,
             Optional<String> watch, List<RecoveryView> recoveries) {
         return new TransitionView("A", "GO", "B", TransitionKind.ACTION, Optional.of("act"), guards, async,
-                failureTransition, watch, recoveries);
+                failureTransition, watch, recoveries, false, Optional.empty(), false);
     }
 
     /** A graph of A and B whose only edge is {@code transition}, from A to the terminal B. */

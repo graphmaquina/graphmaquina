@@ -5,9 +5,9 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Why an {@link Outcome} is what it is, as one flat value: its variant, refined by the {@link RejectionKind} of a
- * rejection and by the {@link IgnoreReason} of a reevaluation that selected nothing. Each code belongs to exactly
- * one {@link OutcomeStatus}. The names are stable identifiers, safe to persist or serialize; a code is added only
- * together with a new variant, rejection kind or ignore reason.
+ * rejection and by the {@link IgnoreReason} of a reevaluation or an advance that ran no edge. Each code belongs to
+ * exactly one {@link OutcomeStatus}. The names are stable identifiers, safe to persist or serialize; a code is added
+ * only together with a new variant, rejection kind or ignore reason.
  */
 @Getter
 @RequiredArgsConstructor
@@ -38,7 +38,13 @@ public enum OutcomeCode {
     NO_WATCH(OutcomeStatus.IGNORED),
 
     /** No rule of the state's watch held: {@link IgnoreReason#NO_RULE_MATCHED}. */
-    NO_RULE_MATCHED(OutcomeStatus.IGNORED);
+    NO_RULE_MATCHED(OutcomeStatus.IGNORED),
+
+    /** The state has no automatic edge: {@link IgnoreReason#NO_AUTOMATIC_TRANSITION}. */
+    NO_AUTOMATIC_TRANSITION(OutcomeStatus.IGNORED),
+
+    /** No automatic edge of the state was admitted: {@link IgnoreReason#NO_CANDIDATE_ADMITTED}. */
+    NO_CANDIDATE_ADMITTED(OutcomeStatus.IGNORED);
 
     /** The status this code refines. */
     private final OutcomeStatus status;

@@ -32,7 +32,8 @@ class SubmachineValidationTest {
     /** An action edge with an optional onFailure and any number of recovery identifiers. */
     private static TransitionOutline action(String from, String transition, String to, Optional<String> onFailure,
                                             String... recoveries) {
-        return new TransitionOutline(from, transition, to, TransitionKind.ACTION, onFailure, List.of(recoveries));
+        return new TransitionOutline(from, transition, to, TransitionKind.ACTION, onFailure, List.of(recoveries),
+                false, false, false, List.of());
     }
 
     /** NEW leaves by CHARGE, DECLINE or CANCEL; PAYMENT_DECLINED by RETRY or CANCEL; PAID ships. */
@@ -61,7 +62,7 @@ class SubmachineValidationTest {
     private static MachineOutline outline(List<TransitionOutline> edges, List<WatchOutline> watches,
                                           SubmachineOutline... submachines) {
         return new MachineOutline(ORDERS, STATES, CATALOG, "NEW", Set.of("SHIPPED", "CANCELLED"),
-                Set.of("PAYMENT_DECLINED"), edges, policies(), watches, List.of(submachines));
+                Set.of("PAYMENT_DECLINED"), edges, policies(), watches, List.of(submachines), List.of());
     }
 
     private static List<Problem> validate(SubmachineOutline... submachines) {

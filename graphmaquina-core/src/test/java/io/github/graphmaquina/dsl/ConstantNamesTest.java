@@ -136,7 +136,7 @@ class ConstantNamesTest {
 
     @Test
     void specValuesWhoseConstantsCannotBePrintedConstruct() {
-        RecoveryRule<OpaqueMove> rule = new RecoveryRule<>(Jammed.class, OpaqueMove.BACK, List.of());
+        RecoveryRule<OpaqueMove> rule = new RecoveryRule<>(Jammed.class, OpaqueMove.BACK, List.of(), false);
         TransitionSpec<Box, Opaque, OpaqueMove> spec = new TransitionSpec<>(Opaque.START, OpaqueMove.GO, Opaque.END,
                 Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.empty());
         StatePolicy<Opaque, OpaqueMove> policy = new StatePolicy<>(Opaque.START, "start moves on",
@@ -203,7 +203,7 @@ class ConstantNamesTest {
         assertEquals("recover(" + Jammed.class.getName() + ", BACK) declares java.lang.IllegalStateException more"
                         + " than once",
                 assertThrows(IllegalArgumentException.class, () -> new RecoveryRule<>(Jammed.class, ShownMove.BACK,
-                        List.of(IllegalStateException.class, IllegalStateException.class))).getMessage());
+                        List.of(IllegalStateException.class, IllegalStateException.class), false)).getMessage());
         assertEquals("the policy of START has a blank reason",
                 assertThrows(IllegalArgumentException.class, () -> new StatePolicy<Shown, ShownMove>(Shown.START,
                         " ", Map.of())).getMessage());

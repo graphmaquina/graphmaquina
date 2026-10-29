@@ -126,9 +126,9 @@ class RecoveryDslTest {
                 publishFrom(RecoveryFixtures.exampleGraph(SUCCEEDS), TicketState.READY);
         assertEquals(List.of(
                         new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                                List.of(ServiceUnavailableException.class)),
+                                List.of(ServiceUnavailableException.class), false),
                         new RecoveryRule<>(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-                                List.of(ProviderRejectedException.class))),
+                                List.of(ProviderRejectedException.class), false)),
                 publish.recoveryRules());
         assertEquals(List.of(InvalidResponseException.class), publish.failsOn());
         assertEquals(Optional.of(TicketChange.MARK_INTEGRATION_FAILED), publish.onFailure());
@@ -152,11 +152,11 @@ class RecoveryDslTest {
         TransitionSpec<Ticket, TicketState, TicketChange> publish = publishFrom(graph, TicketState.READY);
         assertEquals(List.of(
                         new RecoveryRule<>(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
-                                List.of()),
+                                List.of(), false),
                         new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                                List.of(ServiceUnavailableException.class)),
+                                List.of(ServiceUnavailableException.class), false),
                         new RecoveryRule<>(Transport.class, TicketChange.SCHEDULE_RETRY,
-                                List.of(IOException.class, ProviderRejectedException.class))),
+                                List.of(IOException.class, ProviderRejectedException.class), false)),
                 publish.recoveryRules());
         assertEquals(List.of(), publish.failsOn());
         assertEquals(Optional.empty(), publish.onFailure());
@@ -192,7 +192,7 @@ class RecoveryDslTest {
                         .onFailure(TicketChange.MARK_INTEGRATION_FAILED)), TicketState.READY);
         assertEquals(List.of(InvalidResponseException.class, InvalidResponseException.class), spec.failsOn());
         assertEquals(List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                List.of(ServiceUnavailableException.class))), spec.recoveryRules());
+                List.of(ServiceUnavailableException.class), false)), spec.recoveryRules());
     }
 
     /** A supertype and its subtype may sit in different rules, or in a rule and failsOn, in either order. */
@@ -225,9 +225,10 @@ class RecoveryDslTest {
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.RETRY));
         assertEquals(List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
-                        List.of())),
+                        List.of(), false)),
                 publishFrom(graph, TicketState.READY).recoveryRules());
-        assertEquals(List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.RETRY, List.of())),
+        assertEquals(List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.RETRY, List.of(),
+                        false)),
                 publishFrom(graph, TicketState.RETRY_PENDING).recoveryRules());
     }
 

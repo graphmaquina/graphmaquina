@@ -70,7 +70,10 @@ asks nothing of the kind.
 
 Watch reactions are different: they execute after the triggering commit and start separate root
 transactions with their own deadlines. The original operation waits for synchronous watch dispatch before
-returning; its root wait budget does not impose one global deadline on the entire reaction chain.
+returning; its root wait budget does not impose one global deadline on the entire reaction chain. The
+[automatic attempts](automatic-transitions.md) of a chain are the same: each is a new root, whose wait is bounded by
+the `asyncTimeout` of its machine from the moment the attempt starts, so a chain may take longer than one deadline,
+and an attempt whose own deadline passes aborts while the attempts before it stay committed.
 
 ## Timeout, cancellation and late completion
 

@@ -71,7 +71,7 @@ final class CallLog {
     /** The {@code System.nanoTime()} read when the log opened, which {@code elapsed} counts from; 0 for OFF. */
     @Getter(AccessLevel.PACKAGE)
     private final long startNanos;
-    /** The id of the call whose commit triggered this watch reaction, when that call logged. */
+    /** The id of the call whose commit triggered this watch reaction or automatic attempt, when that call logged. */
     private final Optional<Long> trigger;
     /** What starts every line before its id: {@code call}, or {@code check} for an eligibility check. */
     private final String label;
@@ -85,8 +85,8 @@ final class CallLog {
 
     /**
      * Opens the log of a call on {@code logger}; tests hand in one of their own. {@code trigger} is the id of the
-     * call whose commit triggered this watch reaction, empty for a call the application made. It reads both levels
-     * once, and then the clock, unless both are off.
+     * call whose commit triggered this watch reaction or automatic attempt, empty for a call the application made. It
+     * reads both levels once, and then the clock, unless both are off.
      */
     static CallLog open(Logger logger, Optional<Long> trigger) {
         return open(logger, trigger, CALL);
@@ -169,7 +169,7 @@ final class CallLog {
 
     /**
      * {@code start <machine> <request>[ trigger=<id>]}: the identifier execute or an eligibility check was asked for,
-     * or reevaluate.
+     * reevaluate or advance.
      */
     void start(MachineKey<?, ?, ?> machine, String request) {
         debug("start " + machine + " " + request + (trigger.isPresent() ? " trigger=" + trigger.get() : ""));
@@ -201,7 +201,8 @@ final class CallLog {
 
     /**
      * {@code end code=<code> state=<recorded state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>
-     * [ reason="<explanation>"] elapsed=<us>}, on one line; the reason is printed as given, unescaped.
+     * automatic=<n>[ reason="<explanation>"] elapsed=<us>}, on one line: {@code aborted} counts the aborted
+     * reactions and {@code automatic} the automatic steps; the reason is printed as given, unescaped.
      */
     void end(Outcome<?, ?, ?> outcome) {
         List<Reaction> reactions = outcome.reactions();
@@ -214,7 +215,7 @@ final class CallLog {
         Optional<String> reason = outcome.explanation();
         debug("end code=" + outcome.code().name() + " state=" + outcome.recordedState().name() + entityField()
                 + " records=" + outcome.records().size() + " starts=" + outcome.starts().size() + " reactions="
-                + reactions.size() + " aborted=" + aborted
+                + reactions.size() + " aborted=" + aborted + " automatic=" + outcome.automaticSteps().size()
                 + (reason.isPresent() ? " reason=\"" + reason.get() + "\"" : "") + " elapsed=" + elapsed());
     }
 

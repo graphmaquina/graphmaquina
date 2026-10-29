@@ -50,8 +50,8 @@ public class TransitionAbortedException extends CallFailedException {
     /**
      * An abort of {@code call} in {@code phase}, described by {@code details}.
      *
-     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK or REACTIONS: an abort happens before the
-     *     commit
+     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK, REACTIONS or AUTOMATIC_STEPS: an abort
+     *     happens before the commit
      */
     public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message) {
         super(call, describe(details, message));
@@ -62,8 +62,8 @@ public class TransitionAbortedException extends CallFailedException {
     /**
      * An abort of {@code call} in {@code phase}, described by {@code details}, caused by {@code cause}.
      *
-     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK or REACTIONS: an abort happens before the
-     *     commit
+     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK, REACTIONS or AUTOMATIC_STEPS: an abort
+     *     happens before the commit
      */
     public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message,
                                       Throwable cause) {

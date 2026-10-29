@@ -51,18 +51,25 @@ sealed class Transaction permits Transaction.Admission {
     /** The entity of the root call. */
     @Getter(AccessLevel.PACKAGE)
     private final Object callEntity;
-    /** The identifier the call requested; empty for a reevaluation, which requests none. */
+    /** The identifier the call requested; empty for a reevaluation or an advance, which request none. */
     private final Optional<Enum<?>> requested;
-    private final boolean reaction;
+    /** Makes the call when an exception first needs it and no observer brought it. */
+    private final Supplier<MachineCall> newCall;
     /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
     private Optional<MachineCall> call;
     /**
-     * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
-     * its guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The
-     * root moves it on to COMMIT, HOOK and REACTIONS.
+     * Where the call stands. The root's own step moves it, to GUARD before its first guard and to ACTION once its
+     * guards passed, unless it only admits, as {@link Steps#admit} says; a cascaded step leaves it at ACTION. The body
+     * of an advance moves it back to RESOLVE before each automatic edge it tries, as {@link Attempts} says. The root
+     * moves it on to COMMIT, HOOK, REACTIONS and AUTOMATIC_STEPS.
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
+    /**
+     * What the root's own step throws once its guards passed, before the call enters ACTION, as
+     * {@link #checkRootAction} says; empty unless {@link #refuseRootActionWith} set it.
+     */
+    private Optional<Supplier<? extends RuntimeException>> rootActionRefusal = Optional.empty();
     /**
      * The state the root's own step read, its identifier and the destination of the edge it selected, recorded when
      * that step throws or when the clock cannot date its rejection; empty before.
@@ -79,14 +86,14 @@ sealed class Transaction permits Transaction.Admission {
     boolean condemned;
 
     Transaction(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
-                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
-                @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
+                @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested,
+                @NonNull Supplier<MachineCall> newCall, @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
         this.registry = registry;
         this.uow = uow;
         this.callKey = callKey;
         this.callEntity = callEntity;
         this.requested = requested;
-        this.reaction = reaction;
+        this.newCall = newCall;
         this.call = call;
         this.log = log;
     }
@@ -98,8 +105,10 @@ sealed class Transaction permits Transaction.Admission {
      * transaction. Its unit of work is its own, and empty, and {@code key} stands in for its entity.
      */
     static Transaction released(MachineRegistry registry, MachineKey<?, ?, ?> key) {
-        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(), false, Optional.empty(),
-                CallLog.OFF);
+        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(),
+                () -> {
+                    throw new IllegalStateException("the transaction of no call has no call");
+                }, Optional.empty(), CallLog.OFF);
     }
 
     /** The log of the call this transaction runs. */
@@ -108,7 +117,7 @@ sealed class Transaction permits Transaction.Admission {
     /** The call this transaction runs: created the first time it is needed, the same instance afterwards. */
     MachineCall call() {
         if (call.isEmpty()) {
-            call = Optional.of(new MachineCall(callKey, callEntity, requested, reaction));
+            call = Optional.of(newCall.get());
         }
         return call.get();
     }
@@ -185,6 +194,25 @@ sealed class Transaction permits Transaction.Admission {
 
     void enter(CallPhase next) { phase = next; }
 
+    /**
+     * Makes the root's own step throw what {@code refusal} supplies once its guards passed, before the call enters
+     * ACTION, as {@link #checkRootAction} says: an advance sets it when its attempt is past maxAutomaticChain, as
+     * {@link Attempts} says, so that its candidates still select but the one admitted runs nothing and writes nothing.
+     */
+    void refuseRootActionWith(Supplier<? extends RuntimeException> refusal) {
+        rootActionRefusal = Optional.of(refusal);
+    }
+
+    /**
+     * Throws what the refusal that {@link #refuseRootActionWith} set supplies, if one is set; returns otherwise. The
+     * root's own step calls it once its guards passed, right before the call enters ACTION, with its frame pushed.
+     */
+    void checkRootAction() {
+        if (rootActionRefusal.isPresent()) {
+            throw rootActionRefusal.get().get();
+        }
+    }
+
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
     void writing() { writing = true; }
 
@@ -198,7 +226,7 @@ sealed class Transaction permits Transaction.Admission {
         if (phase == CallPhase.COMMIT) {
             return writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
         }
-        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS || phase == CallPhase.AUTOMATIC_STEPS) {
             return StatesWritten.ALL;
         }
         return StatesWritten.NONE;
@@ -222,8 +250,9 @@ sealed class Transaction permits Transaction.Admission {
 
     /**
      * A step of the call at {@code depth}: the root's own step, which execute requests or a reevaluation's watch
-     * selects, as {@link Steps#transition} runs it; a cascade calls Steps.transition directly. {@code input} is the
-     * operation input of the call, empty when it has none; the contexts hand it out as it is.
+     * selects, as {@link Steps#transition} runs it, as it runs each candidate an advance tries; a cascade calls
+     * Steps.transition directly. {@code input} is the operation input of the call, empty when it has none; the contexts
+     * hand it out as it is.
      */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
                                                                           E entity, T id, int depth,
@@ -284,12 +313,12 @@ sealed class Transaction permits Transaction.Admission {
 
     /**
      * The exception the call throws for {@code error}: a failure of this call as it is; anything else, which only
-     * engine code that calls into the application can let through before the commit, an identity's hashCode while
-     * the log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit,
-     * the hooks and the reactions classify every failure of their own where it happens, so a phase after ACTION never
-     * reaches the abort. The abort names what the root's own step recorded when it threw, or when the clock could
-     * not date its rejection: the state it read, the identifier it resolved and the destination of the edge it
-     * selected; before the step read its state, it names the identifier the call requested.
+     * engine code that calls into the application can let through before the commit, an identity's hashCode while the
+     * log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit, the
+     * hooks, the reactions and the automatic steps classify every failure of their own where it happens, so a phase
+     * after ACTION never reaches the abort. The abort names what the root's own step recorded when it threw, or when
+     * the clock could not date its rejection: the state it read, the identifier it resolved and the destination of the
+     * edge it selected; before the step read its state, it names the identifier the call requested.
      */
     CallFailedException classify(Throwable error) {
         if (error instanceof CallFailedException failure && owns(failure)) {
@@ -476,9 +505,10 @@ sealed class Transaction permits Transaction.Admission {
         private Optional<String> abortReason = Optional.empty();
 
         Admission(@NonNull MachineRegistry registry, @NonNull UnitOfWork uow, @NonNull MachineKey<?, ?, ?> callKey,
-                  @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested, boolean reaction,
-                  @NonNull Optional<MachineCall> call, @NonNull CallLog log) {
-            super(registry, uow, callKey, callEntity, requested, reaction, call, log);
+                  @NonNull Object callEntity, @NonNull Optional<Enum<?>> requested,
+                  @NonNull Supplier<MachineCall> newCall, @NonNull Optional<MachineCall> call,
+                  @NonNull CallLog log) {
+            super(registry, uow, callKey, callEntity, requested, newCall, call, log);
         }
 
         /**

@@ -49,12 +49,12 @@ class TransitionSpecTest {
             Optional<ActionRef<String, DayOfWeek, Month>> action, List<Class<? extends Throwable>> failsOn,
             List<RecoveryRule<Month>> rules) {
         return new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, action, List.of(),
-                Optional.empty(), failsOn, Optional.empty(), Optional.empty(), rules);
+                Optional.empty(), failsOn, Optional.empty(), Optional.empty(), rules, false, false);
     }
 
     private static RecoveryRule<Month> rule(Class<? extends FailureKind> kind, Month transition,
                                             List<Class<? extends Throwable>> failsOn) {
-        return new RecoveryRule<>(kind, transition, failsOn);
+        return new RecoveryRule<>(kind, transition, failsOn, false);
     }
 
     @Test
@@ -216,8 +216,35 @@ class TransitionSpecTest {
         IllegalArgumentException invalidTimeout = assertThrows(IllegalArgumentException.class,
                 () -> new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Optional.of(SYNC),
                         List.of(), Optional.empty(), List.of(), Optional.of(Duration.ofSeconds(1)), Optional.empty(),
-                        duplicateKinds));
+                        duplicateKinds, false, false));
         assertEquals("MONDAY -JANUARY-> TUESDAY: timeout is only allowed on an asynchronous action",
                 invalidTimeout.getMessage());
+    }
+
+    @Test
+    void automaticAndContinuingFlagsAreComponents() {
+        TransitionSpec<String, DayOfWeek, Month> edge = new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY,
+                DayOfWeek.TUESDAY, Optional.of(SYNC), List.of(), Optional.of(Month.MARCH), List.of(), Optional.empty(),
+                Optional.empty(), List.of(), true, true);
+        assertTrue(edge.automatic());
+        assertTrue(edge.onFailureContinues());
+    }
+
+    @Test
+    void onFailureContinuesNeedsAnOnFailure() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY, Month.JANUARY,
+                        DayOfWeek.TUESDAY, Optional.of(SYNC), List.of(), Optional.empty(), List.of(), Optional.empty(),
+                        Optional.empty(), List.of(), false, true));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: onFailureContinues needs an onFailure", error.getMessage());
+    }
+
+    @Test
+    void theNineArgumentConstructorDeclaresNeutralFlags() {
+        TransitionSpec<String, DayOfWeek, Month> edge =
+                spec(Optional.of(SYNC), List.of(), Optional.of(Month.MARCH), Optional.empty());
+        assertFalse(edge.automatic());
+        assertFalse(edge.onFailureContinues());
+        assertEquals(List.of(), edge.recoveryRules());
     }
 }

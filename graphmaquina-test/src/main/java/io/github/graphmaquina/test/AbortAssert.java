@@ -76,9 +76,9 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
     }
 
     /**
-     * The abort raised before the entity's state was read, by an {@code execute} asked for {@code transition}, or by
-     * the edge {@code transition} a reevaluation selected: the entity's identity or its state could not be read, so it
-     * reports neither a state nor a destination.
+     * The abort raised before the entity's state was read, by an {@code execute} asked for {@code transition}, by
+     * the edge {@code transition} a reevaluation selected, or by the automatic edge {@code transition} an advance
+     * tried: the entity's identity or its state could not be read, so it reports neither a state nor a destination.
      */
     public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(@NonNull MachineKey<E, S, T> key,
             @NonNull E entity, @NonNull T transition) {
@@ -90,7 +90,10 @@ public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
         return this;
     }
 
-    /** The same for a reevaluation, which asks for no identifier: it reports none either. */
+    /**
+     * The same for a reevaluation or an advance that could not read the state before it ran an edge, which ask for no
+     * identifier: it reports none either.
+     */
     public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(@NonNull MachineKey<E, S, T> key,
             @NonNull E entity) {
         Checks.equal(context, "key", key, abort.key());

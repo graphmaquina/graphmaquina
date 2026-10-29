@@ -95,18 +95,20 @@ resolved from the origin that needs it.
 
 ### Absence, self-loops and reevaluation
 
-Three situations are distinct, and each has its own observable result.
+Four situations are distinct, and each has its own observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
 | No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine whose parent does not hold it is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
+| `advance(entity)` finds no automatic edge from the current state, or admits none of them | Nothing runs when there is none. Otherwise each automatic edge, in its declared order, gets the binding check and the guards of an execute of its identifier, and no action runs. No state write. | `Ignored`, with `IgnoreReason.NO_AUTOMATIC_TRANSITION`, or `NO_CANDIDATE_ADMITTED` and the `rejections()` of the edges it tried |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
 the only exit of a non-terminal state, and it is forbidden on a terminal.
 
-`Ignored` is reserved for reevaluation.
+`Ignored` is reserved for `reevaluate` and `advance`, which request no identifier. A reevaluation whose selected edge
+is refused returns `Rejected`; an `advance` never does.
 
 ### Guards and the reason a request is refused
 
@@ -159,6 +161,15 @@ You declare what a state can do, and its policy words the answer for everything 
 - An `onFailure` identifier, and the recovery identifier of every recovery rule, must name a different edge that
   exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
   it recovers, because identity, not destination, tells them apart.
+- A state with two or more automatic edges declares exactly one automatic order that names each of them once and
+  nothing else, and no state declares an order it cannot use: a second one, or one on a state with fewer than two
+  automatic edges (`SG108`). An edge without guards comes last in the order, since it is always chosen (`SG109`).
+- The automatic edges, together with the jumps of their continuing failure routes, form no cycle, whatever
+  `allowsCycle` says (`SG206`). A continuing route, an `onFailure` that continues or a recovery rule that continues,
+  leads to a state with an automatic edge (`SG305`). With annotations, `onFailureContinues` also needs an `onFailure`
+  to continue (`SG305`).
+- A state that holds a sub-machine has no automatic edge (`SG807`). With annotations, the identifier of an automatic
+  edge executes no operation that takes an input, because an automatic attempt carries none (`SG515`).
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 - A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
   an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
@@ -195,8 +206,9 @@ A typed facade exposes no generic selector: the application's entry points are t
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
 admitted without running it, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
-`async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the structural
-`definition()` and `transitionsFrom(state)`.
+`advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
+declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
+structural `definition()` and `transitionsFrom(state)`.
 
 An operation may accept a second argument: `Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict)`.
 Guards and actions read it through `ctx.input(Verdict.class)`, which returns `Optional<Verdict>`. This lets
@@ -268,7 +280,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade) |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.AutomaticOrder`, `.AutomaticOrders` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
@@ -304,19 +316,30 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | --- | --- | --- | --- |
 | `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
 | `StatePolicy` | type | `state: S`, `otherwise: String` | None |
-| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit` |
-| `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn` |
+| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean` |
+| `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn`, `continueChain: boolean` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
+| `AutomaticOrder` | type | `from: S`, `transitions: T[]` | None |
 | [`Check`](eligibility.md#check-through-the-facade) | method | `id: T` | None |
 
-`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
-`Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
-throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
+`StatePolicy`, `Transition`, `Reject` and `AutomaticOrder` are repeatable, through the generated `StatePolicies`,
+`Transitions`, `Rejects` and `AutomaticOrders` containers. `from` of a `Transition` must contain at least one state.
+Guard arrays execute in declaration order. `failsOn` takes throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
 `timeout` require an action, and `timeout` requires an asynchronous one.
 
 The processor reads and validates `recoveries`, including their failure kinds, throwable types and recovery
 transitions. Generated companions emit one typed `recover(...)` call per rule in declaration order, so annotated
 facades route failures through those rules just as graphs built directly with the DSL do.
+
+`automatic`, `onFailureContinues`, `continueChain` and `AutomaticOrder` declare the
+[automatic](automatic-transitions.md) part of the graph. An `automatic = true` annotation marks the edge from every
+origin in its `from`, whether it is written on an operation or on the interface, and the companion emits `.automatic()`
+for each. `onFailureContinues = true` makes the `onFailure` route a continuing one, emitted as
+`onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with `continueChain = true` is emitted as
+`recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is emitted as one
+`automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders included, to the
+validator the DSL runs in `build()`, so the structural rules above are reported with the same codes for an annotated
+graph.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and

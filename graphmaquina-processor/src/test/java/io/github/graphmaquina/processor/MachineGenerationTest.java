@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
@@ -203,6 +204,31 @@ class MachineGenerationTest {
 
         assertTrue(source.contains(".transition(DocTransition.AUTO_PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"
                 + ".action(\"autoPublish\", (context) -> docActions.autoPublish(context)).endTransition()"), source);
+    }
+
+    /**
+     * The companion implements advance by handing it to the state machine: on a doc whose state has no automatic
+     * edge, the facade answers the state machine's Ignored of NO_AUTOMATIC_TRANSITION.
+     */
+    @Test
+    void theGeneratedFacadeDelegatesAdvance() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.validDocs());
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.DocsRuntime");
+        assertTrue(source.contains("@Override\n    public Outcome<Doc, DocStatus, DocTransition> advance(Doc doc) {"
+                + " return stateMachine.advance(doc); }"), source);
+        Class<?> docActions = result.load("fx.DocActions");
+        Class<?> companion = result.load("fx.DocsRuntime");
+        @SuppressWarnings("unchecked")
+        GraphDefinition<Object, ?, ?> definition = (GraphDefinition<Object, ?, ?>) companion
+                .getMethod("graph", docActions).invoke(null, docActions.getConstructor().newInstance());
+        Class<?> docClass = result.load("fx.Doc");
+        Object doc = docClass.getConstructor(String.class).newInstance("d1");
+        Object facade = companion.getConstructor(StateMachine.class).newInstance(machine(definition,
+                docClass.getMethod("getStatus"), docClass.getMethod("setStatus", result.load("fx.DocStatus"))));
+        Outcome<?, ?, ?> outcome = (Outcome<?, ?, ?>) companion.getMethod("advance", docClass).invoke(facade, doc);
+        assertEquals(OutcomeCode.NO_AUTOMATIC_TRANSITION, outcome.code());
+        assertEquals("DRAFT", outcome.recordedState().toString());
     }
 
     /**

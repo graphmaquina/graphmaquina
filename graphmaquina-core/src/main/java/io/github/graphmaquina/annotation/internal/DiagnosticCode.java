@@ -28,6 +28,12 @@ public enum DiagnosticCode {
     /** Blank DSL callback or condition name. */
     SG107,
 
+    /** A state's automatic order is missing, repeated, incomplete or names an identifier that is not automatic. */
+    SG108,
+
+    /** In an automatic order, an edge without guards comes before another edge. */
+    SG109,
+
     /** Missing or repeated DSL initial declaration. */
     SG201,
 
@@ -43,6 +49,9 @@ public enum DiagnosticCode {
     /** Unused cycle allowance. */
     SG205,
 
+    /** The automatic edges and the continuing failure routes form a cycle. */
+    SG206,
+
     /** Invalid failure route. */
     SG301,
 
@@ -54,6 +63,9 @@ public enum DiagnosticCode {
 
     /** Ambiguous recovery rules. */
     SG304,
+
+    /** A continuing failure route leads to a state with no automatic edge. */
+    SG305,
 
     /** A watch rule names an identifier with no edge from the watched state. */
     SG401,
@@ -105,6 +117,9 @@ public enum DiagnosticCode {
 
     /** Two checks name the same operation, or one method carries both a {@code Transition} and a {@code Check}. */
     SG514,
+
+    /** An automatic transition's identifier runs an operation that takes an input, which an automatic attempt lacks. */
+    SG515,
 
     /** The processor could not write a generated source, provisional export index or processor inventory. */
     SG599,
@@ -168,5 +183,8 @@ public enum DiagnosticCode {
      * A sub-machine declared with annotations lacks the ways between its entities that it needs, or a set holds a
      * machine but not the machine bound to one of its states.
      */
-    SG806
+    SG806,
+
+    /** An automatic edge leaves a state that holds a sub-machine. */
+    SG807
 }

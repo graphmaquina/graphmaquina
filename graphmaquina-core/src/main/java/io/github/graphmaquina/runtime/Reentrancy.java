@@ -6,13 +6,13 @@ import io.github.graphmaquina.error.ReentrantTransitionException;
 /**
  * One boolean per thread, set for the whole of a root transaction, guards and phase 2 included; for the whole of an
  * eligibility check, as {@link Checks} runs it; while a watch is evaluated: the owner lookup of a dispatch, and a
- * reevaluation's state read, peer lookup and conditions; and while an observer is notified. It detects
- * execute/reevaluate/eligibility called from a callback that runs there, a guard, an action, a sub-machine's childOf
- * or parentOf, a watch function, a state accessor, an identity function or an observer callback, whatever the machine
- * or entity. After-commit hooks run once it is released, and a reaction's selected edge runs as a
- * root of its own once the watch functions are done. Carries nothing else. Each holder sets it once everything else is
- * prepared and releases it with a store as the first statement of a finally, so no failure leaves it set, not even a
- * StackOverflowError that unwinds through that finally with no stack left for a call.
+ * reevaluation's state read, peer lookup and conditions; while an advance reads its state and its candidates; and while
+ * an observer is notified. It detects execute/reevaluate/advance/eligibility called from a callback that runs there, a
+ * guard, an action, a sub-machine's childOf or parentOf, a watch function, a state accessor, an identity function or an
+ * observer callback, whatever the machine or entity. After-commit hooks run once it is released, and a reaction's
+ * selected edge runs as a root of its own once the watch functions are done. Carries nothing else. Each holder sets it
+ * once everything else is prepared and releases it with a store as the first statement of a finally, so no failure
+ * leaves it set, not even a StackOverflowError that unwinds through that finally with no stack left for a call.
  */
 final class Reentrancy {
 

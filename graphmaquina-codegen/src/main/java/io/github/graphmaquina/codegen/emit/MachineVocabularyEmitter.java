@@ -20,8 +20,8 @@ import java.util.Set;
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
  * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers,
- * {@code Recovery}, which is written only inside a {@code Transition}, and {@code Check}, which is written on a
- * method.
+ * {@code Recovery}, which is written only inside a {@code Transition}, {@code Check}, which is written on a
+ * method, and {@code AutomaticOrder} with its container, which orders the automatic edges of one state.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
@@ -50,7 +50,8 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check");
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check",
+        "AutomaticOrder", "AutomaticOrders");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
     private static final String METHOD_TARGET = "java.lang.annotation.ElementType.METHOD";
     private static final String EDGE_TARGETS =
@@ -116,6 +117,8 @@ final class MachineVocabularyEmitter {
         reject(source, simpleName, machine, state, transition);
         rejects(source, simpleName, machine);
         check(source, machine, transition);
+        automaticOrder(source, simpleName, machine, state, transition);
+        automaticOrders(source, simpleName, machine);
 
         source.outdent();
         source.line("}");
@@ -186,7 +189,11 @@ final class MachineVocabularyEmitter {
     private static void transition(JavaSource source, String vocabulary, String machine, String state,
             String transition) {
         describe(source, "Declares one edge of {@link " + machine + "}, identified by {@code id} from each of",
-            "its origins. An absent {@code action} makes the edge a move; a single action makes it an action.");
+            "its origins. An absent {@code action} makes the edge a move; a single action makes it an action.",
+            "",
+            "<p>An {@code automatic} edge is one the engine attempts by itself from its origin, in the order of the",
+            "{@link " + vocabulary + ".AutomaticOrder} of that state when it has several. An automatic attempt carries",
+            "no input, so the identifier of an automatic edge may not run an operation that takes one.</p>");
         annotation(source, machine, "TRANSITION", EDGE_TARGETS, Optional.of(vocabulary + ".Transitions"),
             "Transition");
         element(source, transition + " id();", "the identifier of the edge");
@@ -211,6 +218,10 @@ final class MachineVocabularyEmitter {
         source.line(vocabulary + ".Recovery[] recoveries() default {};");
         element(source, Timeout.class.getName() + "[] timeout() default {};",
             "the timeout of the asynchronous action, at most one; none by default");
+        element(source, "boolean automatic() default false;",
+            "whether the edge is automatic, tried after a commit from its origin; false by default");
+        element(source, "boolean onFailureContinues() default false;",
+            "whether the {@code onFailure} route continues the chain of automatic attempts; false by default");
         element(source, symbolClass(HookSymbol.class) + "[] afterCommit() default {};",
             "the hook run after the edge commits, at most one; none inherits the default hook of the"
                 + " {@code Definition}");
@@ -238,7 +249,10 @@ final class MachineVocabularyEmitter {
             "the edge's {@code onFailure}, the fallback, when it declares one. {@code transition} is",
             "resolved from the origin the entity is in, so an edge with that identifier must leave every",
             "origin of the declaring edge. Entered as a recovery, that edge runs without its guards and",
-            "applies no rule or fallback of its own: a recovery never chains.</p>");
+            "applies no rule or fallback of its own: a recovery never chains.</p>",
+            "",
+            "<p>With {@code continueChain} the rule also continues the chain of automatic attempts: the chain goes on",
+            "from the state the transition enters, which must have an automatic edge.</p>");
         annotation(source, machine, "RECOVERY", "{}", Optional.empty(), "Recovery");
         element(source, "java.lang.Class<? extends " + FailureKind.class.getName() + "> kind();",
             "the failure kind the rule takes");
@@ -246,6 +260,9 @@ final class MachineVocabularyEmitter {
             "the transition the rule takes, resolved from the origin the entity is in");
         element(source, "java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};",
             "the throwable types of the action the rule takes; none by default");
+        element(source, "boolean continueChain() default false;",
+            "whether the rule continues the chain of automatic attempts after it takes its transition;"
+                + " false by default");
         close(source);
     }
 
@@ -273,6 +290,26 @@ final class MachineVocabularyEmitter {
             "operation that owns {@code id} may pass its admission conditions now.");
         annotation(source, machine, "CHECK", METHOD_TARGET, Optional.empty(), "Check");
         element(source, transition + " id();", "the identifier of the operation the method checks");
+        close(source);
+    }
+
+    private static void automaticOrder(JavaSource source, String vocabulary, String machine, String state,
+            String transition) {
+        describe(source, "Orders the automatic edges that leave one state of {@link " + machine + "}: the chain tries",
+            "them in the order {@code transitions} names them, each exactly once.");
+        annotation(source, machine, "AUTOMATIC_ORDER", TYPE_TARGET, Optional.of(vocabulary + ".AutomaticOrders"),
+            "AutomaticOrder");
+        element(source, state + " from();", "the state whose automatic edges the order sorts");
+        element(source, transition + "[] transitions();",
+            "the identifiers of those edges, in the order the chain tries them");
+        close(source);
+    }
+
+    private static void automaticOrders(JavaSource source, String vocabulary, String machine) {
+        describe(source, "Holds the repeated {@link " + vocabulary + ".AutomaticOrder} declarations of {@link "
+            + machine + "}.");
+        annotation(source, machine, "AUTOMATIC_ORDERS", TYPE_TARGET, Optional.empty(), "AutomaticOrders");
+        element(source, vocabulary + ".AutomaticOrder[] value();", "the repeated declarations");
         close(source);
     }
 

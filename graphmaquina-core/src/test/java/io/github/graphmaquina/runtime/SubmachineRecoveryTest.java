@@ -313,6 +313,11 @@ class SubmachineRecoveryTest {
         }
 
         @Override
+        public List<TransitionSpec<Batch, BatchState, BatchChange>> automaticFrom(BatchState state) {
+            return graph.automaticFrom(state);
+        }
+
+        @Override
         public Optional<TransitionSpec<Batch, BatchState, BatchChange>> findTransition(BatchState from,
                                                                                      BatchChange transition) {
             return graph.findTransition(from, transition);
