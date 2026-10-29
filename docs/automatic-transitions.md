@@ -297,7 +297,9 @@ search every attempt that ran for the call, those nested in its reactions and in
 the first that matches: `automaticFailure()` an attempt that ended in `Failed`, whether its route stopped the chain or
 let it go on; `automaticBlock()` one that admitted no candidate, whose `rejections()` say why; and `automaticAbort()`
 one that aborted. Their types carry wildcards, because the attempts can be of other machines, and
-[find what the automatic steps did](outcomes.md#find-what-the-automatic-steps-did) gives their search order.
+[find what the automatic steps did](outcomes.md#find-what-the-automatic-steps-did) gives their search order. A chain
+that a call started by a hook decided is in that call's own outcome, which only the hook receives, so they do not find
+it.
 
 In [OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java),
 an account without its address stops at `INFO_SET`, and the block says why:

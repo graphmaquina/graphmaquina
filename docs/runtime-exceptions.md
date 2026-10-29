@@ -9,6 +9,15 @@ are `TransitionAbortedException`, `CommitFailedException` and `AfterCommitExcept
 `WatchChainExceededException` and `AutomaticChainExceededException` are `TransitionAbortedException`s, whose
 `details()` also report the machine key, the entity, the action and the cascade path.
 
+## Contents
+
+- [Exception hierarchy](#exception-hierarchy)
+- [What to investigate](#what-to-investigate)
+- [Accessors](#accessors)
+- [Aborts in detail](#aborts-in-detail)
+
+## Exception hierarchy
+
 ```mermaid
 classDiagram
     direction LR
@@ -38,6 +47,8 @@ classDiagram
     }
 ```
 
+## What to investigate
+
 | Exception | What to investigate |
 | --- | --- |
 | `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade or an exit. A peer's state read through a `PeerView`, such as `ctx.peer(Items.class).stateOf(item)`, throws it into the guard or action that read it, and a watch's owner lookup reports it in `Reaction.Aborted`. |
@@ -65,6 +76,8 @@ when no edge carries the requested identifier from the entity's current state. T
 codes either: map rejected transitions, business failures and technical failures to your application's own
 API contract.
 
+## Accessors
+
 Every `CallFailedException` reports `call()`, `phase()`, `statesWritten()`, `journal()` and `flow()`. Besides that,
 each exception exposes what identifies its cause:
 
@@ -84,6 +97,8 @@ each exception exposes what identifies its cause:
 | `EligibilityCheckException` | `key()`, `entity()`, `transition()`, and the `Optional`s `from()` and `guard()` |
 | `ReentrantTransitionException`, `StaleContextException`, `UninitializedStateException` | `key()`, `entity()` |
 | `InvalidGraphException` | `problems()`, each an `InvalidGraphException.Problem` with its `code()` and `message()`, and `codes()` |
+
+## Aborts in detail
 
 An abort describes one step. The aborts raised for the caller of a cascade or a peer read describe the cascading
 caller's own step, so their `key()`, `entity()`, `from()`, `transition()` and `to()` are the action's, not the peer's:

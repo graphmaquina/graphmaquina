@@ -174,6 +174,21 @@ class AutomaticValidationTest {
                 problems(graph));
     }
 
+    /**
+     * A cycle of automatic edges that no allowsCycle names is first an unauthorized cycle; allowing it reveals that
+     * the automatic edges form it.
+     */
+    @Test
+    void fixingAnSg204RevealsAnSg206() {
+        GraphBuilder<Doc, DocStatus, DocTransition> unallowed = docs()
+                .transition(SUBMIT, DRAFT, REVIEW).automatic().endTransition()
+                .transition(SEND_BACK, REVIEW, DRAFT).automatic().endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition();
+        assertEquals(List.of(DiagnosticCode.SG204.name()),
+                problems(unallowed).stream().map(InvalidGraphException.Problem::code).toList());
+    }
+
     @Test
     void sg206CycleThroughAnAllowedState() {
         GraphBuilder<Doc, DocStatus, DocTransition> graph = docs().allowsCycle(DRAFT)

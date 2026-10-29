@@ -112,10 +112,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The outcome of the first automatic attempt of this call that ended in {@link Failed}, whether its route stopped
-     * the chain or let it go on, among every attempt that ran for this call, nested ones included. The search follows
-     * the order the attempts ran: first the {@link #reactions()}, each {@link Reaction.Done} searched through its
-     * outcome the same way, then the {@link #automaticSteps()}, each step looked at itself and then searched through
-     * its outcome, its reactions and its steps. A watch reaction's own result never counts: a
+     * the chain or let it go on, among every attempt that ran for this call, nested ones included. A chain that a call
+     * started by a hook decided is in that call's own outcome, which only the hook receives, so it is not searched
+     * here. The search follows the order the attempts ran: first the {@link #reactions()}, each {@link Reaction.Done}
+     * searched through its outcome the same way, then the {@link #automaticSteps()}, each step looked at itself and
+     * then searched through its outcome, its reactions and its steps. A watch reaction's own result never counts: a
      * {@link Reaction.Done} whose outcome is Failed is the result of a watch, which {@link #reactions()} holds.
      * Empty when no attempt failed, and for a rejected or ignored outcome, which has neither steps nor reactions; the
      * outcome of an {@code advance} is its own first attempt, which this does not return.
