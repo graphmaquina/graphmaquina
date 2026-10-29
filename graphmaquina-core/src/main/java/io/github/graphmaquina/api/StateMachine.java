@@ -136,10 +136,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * or throws, it writes no state, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine,
      * runs no exit and tells no observer, and a context its guards got is stale once it ends. It answers for any
      * identifier of the catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a
-     * check made where
-     * no call may start, such as from a guard, an action or an observer, are refused before the check starts and
-     * throw as themselves; while a check runs, no call or check may start on its thread either. A check that cannot
-     * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
+     * check made where no call may start, such as from a guard, an action or an observer, are refused before the check
+     * starts and throw as themselves; while a check runs, no call or check may start on its thread either. A check that
+     * cannot reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
      * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
      * {@code check=<id>} in place of {@code call=<id>}.
      *

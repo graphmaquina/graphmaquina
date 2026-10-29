@@ -55,9 +55,12 @@ final class AutomaticChains {
      * The chain of the entity of {@code start}, added to {@code steps}, unless a call nested in the post-commit of
      * {@code scope} moved the entity: while its state has an automatic edge, an attempt, one automatic level above the
      * one before it, listed as a {@link AutomaticStep.Done} with its outcome. Without an automatic edge, it makes no
-     * attempt and runs no code of the application. The chain stops after an attempt that ended Ignored, after one
-     * whose commit took a failure route that stops the chain, and after one whose own post-commit ran a call that
-     * moved the entity, which decided its chain. Anything but an Error that an attempt throws, or that the chain's own
+     * attempt: of the application's code, it ran only what its comparisons and its read of the automatic edges run,
+     * the hashCode and equals of identities once a nested call reported an entity, and the automaticFrom of a
+     * GraphDefinition written by hand. The chain stops after an attempt that
+     * ended Ignored and after one whose commit took a failure route that stops the chain, without comparing or reading
+     * anything more, and after one whose own post-commit ran a call that moved the entity, which decided its chain,
+     * without reading the automatic edges again. Anything but an Error that an attempt throws, or that the chain's own
      * reads throw before its first attempt or after one, the graph's automaticFrom or the hashCode or equals of the
      * entity's identity as the scope and the attempt's list compare it, stops the chain as an
      * {@link AutomaticStep.Aborted} with it as the cause, a throwable that is not a RuntimeException wrapped in

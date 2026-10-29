@@ -152,8 +152,8 @@ final class GraphStatements {
     /**
      * The declarations the companion makes on the graph's builder, in the order the DSL takes them: the initial
      * state, the terminals, the cycle allowances, the policies, the rejections, each edge from each of its origins,
-     * the automatic orders, the watches and the sub-machines. Each declaration is the lines of its chain, the first starting with the call
-     * that opens it and every other with a call it makes on what the previous one returned.
+     * the automatic orders, the watches and the sub-machines. Each declaration is the lines of its chain, the first
+     * starting with the call that opens it and every other with a call it makes on what the previous one returned.
      */
     private static List<List<String>> statements(MachineModel model, Names names, Variables variables,
                                                  BoundInvocation invocations) {
@@ -264,7 +264,10 @@ final class GraphStatements {
         }
     }
 
-    /** {@code java.util.List.of(A, B)} over the identifiers {@code ids} of {@code transitions}, in their order. */
+    /**
+     * {@code List.of(A, B)} over the identifiers {@code ids} of {@code transitions}, in their order, with
+     * {@code List} written as the file writes the type it claimed.
+     */
     private static String identifiers(Names names, TypeElement transitions, List<String> ids) {
         List<String> constants = new ArrayList<>();
         for (String id : ids) {

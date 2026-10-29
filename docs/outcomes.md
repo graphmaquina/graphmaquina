@@ -260,14 +260,17 @@ read them.
   after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
   triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
   reaction's outcome. Entities compare as the commit log compares them, by machine and identity.
-- Outside any call, before its first attempt and after each attempt, to tell whether another follows, the chain
-  compares the entity with those that nested calls moved and reads the automatic edges of its state. When the
-  entity's identity throws from `hashCode` or `equals` as it is compared, or a `GraphDefinition` written by hand
-  throws from `automaticFrom` there, the chain ends as `AutomaticStep.Aborted` with what was thrown: a
-  `RuntimeException` as it is, any other throwable but an `Error` wrapped in `UndeclaredThrowableException`, with
-  the thread interrupted again for an `InterruptedException`. Such a step may follow the chain's last attempt. The
-  identity of another entity that throws there ends no chain but that entity's own. The same `automaticFrom`
-  throwing inside an attempt or an `advance` aborts that call in `RESOLVE`.
+- Outside any call, the chain decides whether an attempt follows. Before its first attempt, it compares the entity with
+  those that calls nested in the post-commit moved, then reads the automatic edges of its state. After an attempt that
+  ended `Ignored`, or whose failure took a route that stops the chain, it stops without either; after any other, it
+  compares the entity with those that calls nested in the attempt's post-commit moved and, unless one of them did, reads
+  the automatic edges of the state the attempt left it in. A comparison runs the `hashCode` and `equals` of identities
+  only when such a call moved something. When the entity's identity throws from `hashCode` or `equals` as it is
+  compared, or a `GraphDefinition` written by hand throws from `automaticFrom` there, the chain ends as
+  `AutomaticStep.Aborted` with what was thrown: a `RuntimeException` as it is, any other throwable but an `Error`
+  wrapped in `UndeclaredThrowableException`, with the thread interrupted again for an `InterruptedException`. Such a
+  step may follow the chain's last attempt. The identity of another entity that throws there ends no chain but that
+  entity's own. The same `automaticFrom` throwing inside an attempt or an `advance` aborts that call in `RESOLVE`.
 
 ## Find what the automatic steps did
 

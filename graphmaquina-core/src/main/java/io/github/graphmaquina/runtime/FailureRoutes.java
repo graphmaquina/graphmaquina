@@ -27,19 +27,20 @@ final class FailureRoutes {
      * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the original
      * origin and run that edge without guards and without a failure route of its own. Its hop is logged as one that
      * stops the automatic chain unless {@code continueChain}, the flag of the route that selected it, is set. An empty
-     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
-     * completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of the call aborts
-     * the call with it as cause, and the abort holds {@code cause}, the original throwable, as suppressed when it is
-     * present and another one: adding it reads no message. These aborts that the engine builds for the recovery step
-     * hold it as suppressed too, unless one is caused by that very throwable, as {@link Transaction#keepingOriginal}
-     * says: its own abort of the recovery action, for a null outcome or stage or a wait that timed out, was interrupted
-     * or was refused, before it poisons the call, where a poison stored earlier still ends the call as it is; the abort
-     * of a sub-machine that the recovery hop enters and that cannot start, once it poisoned the call, since no poison
-     * can precede it; and, once this method returned, the abort built for this step when the exit that a terminal state
-     * selects cannot run, as {@link Submachines#exits} says. A call that logs at TRACE logs the route, or the
-     * unhandled failure, once the rollback is done. A call that records its trail leaves what failed on the mark of the
-     * recovery hop, which sits at the savepoint since the rollback truncated the log there, as soon as the hop is
-     * marked: before a sub-machine its target binds starts and before the recovery action runs.
+     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A recovery action
+     * that throws, or completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of
+     * the call aborts the call with it as cause, and the abort holds {@code cause}, the original throwable, as
+     * suppressed when it is present and another one: adding it reads no message. These aborts that the engine builds
+     * for the recovery step hold it as suppressed too, unless one is caused by that very throwable, as
+     * {@link Transaction#keepingOriginal} says: its own abort of the recovery action, for a null outcome or stage or a
+     * wait that timed out, was interrupted or was refused, before it poisons the call, where a poison stored earlier
+     * still ends the call as it is; the abort of a sub-machine that the recovery hop enters and that cannot start, once
+     * it poisoned the call, since no poison can precede it; and, once this method returned, the abort built for this
+     * step when the exit that a terminal state selects cannot run, as {@link Submachines#exits} says. A call that logs
+     * at TRACE logs the route, or the unhandled failure, once the rollback is done. A call that records its trail
+     * leaves what failed on the mark of the recovery hop, which sits at the savepoint since the rollback truncated the
+     * log there, as soon as the hop is marked: before a sub-machine its target binds starts and before the recovery
+     * action runs.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity,

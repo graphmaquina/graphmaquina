@@ -29,7 +29,9 @@ final class PostCommitScope {
 
     /**
      * The cell of each thread: its only element is the innermost scope open on the thread, empty when none is. It is
-     * an array of Optional, so a thread with no scope open keeps nothing of the library.
+     * an array of Optional, so a thread with no scope open keeps nothing of the library, except a closed scope that a
+     * StackOverflowError left there by interrupting the closing of the outermost one, which the next scope opened or
+     * closed on the thread drops.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static final ThreadLocal<Optional<PostCommitScope>[]> INNERMOST =
@@ -43,7 +45,10 @@ final class PostCommitScope {
     private final Optional<PostCommitScope> self = Optional.of(this);
     /** Each entity a nested commit reported, in the order reported, repeats included. */
     private final List<EntityRef> moved = new ArrayList<>();
-    /** The entities of {@link #moved} before the position {@link #indexed}, as the commit log compares them. */
+    /**
+     * The entities of {@link #moved} before the position {@link #indexed}, as the commit log compares them, but those
+     * whose identity threw as they were indexed, which {@link #unindexed} holds instead.
+     */
     private final Set<EntityRef> index = new HashSet<>();
     /** The entities of {@link #moved} whose identity threw as they were indexed. */
     private final List<EntityRef> unindexed = new ArrayList<>();

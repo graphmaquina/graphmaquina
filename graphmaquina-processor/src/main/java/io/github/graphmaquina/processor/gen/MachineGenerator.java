@@ -565,8 +565,8 @@ public final class MachineGenerator {
     /**
      * Claims in {@code types}, in this order, {@code Duration} when an edge of {@code model} has a timeout,
      * {@code Optional} when the owner reader of a watch returns the owner itself, {@code WatchCondition} when a watch
-     * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more, and
-     * {@code Eligibility} when the facade declares a check.
+     * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more or the graph declares
+     * an automatic order, and {@code Eligibility} when the facade declares a check.
      */
     private static void claimWhereNeeded(Map<String, String> types, MachineModel model) {
         boolean anyTimeout = false;
