@@ -75,13 +75,13 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      *   <li>Neither ignored outcome writes anything.</li>
      * </ul>
      * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
-     * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error. A null argument and a
-     * call made where no call may start are refused before the call starts and throw as themselves; so does a
-     * {@link GraphDefinition} written by hand whose automaticFrom throws, as an abort in RESOLVE. Once the attempt
-     * committed, it runs the automatic chain of each entity it moved, as execute does, its own entity's included
-     * unless the attempt's failure took a route that does not continue: the attempts that follow are each a call of
-     * their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an Error, never throw
-     * to the caller.
+     * {@code UnhandledFailureException} of a domain failure that no route takes or, for a {@link GraphDefinition}
+     * written by hand whose automaticFrom throws, a {@code TransitionAbortedException} in RESOLVE; or an Error. A null
+     * argument and a call made where no call may start are refused before the call starts and throw as themselves.
+     * Once the attempt committed, it runs the automatic chain of each entity it moved, as execute does, its own
+     * entity's included unless the attempt's failure took a route that does not continue: the attempts that follow
+     * are each a call of their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an
+     * Error, never throw to the caller.
      */
     Outcome<E, S, T> advance(E entity);
 

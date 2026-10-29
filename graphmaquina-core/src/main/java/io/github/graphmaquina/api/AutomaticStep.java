@@ -5,9 +5,9 @@ import lombok.NonNull;
 /**
  * Result of one automatic attempt that a commit triggered: an {@code advance} of an entity the commit moved, made as a
  * call of its own once the commit's watch reactions ran. A throwable that is not an Error, thrown by the attempt or by
- * the chain's own reads before it, never propagates, because the commit that triggered the attempt already happened:
- * it becomes {@link Aborted}, and the chain of that entity stops there. An Error is not caught: it propagates
- * unchanged to the caller whose commit triggered the attempt.
+ * the reads the chain makes around its attempts, never propagates, because the commit that triggered the attempt
+ * already happened: it becomes {@link Aborted}, and the chain of that entity stops there. An Error is not caught: it
+ * propagates unchanged to the caller whose commit triggered the attempt.
  */
 public sealed interface AutomaticStep permits AutomaticStep.Done, AutomaticStep.Aborted {
 
@@ -27,18 +27,19 @@ public sealed interface AutomaticStep permits AutomaticStep.Done, AutomaticStep.
     }
 
     /**
-     * An attempt that threw, or a chain that could not make its next attempt, naming the entity of the chain.
+     * An attempt that threw, or a chain whose own reads around its attempts threw, naming the entity of the chain.
      * {@code cause} is RuntimeException, not StateMachineException, so that api does not depend on error. For an
      * attempt that threw, it is the attempt's {@code CallFailedException}, whose {@code statesWritten()} says how far
      * the attempt got in writing states: {@code NONE} when it wrote nothing, as an abort before its commit, the
      * {@code AutomaticChainExceededException} of an attempt past {@code maxAutomaticChain} included; {@code PARTIAL}
      * when one of its setters threw; and {@code ALL} when one of its hooks threw. The flow it hands out is the
-     * attempt's own. Before each attempt, outside any call, the chain reads the automatic edges of the entity's state
-     * and compares the entity with those that calls nested in the post-commit moved, which runs the automaticFrom of
-     * a {@link GraphDefinition} written by hand and the hashCode and equals of the identities it compares: what those
-     * throw is the cause as it is, a checked exception or any other throwable that is neither a RuntimeException nor
-     * an Error wrapped in {@link java.lang.reflect.UndeclaredThrowableException}, and an InterruptedException it
-     * wraps interrupts the thread again.
+     * attempt's own. Outside any call, before its first attempt and after each one, to tell whether another follows,
+     * the chain compares the entity with those that calls nested in the post-commit moved and reads the automatic
+     * edges of its state: what the hashCode or equals of the entity's identity throws as it is compared, or the
+     * automaticFrom of a {@link GraphDefinition} written by hand, is the cause as it is, a checked exception or any
+     * other throwable that is neither a RuntimeException nor an Error wrapped in
+     * {@link java.lang.reflect.UndeclaredThrowableException}, and an InterruptedException it wraps interrupts the
+     * thread again. Such a step may follow the last attempt the chain made.
      */
     record Aborted(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                    @NonNull RuntimeException cause) implements AutomaticStep {

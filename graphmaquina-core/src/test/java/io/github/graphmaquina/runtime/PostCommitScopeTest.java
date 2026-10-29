@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.fixtures.CellChains;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import java.util.List;
@@ -13,11 +14,39 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The post-commit scopes of a thread: a commit reports to every scope open around it, compared as the commit log
- * compares entities; a scope closes as the innermost open one; and a scope whose closing a StackOverflowError
- * interrupted after its first store, which marks it closed, takes no more reports and is dropped by the next scope
- * the thread opens or closes, so it neither grows nor makes the closing of the scope around it throw.
+ * compares entities; an identity that throws as a scope indexes it fails only the lookups of that identity; a scope
+ * closes as the innermost open one; and a scope whose closing a StackOverflowError interrupted after its first store,
+ * which marks it closed, takes no more reports and is dropped by the next scope the thread opens or closes, so it
+ * neither grows nor makes the closing of the scope around it throw. A real overflow, wherever it strikes while scopes
+ * open and close, leaves none open.
  */
 class PostCommitScopeTest {
+
+    private static final long STACK = 256 * 1024;
+
+    /**
+     * An identity whose hashCode throws.
+     *
+     * @param value the id
+     */
+    record Touchy(String value) {
+
+        @Override
+        public int hashCode() {
+            throw new IllegalStateException("no hash for " + value);
+        }
+    }
+
+    /** Opens a scope inside each scope it opened, closing each as a post-commit does, until the stack overflows. */
+    private static void nest() {
+        PostCommitScope scope = PostCommitScope.open();
+        try {
+            nest();
+        } finally {
+            scope.closed = true;
+            scope.close();
+        }
+    }
 
     private static EntityRef ref(String id) {
         return new EntityRef(DOCS, id, new Doc(id, DocStatus.DRAFT));
@@ -74,5 +103,45 @@ class PostCommitScopeTest {
         assertEquals(List.of(), stale.moved());
         PostCommitScope last = PostCommitScope.open();
         last.close();
+    }
+
+    /**
+     * An entry whose identity throws as the scope indexes it is set aside: lookups of other entities answer as before,
+     * however often they run, and only a lookup of that identity throws, from its own hashCode.
+     */
+    @Test
+    void anIdentityThatThrowsAsItIsIndexedFailsOnlyItsOwnLookups() {
+        Doc doc = new Doc("t1", DocStatus.DRAFT);
+        PostCommitScope scope = PostCommitScope.open();
+        PostCommitScope.report(List.of(new EntityRef(DOCS, new Touchy("t1"), doc), ref("d1")));
+        scope.closed = true;
+        scope.close();
+        assertTrue(scope.movedBelow(ref("d1")));
+        assertFalse(scope.movedBelow(ref("d2")));
+        EntityRef touchy = new EntityRef(DOCS, new Touchy("t1"), doc);
+        assertThrows(IllegalStateException.class, () -> scope.movedBelow(touchy));
+        assertFalse(scope.movedBelow(ref("d3")));
+    }
+
+    /**
+     * On a thread of a small stack, scopes open inside each other until the stack overflows, in rounds, inside a scope
+     * opened first: the overflow, wherever it strikes, in an open, in a close or between them, reaches the round as
+     * itself, and the first scope still takes reports and closes as the innermost one open. Where the overflow strikes
+     * depends on the JIT, so the rounds prove nothing when they pass by chance; they fail when an overflow leaves a
+     * scope open.
+     */
+    @Test
+    void anOverflowWhileScopesOpenOrCloseLeavesNoneOpen() throws InterruptedException {
+        Throwable thrown = CellChains.onStack(STACK, () -> {
+            for (int round = 0; round < 20; round++) {
+                PostCommitScope outer = PostCommitScope.open();
+                assertThrows(StackOverflowError.class, PostCommitScopeTest::nest);
+                PostCommitScope.report(List.of(ref("d" + round)));
+                outer.closed = true;
+                outer.close();
+                assertTrue(outer.movedBelow(ref("d" + round)));
+            }
+        });
+        assertEquals(null, thrown);
     }
 }

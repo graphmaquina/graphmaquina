@@ -192,7 +192,7 @@ on their thread. `onFailed` receives the very throwable the caller gets, with th
 how far it got in writing states; an `Error` is reported too, then propagates. The phase is one of `CallPhase`'s
 `RESOLVE`, `GUARD`, `ACTION`, `COMMIT`, `HOOK`, `REACTIONS` and `AUTOMATIC_STEPS`. Only an `Error` reaches `onFailed`
 in `REACTIONS`, one thrown by a reaction, or in `AUTOMATIC_STEPS`, one thrown by an automatic attempt, by the reads
-a chain makes before an attempt or by the `end` line of a call that committed, since any other throwable there
+a chain makes around its attempts or by the `end` line of a call that committed, since any other throwable there
 becomes a `Reaction.Aborted` or an `AutomaticStep.Aborted`. So an observer reads
 the call's flow as the caller does: `outcome.flow()` in `onCompleted`, and the `flow()` of the `CallFailedException` in `onFailed`, which
 the call attached before it told the observers.

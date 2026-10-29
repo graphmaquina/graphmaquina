@@ -511,4 +511,27 @@ class AutomaticChainCompositionTest {
         }
         assertEquals(DONE, job.status());
     }
+
+    /**
+     * The board's commit cascades the job, whose hook's call moves it on and chains it to DONE. When the commit's own
+     * chains start, the board first, the scope indexes the two entries of the job that call reported, and the job's
+     * identity throws comparing them: that ends no chain but the job's own, so the board, which has no automatic edge,
+     * makes no step, and the job's chain ends as an aborted step when its own identity throws.
+     */
+    @Test
+    void anIdentityThatThrowsEndsOnlyItsOwnChain() {
+        Job job = new Job("j1", TODO);
+        nudge = (TransitionContext<Board, BoardStatus, BoardTransition> ctx) -> ctx.cascade(JOBS, job, START);
+        List<Outcome<Job, JobStatus, JobTransition>> hooked = new ArrayList<>();
+        try (MachineRegistry registry = registry(DOING, 10, Fussy::new)) {
+            StateMachine<Job, JobStatus, JobTransition> jobs = registry.of(JOBS);
+            onStart = (Job started) -> hooked.add(jobs.execute(started, SKIP));
+            Outcome<Board, BoardStatus, BoardTransition> outcome =
+                    registry.of(BOARDS).execute(new Board("b1"), BoardTransition.NUDGE);
+            assertEquals(List.of("Aborted IllegalStateException"), described(outcome.automaticSteps()));
+            assertSame(job, outcome.automaticSteps().get(0).entity());
+        }
+        assertEquals(List.of("Done APPLIED SHIP DONE"), described(hooked.get(0).automaticSteps()));
+        assertEquals(DONE, job.status());
+    }
 }

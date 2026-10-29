@@ -260,12 +260,14 @@ read them.
   after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
   triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
   reaction's outcome. Entities compare as the commit log compares them, by machine and identity.
-- Before each attempt, outside any call, the chain reads the automatic edges of the entity's state and compares the
-  entity with those that nested calls moved. A `GraphDefinition` written by hand whose `automaticFrom` throws there,
-  or an identity whose `hashCode` or `equals` throws there, ends the chain as `AutomaticStep.Aborted` with what it
-  threw: a `RuntimeException` as it is, any other throwable but an `Error` wrapped in
-  `UndeclaredThrowableException`, with the thread interrupted again for an `InterruptedException`. The same
-  `automaticFrom` throwing inside an attempt or an `advance` aborts that call in `RESOLVE`.
+- Outside any call, before its first attempt and after each attempt, to tell whether another follows, the chain
+  compares the entity with those that nested calls moved and reads the automatic edges of its state. When the
+  entity's identity throws from `hashCode` or `equals` as it is compared, or a `GraphDefinition` written by hand
+  throws from `automaticFrom` there, the chain ends as `AutomaticStep.Aborted` with what was thrown: a
+  `RuntimeException` as it is, any other throwable but an `Error` wrapped in `UndeclaredThrowableException`, with
+  the thread interrupted again for an `InterruptedException`. Such a step may follow the chain's last attempt. The
+  identity of another entity that throws there ends no chain but that entity's own. The same `automaticFrom`
+  throwing inside an attempt or an `advance` aborts that call in `RESOLVE`.
 
 ## Find what the automatic steps did
 
@@ -276,7 +278,7 @@ the first one that matches:
 | Method | Returns | Present when |
 | --- | --- | --- |
 | `automaticFailure()` | `Optional<Outcome.Failed<?, ?, ?>>` | an attempt ended in `Failed`, whether its route stopped the chain or let it go on |
-| `automaticAbort()` | `Optional<AutomaticStep.Aborted>` | an attempt aborted, on a domain failure that no route takes, a technical failure, any other exception or `maxAutomaticChain`, or a chain could not make its next attempt |
+| `automaticAbort()` | `Optional<AutomaticStep.Aborted>` | an attempt aborted, on a domain failure that no route takes, a technical failure, any other exception or `maxAutomaticChain`, or the reads a chain makes around its attempts threw |
 | `automaticBlock()` | `Optional<Outcome.Ignored<?, ?, ?>>` | an attempt admitted none of its candidates, `NO_CANDIDATE_ADMITTED`; its `rejections()` say why |
 
 They search in the order the attempts ran. First come the `reactions()`, each `Reaction.Done` searched the same way

@@ -58,8 +58,9 @@ final class AutomaticChains {
      * attempt and runs no code of the application. The chain stops after an attempt that ended Ignored, after one
      * whose commit took a failure route that stops the chain, and after one whose own post-commit ran a call that
      * moved the entity, which decided its chain. Anything but an Error that an attempt throws, or that the chain's own
-     * reads throw before an attempt, the graph's automaticFrom or an identity's hashCode or equals, stops the chain as
-     * an {@link AutomaticStep.Aborted} with it as the cause, a throwable that is not a RuntimeException wrapped in
+     * reads throw before its first attempt or after one, the graph's automaticFrom or the hashCode or equals of the
+     * entity's identity as the scope and the attempt's list compare it, stops the chain as an
+     * {@link AutomaticStep.Aborted} with it as the cause, a throwable that is not a RuntimeException wrapped in
      * UndeclaredThrowableException, an InterruptedException interrupting the thread again; an Error propagates.
      * Otherwise it goes on from the state the attempt's commit left the entity in.
      */

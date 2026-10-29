@@ -14,7 +14,7 @@ import java.util.Set;
  * aborts in ACTION with a {@code TransitionAbortedException}. So does a call whose child reaches a terminal state that
  * its binding maps to no exit, or to an identifier with no edge leaving the bound state. An {@link #automaticFrom}
  * that throws aborts an advance, or an automatic attempt, in RESOLVE, and ends an automatic chain that reads it before
- * an attempt as an {@link AutomaticStep.Aborted}.
+ * an attempt, or after one, as an {@link AutomaticStep.Aborted}.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
