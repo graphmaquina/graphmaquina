@@ -52,14 +52,15 @@ final class AutomaticChains {
     }
 
     /**
-     * The chain of the entity of {@code start}, added to {@code steps}, unless a call nested in the post-commit of
-     * {@code scope} moved the entity: while its state has an automatic edge, an attempt, one automatic level above the
-     * one before it, listed as a {@link AutomaticStep.Done} with its outcome. Without an automatic edge, it makes no
-     * attempt: of the application's code, it ran only what its comparisons and its read of the automatic edges run, the
-     * hashCode and equals of identities once a nested call reported an entity, and the automaticFrom of a
-     * GraphDefinition written by hand. The chain stops after an attempt that ended Ignored and after one whose commit
-     * took a failure route that stops the chain, without comparing or reading anything more, and after one whose own
-     * post-commit ran a call that moved the entity, which decided its chain, without reading the automatic edges again.
+     * The chain of the entity of {@code start}, added to {@code steps}: while its state has an automatic edge and no
+     * call nested in the post-commit before it moved the entity, an attempt, one automatic level above the one before
+     * it, listed as a {@link AutomaticStep.Done} with its outcome. Before its first attempt and after each one, it
+     * reads the automatic edges of the state first, and compares the entity with those that the nested calls moved,
+     * the post-commit of {@code scope}'s or the attempt's own, only when that state has one. So a state without an
+     * automatic edge ends the chain having run, of the application's code, only the automaticFrom of a
+     * GraphDefinition written by hand: no state getter and no identity's hashCode or equals. The chain stops after an
+     * attempt that ended Ignored and after one whose commit took a failure route that stops the chain, without reading
+     * anything more, and after one whose own post-commit ran a call that moved the entity, which decided its chain.
      * Anything but an Error that an attempt throws, or that the chain's own reads throw before its first attempt or
      * after one, the graph's automaticFrom or the hashCode or equals of the entity's identity as the scope and the
      * attempt's list compare it, stops the chain as an {@link AutomaticStep.Aborted} with it as the cause, a throwable
@@ -70,22 +71,17 @@ final class AutomaticChains {
             DefaultStateMachine<E, S, T> machine, ChainStart start, ChainLevels levels, Optional<Long> trigger,
             PostCommitScope scope, List<AutomaticStep> steps) {
         E entity = machine.key().entity().cast(start.ref().instance());
-        S state = machine.key().states().cast(start.state());
         int level = levels.automatic();
         try {
-            if (scope.movedBelow(start.ref())) {
-                return;
-            }
-            while (!machine.definition().automaticFrom(state).isEmpty()) {
+            boolean next = hasAutomaticEdge(machine, machine.key().states().cast(start.state()))
+                    && !scope.movedBelow(start.ref());
+            while (next) {
                 level++;
                 Attempt<E, S, T> attempt = Attempts.attempt(machine, entity, CallOrigin.AUTOMATIC_STEP, trigger,
                         new ChainLevels(levels.watch(), level), Optional.of(start.ref()));
                 steps.add(new AutomaticStep.Done(machine.key(), entity, attempt.outcome()));
-                if (attempt.outcome() instanceof Outcome.Ignored<E, S, T> || attempt.stopsChain()
-                        || attempt.movedBelow().contains(start.ref())) {
-                    return;
-                }
-                state = attempt.state();
+                next = !(attempt.outcome() instanceof Outcome.Ignored<E, S, T>) && !attempt.stopsChain()
+                        && hasAutomaticEdge(machine, attempt.state()) && !attempt.movedBelow().contains(start.ref());
             }
         } catch (Error fatal) {
             throw fatal;
@@ -94,5 +90,11 @@ final class AutomaticChains {
             steps.add(new AutomaticStep.Aborted(machine.key(), entity, aborted instanceof RuntimeException runtime
                     ? runtime : new UndeclaredThrowableException(aborted)));
         }
+    }
+
+    /** Whether {@code state} has an automatic edge, as the machine's graph lists them. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean hasAutomaticEdge(
+            DefaultStateMachine<E, S, T> machine, S state) {
+        return !machine.definition().automaticFrom(state).isEmpty();
     }
 }

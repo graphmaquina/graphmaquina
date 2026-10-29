@@ -33,11 +33,11 @@ public sealed interface AutomaticStep permits AutomaticStep.Done, AutomaticStep.
      * the attempt got in writing states: {@code NONE} when it wrote nothing, as an abort before its commit, the
      * {@code AutomaticChainExceededException} of an attempt past {@code maxAutomaticChain} included; {@code PARTIAL}
      * when one of its setters threw; and {@code ALL} when one of its hooks threw. The flow it hands out is the
-     * attempt's own. Outside any call, to tell whether an attempt follows, the chain compares the entity with those
-     * that calls nested in the post-commit moved, before its first attempt and after each one that neither ended
-     * Ignored nor took a failure route that stops the chain, and then, unless one of them moved it, reads the
-     * automatic edges of its state: what the hashCode or equals of the entity's identity throws as it is compared,
-     * or the automaticFrom of a {@link GraphDefinition} written by hand, is the cause as it is, a checked exception or
+     * attempt's own. Outside any call, to tell whether an attempt follows, the chain reads the automatic edges of the
+     * entity's state, before its first attempt and after each one that neither ended Ignored nor took a failure route
+     * that stops the chain, and, only when that state has one, compares the entity with those that calls nested in the
+     * post-commit moved: what the automaticFrom of a {@link GraphDefinition} written by hand throws, or the hashCode
+     * or equals of the entity's identity as it is compared, is the cause as it is, a checked exception or
      * any other throwable that is neither a RuntimeException nor an Error wrapped in
      * {@link java.lang.reflect.UndeclaredThrowableException}, and an InterruptedException it wraps interrupts the
      * thread again. Such a step may follow the last attempt the chain made.

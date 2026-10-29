@@ -514,9 +514,11 @@ class AutomaticChainCompositionTest {
 
     /**
      * The board's commit cascades the job, whose hook's call moves it on and chains it to DONE. When the commit's own
-     * chains start, the board first, the scope indexes the two entries of the job that call reported, and the job's
-     * identity throws comparing them: that ends no chain but the job's own, so the board, which has no automatic edge,
-     * makes no step, and the job's chain ends as an aborted step when its own identity throws.
+     * chains start, the board first, NUDGED has no automatic edge, so the board's chain ends without comparing
+     * anything and makes no step. The job's chain starts from DOING, which has one, so the scope indexes the two
+     * entries of the job that the hook's call reported: the identity of the second one throws as it is indexed, which
+     * sets that entry aside and ends no chain, and the job's chain ends as an aborted step when its own identity
+     * throws as the scope looks it up.
      */
     @Test
     void anIdentityThatThrowsEndsOnlyItsOwnChain() {

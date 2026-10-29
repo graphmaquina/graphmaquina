@@ -39,6 +39,7 @@ import io.github.graphmaquina.fixtures.AccountTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -105,8 +106,40 @@ class AutomaticChainTest {
         void setReceipt(ReceiptStatus receipt) { this.receipt = receipt; }
     }
 
+    /** What the probes of a task machine counted while {@link #armed} was true. */
+    static final class Calls {
+
+        boolean armed;
+        int identity;
+        int state;
+    }
+
+    /**
+     * The identity of a task: its id, compared by value, whose hashCode and equals count each call in {@code calls}
+     * while it is armed.
+     *
+     * @param id the task's id
+     * @param calls where the calls are counted
+     */
+    record CountedId(String id, Calls calls) {
+
+        @Override
+        public boolean equals(Object other) {
+            calls.identity += calls.armed ? 1 : 0;
+            return other instanceof CountedId that && that.id.equals(id);
+        }
+
+        @Override
+        public int hashCode() {
+            calls.identity += calls.armed ? 1 : 0;
+            return id.hashCode();
+        }
+    }
+
     private final AddressVerifier verifier = new AddressVerifier();
     private final StateMachine<Account, AccountStatus, AccountTransition> accounts = machine(onboarding(verifier));
+    /** The after-commit hook of FINISH in {@link #counted}. */
+    private Consumer<Task> onFinish = (Task task) -> { };
 
     /** An account in {@code status} whose personal info is complete and whose address is complete or not. */
     private static Account account(AccountStatus status, boolean addressComplete) {
@@ -249,6 +282,54 @@ class AutomaticChainTest {
         assertEquals(TaskStatus.BLOCKED, outcome.recordedState());
         assertEquals(List.of("Done APPLIED ESCALATE ESCALATED"), described(outcome.automaticSteps()));
         assertEquals(TaskStatus.ESCALATED, task.status());
+    }
+
+    /**
+     * The task machine whose FINISH, OPEN to DONE, runs {@link #onFinish} after its commit, BLOCK leads to BLOCKED and
+     * the automatic ESCALATE on to ESCALATED; its state getter and its identity count their calls in {@code calls}.
+     */
+    private StateMachine<Task, TaskStatus, TaskTransition> counted(Calls calls) {
+        GraphDefinition<Task, TaskStatus, TaskTransition> tasks = StateGraph.define(TASKS)
+                .initial(TaskStatus.OPEN).terminal(TaskStatus.DONE).terminal(TaskStatus.ESCALATED)
+                .statePolicy(TaskStatus.OPEN, "an open task is finished")
+                .statePolicy(TaskStatus.BLOCKED, "a blocked task is escalated")
+                .transition(TaskTransition.FINISH, TaskStatus.OPEN, TaskStatus.DONE)
+                    .afterCommit("finished", (Task task) -> onFinish.accept(task)).endTransition()
+                .transition(TaskTransition.BLOCK, TaskStatus.OPEN, TaskStatus.BLOCKED).endTransition()
+                .transition(TaskTransition.ESCALATE, TaskStatus.BLOCKED, TaskStatus.ESCALATED).automatic()
+                    .endTransition()
+                .build();
+        return StateMachines.from(tasks)
+                .state((Task task) -> {
+                    calls.state += calls.armed ? 1 : 0;
+                    return task.status();
+                }, Task::setStatus)
+                .identity((Task task) -> new CountedId(task.id(), calls))
+                .build();
+    }
+
+    /**
+     * The hook of the first task's FINISH finishes a second task, a call nested in the first commit's post-commit,
+     * which reports the second task to it. The first task's chain then starts from DONE, which has no automatic edge:
+     * it reads no state and runs no identity's hashCode or equals, which comparing it with the reported task would.
+     */
+    @Test
+    void aStateWithoutAutomaticEdgesComparesNoIdentity() {
+        Calls calls = new Calls();
+        StateMachine<Task, TaskStatus, TaskTransition> tasks = counted(calls);
+        Task first = new Task("t1");
+        Task second = new Task("t2");
+        onFinish = (Task task) -> {
+            if (task == first) {
+                tasks.execute(second, TaskTransition.FINISH);
+                calls.armed = true;
+            }
+        };
+        Outcome<Task, TaskStatus, TaskTransition> outcome = tasks.execute(first, TaskTransition.FINISH);
+        calls.armed = false;
+        assertEquals(List.of(OutcomeCode.APPLIED, List.of()), List.of(outcome.code(), outcome.automaticSteps()));
+        assertEquals(List.of(TaskStatus.DONE, TaskStatus.DONE), List.of(first.status(), second.status()));
+        assertEquals(List.of(0, 0), List.of(calls.identity, calls.state));
     }
 
     /**
