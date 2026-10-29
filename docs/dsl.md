@@ -81,8 +81,8 @@ Each call returns the stage the next call continues from:
 
 ```mermaid
 flowchart LR
-    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject"]
-    graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, failsOn, recover, timeout,<br/>afterCommit, afterCommitWith"]
+    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder"]
+    graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, onFailureAndContinue, failsOn,<br/>recover, recoverAndContinue, timeout,<br/>automatic, afterCommit, afterCommitWith"]
     edge -- "endTransition()" --> graphStage
     graphStage -- "watch(state, peerKey, peersOf, ownerOf)" --> watch["WatchBuilder<br/>when(condition)"]
     watch -- "when(...)" --> rule["WatchRuleBuilder"]
@@ -104,8 +104,12 @@ wait. `recover(kind, id)` names the
 recovery for a returned failure of that kind; `recover(kind, id, type)` and `recover(kind, id, types)` also route a
 throwable whose most specific declared type is one of the rule's. `onFailure(id)` names the fallback for every other
 returned failure and for a throwable whose most specific declared type is one of the edge's `failsOn`. Recovery
-identifiers resolve from the failing edge's origin. `afterCommit(name, hook)` takes a hook of the entity alone and
-`afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
+identifiers resolve from the failing edge's origin. `recoverAndContinue`, with the overloads of `recover`, and
+`onFailureAndContinue(id)`, which is the edge's `onFailure`, declare routes that let the entity's automatic chain go on
+from the recovery state. `automatic()` marks the edge as one the machine takes on its own, and the graph's
+`automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, as
+[automatic transitions](automatic-transitions.md) explains. `afterCommit(name, hook)` takes a hook of the entity alone
+and `afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
 second throws `IllegalStateException` at once. `statePolicy` and `reject` word the answers a node gives. A state has
 exactly the edges you declare.
 
@@ -113,10 +117,10 @@ A guard or an action is named by the name given or, without one, by the simple n
 method reference or an anonymous class has no such name, so it needs the overload that takes one: `build()` reports
 `SG106` without it, and `SG107` for a blank name. `build()` refuses a second guard of one name on an edge with
 `SG105`, as it refuses the same guard declared twice. An edge left open, or one that declares more than one action,
-`onFailure` or `timeout`, fails `build()` with `SG507`; a missing or repeated `initial` is `SG201`. A null argument is
-refused at once with a `NullPointerException`. An edge's stage refuses every further call with
-`IllegalStateException` once `endTransition()` closed it, and once `build()` has run, even a `build()` that failed,
-every stage refuses further declarations, and a second `build()`, the same way.
+`onFailure` or `timeout`, or a second `automatic()`, fails `build()` with `SG507`; a missing or repeated `initial`
+is `SG201`. A null argument is refused at once with a `NullPointerException`. An edge's stage refuses every further
+call with `IllegalStateException` once `endTransition()` closed it, and once `build()` has run, even a `build()` that
+failed, every stage refuses further declarations, and a second `build()`, the same way.
 
 `build()` first reports what an edge, the initial state or a watch gets wrong on its own, and duplicate keys. The
 structural checks, policies, terminal states, reachability, cycles, failure routes, watch targets and the bindings of
@@ -129,19 +133,21 @@ every code.
 `TransitionSpec` refuses `onFailure`, `failsOn` or recovery rules without an action, and a timeout without an
 asynchronous action, with `IllegalArgumentException`. A definition assembled from them by hand gets none of the graph
 checks `build()` runs, such as reachability, cycles or failure routes, so the DSL or the annotations are the way to a
-validated graph. Their constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard
-name only for `GUARD`, a `Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its
-`statesWritten`, a `MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any other
-request, and a reaction only for a `REEVALUATE`, a `TransitionSpec` a positive timeout, a `WatchSpec` at least one rule, and named references a non-blank name. The outcome constructors
-without `starts`, `failureKind` or `flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec`
-whose `failsOn` holds an interface type can make the order of its entries change the route, which the DSL and the
-annotations never allow. The `TransitionSpec` constructor without `recoveryRules` declares none, and a `SubmachineSpec`
-copies its exits, in order, into an unmodifiable map and refuses a null terminal or identifier with
-`NullPointerException`. The `dsl` package also holds
-the outline records and `MachineOutlineValidator` that the DSL and the annotation processor share to check a graph by
-names; building a graph does not need them. `MachineOutlineValidator.validate(outline)` returns the problems sorted by
-code, origin state and identifier, and the outline records refuse empty or repeated states, repeated identifiers and
-unknown names with `IllegalArgumentException`.
+validated graph. Such a definition implements `automaticFrom(state)` itself: the runtime asks only it for the automatic
+edges of a state, so it must list exactly the edges leaving that state that are marked `automatic`. The records'
+constructors check what they can: an outcome's `Rejected` needs a non-blank reason and a guard name only for `GUARD`, a
+`Failed` a non-blank reason and a valid failure kind, a `CallFailure` a phase that matches its `statesWritten`, a
+`MachineCall` an identifier of its own catalogue, one for an `EXECUTE` and none for any other request, a reaction only
+for a `REEVALUATE` and an automatic step only for an `ADVANCE`, a `TransitionSpec` a positive timeout, a `WatchSpec` at
+least one rule, and named references a non-blank name. The outcome constructors without `starts`, `failureKind` or
+`flow` report none and give `FlowView.empty()`. A hand-built `TransitionSpec` whose `failsOn` holds an interface type
+can make the order of its entries change the route, which the DSL and the annotations never allow. The `TransitionSpec`
+constructor without `recoveryRules`, `automatic` and `onFailureContinues` declares no rule and neither flag, and a
+`SubmachineSpec` copies its exits, in order, into an unmodifiable map and refuses a null terminal or identifier with
+`NullPointerException`. The `dsl` package also holds the outline records and `MachineOutlineValidator` that the DSL and
+the annotation processor share to check a graph by names; building a graph does not need them.
+`MachineOutlineValidator.validate(outline)` returns the problems sorted by code, origin state and identifier, and the
+outline records refuse empty or repeated states, repeated identifiers and unknown names with `IllegalArgumentException`.
 
 ## Watches and sub-machines
 
@@ -216,4 +222,4 @@ executor never is; give it an `asyncExecutor` you close yourself when it runs ca
 
 ---
 
-Next: [Asynchronous work and timeouts](async.md). Back to the [documentation index](README.md).
+Next: [Automatic transitions](automatic-transitions.md). Back to the [documentation index](README.md).

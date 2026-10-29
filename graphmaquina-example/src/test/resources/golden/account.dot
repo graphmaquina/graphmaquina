@@ -1,0 +1,23 @@
+digraph "Account/AccountStatus" {
+    rankdir=LR;
+    initial [shape=point, label=""];
+    n0 [label="NEW", shape=ellipse, tooltip="otherwise: a new account sets its password"];
+    n1 [label="PASSWORD_SET", shape=ellipse, tooltip="otherwise: an account completes its personal info"];
+    n2 [label="INFO_SET", shape=ellipse, tooltip="otherwise: an account completes its address"];
+    n3 [label="ADDRESS_SET", shape=ellipse, tooltip="otherwise: an account is activated"];
+    n4 [label="ACTIVE", shape=doublecircle, tooltip="otherwise: terminal state ACTIVE accepts no transitions"];
+    n5 [label="PREMIUM", shape=doublecircle, tooltip="otherwise: terminal state PREMIUM accepts no transitions"];
+    n6 [label="FLAGGED", shape=ellipse, tooltip="otherwise: a flagged account is reviewed"];
+    n7 [label="REVIEW", shape=ellipse, tooltip="otherwise: a reviewed account is closed"];
+    n8 [label="CLOSED", shape=doublecircle, tooltip="otherwise: terminal state CLOSED accepts no transitions"];
+    initial -> n0;
+    n0 -> n1 [label="SET_PASSWORD"];
+    n1 -> n1 [label="TOUCH"];
+    n1 -> n2 [label="COMPLETE_INFO [auto] [if infoComplete]"];
+    n2 -> n3 [label="COMPLETE_ADDRESS [auto] verifyAddress [if addressComplete] [recover AddressFailures$Unverifiable -> FLAG continues]"];
+    n2 -> n6 [label="FLAG"];
+    n3 -> n5 [label="ACTIVATE_PREMIUM [auto 1] [if premium]"];
+    n3 -> n4 [label="ACTIVATE [auto 2]"];
+    n6 -> n7 [label="REQUEST_REVIEW [auto]"];
+    n7 -> n8 [label="CLOSE"];
+}

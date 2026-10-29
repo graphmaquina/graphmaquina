@@ -25,11 +25,11 @@ The runtime's normal root execution follows this sequence:
 5. Release the root reentrancy marker and invalidate transition contexts.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
-8. Run the automatic chain of each entity with a hop or a sub-machine start in the commit, in log order, unless its
-   last hop there is a failure route that does not continue, or a call made on the same thread in steps 6 to 8, by a
-   hook, a watch reaction or an earlier attempt, already committed a hop or a start of it: the deepest commit that
-   moved an entity chains it. While its state has an automatic edge, one `advance` of it after another, each a call
-   of its own, which `automaticSteps()` lists, as
+8. Run the [automatic chain](automatic-transitions.md#when-the-chain-runs) of each entity with a hop or a sub-machine
+   start in the commit, in log order, unless its last hop there is a failure route that does not continue, or a call
+   made on the same thread in steps 6 to 8, by a hook, a watch reaction or an earlier attempt, already committed a hop
+   or a start of it: the deepest commit that moved an entity chains it. While its state has an automatic edge, one
+   `advance` of it after another, each a call of its own, which `automaticSteps()` lists, as
    [records, journals and reactions](outcomes.md#records-journals-and-reactions) describes.
 9. Freeze the call's flow, notify the observers that the call completed, and return its outcome, which carries the
    frozen flow.
@@ -275,7 +275,9 @@ your application's transaction boundary.
 GraphMaquina's after-commit means its in-memory state commit. It does not mean a surrounding database
 transaction committed. If a message must follow a durable database commit, use your persistence framework's
 transaction-completion facility or a transactional outbox rather than assuming the graph hook provides that
-guarantee.
+guarantee. Likewise, when the application throws its own error for an automatic step that failed after the call
+committed, a transaction that rolls back on that error undoes in the database what the outcome reports as committed,
+as [the application's transaction](automatic-transitions.md#the-applications-transaction) warns.
 
 Executor-based calls do not automatically propagate thread-local transactions, security contexts or ORM
 sessions. Arrange those boundaries on the execution thread. Async action callbacks must not use an entity or

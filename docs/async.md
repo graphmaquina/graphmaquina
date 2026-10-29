@@ -292,7 +292,7 @@ An unexpected exception, such as `IllegalStateException`, completes the operatio
 There are two layers of result. A future that completes normally does not imply `Outcome.Applied`:
 `Rejected`, `Ignored` and a handled `Failed` are normal values too.
 
-![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions must also be inspected.](images/async-future-results.svg)
+![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions and automatic steps must also be inspected.](images/async-future-results.svg)
 
 With the `tickets` and `ticket` from the example, this fragment reacts to completion without joining:
 

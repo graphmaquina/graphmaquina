@@ -96,15 +96,15 @@ classDiagram
 ```
 
 A `TransitionSpec` is one edge: its endpoints and identifier, its `kind()`, `ACTION` or `MOVE`, its `key()`, the
-`TransitionKey` `(from, transition)`, which prints as `FROM/TRANSITION`, the `ActionRef` and `GuardRef`s that name its action and guards, its
-`onFailure`, `failsOn`, `recoveryRules()`, `timeout` and `afterCommit` hook, and `isAsync()`, true when the action
-or any guard is asynchronous. `automatic()` says the graph declares the edge automatic, and `onFailureContinues()`
-that its `onFailure` route continues the chain of automatic attempts; so does a `RecoveryRule` whose
-`continueChain()` is true. `policy(state)` is never null: a `StatePolicy` holds the state's `otherwise` reason
-and its `rejectionReasons()` per identifier, and `reasonFor(id)` picks the one a request gets. `watch(state)`
-returns the state's `WatchSpec`, with the peer machine's key and its ordered `WatchRule`s, each a named condition and
-the identifier it executes, and `submachine(state)` the `SubmachineSpec` that binds a child, with its `child()`
-definition, `childKey()` and `exits()`.
+`TransitionKey` `(from, transition)`, which prints as `FROM/TRANSITION`, the `ActionRef` and `GuardRef`s that name its
+action and guards, its `onFailure`, `failsOn`, `recoveryRules()`, `timeout` and `afterCommit` hook, and `isAsync()`,
+true when the action or any guard is asynchronous. `automatic()` says the graph declares the edge
+[automatic](automatic-transitions.md), and `onFailureContinues()` that its `onFailure` route continues the chain of
+automatic attempts; so does a `RecoveryRule` whose `continueChain()` is true. `policy(state)` is never null: a
+`StatePolicy` holds the state's `otherwise` reason and its `rejectionReasons()` per identifier, and `reasonFor(id)`
+picks the one a request gets. `watch(state)` returns the state's `WatchSpec`, with the peer machine's key and its
+ordered `WatchRule`s, each a named condition and the identifier it executes, and `submachine(state)` the
+`SubmachineSpec` that binds a child, with its `child()` definition, `childKey()` and `exits()`.
 
 An `ActionRef` and a `GuardRef` are either `Sync` or `Async` records, with their `name()` and `isAsync()`; a `HookRef`
 is a named hook that takes the entity and its `CommitContext`, which `run(entity, context)` calls, and

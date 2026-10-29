@@ -274,9 +274,9 @@ read them.
 
 ## Find what the automatic steps did
 
-A call's automatic attempts can fail, abort or stop at a guard after the call itself committed, in its own chains or
-in chains nested in its reactions and in other attempts. Three methods of every outcome search all of them and return
-the first one that matches:
+A call's [automatic attempts](automatic-transitions.md) can fail, abort or stop at a guard after the call itself
+committed, in its own chains or in chains nested in its reactions and in other attempts. Three methods of every outcome
+search all of them and return the first one that matches:
 
 | Method | Returns | Present when |
 | --- | --- | --- |

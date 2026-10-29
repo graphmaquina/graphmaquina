@@ -45,19 +45,20 @@ Each setting is checked where it is given: a `maxCascadeDepth`, `maxWatchChain` 
 `IllegalArgumentException`. The builder is single-use: once `build()` succeeds, every method throws
 `IllegalStateException`.
 
-The limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
-reaction runs one level deeper, so that stack bounds them too. So does each automatic attempt that a commit triggers,
-one level deeper than the call whose commit triggered it, while the attempts of one entity's chain run one after
-another at the same level; `maxAutomaticChain(int)`, on the set builder and on `MachineRegistry.builder()`, bounds how many attempts may follow one
-another on one path of continuations, 10 by default and at least 1: the attempt one past it that admits a candidate
-aborts, before its action runs, with `AutomaticChainExceededException`. How many levels a stack holds depends on the
-JIT, on the platform and on the frames of your own callbacks. As one measure, with an action that only cascades to the next
-entity, on JDK 21.0.9 on macOS arm64, a thread of 1 MiB held about 300 to 450 cascade levels, and one of 8 MiB about
-2,600 over the first calls of the JVM and about 30,000 once the JIT had optimized the engine's code. A call that goes deeper than its thread's stack meets a `StackOverflowError`, which reaches your actions
-on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch chain or
-an automatic chain, the root and the reactions and attempts before the one that overflowed have committed already. The
-registry and the thread are not left unusable by it: later calls run as before. Keep the limits within what the stacks of your threads hold, or run
-deep calls on threads with a larger stack.
+The limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch reaction
+runs one level deeper, so that stack bounds them too. So does each [automatic attempt](automatic-transitions.md) that a
+commit triggers, one level deeper than the call whose commit triggered it, while the attempts of one entity's chain run
+one after another at the same level; `maxAutomaticChain(int)`, on the set builder and on `MachineRegistry.builder()`,
+bounds how many attempts may follow one another on one path of continuations, 10 by default and at least 1: the attempt
+one past it that admits a candidate aborts, before its action runs, with `AutomaticChainExceededException`. How many
+levels a stack holds depends on the JIT, on the platform and on the frames of your own callbacks. As one measure, with
+an action that only cascades to the next entity, on JDK 21.0.9 on macOS arm64, a thread of 1 MiB held about 300 to 450
+cascade levels, and one of 8 MiB about 2,600 over the first calls of the JVM and about 30,000 once the JIT had optimized
+the engine's code. A call that goes deeper than its thread's stack meets a `StackOverflowError`, which reaches your
+actions on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch
+chain or an automatic chain, the root and the reactions and attempts before the one that overflowed have committed
+already. The registry and the thread are not left unusable by it: later calls run as before. Keep the limits within what
+the stacks of your threads hold, or run deep calls on threads with a larger stack.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An interrupt of the closing thread interrupts the

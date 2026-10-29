@@ -184,6 +184,24 @@ class AutomaticChainTest {
     }
 
     /**
+     * A call of the application that fails by a route that continues runs its entity's chain from the recovery state,
+     * as an attempt does: here an advance, whose own attempt is that call.
+     */
+    @Test
+    void anApplicationCallFailedByAContinuingRouteChainsFromTheRecoveryState() {
+        AddressVerifier unverifiable = new AddressVerifier();
+        unverifiable.behaviour = (Account target) ->
+                ActionOutcome.failed(AddressFailures.Unverifiable.class, "address cannot be verified");
+        Account account = account(INFO_SET, true);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                machine(onboardingContinuing(unverifiable)).advance(account);
+        assertEquals(OutcomeCode.FAILURE_ROUTED, outcome.code());
+        assertEquals(FLAGGED, outcome.recordedState());
+        assertEquals(List.of("Done APPLIED REQUEST_REVIEW REVIEW"), described(outcome.automaticSteps()));
+        assertEquals(REVIEW, account.status());
+    }
+
+    /**
      * An attempt whose own step enters a bound state whose child starts in a terminal state also runs that child's
      * exit: the chain goes on from where the exit left the entity, not from the destination of the edge the attempt
      * ran, which its outcome records.

@@ -483,8 +483,9 @@ and a `TransitionSpec` refuses rules without an action, a kind that two rules us
 its rules and `failsOn`, all with `IllegalArgumentException`.
 
 Recovery rules choose a route and nothing more. Nothing retries automatically or waits for a backoff:
-`SCHEDULE_RETRY` only records that a retry is due, and the application decides when to request `RETRY`. Nothing
-compensates either: the savepoint discards the engine's pending states and the writes to the call's flow, not the
+`SCHEDULE_RETRY` only records that a retry is due, and the application decides when to request `RETRY`. A route stops
+the entity's [automatic chain](automatic-transitions.md#failure-routes-that-continue) unless it is declared to continue.
+Nothing compensates either: the savepoint discards the engine's pending states and the writes to the call's flow, not the
 changes the action made to the entity, to an object it stored in the flow, to the application's transaction or to
 external systems. To assert kinds and rules in a test, see
 [failure kinds and recovery rules](testing-advanced.md#failure-kinds-and-recovery-rules) in the testing guide.

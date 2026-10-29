@@ -331,14 +331,15 @@ The processor reads and validates `recoveries`, including their failure kinds, t
 transitions. Generated companions emit one typed `recover(...)` call per rule in declaration order, so annotated
 facades route failures through those rules just as graphs built directly with the DSL do.
 
-`automatic`, `onFailureContinues`, `continueChain` and `AutomaticOrder` declare the automatic part of the graph. An
-`automatic = true` annotation marks the edge from every origin in its `from`, whether it is written on an operation or
-on the interface, and the companion emits `.automatic()` for each. `onFailureContinues = true` makes the `onFailure`
-route a continuing one, emitted as `onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with
-`continueChain = true` is emitted as `recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is
-emitted as one `automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders
-included, to the validator the DSL runs in `build()`, so the structural rules above are reported with the same codes
-for an annotated graph.
+`automatic`, `onFailureContinues`, `continueChain` and `AutomaticOrder` declare the
+[automatic](automatic-transitions.md) part of the graph. An `automatic = true` annotation marks the edge from every
+origin in its `from`, whether it is written on an operation or on the interface, and the companion emits `.automatic()`
+for each. `onFailureContinues = true` makes the `onFailure` route a continuing one, emitted as
+`onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with `continueChain = true` is emitted as
+`recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is emitted as one
+`automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders included, to the
+validator the DSL runs in `build()`, so the structural rules above are reported with the same codes for an annotated
+graph.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and

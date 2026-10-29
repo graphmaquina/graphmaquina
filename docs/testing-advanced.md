@@ -330,8 +330,8 @@ Each key reads its own field, so `changes()` reports a moved state under its own
 ## Automatic transitions
 
 The graph declares an edge automatic, and an `advance`, or the chain that a commit triggers, takes it without a
-request for its identifier. These are the views that assert on that, none of which runs an action, a guard or a
-hook.
+request for its identifier, as [automatic transitions](automatic-transitions.md) explains. These are the views that
+assert on that, none of which runs an action, a guard or a hook.
 
 On the graph, `assertThat(definition).automaticFrom(state).containsExactly(...)` compares the identifiers of the
 automatic edges that leave a state, in the order an advance tries them, which a state with two or more automatic edges

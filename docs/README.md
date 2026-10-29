@@ -38,6 +38,7 @@ time; each page links the next one in that order.
 | [Handle transition outcomes](outcomes.md) | The four outcome variants, status and code, records, journals, reactions and failed calls |
 | [Check an operation before you call it](eligibility.md) | Whether an operation would be admitted now, and why not, through a facade or the DSL, without running it |
 | [Programmatic DSL](dsl.md) | Building a graph and a machine without annotations |
+| [Automatic transitions](automatic-transitions.md) | Edges the machine takes on its own after a commit, their order, `advance`, continuing failure routes, the limit and what the caller sees |
 
 ## Asynchronous work
 
@@ -96,6 +97,7 @@ time; each page links the next one in that order.
 | Pass a value from the caller to guards and actions | [Operations and internal edges](graph-model.md#operations-and-internal-edges) |
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
 | Send different failures to different states | [Recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type) |
+| Advance an entity on its own | [Automatic transitions](automatic-transitions.md) |
 | Map an outcome to an HTTP response | [Map an outcome to a response](outcomes.md#map-an-outcome-to-a-response) |
 | Call a remote service from an action | [Asynchronous work](async.md) and [deadline rules](async-deadlines.md#deadline-rules) |
 | Move several entities in one unit of work | [Cascade a transition](coordination.md#cascade-a-transition) |

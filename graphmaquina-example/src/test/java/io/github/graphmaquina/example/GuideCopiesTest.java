@@ -24,8 +24,10 @@ import org.junit.jupiter.api.Test;
  * The Java blocks of the composition page's section on sub-machines over the same entity, from its mention of
  * {@code SameEntitySubmachineTest} on, appear verbatim in that test. Every Java block of the eligibility page that a
  * link to a file of the example introduces appears verbatim in that file: the checks the shop's and the billing's
- * facades declare, and the tests that ask them. A block may sit deeper in the source than in the guide, by whole
- * levels of four spaces. A blank block quotes nothing, so it fails.
+ * facades declare, and the tests that ask them. Every Java block of the automatic transitions page follows a link to a
+ * source or a test of the onboarding and appears verbatim in that file, with or without the file's Javadoc comments. A
+ * block may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing,
+ * so it fails.
  */
 class GuideCopiesTest {
 
@@ -58,6 +60,10 @@ class GuideCopiesTest {
      * other four being those that GuideOutcomeFragmentsTest, in graphmaquina-test, compiles.
      */
     private static final int ELIGIBILITY_QUOTES = 8;
+    /** A link to a source or a test of the onboarding, which the automatic transitions page quotes. */
+    private static final Pattern ONBOARDING_LINK = Pattern.compile(
+            "\\]\\(\\.\\./graphmaquina-example/src/((?:main|test)" + EXAMPLE_PACKAGE + "onboarding/[^)]+\\.java)\\)");
+    private static final String AUTOMATIC_PAGE = "automatic-transitions.md";
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
 
@@ -129,6 +135,34 @@ class GuideCopiesTest {
         }
         assertEquals(ELIGIBILITY_QUOTES, quotes.size());
         assertEquals(ELIGIBILITY_SOURCES, quotes.stream().map(TestQuote::source).collect(Collectors.toSet()));
+        assertEquals(List.of(), missing);
+    }
+
+    /**
+     * Whether {@code source} holds {@code block} at one of the depths a guide may drop, as it is or once its Javadoc
+     * comments are left out.
+     */
+    private static boolean quotes(String source, String block) {
+        return holds(source, block, 0, 4, 8, 12) || holds(JAVADOC.matcher(source).replaceAll(""), block, 0, 4, 8, 12);
+    }
+
+    /**
+     * Every Java block of the automatic transitions page follows a link to a source or a test of the onboarding, so
+     * the page quotes as many files as it has Java blocks, and each block appears verbatim in the file it follows.
+     */
+    @Test
+    void theAutomaticTransitionsPageQuotesTheOnboardingVerbatim() throws IOException {
+        String page = read(path("graphmaquina.docs", AUTOMATIC_PAGE));
+        List<TestQuote> quotes = new TestQuoteReader(ONBOARDING_LINK).read(page);
+        List<String> missing = new ArrayList<>();
+        for (TestQuote quote : quotes) {
+            if (quote.code().isBlank() || !quotes(read(exampleFile(quote.source())), quote.code())) {
+                missing.add("docs/" + AUTOMATIC_PAGE + ":" + quote.start() + " " + quote.source());
+            }
+        }
+        assertFalse(quotes.isEmpty(), "no Java block of the page follows a link to the onboarding");
+        assertEquals(JAVA_BLOCK.matcher(page).results().count(), (long) quotes.size(),
+                "a Java block of the page follows no link to the onboarding");
         assertEquals(List.of(), missing);
     }
 
