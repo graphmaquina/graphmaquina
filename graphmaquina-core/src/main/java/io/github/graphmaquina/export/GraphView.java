@@ -101,7 +101,8 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
 
     /**
      * The 1-based place of {@code spec} among the automatic edges of its origin, as {@code automaticFrom} lists them,
-     * when there are two or more of them and so the state declares an order; empty otherwise.
+     * when there are two or more of them and so the state declares an order; empty otherwise, and when the list does
+     * not hold the edge.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Optional<Integer> automaticPosition(
             GraphDefinition<E, S, T> definition, TransitionSpec<E, S, T> spec) {
@@ -109,7 +110,12 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             return Optional.empty();
         }
         List<TransitionSpec<E, S, T>> ordered = definition.automaticFrom(spec.from());
-        return ordered.size() < 2 ? Optional.empty() : Optional.of(ordered.indexOf(spec) + 1);
+        if (ordered.size() < 2) {
+            return Optional.empty();
+        }
+        // By identifier, which keys an edge from its origin: a definition written by hand may list another instance.
+        int index = ordered.stream().map(TransitionSpec::transition).toList().indexOf(spec.transition());
+        return index < 0 ? Optional.empty() : Optional.of(index + 1);
     }
 
     /** The policy of each state of {@code definition}, in node order, with its rejections by names. */

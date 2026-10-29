@@ -1,9 +1,11 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.AutomaticStep;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
+import io.github.graphmaquina.test.internal.AutomaticSteps;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Optional;
@@ -39,6 +41,8 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     private static final String ABORTED_STEP = "an aborted automatic step";
     private static final String BLOCKED_ATTEMPT = "a blocked automatic attempt";
     private static final String NONE = "none";
+    private static final String AUTOMATIC_FAILURE_VIEW = ".automaticFailure (failed)";
+    private static final String AUTOMATIC_BLOCK_VIEW = ".automaticBlock (ignored)";
 
     /** Prefix of every failure message raised by this view. */
     final String context;
@@ -161,16 +165,37 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
 
     /**
      * The first automatic attempt of the call that ended in a failure, as {@link Outcome#automaticFailure()} searches
-     * for it, whether its route stopped the chain or let it go on. It fails when no attempt failed. The attempt is
-     * taken to belong to the machine of this outcome, which is checked by its entity and its enums: one of another
-     * machine raises {@link IllegalArgumentException}, and {@link #automaticSteps()} with {@code forEntity} is what
-     * reads it.
+     * for it, whether its route stopped the chain or let it go on. It fails when no attempt failed. The search takes
+     * the first of any machine, a peer's included when a watch reaction ran its chain, and this view takes that attempt
+     * to belong to the machine of this outcome, which it checks by its entity and its enums: one of another machine
+     * raises {@link IllegalArgumentException}, whose message names that machine. {@link
+     * #automaticFailure(MachineKey)} is the form that selects the attempts of one machine.
      */
     public FailedOutcomeAssert<E, S, T> automaticFailure() {
         Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_FAILURE, FAILED_ATTEMPT, actual);
         Outcome.Failed<?, ?, ?> found = Checks.present(context, AUTOMATIC_FAILURE, FAILED_ATTEMPT,
                 outcome.automaticFailure());
-        return new FailedOutcomeAssert<>(context + ".automaticFailure (failed)", CheckedTypes.failedOf(outcome, found));
+        try {
+            return new FailedOutcomeAssert<>(context + AUTOMATIC_FAILURE_VIEW, CheckedTypes.failedOf(outcome, found));
+        } catch (IllegalArgumentException mismatch) {
+            throw ofAnotherMachine(outcome, found, mismatch, "automaticFailure");
+        }
+    }
+
+    /**
+     * The first automatic attempt of {@code key}'s machine that ended in a failure, searched in the order {@link
+     * #automaticFailure()} uses but skipping the attempts of every other machine, so a peer's failure found first
+     * through a watch reaction does not hide this machine's own. The view is typed by {@code key}, whose classes the
+     * attempt is checked against. It fails when that machine has no failed attempt.
+     */
+    public <E2, S2 extends Enum<S2>, T2 extends Enum<T2>> FailedOutcomeAssert<E2, S2, T2> automaticFailure(
+            @NonNull MachineKey<E2, S2, T2> key) {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_FAILURE, FAILED_ATTEMPT + " of " + name(key),
+                actual);
+        Outcome.Failed<?, ?, ?> found = Checks.present(context, AUTOMATIC_FAILURE,
+                FAILED_ATTEMPT + " of " + name(key), AutomaticSteps.failure(outcome, key));
+        return new FailedOutcomeAssert<>(context + AUTOMATIC_FAILURE_VIEW,
+                CheckedTypes.outcome(key, found).asFailed().orElseThrow());
     }
 
     /**
@@ -184,16 +209,48 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     }
 
     /**
+     * The first automatic step of {@code key}'s machine that aborted, searched in the order {@link
+     * #automaticAbort()} uses but skipping the steps of every other machine. The view is typed by {@code key}. It
+     * fails when that machine has no aborted step.
+     */
+    public <E2, S2 extends Enum<S2>, T2 extends Enum<T2>> AbortedAutomaticStepAssert<E2, S2, T2> automaticAbort(
+            @NonNull MachineKey<E2, S2, T2> key) {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_ABORT, ABORTED_STEP + " of " + name(key), actual);
+        AutomaticStep.Aborted found = Checks.present(context, AUTOMATIC_ABORT, ABORTED_STEP + " of " + name(key),
+                AutomaticSteps.abort(outcome, key));
+        return new AbortedAutomaticStepAssert<>(context + ".automaticAbort", found);
+    }
+
+    /**
      * The first automatic attempt of the call that admitted none of its candidates, as {@link Outcome#automaticBlock()}
      * searches for it, whose {@link IgnoredOutcomeAssert#rejections()} say why. It fails when no attempt was blocked,
-     * and it takes the attempt to belong to the machine of this outcome as {@link #automaticFailure()} does.
+     * and it takes the attempt to belong to the machine of this outcome, and raises
+     * {@link IllegalArgumentException} for another's, as {@link #automaticFailure()} does.
      */
     public IgnoredOutcomeAssert<E, S, T> automaticBlock() {
         Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_BLOCK, BLOCKED_ATTEMPT, actual);
         Outcome.Ignored<?, ?, ?> found = Checks.present(context, AUTOMATIC_BLOCK, BLOCKED_ATTEMPT,
                 outcome.automaticBlock());
-        return new IgnoredOutcomeAssert<>(context + ".automaticBlock (ignored)",
-                CheckedTypes.ignoredOf(outcome, found));
+        try {
+            return new IgnoredOutcomeAssert<>(context + AUTOMATIC_BLOCK_VIEW, CheckedTypes.ignoredOf(outcome, found));
+        } catch (IllegalArgumentException mismatch) {
+            throw ofAnotherMachine(outcome, found, mismatch, "automaticBlock");
+        }
+    }
+
+    /**
+     * The first automatic attempt of {@code key}'s machine that admitted none of its candidates, searched in the order
+     * {@link #automaticBlock()} uses but skipping the attempts of every other machine. The view is typed by
+     * {@code key}. It fails when that machine has no blocked attempt.
+     */
+    public <E2, S2 extends Enum<S2>, T2 extends Enum<T2>> IgnoredOutcomeAssert<E2, S2, T2> automaticBlock(
+            @NonNull MachineKey<E2, S2, T2> key) {
+        Outcome<E, S, T> outcome = Checks.subject(context, AUTOMATIC_BLOCK, BLOCKED_ATTEMPT + " of " + name(key),
+                actual);
+        Outcome.Ignored<?, ?, ?> found = Checks.present(context, AUTOMATIC_BLOCK,
+                BLOCKED_ATTEMPT + " of " + name(key), AutomaticSteps.block(outcome, key));
+        return new IgnoredOutcomeAssert<>(context + AUTOMATIC_BLOCK_VIEW,
+                CheckedTypes.outcome(key, found).asIgnored().orElseThrow());
     }
 
     /** No automatic attempt of the call failed; the failure names the outcome of the first one that did. */
@@ -236,6 +293,22 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      */
     public FlowAssert flow() {
         return new FlowAssert(context + ".flow", outcome().map(Outcome::flow));
+    }
+
+    /** The key by its three classes in full, which the short form of {@code toString} does not give. */
+    private static String name(MachineKey<?, ?, ?> key) {
+        return key.entity().getName() + "/" + key.states().getName() + "/" + key.transitions().getName();
+    }
+
+    /**
+     * The error of a search that found an attempt of a machine other than this outcome's: it keeps the mismatch, names
+     * the machine of the step that holds the attempt and says which keyed form selects a machine's own.
+     */
+    private static IllegalArgumentException ofAnotherMachine(Outcome<?, ?, ?> outcome, Outcome<?, ?, ?> found,
+            IllegalArgumentException mismatch, String search) {
+        String machine = AutomaticSteps.keyOf(outcome, found).map(BaseOutcomeAssert::name).orElse("another machine");
+        return new IllegalArgumentException(mismatch.getMessage() + "; the first attempt the call searched belongs to "
+                + machine + ", so select the attempts of one machine with " + search + "(MachineKey)", mismatch);
     }
 
     /** The outcome under test, wrapped once: the field is null only for a view built from a null subject. */

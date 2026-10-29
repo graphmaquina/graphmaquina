@@ -21,15 +21,14 @@ public final class AutomaticEdgesAssert<T extends Enum<T>> {
 
     /**
      * Compares the identifiers with {@code expected}, exactly and in order, keeping duplicates; no argument matches a
-     * state that has no automatic edge.
+     * state that has no automatic edge. A null among them is never equal to an identifier, so it fails as an expectation.
      */
     @SafeVarargs
     public final AutomaticEdgesAssert<T> containsExactly(T... expected) {
-        List<T> declared = new ArrayList<>();
+        List<T> wanted = new ArrayList<>();
         for (T transition : expected) {
-            declared.add(transition);
+            wanted.add(transition);
         }
-        List<T> wanted = List.copyOf(declared);
         List<T> edges = Checks.subject(context, "automatic transitions", wanted, actual);
         Checks.equal(context, "automatic transitions", wanted, edges);
         return this;

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.GraphSnapshots;
 import io.github.graphmaquina.test.fixtures.AutomaticDomain;
@@ -16,6 +17,8 @@ import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.snapshot.GoldenOptions;
 import io.github.graphmaquina.test.snapshot.GraphDiff;
 import io.github.graphmaquina.test.snapshot.GraphSnapshot;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -85,6 +88,36 @@ class AutomaticSnapshotTest {
                 GraphSnapshot.capture(AutomaticDomain.graph(true)));
         assertEquals("/transitions/NEW/PREPARE/automatic: expected <absent> but was \"true\"\n",
                 difference.render());
+    }
+
+    /** A definition whose {@code automaticFrom} fails the test, so a capture that calls it cannot go unnoticed. */
+    @SuppressWarnings("unchecked")
+    private static GraphDefinition<Entity, State, Id> refusingAutomaticFrom(GraphDefinition<Entity, State, Id> real) {
+        return (GraphDefinition<Entity, State, Id>) Proxy.newProxyInstance(
+                AutomaticSnapshotTest.class.getClassLoader(), new Class<?>[] {GraphDefinition.class},
+                (Object proxy, Method method, Object[] args) -> {
+                    if (method.getName().equals("automaticFrom")) {
+                        throw new AssertionError("automaticFrom was called");
+                    }
+                    return method.invoke(real, args);
+                });
+    }
+
+    @Test
+    void aGraphWithoutTwoAutomaticEdgesInAStateNeverAsksForTheirOrder() {
+        GraphDefinition<Entity, State, Id> none = TestDomain.graph(Duration.ofSeconds(1));
+        assertEquals(GraphSnapshot.capture(none).serialize(),
+                GraphSnapshot.capture(refusingAutomaticFrom(none)).serialize());
+        GraphDefinition<Entity, State, Id> single = StateGraph.define(TestDomain.KEY).initial(State.NEW)
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "prepare first").statePolicy(State.READY, "finish only")
+                .transition(Id.PREPARE, State.NEW, State.READY).automatic().endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).automatic().endTransition()
+                .build();
+        GraphSnapshot snapshot = GraphSnapshot.capture(refusingAutomaticFrom(single));
+        assertEquals("true", snapshot.fields().get("/transitions/NEW/PREPARE/automatic"));
+        assertTrue(snapshot.fields().keySet().stream().noneMatch((String path) -> path.startsWith("/automaticOrder")));
     }
 
     @Test

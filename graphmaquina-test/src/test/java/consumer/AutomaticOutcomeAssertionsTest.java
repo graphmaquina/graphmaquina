@@ -4,13 +4,17 @@ import static consumer.GraphAssertionErrors.assertFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.AutomaticStep;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.RejectionKind;
+import io.github.graphmaquina.test.FailedOutcomeAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.IgnoredOutcomeAssert;
 import io.github.graphmaquina.test.OutcomeAssert;
@@ -244,10 +248,152 @@ class AutomaticOutcomeAssertionsTest {
                 "ignored outcome.rejections", "size", 1, 0);
     }
 
+    // --- the keyed searches --------------------------------------------------------------------------
+
+    /**
+     * The commit's watch reaction ran the chain of a peer machine, whose failure the core search reaches first, and the
+     * machine's own failed attempt comes after it.
+     */
+    private static Outcome<Entity, State, Id> peerFirst(Entity entity, AutomaticStep... own) {
+        Outcome<String, PeerState, PeerId> peerRun = new Outcome.Applied<>("p", PeerState.A, PeerId.GO, PeerState.B,
+                List.of(), List.of(), List.of(), FlowView.empty(), List.of(new AutomaticStep.Done(PEER, "p",
+                        new Outcome.Failed<>("p", PeerState.A, PeerId.GO, PeerState.B, PeerId.BACK, PeerState.B,
+                                "boom", Optional.empty(), List.of(), List.of()))));
+        return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(),
+                List.of(new Reaction.Done(PEER, "p", peerRun)), List.of(), FlowView.empty(), List.of(own));
+    }
+
+    private static String name(MachineKey<?, ?, ?> key) {
+        return key.entity().getName() + "/" + key.states().getName() + "/" + key.transitions().getName();
+    }
+
+    @Test
+    void aPeersFailureFoundFirstThroughAReactionDoesNotHideTheMachinesOwn() {
+        Entity entity = new Entity("e", State.READY);
+        OutcomeAssert<Entity, State, Id> view =
+                OutcomeAssert.assertThat(peerFirst(entity, done(entity, failed(entity))));
+        IllegalArgumentException keyless = assertThrows(IllegalArgumentException.class, view::automaticFailure);
+        assertTrue(keyless.getMessage().contains(name(PEER)), keyless.getMessage());
+        assertTrue(keyless.getMessage().contains("automaticFailure(MachineKey)"), keyless.getMessage());
+        FailedOutcomeAssert<Entity, State, Id> own = view.automaticFailure(TestDomain.KEY);
+        own.hasFailureTransition(Id.RECOVER).movedTo(State.FAILED);
+        FailedOutcomeAssert<String, PeerState, PeerId> peer = view.automaticFailure(PEER);
+        peer.hasFailureTransition(PeerId.BACK).movedTo(PeerState.B);
+    }
+
+    @Test
+    void aPeersBlockFoundFirstThroughAReactionDoesNotHideTheMachinesOwn() {
+        Entity entity = new Entity("e", State.READY);
+        Outcome<String, PeerState, PeerId> peerBlocked = new Outcome.Ignored<>("p", PeerState.A,
+                IgnoreReason.NO_CANDIDATE_ADMITTED, List.of(new Eligibility.Ineligible<>("p", PeerState.A, PeerId.GO,
+                        "no", RejectionKind.GUARD, Optional.of("peerGuard"))));
+        Outcome<String, PeerState, PeerId> peerRun = new Outcome.Applied<>("p", PeerState.A, PeerId.GO, PeerState.B,
+                List.of(), List.of(), List.of(), FlowView.empty(),
+                List.of(new AutomaticStep.Done(PEER, "p", peerBlocked)));
+        Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
+                List.of(), List.of(new Reaction.Done(PEER, "p", peerRun)), List.of(), FlowView.empty(),
+                List.of(done(entity, blockedAttempt(entity))));
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(outcome);
+        IllegalArgumentException keyless = assertThrows(IllegalArgumentException.class, view::automaticBlock);
+        assertTrue(keyless.getMessage().contains(name(PEER)), keyless.getMessage());
+        assertTrue(keyless.getMessage().contains("automaticBlock(MachineKey)"), keyless.getMessage());
+        view.automaticBlock(TestDomain.KEY).rejections().single().isRejectedByGuardNamed("open");
+        view.automaticBlock(PEER).rejections().single().isRejectedByGuardNamed("peerGuard").transition(PeerId.GO);
+    }
+
+    @Test
+    void aPeersAbortFoundFirstThroughAReactionDoesNotHideTheMachinesOwn() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException peerCause = new IllegalStateException("peer down");
+        IllegalArgumentException ownCause = new IllegalArgumentException("own down");
+        Outcome<String, PeerState, PeerId> peerRun = new Outcome.Applied<>("p", PeerState.A, PeerId.GO, PeerState.B,
+                List.of(), List.of(), List.of(), FlowView.empty(),
+                List.of(new AutomaticStep.Aborted(PEER, "p", peerCause)));
+        Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
+                List.of(), List.of(new Reaction.Done(PEER, "p", peerRun)), List.of(), FlowView.empty(),
+                List.of(new AutomaticStep.Aborted(TestDomain.KEY, entity, ownCause)));
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(outcome);
+        view.automaticAbort().hasCauseSameAs(peerCause);
+        view.automaticAbort(TestDomain.KEY).hasCauseSameAs(ownCause);
+        view.automaticAbort(PEER).hasCauseSameAs(peerCause);
+    }
+
+    @Test
+    void twoMachinesOfOneEntityAndOneStateEnumAreToldApartByTheirKeys() {
+        Entity entity = new Entity("e", State.READY);
+        Outcome.Failed<Entity, State, Id2> other = new Outcome.Failed<>(entity, State.READY, Id2.FINISH, State.DONE,
+                Id2.RECOVER, State.FAILED, "boom", Optional.empty(), List.of(), List.of());
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(withSteps(entity,
+                new AutomaticStep.Done(SIBLING, entity, other), done(entity, failed(entity))));
+        assertThrows(IllegalArgumentException.class, view::automaticFailure);
+        view.automaticFailure(TestDomain.KEY).hasFailureTransition(Id.RECOVER);
+        view.automaticFailure(SIBLING).hasFailureTransition(Id2.RECOVER);
+    }
+
+    @Test
+    void aFailureOfTheSameEntityClassOverAnotherStateEnumIsNotTheMachinesOwn() {
+        Entity entity = new Entity("e", State.READY);
+        Outcome<?, ?, ?> foreign = new Outcome.Failed<>(entity, PeerState.A, PeerId.GO, PeerState.B, PeerId.BACK,
+                PeerState.B, "boom", Optional.empty(), List.of(), List.of());
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(withSteps(entity,
+                new AutomaticStep.Done(PEER, entity, foreign)));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, view::automaticFailure);
+        assertTrue(error.getMessage().contains("states"), error.getMessage());
+    }
+
+    @Test
+    void aKeyedSearchFailsClearlyWhenThatMachineHasNoSuchStep() {
+        Entity entity = new Entity("e", State.READY);
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(withSteps(entity,
+                done(entity, failed(entity)), done(entity, blockedAttempt(entity)),
+                new AutomaticStep.Aborted(TestDomain.KEY, entity, new IllegalStateException("down"))));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.automaticFailure(PEER)),
+                OUTCOME, FAILURE, "a failed automatic attempt of " + name(PEER), null);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.automaticBlock(PEER)),
+                OUTCOME, BLOCK, "a blocked automatic attempt of " + name(PEER), null);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.automaticAbort(PEER)),
+                OUTCOME, ABORT, "an aborted automatic step of " + name(PEER), null);
+    }
+
+    @Test
+    void nullSubjectAndNullKeyFailTheKeyedSearches() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> OutcomeAssert.assertThat(none).automaticFailure(PEER)),
+                OUTCOME, FAILURE, "a failed automatic attempt of " + name(PEER), null);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> OutcomeAssert.assertThat(none).automaticBlock(PEER)),
+                OUTCOME, BLOCK, "a blocked automatic attempt of " + name(PEER), null);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> OutcomeAssert.assertThat(none).automaticAbort(PEER)),
+                OUTCOME, ABORT, "an aborted automatic step of " + name(PEER), null);
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(applied(new Entity("e", State.READY)));
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> view.automaticFailure(null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> view.automaticBlock(null)).getMessage());
+        assertEquals("key is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> view.automaticAbort(null)).getMessage());
+    }
+
     // --- fixtures ------------------------------------------------------------------------------------
 
     /** States and identifiers of a machine that is not the test domain's. */
     enum Other { A, B, GO }
+
+    /** States of a peer machine over strings. */
+    enum PeerState { A, B }
+
+    /** Transition identifiers of that peer machine. */
+    enum PeerId { GO, BACK }
+
+    /** Transition identifiers of a second machine over the test domain's entity and states. */
+    enum Id2 { FINISH, RECOVER }
+
+    private static final MachineKey<String, PeerState, PeerId> PEER =
+            MachineKey.of(String.class, PeerState.class, PeerId.class);
+
+    private static final MachineKey<Entity, State, Id2> SIBLING = MachineKey.of(Entity.class, State.class, Id2.class);
 
     private static Outcome.Applied<Entity, State, Id> applied(Entity entity) {
         return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());

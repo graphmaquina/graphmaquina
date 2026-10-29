@@ -19,6 +19,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -357,6 +358,15 @@ class GraphAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> graph.automaticFrom(State.NEW).containsExactly(Id.PREPARE, Id.RECOVER)),
                 GRAPH + " NEW automatic", "automatic transitions", List.of(Id.PREPARE, Id.RECOVER),
+                List.of(Id.PREPARE));
+    }
+
+    @Test
+    void aNullAmongTheExpectedIdentifiersIsAnAssertionFailureNotACrash() {
+        GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(AutomaticDomain.graph());
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> graph.automaticFrom(State.NEW).containsExactly(Id.PREPARE, null));
+        assertFailure(error, GRAPH + " NEW automatic", "automatic transitions", Arrays.asList(Id.PREPARE, null),
                 List.of(Id.PREPARE));
     }
 

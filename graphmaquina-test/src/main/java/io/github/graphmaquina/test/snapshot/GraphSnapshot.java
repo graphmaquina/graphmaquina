@@ -168,14 +168,17 @@ public final class GraphSnapshot {
 
     /**
      * The order in which an advance tries the automatic edges of {@code state}, which the state declares only when
-     * it has two or more: their count at {@code /automaticOrder/<state>/count} and the identifier at each index.
+     * it has two or more: their count at {@code /automaticOrder/<state>/count} and the identifier at each index. The
+     * edges are counted from {@code outgoingFrom}, and {@code automaticFrom} is asked only for a state with two or
+     * more, so a graph without such a state never calls it.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> void captureAutomaticOrder(
             Map<String, String> fields, GraphDefinition<E, S, T> definition, S state) {
-        List<TransitionSpec<E, S, T>> automatic = definition.automaticFrom(state);
-        if (automatic.size() < 2) {
+        long marked = definition.outgoingFrom(state).stream().filter(TransitionSpec::automatic).count();
+        if (marked < 2) {
             return;
         }
+        List<TransitionSpec<E, S, T>> automatic = definition.automaticFrom(state);
         String path = "/automaticOrder/" + state.name();
         fields.put(path + "/count", Integer.toString(automatic.size()));
         for (int index = 0; index < automatic.size(); index++) {

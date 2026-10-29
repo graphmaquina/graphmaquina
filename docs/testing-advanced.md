@@ -340,8 +340,9 @@ declares; with no argument it says the state has none. On an edge, `isAutomatic(
 recovery rule it declares for that failure kind does.
 
 On an outcome, `automaticSteps()` has the shape of `reactions()`: `hasSize`, `isEmpty`, `hasNoAborted()` for the list
-alone, `hasNoAbortedRecursively()` for the steps of the attempts as well, and `forEntity(key, entity)`, which selects by
-key and by entity identity, then `single()` or `atIndex(i)` and `isDone().outcome()` or `isAborted().hasCause(...)`.
+alone, `hasNoAbortedRecursively()` for the steps of the attempts as well, though only through their
+`automaticSteps()`, never through the `reactions()` of an attempt, which `hasNoAutomaticAbort()` also searches, and
+`forEntity(key, entity)`, which selects by key and by entity identity, then `single()` or `atIndex(i)` and `isDone().outcome()` or `isAborted().hasCause(...)`.
 The searches follow `Outcome.automaticFailure()`, `automaticAbort()` and `automaticBlock()` through the attempts of
 the call, the nested ones included, and fail when they find nothing:
 
@@ -352,9 +353,12 @@ the call, the nested ones included, and fail when they find nothing:
 | `automaticBlock()` | The view of an ignored outcome, whose `rejections()` has `hasSize`, `single()` and `atIndex(i)`, each an eligibility view of the edge that was refused |
 | `hasNoAutomaticFailure()`, `hasNoAutomaticAbort()`, `hasNoAutomaticBlock()` | The outcome view; they fail with what the search found |
 
-The three searches take the attempt to belong to the machine of the outcome and check its entity and its enums, so an
-attempt of another machine raises `IllegalArgumentException`; read it with `automaticSteps().forEntity(key, entity)`
-instead.
+The searches take the first attempt of any machine, and a watch reaction can run the chain of a peer machine before
+the outcome's own. The three forms above without an argument take the attempt to belong to the machine of the outcome
+and check its entity and its enums, so an attempt of another machine raises `IllegalArgumentException`, whose message
+names that machine. `automaticFailure(key)`, `automaticBlock(key)` and `automaticAbort(key)` search in the same order
+but only among the steps of the machine that `key` names, and return views typed by that key; they fail, naming the
+key, when that machine has no such step.
 
 ## The call's flow and its trail
 
