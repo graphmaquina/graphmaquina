@@ -29,6 +29,10 @@ import lombok.RequiredArgsConstructor;
  * the action's name nor the operation's Java name has any part in it. An absent action makes the edge a move
  * and a single one makes it an action; everything else is shared between the two.</p>
  *
+ * <p>The {@code automatic} mark and the continuing failure routes are read as the flags they are. A continuing
+ * {@code onFailure} without an {@code onFailure} is {@link AutomaticChecks}' to report, as is an automatic edge of an
+ * operation that takes an input; the rest of the rules about them are the outline's.</p>
+ *
  * <p>Every state and every identifier is read as the constant it is and checked against the machine's own enum
  * before its name is used, and every symbol is resolved to the method the generated code calls. No name reaches
  * the model without one of those two checks having accepted it first.</p>
@@ -47,6 +51,7 @@ import lombok.RequiredArgsConstructor;
 final class TypedTransitions {
 
     private final StructuralChecks structure;
+    private final AutomaticChecks automaticChecks;
     private final SymbolResolver symbols;
     private final TypedTimeouts timeouts;
     private final Annotations annotations;
@@ -107,12 +112,19 @@ final class TypedTransitions {
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
         structure.checkAsyncTimeout(timeout, action,
                 DiagnosticAnchor.of(element, mirror, declaredTimeout.orElse(declaredTo.get())));
-        if (diagnostics.errors() > before) {
-            return Optional.empty();
-        }
-        return Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
-                action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
-                action, guards, onFailure, failsOn, timeout, afterCommit, recoveries));
+        automaticChecks.checkContinuationHasRoute(flag(mirror, "onFailureContinues"), onFailure, id.get(), from.get(),
+                to.get(), DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "onFailureContinues")));
+        return diagnostics.errors() > before
+                ? Optional.empty()
+                : Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
+                        action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
+                        action, guards, onFailure, failsOn, timeout, afterCommit, recoveries,
+                        flag(mirror, "automatic"), flag(mirror, "onFailureContinues")));
+    }
+
+    /** Whether the boolean element {@code name} of {@code mirror} holds {@code true}, its default being false. */
+    private boolean flag(AnnotationMirror mirror, String name) {
+        return annotations.find(mirror, name).map(AnnotationValue::getValue).map(Boolean.TRUE::equals).orElse(false);
     }
 
     /**
@@ -216,7 +228,7 @@ final class TypedTransitions {
         Optional<String> transition = TypedValues.constantName(declaredTransition.get(), machine.transitionsElement());
         List<AnnotationValue> failsOnValues = classValues(annotations.array(recovery, "failsOn"));
         return transition.map((String identifier) -> new RecoveryModel(kind, identifier, classes(failsOnValues),
-                recovery, declaredKind.get(), failsOnValues));
+                recovery, declaredKind.get(), failsOnValues, flag(recovery, "continueChain")));
     }
 
     /** The exception types an array element names, skipping any value javac could not read as a class. */

@@ -413,7 +413,7 @@ public final class SetGenerator {
 
     /**
      * The settings the {@code Builder} hands to the registry's builder: the deepest cascade, the longest chain of
-     * watch reactions, and the observers.
+     * watch reactions, the longest chain of automatic attempts, and the observers.
      */
     private static void registrySettings(Names names, Variables variables, SourceWriter out) {
         String registry = variables.registryBuilder();
@@ -432,6 +432,13 @@ public final class SetGenerator {
                 "int " + setters.get("chain"),
                 "@param " + setters.get("chain") + " how many watch reactions may follow one another, at least 1",
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
+        forward(out, "Bounds how many automatic attempts that commit something may follow one another on one path of"
+                + " continuations from a call of the application; the default is 10, and a value below 1 is refused."
+                + " The attempt past the bound that admits a candidate aborts before its action, writing nothing, with"
+                + " an AutomaticChainExceededException. A call that an after-commit hook starts is a new root, which"
+                + " this bound never counts.", "maxAutomaticChain", "int " + setters.get("chain"),
+                "@param " + setters.get("chain") + " how many automatic attempts may follow one another, at least 1",
+                registry + ".maxAutomaticChain(" + setters.get("chain") + ");");
         forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
                 + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
                 "@param " + setters.get("observer") + " the observer to add",

@@ -6,13 +6,15 @@ import javax.lang.model.element.TypeElement;
 
 /**
  * Everything the generators need about one machine declared with the vocabulary generated for it. The checks are
- * not among the operations: a check executes nothing, so it adds no edge and owns no identifier.
+ * not among the operations: a check executes nothing, so it adds no edge and owns no identifier. The automatic orders
+ * are the {@code AutomaticOrder} declarations of the interface, in declaration order, repeats included.
  */
 public record MachineModel(MachineTypes types, String packageName, String initial, List<String> terminals,
                            List<String> cycleAllowed, Property stateGetter, Property stateSetter, Property idGetter,
                            List<StatePolicyModel> policies, List<RejectionModel> rejections,
                            List<TransitionModel> transitions, List<OperationModel> operations,
-                           List<WatchModel> watches, List<SubmachineModel> submachines, List<CheckModel> checks) {
+                           List<WatchModel> watches, List<SubmachineModel> submachines, List<CheckModel> checks,
+                           List<AutomaticOrderModel> automaticOrders) {
 
     public MachineModel {
         terminals = List.copyOf(terminals);
@@ -24,6 +26,7 @@ public record MachineModel(MachineTypes types, String packageName, String initia
         watches = List.copyOf(watches);
         submachines = List.copyOf(submachines);
         checks = List.copyOf(checks);
+        automaticOrders = List.copyOf(automaticOrders);
     }
 
     public String facadeName() {

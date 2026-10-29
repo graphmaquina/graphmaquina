@@ -29,7 +29,8 @@ import org.junit.jupiter.api.io.TempDir;
  * its {@code Transition} gains: the shape both are emitted with, the place {@code Recovery} takes in the inventory,
  * that an edge compiles without recoveries and with several of them, with and without throwable types, that javac
  * itself refuses a kind that is not a failure kind and a constant of another enum, and that a name whose first
- * segment the nested {@code Recovery} would take over is refused with SG603.
+ * segment the nested {@code Recovery} would take over is refused with SG603. It also covers the automatic elements
+ * of {@code Transition} and {@code Recovery} and the repeatable {@code AutomaticOrder}.
  */
 class RecoveryVocabularyTest {
 
@@ -153,6 +154,9 @@ class RecoveryVocabularyTest {
                 "fx.DocTransition transition();",
                 "/** {@return the throwable types of the action the rule takes; none by default} */",
                 "java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};",
+                "/** {@return whether the rule continues the chain of automatic attempts after it takes its"
+                        + " transition; false by default} */",
+                "boolean continueChain() default false;",
                 "}"), declaration(vocabulary, "Recovery"));
         List<String> transition = declaration(vocabulary, "Transition");
         assertTrue(transition.contains("DocsGraph.Recovery[] recoveries() default {};"), transition::toString);
@@ -171,13 +175,73 @@ class RecoveryVocabularyTest {
 
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
                 "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
-                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check"), ApiEmitter.annotationTypes(model));
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.AutomaticOrder",
+                "fx.DocsGraph.AutomaticOrders"), ApiEmitter.annotationTypes(model));
         assertEquals(ApiEmitter.annotationTypes(model), declared);
     }
 
     @Test
     void compilesAnEdgeWithoutRecoveriesAndAnEdgeWithThreeOfThem() {
         SourceFiles.Compilation compilation = compile(emitted(), USAGE);
+
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertEquals(List.of(), compilation.messages());
+    }
+
+    /**
+     * The automatic marks: {@code Transition} gains the two flags and {@code Recovery} the one that continues the
+     * chain, each with its default, and {@code AutomaticOrder} is a repeatable annotation of a type that names a state
+     * and the identifiers of its automatic edges.
+     */
+    @Test
+    void emitsTheAutomaticElementsAndTheRepeatableAutomaticOrder() {
+        String vocabulary = content(emitted(), "fx.DocsGraph");
+
+        List<String> transition = declaration(vocabulary, "Transition");
+        assertTrue(transition.contains("boolean automatic() default false;"), transition::toString);
+        assertTrue(transition.contains("boolean onFailureContinues() default false;"), transition::toString);
+        assertEquals(List.of(
+                "@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Docs.class,"
+                        + " value = io.github.graphmaquina.annotation.internal.VocabularyKind.AUTOMATIC_ORDER)",
+                "@java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE)",
+                "@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)",
+                "@java.lang.annotation.Repeatable(DocsGraph.AutomaticOrders.class)",
+                "public @interface AutomaticOrder {",
+                "/** {@return the state whose automatic edges the order sorts} */",
+                "fx.DocStatus from();",
+                "/** {@return the identifiers of those edges, in the order the chain tries them} */",
+                "fx.DocTransition[] transitions();",
+                "}"), declaration(vocabulary, "AutomaticOrder"));
+        assertTrue(declaration(vocabulary, "AutomaticOrders").contains("DocsGraph.AutomaticOrder[] value();"));
+    }
+
+    /** Automatic edges, a continuing route of each kind and two orders compile, the orders through the container. */
+    @Test
+    void compilesAutomaticEdgesContinuingRoutesAndRepeatedOrders() {
+        SourceFiles.Compilation compilation = compile(emitted(), Map.of("use.AutomaticUsage", """
+            package use;
+            /** Automatic edges and two orders written on a type. */
+            @fx.DocsGraph.AutomaticOrder(from = fx.DocStatus.DRAFT,
+                    transitions = {fx.DocTransition.SUBMIT, fx.DocTransition.ARCHIVE})
+            @fx.DocsGraph.AutomaticOrder(from = fx.DocStatus.REVIEW,
+                    transitions = {fx.DocTransition.PUBLISH, fx.DocTransition.REJECT})
+            @fx.DocsGraph.Transition(id = fx.DocTransition.SUBMIT, from = fx.DocStatus.DRAFT,
+                    to = fx.DocStatus.REVIEW, automatic = true)
+            public interface AutomaticUsage {
+
+                @fx.DocsGraph.Transition(
+                        id = fx.DocTransition.PUBLISH,
+                        from = fx.DocStatus.REVIEW,
+                        to = fx.DocStatus.PUBLISHED,
+                        automatic = true,
+                        action = fx.DocActionsRefs.Publish.class,
+                        recoveries = @fx.DocsGraph.Recovery(kind = fx.PublicationFailures.Unavailable.class,
+                            transition = fx.DocTransition.RETRY_LATER, continueChain = true),
+                        onFailure = fx.DocTransition.ARCHIVE,
+                        onFailureContinues = true)
+                void publish();
+            }
+            """));
 
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(List.of(), compilation.messages());

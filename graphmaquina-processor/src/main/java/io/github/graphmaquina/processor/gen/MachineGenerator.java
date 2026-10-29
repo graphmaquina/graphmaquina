@@ -572,7 +572,7 @@ public final class MachineGenerator {
         boolean anyTimeout = false;
         boolean anyPlainOwner = false;
         boolean anyBuiltIn = false;
-        boolean anyTypeList = false;
+        boolean anyTypeList = !model.automaticOrders().isEmpty();
         for (TransitionModel transition : model.allTransitions()) {
             anyTimeout |= transition.timeout().isPresent();
             for (RecoveryModel recovery : transition.recoveries()) {

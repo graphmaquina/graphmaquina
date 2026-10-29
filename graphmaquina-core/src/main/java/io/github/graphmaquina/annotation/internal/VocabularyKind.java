@@ -23,5 +23,8 @@ public enum VocabularyKind {
     /** One exit of a sub-machine, written only inside the {@code exits} of a {@link #SUBMACHINE}. */
     EXIT,
     /** One method of a facade that checks, without running it, the operation that owns the identifier it names. */
-    CHECK
+    CHECK,
+    /** One state's order of attempts among its automatic edges. */
+    AUTOMATIC_ORDER,
+    AUTOMATIC_ORDERS
 }

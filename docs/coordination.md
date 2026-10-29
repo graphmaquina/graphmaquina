@@ -37,17 +37,18 @@ does not instantiate service classes or discover dependency-injection beans.
 | `recordTrail(InstantSource)` | Record that trail on the given clock instead |
 | `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
+| `maxAutomaticChain(int)` | Bound successive automatic attempts of a chain; default `10`, minimum `1` |
 | `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
 
-Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain` below `1` throws
+Each setting is checked where it is given: a `maxCascadeDepth`, `maxWatchChain` or `maxAutomaticChain` below `1` throws
 `IllegalArgumentException`. The builder is single-use: once `build()` succeeds, every method throws
 `IllegalStateException`.
 
-Both limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
+The limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
 reaction runs one level deeper, so that stack bounds them too. So does each automatic attempt that a commit triggers,
 one level deeper than the call whose commit triggered it, while the attempts of one entity's chain run one after
-another at the same level; `MachineRegistry.builder().maxAutomaticChain(int)` bounds how many attempts may follow one
+another at the same level; `maxAutomaticChain(int)`, on the set builder and on `MachineRegistry.builder()`, bounds how many attempts may follow one
 another on one path of continuations, 10 by default and at least 1: the attempt one past it that admits a candidate
 aborts, before its action runs, with `AutomaticChainExceededException`. How many levels a stack holds depends on the
 JIT, on the platform and on the frames of your own callbacks. As one measure, with an action that only cascades to the next

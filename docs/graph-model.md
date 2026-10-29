@@ -161,6 +161,15 @@ You declare what a state can do, and its policy words the answer for everything 
 - An `onFailure` identifier, and the recovery identifier of every recovery rule, must name a different edge that
   exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
   it recovers, because identity, not destination, tells them apart.
+- A state with two or more automatic edges declares exactly one automatic order that names each of them once and
+  nothing else, and no state declares an order it cannot use: a second one, or one on a state with fewer than two
+  automatic edges (`SG108`). An edge without guards comes last in the order, since it is always chosen (`SG109`).
+- The automatic edges, together with the jumps of their continuing failure routes, form no cycle, whatever
+  `allowsCycle` says (`SG206`). A continuing route, an `onFailure` that continues or a recovery rule that continues,
+  leads to a state with an automatic edge (`SG305`). With annotations, `onFailureContinues` also needs an `onFailure`
+  to continue (`SG305`).
+- A state that holds a sub-machine has no automatic edge (`SG807`). With annotations, the identifier of an automatic
+  edge executes no operation that takes an input, because an automatic attempt carries none (`SG515`).
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 - A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
   an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
@@ -271,7 +280,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade) |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.AutomaticOrder`, `.AutomaticOrders` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
@@ -307,19 +316,29 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | --- | --- | --- | --- |
 | `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
 | `StatePolicy` | type | `state: S`, `otherwise: String` | None |
-| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit` |
-| `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn` |
+| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean` |
+| `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn`, `continueChain: boolean` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
+| `AutomaticOrder` | type | `from: S`, `transitions: T[]` | None |
 | [`Check`](eligibility.md#check-through-the-facade) | method | `id: T` | None |
 
-`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
-`Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
-throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
+`StatePolicy`, `Transition`, `Reject` and `AutomaticOrder` are repeatable, through the generated `StatePolicies`,
+`Transitions`, `Rejects` and `AutomaticOrders` containers. `from` of a `Transition` must contain at least one state.
+Guard arrays execute in declaration order. `failsOn` takes throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
 `timeout` require an action, and `timeout` requires an asynchronous one.
 
 The processor reads and validates `recoveries`, including their failure kinds, throwable types and recovery
 transitions. Generated companions emit one typed `recover(...)` call per rule in declaration order, so annotated
 facades route failures through those rules just as graphs built directly with the DSL do.
+
+`automatic`, `onFailureContinues`, `continueChain` and `AutomaticOrder` declare the automatic part of the graph. An
+`automatic = true` annotation marks the edge from every origin in its `from`, whether it is written on an operation or
+on the interface, and the companion emits `.automatic()` for each. `onFailureContinues = true` makes the `onFailure`
+route a continuing one, emitted as `onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with
+`continueChain = true` is emitted as `recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is
+emitted as one `automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders
+included, to the validator the DSL runs in `build()`, so the structural rules above are reported with the same codes
+for an annotated graph.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and

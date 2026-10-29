@@ -118,6 +118,9 @@ public enum DiagnosticCode {
     /** Two checks name the same operation, or one method carries both a {@code Transition} and a {@code Check}. */
     SG514,
 
+    /** An automatic transition's identifier runs an operation that takes an input, which an automatic attempt lacks. */
+    SG515,
+
     /** The processor could not write a generated source, provisional export index or processor inventory. */
     SG599,
 

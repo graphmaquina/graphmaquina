@@ -31,13 +31,14 @@ final class TypedPipeline {
         SymbolResolver symbolResolver = new SymbolResolver(symbols, missingIndex, signatures, effective,
                 new Bindings(signatures), invocations, diagnostics);
         TypedPairs pairs = new TypedPairs(structure, signatures, diagnostics);
+        AutomaticChecks automaticChecks = new AutomaticChecks(diagnostics);
         return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
-                new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
-                        annotations, diagnostics),
+                new TypedTransitions(structure, automaticChecks, symbolResolver,
+                        new TypedTimeouts(annotations, diagnostics), annotations, diagnostics),
                 pairs,
                 new TypedWatchReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures, diagnostics),
                 new TypedSubmachineReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures,
                         diagnostics),
-                signatures, diagnostics);
+                signatures, automaticChecks, diagnostics);
     }
 }

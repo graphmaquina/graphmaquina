@@ -1,11 +1,13 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.dsl.AutomaticOrderOutline;
 import io.github.graphmaquina.dsl.ExitOutline;
 import io.github.graphmaquina.dsl.MachineOutline;
 import io.github.graphmaquina.dsl.PolicyOutline;
 import io.github.graphmaquina.dsl.SubmachineOutline;
 import io.github.graphmaquina.dsl.TransitionOutline;
 import io.github.graphmaquina.dsl.WatchOutline;
+import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.RejectionModel;
@@ -16,6 +18,7 @@ import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,8 +26,10 @@ import java.util.Set;
 /**
  * Turns a model into the structural outline the DSL builds too: only the edges that were declared, each with the
  * identifiers its fallback and its recovery rules recover through, one policy per state that declares one or is
- * terminal, the identifiers each watch executes, and each sub-machine with the terminal states of its child and its
- * exits as declared. No pair is materialized.
+ * terminal, the identifiers each watch executes, each sub-machine with the terminal states of its child and its
+ * exits as declared, and the automatic orders as declared. An edge carries whether it has guards, whether it is
+ * automatic, whether its {@code onFailure} continues the chain and the identifiers its continuing recovery rules
+ * name. No pair is materialized.
  */
 final class Outlines {
 
@@ -34,12 +39,17 @@ final class Outlines {
         List<TransitionOutline> edges = new ArrayList<>();
         for (TransitionModel transition : model.allTransitions()) {
             List<String> recoveries = new ArrayList<>();
+            Set<String> continuing = new LinkedHashSet<>();
             for (RecoveryModel recovery : transition.recoveries()) {
                 recoveries.add(recovery.transition());
+                if (recovery.continueChain()) {
+                    continuing.add(recovery.transition());
+                }
             }
             for (String from : transition.from()) {
                 edges.add(new TransitionOutline(from, transition.transitionId(), transition.to(), transition.kind(),
-                        transition.onFailure(), recoveries, false, false, false, List.of()));
+                        transition.onFailure(), recoveries, !transition.guards().isEmpty(), transition.automatic(),
+                        transition.onFailureContinues(), List.copyOf(continuing)));
             }
         }
         List<WatchOutline> watches = new ArrayList<>();
@@ -61,7 +71,16 @@ final class Outlines {
         }
         return new MachineOutline(model.facadeName(), model.types().stateNames(), model.types().transitionNames(),
                 model.initial(), Set.copyOf(model.terminals()), Set.copyOf(model.cycleAllowed()), edges,
-                policies(model), watches, submachines, List.of());
+                policies(model), watches, submachines, orders(model));
+    }
+
+    /** The orders as declared, in declaration order and repeats included, for the validator to judge. */
+    private static List<AutomaticOrderOutline> orders(MachineModel model) {
+        List<AutomaticOrderOutline> orders = new ArrayList<>();
+        for (AutomaticOrderModel order : model.automaticOrders()) {
+            orders.add(new AutomaticOrderOutline(order.from(), order.transitions()));
+        }
+        return orders;
     }
 
     /**

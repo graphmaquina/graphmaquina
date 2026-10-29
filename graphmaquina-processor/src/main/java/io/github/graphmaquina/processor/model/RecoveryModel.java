@@ -12,10 +12,12 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>The rule keeps the values it was read from, so that a diagnostic about it points at the value that is wrong:
  * {@code annotation} is the nested {@code Recovery} itself, {@code kindValue} the value that names the kind, and
- * {@code failsOnValues} holds, at each position, the value that names the type {@code failsOn} holds there.</p>
+ * {@code failsOnValues} holds, at each position, the value that names the type {@code failsOn} holds there.
+ * {@code continueChain} says whether the rule continues the chain of automatic attempts.</p>
  */
 public record RecoveryModel(TypeMirror kind, String transition, List<TypeMirror> failsOn, AnnotationMirror annotation,
-                            AnnotationValue kindValue, List<AnnotationValue> failsOnValues) {
+                            AnnotationValue kindValue, List<AnnotationValue> failsOnValues,
+                            boolean continueChain) {
 
     public RecoveryModel {
         failsOn = List.copyOf(failsOn);
