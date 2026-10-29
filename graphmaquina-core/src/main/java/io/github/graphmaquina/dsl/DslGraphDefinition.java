@@ -100,9 +100,9 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     }
 
     /**
-     * The automatic edges of each state: those {@code orders} names for the state, in that order, then every other
-     * automatic edge of the state in the order of {@code outgoing}. A name that is not an automatic edge from the state
-     * is left out, and a name repeated counts once, so the lists hold exactly the automatic edges.
+     * The automatic edges of each state: in the order {@code orders} declares for the state, which {@code build()}
+     * accepted only once it named each of them exactly once and nothing else; for a state without an order, which has
+     * at most one, as {@code outgoing} lists it.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Map<S, List<TransitionSpec<E, S, T>>> automaticEdges(
             MachineKey<E, S, T> key, Map<S, List<TransitionSpec<E, S, T>>> outgoing, Map<S, List<T>> orders) {
@@ -114,22 +114,24 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
                     marked.add(spec);
                 }
             }
-            List<TransitionSpec<E, S, T>> sorted = new ArrayList<>();
-            for (T named : orders.getOrDefault(entry.getKey(), List.of())) {
-                for (TransitionSpec<E, S, T> spec : marked) {
-                    if (spec.transition() == named && !sorted.contains(spec)) {
-                        sorted.add(spec);
-                    }
-                }
-            }
+            List<T> order = orders.getOrDefault(entry.getKey(), List.of());
+            result.put(entry.getKey(), List.copyOf(order.isEmpty() ? marked : inOrder(marked, order)));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** The edges of {@code marked}, one per identifier of {@code order}, in that order. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<TransitionSpec<E, S, T>> inOrder(
+            List<TransitionSpec<E, S, T>> marked, List<T> order) {
+        List<TransitionSpec<E, S, T>> sorted = new ArrayList<>();
+        for (T named : order) {
             for (TransitionSpec<E, S, T> spec : marked) {
-                if (!sorted.contains(spec)) {
+                if (spec.transition() == named) {
                     sorted.add(spec);
                 }
             }
-            result.put(entry.getKey(), List.copyOf(sorted));
         }
-        return Collections.unmodifiableMap(result);
+        return sorted;
     }
 
     @Override
