@@ -77,6 +77,7 @@ already flat.
 A wizard with two steps can pause and resume at the step it left. The hook of `PAUSE` stores that step in `resumeAt`, a
 plain field of `Wizard` beside its state. `RESUME` leads to `RESUMING`, a real state whose two automatic edges return
 the wizard to the stored step: `BACK_TO_ONE`, guarded, is tried first, and `BACK_TO_TWO`, without guards, comes last.
+`resumeAt` is a plain field of the entity: persist it with the entity, or the history is lost on reload.
 The enums are `WizardState { STEP_ONE, STEP_TWO, PAUSED, RESUMING, DONE }` and
 `WizardTransition { NEXT, FINISH, PAUSE, RESUME, BACK_TO_ONE, BACK_TO_TWO }`. The hook and the guard:
 
@@ -182,9 +183,11 @@ public final class CheckHistory {
 
 Resuming an application held at `INCOME` restarts its checks at `IDENTITY` and cascades `RESTORE_INCOME` in the same
 commit: the outcome's `starts()` hold the restart, from `INCOME` to `IDENTITY`, and its `records()` hold `RESUME` and,
-one level deeper, `RESTORE_INCOME`. `RESTORE_INCOME` runs its guards like any edge, and a refusal aborts the whole
-resume, which then writes nothing. With one step to restore, one `if` is enough; with several, the action takes one
-branch per step, each with its own edge from the initial state.
+one level deeper, `RESTORE_INCOME`. `RESTORE_INCOME` runs its guards like any edge. A refused restoring cascade aborts
+the whole call: the resume throws `TransitionAbortedException` and writes nothing, the parent's move included. With one
+step to restore, one `if` is enough; with several, the action takes one branch per step, each with its own edge from
+the initial state. `resumeCheckAt` is a plain field of the entity: persist it with the entity, or the history is lost on
+reload.
 
 ## Parallel regions
 
