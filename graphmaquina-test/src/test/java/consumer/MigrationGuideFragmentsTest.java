@@ -231,8 +231,13 @@ class MigrationGuideFragmentsTest {
                 @Test
                 void theHookRunsTheExitAndEntryActionsOfEachCommittedHop() {
                     Document document = new Document("D1", "Spec", true);
-                    assertEquals(List.of(), board.calls);
-                    documents.submit(document);
+                    // the first call commits its own hop only: nothing ran for the initial state before it
+                    Outcome<Document, DocumentState, DocumentTransition> submitted = documents.submit(document);
+                    assertEquals(List.of("DRAFT SUBMIT REVIEW"), submitted.records().stream()
+                            .map((TransitionRecord<?, ?, ?> hop) -> hop.from() + " " + hop.transition() + " "
+                                    + hop.to())
+                            .toList());
+                    assertEquals(List.of("assign D1"), board.calls);
                     documents.publish(document);
                     assertEquals(List.of("assign D1", "release D1"), board.calls);
                 }
@@ -333,7 +338,10 @@ class MigrationGuideFragmentsTest {
                 @Test
                 void resumeReturnsToStepOne() {
                     Wizard wizard = new Wizard("W2");
+                    // a step an earlier pause stored, which the hook of this pause must replace
+                    wizard.setResumeAt(STEP_TWO);
                     wizards.pause(wizard);
+                    assertEquals(STEP_ONE, wizard.getResumeAt());
                     assertThat(wizards.resume(wizard)).isApplied().movedTo(RESUMING)
                             .hasEntityState(Wizard::getState, STEP_ONE)
                             .automaticSteps().forEntity(WizardsRuntime.KEY, wizard).single()
@@ -729,6 +737,9 @@ class MigrationGuideFragmentsTest {
                 void nothingFiresUntilTheScheduledCall() {
                     Reservation reservation = heldFifteenMinutes("R2");
                     now.set(HELD_AT.plus(Duration.ofMinutes(16)));
+                    // asking the machine to go on does not expire it: EXPIRE is no automatic edge here
+                    assertThat(reservations.advance(reservation)).isIgnored()
+                            .hasReason(IgnoreReason.NO_AUTOMATIC_TRANSITION);
                     assertEquals(HELD, reservation.getState());
                     assertThat(reservations.expire(reservation)).isApplied().movedTo(EXPIRED);
                 }
@@ -751,6 +762,8 @@ class MigrationGuideFragmentsTest {
                             .hasReason(IgnoreReason.NO_CANDIDATE_ADMITTED).rejections().single()
                             .transition(EXPIRE).isRejectedByGuardNamed("expired");
                     now.set(HELD_AT.plus(Duration.ofMinutes(31)));
+                    // a commit of another reservation runs no chain for this one
+                    timed.reservations().confirm(heldFifteenMinutes("R6"));
                     assertEquals(HELD, reservation.getState());
                     assertThat(timed.reservations().advance(reservation)).isApplied().requestedTransition(EXPIRE)
                             .hasEntityState(Reservation::getState, EXPIRED);

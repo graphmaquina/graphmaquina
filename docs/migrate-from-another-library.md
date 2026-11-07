@@ -52,6 +52,8 @@ several entries below follow from that:
      [state snapshot](testing-samples.md#tracked-entity-state) checks that nothing changed where the original ignored
      an event or rolled back. Where a pattern adds automatic steps, assert `automaticSteps()` and the entity's final
      state, and `automaticBlock()` on the arrivals where no automatic edge should be taken.
+   - Cover what [asserting on identity](testing.md#asserting-on-identity) lists, such as every self-loop and its hook,
+     and hooks that fail after the commit.
    - A topology path proves nothing about a run, and `isApplied()` does not prove that automatic steps and reactions
      succeeded, as [what a check does not prove](testing.md#what-a-check-does-not-prove) says.
 
@@ -340,10 +342,12 @@ action that cascades into the other regions, in the same commit. A join becomes 
 that reads the other regions' states, and something must request that edge when the last region arrives: the action
 of the region that arrives last cascades into the joining region, or your code calls the operation, or `advance` for
 an automatic edge, on the joining region. An automatic edge of the joining region is not tried when only another
-region moved, because a commit runs the automatic chains of the machines it moved, not of the others; when the join is
-an automatic edge, each arrival of the joining region before the others are done reports the refused attempt in
-`automaticBlock()`. A refusal inside a cascade aborts the whole call. A state can hold one sub-machine only, so regions
-cannot all be sub-machines of one state. Two machines may share an entity only with different state enums.
+region moved, because a commit runs the automatic chains of the machines it moved, not of the others. When the join is
+an automatic edge, each arrival of the joining region in the state the join leaves, by an ordinary hop, a self-loop
+included, before the other regions are done, reports the refused attempt in `automaticBlock()`; an arrival by a
+failure route that does not continue, the default, or by a call whose hook threw runs no attempt. A refusal inside a
+cascade aborts the whole call. A state can hold one sub-machine only, so regions cannot all be sub-machines of one
+state. Two machines may share an entity only with different state enums.
 
 ### Timers and timeouts
 
@@ -359,7 +363,8 @@ refuses it, but only while the identifier and the guard tell the cases apart: wh
 from another state the entity is now in, a stale timer applies that edge if its guard passes there. With the
 automatic-edge variant, every arrival in the timed state by an ordinary hop before the deadline, a self-loop included,
 runs an attempt that the guard refuses: the outcome reports it in `automaticBlock()`, `automaticSteps()` lists it, and
-observers see an extra call. Calls from the scheduler are not serialized with other calls on the same entity. The
+observers see an extra call. An arrival by a failure route that does not continue, the default, or by a call whose
+hook threw runs no attempt. Calls from the scheduler are not serialized with other calls on the same entity. The
 `asyncTimeout` and `@Timeout` settings are not state timers: they bound how long a call waits for an asynchronous action
 or guard, and when they expire the call aborts and takes no failure route.
 

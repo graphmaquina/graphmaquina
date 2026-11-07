@@ -34,7 +34,8 @@ publishing {
 // local repository, with the repository and the release passed in as system properties.
 tasks.test {
     exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class",
-        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class", "**/MigrationGuideFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class",
+        "**/MigrationGuideFragmentsTest.class")
 }
 
 val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
@@ -43,7 +44,8 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class",
-        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class", "**/MigrationGuideFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class",
+        "**/MigrationGuideFragmentsTest.class")
     dependsOn(tasks.named("testClasses"))
     dependsOn(tasks.named("publishMavenPublicationToAdapterTestsRepository"))
     dependsOn(":graphmaquina-core:publishMavenPublicationToAdapterTestsRepository")
@@ -53,7 +55,7 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     dependsOn(":graphmaquina-maven-plugin:publishMavenPublicationToAdapterTestsRepository")
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToAdapterTestsRepository"))
-    // The quickstart, guide fragment and testing guide tests read their pages from this directory.
+    // The quickstart, guide fragment, testing guide and migration guide tests read their pages from this directory.
     val docs = rootProject.layout.projectDirectory.dir("docs")
     val gradleExecutable = requireNotNull(gradle.gradleHomeDir).resolve(
         if (System.getProperty("os.name").startsWith("Windows")) "bin/gradle.bat" else "bin/gradle"

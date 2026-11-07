@@ -213,7 +213,7 @@ public interface OrderPayments extends Machine<Order, PaymentStatus, PaymentTran
     id = OrderRefs.Id.class)
 @OrderPackingGraph.StatePolicy(state = PACKING, otherwise = "pack the order")
 @OrderPackingGraph.StatePolicy(state = PACKED, otherwise = "the order ships once it is paid")
-// the join, tried after every move into PACKED
+// the join, tried after an ordinary hop into PACKED, or on advance
 @OrderPackingGraph.Transition(
     id = SHIP,
     from = PACKED,
@@ -227,11 +227,11 @@ public interface OrderPacking extends Machine<Order, PackingStatus, PackingTrans
 }
 ```
 
-`SHIP` is automatic and guarded by the payment region's state, so packing an order that is already paid ships it in
-the same call, through the chain that the move into `PACKED` runs. When the payment arrives last, a commit that moved
-only the payment would run no chain of the packing region, since a commit runs the chains of the machines it moved, so
-the action of `PAY` requests `SHIP` itself, as a cascade in the same commit. The action and the guard read the other region with `ctx.peer(...)`, which sees the
-pending state of a step earlier in the same call:
+`SHIP` is automatic and guarded by the payment region's state, so packing an order that is already paid ships it
+before `pack` returns, in an automatic attempt of its own after the commit of `PACKED`. When the payment arrives last,
+a commit that moved only the payment would run no chain of the packing region, since a commit runs the chains of the
+machines it moved, so the action of `PAY` requests `SHIP` itself, as a cascade in the same commit. The action and the
+guard read the other region with `ctx.peer(...)`, which sees the pending state of a step earlier in the same call:
 
 ```java
 public final class RegionRules {
@@ -320,7 +320,8 @@ edge and is refused as `NO_TRANSITION`, and one that comes after an `EXTEND` sel
 later is refused by the guard. To use an automatic edge instead, mark `EXPIRE` `automatic = true` and have the
 scheduler call `reservations.advance(reservation)`. Every arrival in `HELD` by an ordinary hop before the deadline, such
 as an `EXTEND`, then runs an attempt that the guard refuses, and the outcome of that arrival reports it in
-`automaticBlock()`. The `asyncTimeout` and `@Timeout` settings are no timers: they bound how long a call waits for
+`automaticBlock()`; an arrival by a failure route that does not continue, the default, or by a call whose hook threw
+runs none. The `asyncTimeout` and `@Timeout` settings are no timers: they bound how long a call waits for
 asynchronous work, as [deadline rules](async-deadlines.md#deadline-rules) explains.
 
 ## Deferred events
@@ -332,7 +333,7 @@ be cancelled while it is `PROCESSING`, so it keeps the cancellation for `READY`.
 `READY`, `SHIPPED` and `CANCELLED`; `cancel` is accepted in `NEW` and `READY`, and `CANCELLED` is final. On the facade:
 
 ```java
-// the deferred cancellation, tried after every arrival in READY
+// the deferred cancellation, tried after an ordinary hop into READY, or on advance
 @OrdersGraph.Transition(
     id = CANCEL_WHEN_READY,
     from = READY,
@@ -366,13 +367,13 @@ if (outcome.code() == OutcomeCode.NO_TRANSITION) {
 ```
 
 When `finish(order)` moves the order to `READY`, the order's chain takes `CANCEL_WHEN_READY` in an attempt of its own,
-listed in the outcome's `automaticSteps()`. An order that arrives in `READY` with no request recorded runs the same
-attempt, which the guard refuses, and the outcome reports it in `automaticBlock()`: code that treats a block as an
-error must not do so for this edge. A request recorded while the order is already in `READY` waits until the
-application calls `advance(order)`, whose outcome is that attempt's own. So does a request already recorded when the
-order arrives by a hop that runs no chain: a failure route that does not continue, which is the default, or a call
-whose hook threw. Since `CANCELLED` is final, the flag needs no clearing; for a target that is not final, clear it in
-the deferred edge's action or hook, or the edge is taken again on the next arrival.
+listed in the outcome's `automaticSteps()`. An order that arrives in `READY` by an ordinary hop with no request
+recorded runs the same attempt, which the guard refuses, and the outcome reports it in `automaticBlock()`: code that
+treats a block as an error must not do so for this edge. A request recorded while the order is already in `READY`
+waits until the application calls `advance(order)`, whose outcome is that attempt's own. So does a request already
+recorded when the order arrives by a hop that runs no chain: a failure route that does not continue, which is the
+default, or a call whose hook threw. Since `CANCELLED` is final, the flag needs no clearing; for a target that is not
+final, clear it in the deferred edge's action or hook, or the edge is taken again on the next arrival.
 
 ---
 
