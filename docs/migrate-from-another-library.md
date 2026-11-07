@@ -11,9 +11,27 @@ elsewhere get a built and tested pattern on [migration patterns](migration-patte
 - [The model: state in the entity](#the-model-state-in-the-entity)
 - [The procedure](#the-procedure)
 - [Concepts with an equivalent](#concepts-with-an-equivalent)
+  - [States, events and transitions](#states-events-and-transitions),
+    [Several transitions between the same pair of states](#several-transitions-between-the-same-pair-of-states),
+    [Self-transitions](#self-transitions), [Asking which events are permitted now](#asking-which-events-are-permitted-now)
 - [Concepts that behave differently](#concepts-that-behave-differently)
+  - [Where the state lives](#where-the-state-lives), [Initial and final states](#initial-and-final-states),
+    [Internal transitions](#internal-transitions), [Events with data](#events-with-data), [Guards](#guards),
+    [Transition actions](#transition-actions), [Composite states](#composite-states),
+    [Extended state variables](#extended-state-variables),
+    [Transitions that fire on their own](#transitions-that-fire-on-their-own),
+    [Listeners and interceptors](#listeners-and-interceptors), [Persistence and restoration](#persistence-and-restoration),
+    [Errors in actions](#errors-in-actions), [Several machines that collaborate](#several-machines-that-collaborate)
 - [Concepts without an equivalent](#concepts-without-an-equivalent)
+  - [Entry and exit actions](#entry-and-exit-actions),
+    [Choice and junction pseudo-states](#choice-and-junction-pseudo-states), [History states](#history-states),
+    [Parallel regions](#parallel-regions), [Timers and timeouts](#timers-and-timeouts),
+    [Deferred events](#deferred-events), [One machine object per entity](#one-machine-object-per-entity),
+    [Starting, stopping and resetting a machine](#starting-stopping-and-resetting-a-machine),
+    [Event queues and concurrent events](#event-queues-and-concurrent-events)
 - [Concepts that depend on the original machine](#concepts-that-depend-on-the-original-machine)
+  - [Rejecting an event that is not permitted](#rejecting-an-event-that-is-not-permitted),
+    [Defining the machine at runtime](#defining-the-machine-at-runtime)
 
 ## The model: state in the entity
 
@@ -185,6 +203,13 @@ A sub-machine: the parent declares `@GraphPeers(Child.class)` and one generated 
 bound state; with the DSL, `submachine(state, childDefinition, ...)` and `exit(terminal, id)`. Parent and child belong
 to the same `@StateGraphs` set. See [compose machines](composition.md).
 
+A sub-machine is the default translation: a state can hold a whole machine of its own, so GraphMaquina does have
+nested states, and a migration never reports that it has none. Flatten the inner states into the parent's graph only
+when they need nothing a sub-machine gives them: a state field of their own, a start at their initial state on every
+entry, exits selected by their final states, and refusals as `DETACHED` once the parent has left. A flat translation
+declares each edge that left the composite state with every inner state in its `from`. When you flatten, tell the
+developer which composite state you flattened and why a sub-machine did not fit.
+
 What changes: the inner states become a separate machine with its own state enum and field, on a related entity or on
 the same one. Events are not delegated: an event for the inner states is a call on the child's facade, an event for
 the outer state a call on the parent's, and an event the child does not handle is refused by the child, not passed to
@@ -302,8 +327,9 @@ caller can decide, with an [eligibility check](eligibility.md) to tell it which 
 What changes: GraphMaquina has no pseudo-states, and one event cannot have several guarded targets from one state
 (`SG102`). With an intermediate state, the decision point becomes a real state: the entity is committed there, the
 setter runs and hooks and watches react, and then one automatic attempt, a call of its own, tries the branches in
-order and runs the first one admitted. The caller's outcome reports the move into the intermediate state; the final
-state is in `automaticSteps()` and on the entity. If no branch is admitted, the entity stays in the intermediate state
+order and runs the first one admitted. The caller's `Applied` outcome reports the move into the intermediate state:
+its `to()`, which `movedTo` asserts in a test, is that state. Read the branch taken and the real destination from the
+outcome's `automaticSteps()`, or the state from the entity. If no branch is admitted, the entity stays in the intermediate state
 and the outcome reports the attempt in `automaticBlock()`, whose `rejections()` list each refused branch; a failing
 branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. Since the attempt is a call of its own,
 the branches' guards get an empty input and a flow of their own: they decide from the entity's fields, not from the
@@ -313,15 +339,17 @@ comes last (`SG109`).
 
 ### History states
 
-Closest pattern: in a flat graph, a hook of the leaving edge stores the state the entity leaves in a plain field, and
-the return goes through an intermediate state whose automatic edges, guarded by that field, lead back to it. When the
-inner states are a sub-machine, the edge that enters the bound state cascades the restarted child back to the stored
-step. Or the inner states stay an independent machine over the same entity, not bound as a sub-machine, so nothing
-resets them. See [the patterns](migration-patterns.md#history-states).
+Closest pattern: if the composite state is a sub-machine, as [composite states](#composite-states) translates it by
+default, the edge that enters the bound state cascades the restarted child back to the stored step:
+[restore a sub-machine](migration-patterns.md#restore-a-sub-machine). The flat pattern is for states that are already
+flat: a hook of the leaving edge stores the state the entity leaves in a plain field, and the return goes through an
+intermediate state whose automatic edges, guarded by that field, lead back to it:
+[resume a flat machine](migration-patterns.md#resume-a-flat-machine). Or the inner states stay an independent machine
+over the same entity, not bound as a sub-machine, so nothing resets them.
 
 What changes: GraphMaquina has no history states. A sub-machine restarts at its initial state each time its state is
-entered, whatever state it had reached. With the resume pattern, the stored step is an ordinary field you persist, the
-return goes through a real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states), and
+entered, whatever state it had reached. Whichever pattern you use, the stored step is an ordinary field of your
+entity: your hook writes it, and you persist it with the entity. With the resume pattern, the return goes through a real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states), and
 the outcome of the resume call reports that intermediate state; the restored state is on the entity and in
 `automaticSteps()`. With the restoring cascade, the restart and the restore happen in the same commit, the child needs
 an extra edge from its initial state to each state it may return to, those edges run their guards, actions and hooks
@@ -433,6 +461,9 @@ direct when the original returned a status or a boolean, or ignored the event: a
 `outcome.status()` or `code()`, and a caller that ignored refusals can keep ignoring them, since nothing is written.
 
 Notes: every state that is not final words a policy (`SG701`), and inside a cascade a refusal aborts the whole call.
+A refusal commits nothing and runs no hook: where the original audited or logged refused events, use a
+`MachineObserver`, whose `onCompleted` receives every outcome, refused ones included, as
+[observers](commit-and-persistence.md#observers) shows.
 
 What changes, when the original threw an exception: a refused event is returned as an outcome, never thrown. Code that
 relied on the exception to stop now carries on as if the move had happened unless it checks `outcome.status()` or

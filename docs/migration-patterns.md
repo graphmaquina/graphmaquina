@@ -66,8 +66,11 @@ or leaves the state instead, where a failure takes the edge's failure route.
 ## History states
 
 A history state let a composite state resume at the step it was left in, instead of at its initial state. GraphMaquina
-keeps no history: the entity's state field is the only memory, so these patterns store the step to resume in a field of
-its own.
+has no history states: the entity's state field is the only memory, so these patterns store the step to resume in a
+field of its own, which you persist with the entity like any other field. If the composite state is a sub-machine, as
+[composite states](migrate-from-another-library.md#composite-states) translates it by default, use
+[restore a sub-machine](#restore-a-sub-machine); [resume a flat machine](#resume-a-flat-machine) is for states that are
+already flat.
 
 ### Resume a flat machine
 
