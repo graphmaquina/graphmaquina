@@ -13,15 +13,17 @@ elsewhere get a built and tested pattern on [migration patterns](migration-patte
 - [Concepts with an equivalent](#concepts-with-an-equivalent)
   - [States, events and transitions](#states-events-and-transitions),
     [Several transitions between the same pair of states](#several-transitions-between-the-same-pair-of-states),
-    [Self-transitions](#self-transitions), [Asking which events are permitted now](#asking-which-events-are-permitted-now)
+    [Self-transitions](#self-transitions),
+    [Asking which events are permitted now](#asking-which-events-are-permitted-now)
 - [Concepts that behave differently](#concepts-that-behave-differently)
   - [Where the state lives](#where-the-state-lives), [Initial and final states](#initial-and-final-states),
     [Internal transitions](#internal-transitions), [Events with data](#events-with-data), [Guards](#guards),
     [Transition actions](#transition-actions), [Composite states](#composite-states),
     [Extended state variables](#extended-state-variables),
     [Transitions that fire on their own](#transitions-that-fire-on-their-own),
-    [Listeners and interceptors](#listeners-and-interceptors), [Persistence and restoration](#persistence-and-restoration),
-    [Errors in actions](#errors-in-actions), [Several machines that collaborate](#several-machines-that-collaborate)
+    [Listeners and interceptors](#listeners-and-interceptors),
+    [Persistence and restoration](#persistence-and-restoration), [Errors in actions](#errors-in-actions),
+    [Several machines that collaborate](#several-machines-that-collaborate)
 - [Concepts without an equivalent](#concepts-without-an-equivalent)
   - [Entry and exit actions](#entry-and-exit-actions),
     [Choice and junction pseudo-states](#choice-and-junction-pseudo-states), [History states](#history-states),
@@ -207,8 +209,10 @@ A sub-machine is the default translation: a state can hold a whole machine of it
 nested states, and a migration never reports that it has none. Flatten the inner states into the parent's graph only
 when they need nothing a sub-machine gives them: a state field of their own, a start at their initial state on every
 entry, exits selected by their final states, and refusals as `DETACHED` once the parent has left. A flat translation
-declares each edge that left the composite state with every inner state in its `from`. When you flatten, tell the
-developer which composite state you flattened and why a sub-machine did not fit.
+declares each edge that left the composite state with every inner state in its `from`, except the inner states that
+handle the same event themselves: they keep their own edge, since a second edge with the same origin and identifier is
+refused (`SG102`). When you flatten, tell the developer which composite state you flattened and why a sub-machine did
+not fit.
 
 What changes: the inner states become a separate machine with its own state enum and field, on a related entity or on
 the same one. Events are not delegated: an event for the inner states is a call on the child's facade, an event for
@@ -329,13 +333,13 @@ What changes: GraphMaquina has no pseudo-states, and one event cannot have sever
 setter runs and hooks and watches react, and then one automatic attempt, a call of its own, tries the branches in
 order and runs the first one admitted. The caller's `Applied` outcome reports the move into the intermediate state:
 its `to()`, which `movedTo` asserts in a test, is that state. Read the branch taken and the real destination from the
-outcome's `automaticSteps()`, or the state from the entity. If no branch is admitted, the entity stays in the intermediate state
-and the outcome reports the attempt in `automaticBlock()`, whose `rejections()` list each refused branch; a failing
-branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. Since the attempt is a call of its own,
-the branches' guards get an empty input and a flow of their own: they decide from the entity's fields, not from the
-event's data or from values the original call put in its flow. An operation that takes an input cannot be a branch
-(`SG515`), the intermediate state needs a policy and cannot hold a sub-machine (`SG807`), and the branch without guards
-comes last (`SG109`).
+outcome's `automaticSteps()`, or the state from the entity. If no branch is admitted, the entity stays in the
+intermediate state and the outcome reports the attempt in `automaticBlock()`, whose `rejections()` list each refused
+branch; a failing branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. Since the attempt is
+a call of its own, the branches' guards get an empty input and a flow of their own: they decide from the entity's
+fields, not from the event's data or from values the original call put in its flow. An operation that takes an input
+cannot be a branch (`SG515`), the intermediate state needs a policy and cannot hold a sub-machine (`SG807`), and the
+branch without guards comes last (`SG109`).
 
 ### History states
 
@@ -348,14 +352,15 @@ intermediate state whose automatic edges, guarded by that field, lead back to it
 over the same entity, not bound as a sub-machine, so nothing resets them.
 
 What changes: GraphMaquina has no history states. A sub-machine restarts at its initial state each time its state is
-entered, whatever state it had reached. Whichever pattern you use, the stored step is an ordinary field of your
-entity: your hook writes it, and you persist it with the entity. With the resume pattern, the return goes through a real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states), and
-the outcome of the resume call reports that intermediate state; the restored state is on the entity and in
-`automaticSteps()`. With the restoring cascade, the restart and the restore happen in the same commit, the child needs
-an extra edge from its initial state to each state it may return to, those edges run their guards, actions and hooks
-like any edge, and a refused cascade aborts the parent's call. With an unbound machine, you lose the automatic start,
-the exits and the `DETACHED` protection of a sub-machine, and it never resets either: if the original also entered
-the composite state without history, that reset needs an explicit edge of the inner machine.
+entered, whatever state it had reached. With either stored-step pattern, the stored step is an ordinary field of your
+entity: your hook writes it, and you persist it with the entity. With the resume pattern, the return goes through a
+real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states), and the outcome of the
+resume call reports that intermediate state; the restored state is on the entity and in `automaticSteps()`. With the
+restoring cascade, the restart and the restore happen in the same commit, the child needs an extra edge from its
+initial state to each state it may return to, those edges run their guards, actions and hooks like any edge, and a
+refused cascade aborts the parent's call. With an unbound machine, you lose the automatic start, the exits and the
+`DETACHED` protection of a sub-machine, and it never resets either: if the original also entered the composite state
+without history, that reset needs an explicit edge of the inner machine.
 
 ### Parallel regions
 
