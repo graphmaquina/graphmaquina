@@ -34,7 +34,7 @@ publishing {
 // local repository, with the repository and the release passed in as system properties.
 tasks.test {
     exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class",
-        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class", "**/MigrationGuideFragmentsTest.class")
 }
 
 val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
@@ -43,7 +43,7 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class",
-        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class", "**/MigrationGuideFragmentsTest.class")
     dependsOn(tasks.named("testClasses"))
     dependsOn(tasks.named("publishMavenPublicationToAdapterTestsRepository"))
     dependsOn(":graphmaquina-core:publishMavenPublicationToAdapterTestsRepository")
