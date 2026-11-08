@@ -183,7 +183,9 @@ final class ClasspathDeclarations implements AutoCloseable {
     /**
      * The packages a single-module-import declaration of {@code module}, Java 25 syntax, imports on demand, as
      * {@link ModuleExports#packages} reads them from the module javac finds under that name at this task's release.
-     * Empty for a module javac does not find, which javac reports itself once it compiles the import.
+     * Empty for a module this task does not find: one the JDK lacks at this release, which javac reports once it
+     * compiles the import, or one of the project's module path, which this task, compiling over the classpath, never
+     * sees, so a name only that import brings stays unresolved.
      */
     List<String> exportedPackages(String module) {
         return exportedPackages.computeIfAbsent(module,

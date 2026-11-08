@@ -154,7 +154,7 @@ The source-reading step uses `JavacTask.parse()` with annotation processing disa
 original application or require its generated annotation classes. It parses the original sources at the compilation's
 release and in its source encoding, which the build adapters pass in the request, and it writes the generated sources
 in that encoding too. It resolves the headers and exported members needed for generation, reading the names they
-write as javac reads them at that release, through a single-module-import declaration such as
+write as javac reads them at that release, through a single-module-import declaration of a JDK module such as
 `import module java.base;` (Java 25) too, then emits vocabulary plus a manifest. The processor verifies that the
 manifest matches the declarations javac accepted, resolves bindings, checks the graph and emits facades, in ASCII
 only: every other character of a name or a text is written as a `\uXXXX` escape, so javac writes them alike in any
