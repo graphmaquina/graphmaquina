@@ -1557,7 +1557,6 @@ public final class MavenFixture {
         return directory.resolve("target/" + artifactId + "-1.0.0.jar");
     }
 
-    /** Removes {@code root} and everything below it, deepest entry first; an absent root is nothing to do. */
     /**
      * Takes every permission on {@code directory} away, so that it cannot be listed, and tells whether it no longer can
      * be: a user who may read anything still lists it, and a file system without POSIX permissions changes nothing.
@@ -1618,6 +1617,7 @@ public final class MavenFixture {
         return home;
     }
 
+    /** Removes {@code root} and everything below it, deepest entry first; an absent root is nothing to do. */
     private static void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
