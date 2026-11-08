@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.gen.MachineGenerator.Variables;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
@@ -17,6 +18,7 @@ import io.github.graphmaquina.processor.model.WatchModel;
 import io.github.graphmaquina.processor.model.WatchOwner;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,10 +26,16 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * Writes the {@code graph(...)} of a machine's companion and, for a graph of more than
+ * Writes the {@code graph(...)} and the {@code structure()} of a machine's companion and, for a graph of more than
  * {@value MachineGenerator#DECLARATIONS_PER_METHOD} declarations, the private methods {@code graphPart1},
- * {@code graphPart2}, … that make those declarations in place of {@code graph(...)}, as {@link MachineGenerator}
- * describes them.
+ * {@code graphPart2}, … and {@code structurePart1}, {@code structurePart2}, … that make those declarations in place of
+ * each, as {@link MachineGenerator} describes them.
+ *
+ * <p>{@code structure()} makes the very declarations {@code graph(...)} makes, but takes nothing: it reads the
+ * definition of each child from that child's own {@code structure()}, and calls each instance member of a class with
+ * instance members on the receiver {@code UnboundCollaborator.<Host>of(host, companion)} returns, which throws when
+ * the callable runs. Every other expression, a call of a static member, a property read and a built-in watch
+ * condition, is the one {@code graph(...)} writes.</p>
  */
 final class GraphStatements {
 
@@ -72,7 +80,58 @@ final class GraphStatements {
         out.line(builder + " " + variables.builder() + " = " + names.qualifier(MachineGenerator.STATE_GRAPH)
                 + ".define(KEY);");
         declareAndBuild(statements, declared, variables, out);
-        partMethods(statements, declarations, builder, variables, out);
+        partMethods(statements, declarations, builder, "graph(...)", variables, out);
+    }
+
+    /**
+     * Writes {@code structure()}, which declares the graph {@code graph(...)} declares with no collaborator bound, and
+     * after it the private methods that declare part of that graph, if any. It reads the definition of each child
+     * once, from that child's {@code structure()}, into a variable named as the parameter of {@code graph(...)} that
+     * takes it, and hands it to those methods as {@code graph(...)} hands its parameter.
+     */
+    static void structure(MachineModel model, Names names, Variables variables, BoundInvocation invocations,
+                          SourceWriter out) {
+        String companion = MachineGenerator.qualifiedName(model);
+        String structure = UnboundCollaborator.STRUCTURE;
+        List<String> declarations = new ArrayList<>();
+        List<String> declared = new ArrayList<>();
+        List<String> children = new ArrayList<>();
+        for (MachineTypes child : model.children()) {
+            String name = variables.definitions().get(child.facade().getQualifiedName().toString());
+            String declaration = MachineGenerator.definitionType(child, names) + " " + name;
+            declarations.add(declaration);
+            declared.add(name);
+            children.add(declaration + " = " + names.qualifier(MachineGenerator.companionOf(child)) + "." + structure
+                    + "();");
+        }
+        Map<String, String> receivers = new LinkedHashMap<>();
+        for (TypeElement dependency : model.instanceDependencies()) {
+            String host = dependency.getQualifiedName().toString();
+            receivers.put(host, names.qualifier(MachineGenerator.UNBOUND) + ".<" + names.of(host) + ">of("
+                    + MachineGenerator.quote(host) + ", " + MachineGenerator.quote(companion) + ")");
+        }
+        Variables unbound = variables.unbound(receivers);
+        String builder = names.of(MachineGenerator.GRAPH_BUILDER)
+                + MachineGenerator.typeArguments(model.types(), names);
+        List<List<String>> statements = statements(model, names, unbound, invocations);
+        out.blank();
+        out.javadoc("The definition as the annotations of {@link "
+                + names.of(model.types().facade().getQualifiedName().toString()) + "} declare it, with no"
+                + " collaborator bound, for inspection, structural tests and diagrams."
+                + (model.children().isEmpty() ? "" : " Each machine it binds as a sub-machine is read from the {@code "
+                        + structure + "()} of that machine's companion.")
+                + " An action, guard, hook or lookup that calls an instance member of a class throws"
+                + " {@code IllegalStateException} when it runs; a static member, a property read and a built-in watch"
+                + " condition run as in {@code graph(...)}. Build machines from {@code graph(...)}.",
+                List.of("@return the definition, with no collaborator bound"));
+        out.open("public static " + MachineGenerator.definitionType(model.types(), names) + " " + structure + "()");
+        for (String child : children) {
+            out.line(child);
+        }
+        out.line(builder + " " + unbound.builder() + " = " + names.qualifier(MachineGenerator.STATE_GRAPH)
+                + ".define(KEY);");
+        declareAndBuild(statements, declared, unbound, out);
+        partMethods(statements, declarations, builder, structure + "()", unbound, out);
     }
 
     /**
@@ -96,12 +155,13 @@ final class GraphStatements {
     }
 
     /**
-     * Writes the private methods that make {@code statements} for a graph too large for {@code graph(...)}, each
-     * taking the builder, typed {@code builder}, then the parameters {@code declarations} of {@code graph(...)}, and
-     * returning the builder; none for a graph {@code graph(...)} declares itself.
+     * Writes the private methods that make {@code statements} for a graph too large for {@code method}, the
+     * {@code graph(...)} or the {@code structure()} that calls them, each taking the builder, typed {@code builder},
+     * then the parameters {@code declarations} of {@code method}, and returning the builder; none for a graph
+     * {@code method} declares itself.
      */
     private static void partMethods(List<List<String>> statements, List<String> declarations, String builder,
-                                    Variables variables, SourceWriter out) {
+                                    String method, Variables variables, SourceWriter out) {
         String graph = variables.builder();
         int parts = parts(statements.size());
         String parameterList = declarations.isEmpty() ? "" : ", " + String.join(", ", declarations);
@@ -109,8 +169,8 @@ final class GraphStatements {
             int first = (part - 1) * MachineGenerator.DECLARATIONS_PER_METHOD;
             int last = Math.min(statements.size(), first + MachineGenerator.DECLARATIONS_PER_METHOD);
             out.blank();
-            out.line("/** Declarations " + (first + 1) + " to " + last + " of the definition {@code graph(...)} builds,"
-                    + " in its order. */");
+            out.line("/** Declarations " + (first + 1) + " to " + last + " of the definition {@code " + method
+                    + "} builds, in its order. */");
             out.open("private static " + builder + " " + variables.part() + part + "(" + builder + " " + graph
                     + parameterList + ")");
             declare(statements.subList(first, last), graph, out);

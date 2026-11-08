@@ -76,7 +76,7 @@ class TypedAutomaticTest {
         assertTrue(result.generated("fx.DocsRuntime").contains(
                 ".transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).automatic().endTransition()"),
                 result.generated("fx.DocsRuntime"));
-        assertEquals(1, result.generated("fx.DocsRuntime").split("\\.automatic\\(\\)", -1).length - 1);
+        assertEquals(1, result.beforeStructure("fx.DocsRuntime").split("\\.automatic\\(\\)", -1).length - 1);
     }
 
     @Test

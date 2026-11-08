@@ -63,6 +63,12 @@ class LargeMachineTest {
         assertEquals(EDGES, generated.transitions().size());
         assertEquals(GraphView.of(dsl), GraphView.of(generated));
         assertEquals(GraphvizExporter.render(GraphView.of(dsl)), GraphvizExporter.render(GraphView.of(generated)));
+        assertTrue(companion.contains(
+                "private static GraphBuilder<Item, ItemStatus, ItemTransition> structurePart31("),
+                companion.substring(0, 4000));
+        GraphDefinition<?, ?, ?> structure =
+                (GraphDefinition<?, ?, ?>) result.load("big.ItemsRuntime").getMethod("structure").invoke(null);
+        assertEquals(GraphView.of(dsl), GraphView.of(structure));
     }
 
     /**
@@ -86,6 +92,27 @@ class LargeMachineTest {
         GraphDefinition<?, ?, ?> generated = (GraphDefinition<?, ?, ?>) result.load("big.ItemsRuntime")
                 .getMethod("graph", host).invoke(null, constructor.newInstance());
         assertEquals(GraphView.of(twin(result, edges)), GraphView.of(generated));
+    }
+
+    /**
+     * {@code structure()} of a graph of more declarations than one method makes is split the same way, into methods
+     * that take the builder alone, since it binds no collaborator, and draws as {@code graph(...)} does.
+     */
+    @Test
+    void theMethodsThatDeclareAPartOfTheStructureTakeTheBuilderAlone() throws Exception {
+        int edges = 150;
+        Compilation.Result result = Compilation.compileTyped(machine(edges, ""));
+
+        assertTrue(result.success(), result.describe());
+        String companion = result.generated("big.ItemsRuntime");
+        assertTrue(companion.contains("        graph = structurePart1(graph);\n"
+                + "        graph = structurePart2(graph);\n        return graph.build();\n"), companion);
+        assertTrue(companion.contains("private static GraphBuilder<Item, ItemStatus, ItemTransition> structurePart2("
+                + "GraphBuilder<Item, ItemStatus, ItemTransition> graph)"), companion);
+        GraphDefinition<?, ?, ?> structure =
+                (GraphDefinition<?, ?, ?>) result.load("big.ItemsRuntime").getMethod("structure").invoke(null);
+        assertEquals(GraphvizExporter.render(GraphView.of(twin(result, edges))),
+                GraphvizExporter.render(GraphView.of(structure)));
     }
 
     /**

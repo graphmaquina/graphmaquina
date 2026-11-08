@@ -116,6 +116,16 @@ final class Compilation {
         }
 
         /**
+         * The source of the companion {@code qualifiedName} before its {@code structure()}, which repeats the
+         * declarations {@code graph(...)} makes: what a count of the declarations of the graph reads.
+         */
+        String beforeStructure(String qualifiedName) {
+            String source = generated(qualifiedName);
+            int structure = source.indexOf(" structure() {");
+            return structure < 0 ? source : source.substring(0, source.lastIndexOf("/**", structure));
+        }
+
+        /**
          * Every class comes from the same loader, so reflection over two generated types sees one identity per type.
          */
         Class<?> load(String qualifiedName) {

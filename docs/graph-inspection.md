@@ -7,6 +7,7 @@ a Graphviz diagram. None of it runs a guard, an action, a hook or a sub-machine'
 ## Contents
 
 - [Read a definition](#read-a-definition)
+- [A definition without collaborators](#a-definition-without-collaborators)
 - [Query the topology](#query-the-topology)
 - [Export Graphviz DOT](#export-graphviz-dot)
 - [Diagrams and contracts in tests](#diagrams-and-contracts-in-tests)
@@ -109,6 +110,26 @@ ordered `WatchRule`s, each a named condition and the identifier it executes, and
 An `ActionRef` and a `GuardRef` are either `Sync` or `Async` records, with their `name()` and `isAsync()`; a `HookRef`
 is a named hook that takes the entity and its `CommitContext`, which `run(entity, context)` calls, and
 `HookRef.of(name, consumer)` adapts a hook that takes the entity alone.
+
+## A definition without collaborators
+
+`TicketsRuntime.graph(new TicketActions())` needs the collaborators the machine calls, and a companion whose machine
+binds sub-machines also takes the definition of each of them. To read, test or draw the graph without any of them,
+every machine's companion also declares `structure()`:
+
+```java
+GraphDefinition<Ticket, TicketState, TicketTransition> structure = TicketsRuntime.structure();
+```
+
+`structure()` makes the very declarations `graph(...)` makes and takes nothing. It reads the definition of each
+machine it binds as a sub-machine from the `structure()` of that machine's companion, once, as `graph(...)` binds the
+one definition it is given. It binds no collaborator: an action, guard, hook or lookup that calls an instance member of
+a class throws `IllegalStateException` when it runs, naming that class and the companion, as in
+`com.example.tickets.TicketsRuntime.structure() binds no com.example.tickets.TicketActions: build a machine from
+com.example.tickets.TicketsRuntime.graph(...)`. A static member, a property read, such as a watch's peers or a
+sub-machine's child, and a built-in watch condition run as they do in `graph(...)`. Building, reading or exporting the
+definition runs none of them, so `structure()` answers every query on this page and draws exactly as `graph(...)` does.
+Build the machines you run from `graph(...)` or from the generated set.
 
 ## Query the topology
 
@@ -225,7 +246,7 @@ kind and the `failsOn` types as binary names, the recovery identifier and whethe
 parent identifier it selects, in the given order.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
-running set.
+running set, or through [`TicketsRuntime.structure()`](#a-definition-without-collaborators) without any collaborator.
 
 ## Diagrams and contracts in tests
 

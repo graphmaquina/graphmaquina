@@ -272,7 +272,7 @@ class TypedCheckGenerationTest {
         String generated = result.generated("fx.DocsRuntime");
         assertEquals(1, occurrences(generated, "stateMachine.execute("), generated);
         assertEquals(1, occurrences(generated, "stateMachine.eligibility("), generated);
-        assertEquals(1, occurrences(generated, ".action(\"publish\""), generated);
+        assertEquals(1, occurrences(result.beforeStructure("fx.DocsRuntime"), ".action(\"publish\""), generated);
     }
 
     /** The check of an operation of a state that holds a sub-machine is no exit: it draws no {@code SG804}. */

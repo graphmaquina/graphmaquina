@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -39,8 +40,8 @@ import javax.lang.model.util.Elements;
 
 /**
  * Emits {@code <Interface>Runtime}, whose name {@link SymbolNames#runtimeName} derives from the interface's simple
- * name normalized to PascalCase: the graph factory built with the typed graph DSL, and the facade that implements the
- * interface.
+ * name normalized to PascalCase: the graph factory built with the typed graph DSL, its collaborator-free twin
+ * {@code structure()}, and the facade that implements the interface.
  *
  * <p>The companion is marked {@code @GeneratedCompanion}, which this processor owns, and suppresses the
  * {@code deprecation} and {@code removal} warnings of the members it calls and the {@code rawtypes} warnings of the
@@ -50,8 +51,9 @@ import javax.lang.model.util.Elements;
  *
  * <p>Every public member it declares, but the operations and the methods of {@code Machine} it implements, whose
  * comments {@code javadoc} inherits from the facade, carries a documentation comment with the tags its signature
- * calls for, as {@link SourceWriter#javadoc} writes it: the key, the constructor, {@code graph(...)} and the methods
- * that implement a check, whose comment says what they ask and that they run nothing.</p>
+ * calls for, as {@link SourceWriter#javadoc} writes it: the key, the constructor, {@code graph(...)},
+ * {@code structure()} and the methods that implement a check, whose comment says what they ask and that they run
+ * nothing.</p>
  *
  * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
@@ -78,6 +80,15 @@ import javax.lang.model.util.Elements;
  * named {@code graphPart} followed by their number, with as many underscores after {@code graphPart} as it takes for
  * no such name to be one of a method the facade declares or inherits. The builder's variable is named {@code graph},
  * suffixed as any variable is.</p>
+ *
+ * <p>{@code structure()}, written right after {@code graph(...)} and its private methods, takes no parameter and makes
+ * the same declarations, as {@link GraphStatements} describes: each child's definition is that child's companion's
+ * own {@code structure()}, and an instance member of a class with instance members is called on the receiver
+ * {@code UnboundCollaborator.of} returns, which throws when the callable runs. A graph of more than
+ * {@value #DECLARATIONS_PER_METHOD} declarations is declared by the private methods {@code structurePart1},
+ * {@code structurePart2}, …, which take the builder alone and are named as the ones of {@code graph(...)} are. The
+ * companion claims {@code UnboundCollaborator} through {@link Names} only when the machine binds a class with instance
+ * members, and the companion of each child it binds.</p>
  *
  * <p>Each check of the model becomes one method, after the operations, in declaration order. It refuses its null
  * arguments as an operation does, then returns {@code stateMachine.eligibility(entity, ID)}, or
@@ -140,6 +151,7 @@ public final class MachineGenerator {
     private static final String COMPLETABLE_FUTURE = "java.util.concurrent.CompletableFuture";
     private static final String SUPPLIER = "java.util.function.Supplier";
     static final String GENERATED = GeneratedCompanion.class.getName();
+    static final String UNBOUND = UnboundCollaborator.class.getName();
     static final String SUPPRESS_WARNINGS = "java.lang.SuppressWarnings";
 
     static final String OVERRIDE = "java.lang.Override";
@@ -166,11 +178,12 @@ public final class MachineGenerator {
      * wherever a method other than an operation, or a lambda, takes it. {@code rethrow} names the private method that
      * throws on what a lambda caught; it and {@code failure} are empty when no lambda catches anything.
      * {@code builder} names the variable that holds the graph's builder, and the parameter of each private method that
-     * declares part of the graph, the methods {@code part} names followed by their number, starting at {@code 1}.
+     * declares part of the graph, the methods {@code part} names followed by their number, starting at {@code 1};
+     * {@code structurePart} names those of {@code structure()} the same way.
      */
     record Variables(Set<String> reserved, String machine, String state, String call,
                      Map<String, String> definitions, Map<String, String> parameters, String entity,
-                     String rethrow, String failure, String builder, String part) {
+                     String rethrow, String failure, String builder, String part, String structurePart) {
 
         /** Every name a lambda of {@code graph(...)} may not take. */
         Set<String> taken() {
@@ -179,10 +192,31 @@ public final class MachineGenerator {
             taken.addAll(reserved);
             return taken;
         }
+
+        /**
+         * The variables {@code structure()} declares the graph with: these, but with {@code receivers}, the expression
+         * each class with instance members is reached through, by its qualified name, in place of the parameters, and
+         * with its private methods named after {@code structurePart}. Its variables that hold the definitions of the
+         * children keep the names of the parameters of {@code graph(...)}, so its lambdas keep clear of them too.
+         */
+        Variables unbound(Map<String, String> receivers) {
+            return new Variables(reserved, machine, state, call, definitions, Map.copyOf(receivers), entity, rethrow,
+                    failure, builder, structurePart, structurePart);
+        }
     }
 
     public static String qualifiedName(MachineModel model) {
         return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.facadeName()));
+    }
+
+    /**
+     * The qualified name of the companion of the machine {@code machine}, a child of this compilation or of a
+     * dependency, which the processor generated under the same rule as {@link #qualifiedName}.
+     */
+    static String companionOf(MachineTypes machine) {
+        String packageName = Names.packageOf(machine.facade()).getQualifiedName().toString();
+        return SymbolNames.qualified(packageName, SymbolNames.runtimeName(
+                SymbolNames.nameWithin(packageName, machine.facade().getQualifiedName().toString())));
     }
 
     /**
@@ -232,6 +266,7 @@ public final class MachineGenerator {
                 facade);
         fieldsAndConstructor(model, names, variables, objects, out);
         GraphStatements.graph(model, names, variables, invocations, out);
+        GraphStatements.structure(model, names, variables, invocations, out);
         for (OperationModel operation : model.operations()) {
             operation(model, names, variables, objects, operation, out);
         }
@@ -445,8 +480,10 @@ public final class MachineGenerator {
         boolean catches = !caught(model, invocations).isEmpty();
         String failure = catches ? unique("failure", reserved) : "";
         String rethrow = catches ? rethrowName(model.types().facade(), invocations.elements()) : "";
-        String part = partName(model.types().facade(), invocations.elements(), rethrow,
-                GraphStatements.parts(GraphStatements.declarations(model)));
+        int parts = GraphStatements.parts(GraphStatements.declarations(model));
+        String part = partName("graphPart", model.types().facade(), invocations.elements(), rethrow, parts);
+        String structurePart = partName("structurePart", model.types().facade(), invocations.elements(), rethrow,
+                parts);
         Map<String, String> parameters = parameterNames(model.instanceDependencies(), reserved);
         Set<String> named = new LinkedHashSet<>(reserved);
         named.addAll(parameters.values());
@@ -458,7 +495,7 @@ public final class MachineGenerator {
         Map<String, String> declared = new LinkedHashMap<>(definitions);
         declared.putAll(parameters);
         return new Variables(Set.copyOf(reserved), machine, state, call, definitions, parameters,
-                entityParameter(model, declared, reserved), rethrow, failure, builder, part);
+                entityParameter(model, declared, reserved), rethrow, failure, builder, part, structurePart);
     }
 
     /**
@@ -540,11 +577,15 @@ public final class MachineGenerator {
         }
         for (MachineTypes child : model.children()) {
             claimMachineTypes(types, child);
+            Names.claim(types, companionOf(child));
         }
         claimWhereNeeded(types, model);
         claimMachineTypes(types, model.types());
         for (TypeElement dependency : model.instanceDependencies()) {
             Names.claim(types, dependency);
+        }
+        if (!model.instanceDependencies().isEmpty()) {
+            Names.claim(types, UNBOUND);
         }
         for (Binding binding : bindings(model)) {
             if (binding.isStatic()) {
@@ -664,18 +705,19 @@ public final class MachineGenerator {
     }
 
     /**
-     * The name the private methods that declare part of the graph are named by, each followed by its number from
-     * {@code 1} to {@code parts}: {@code graphPart}, with as many underscores after it as it takes for none of those
-     * names to be one of a method the facade declares or inherits, or {@code rethrow}. Empty when {@code parts} is
-     * zero.
+     * The name the private methods that declare part of the graph of {@code graph(...)}, for {@code base}
+     * {@code graphPart}, or of {@code structure()}, for {@code base} {@code structurePart}, are named by, each followed
+     * by its number from {@code 1} to {@code parts}: {@code base}, with as many underscores after it as it takes for
+     * none of those names to be one of a method the facade declares or inherits, or {@code rethrow}. Empty when
+     * {@code parts} is zero.
      */
-    private static String partName(TypeElement facade, Elements elements, String rethrow, int parts) {
+    private static String partName(String base, TypeElement facade, Elements elements, String rethrow, int parts) {
         if (parts == 0) {
             return "";
         }
         Set<String> taken = methodNames(facade, elements);
         taken.add(rethrow);
-        String part = "graphPart";
+        String part = base;
         boolean free = false;
         while (!free) {
             free = true;

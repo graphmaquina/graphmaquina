@@ -14,7 +14,7 @@ class DefaultAfterCommitTest {
     private static final String EXPLICIT = ", afterCommit = DocActionsRefs.Notified.class";
 
     private static long hooks(Compilation.Result result, String name) {
-        return result.generated("fx.DocsRuntime").lines()
+        return result.beforeStructure("fx.DocsRuntime").lines()
             .filter(line -> line.contains(".afterCommit(\"" + name + "\""))
             .count();
     }

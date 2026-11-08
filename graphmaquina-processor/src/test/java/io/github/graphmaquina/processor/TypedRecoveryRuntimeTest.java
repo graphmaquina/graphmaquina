@@ -128,6 +128,7 @@ class TypedRecoveryRuntimeTest {
             import java.util.function.Supplier;
             import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
             import java.time.Duration;
+            import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 
             /** Generated companion of {@link Docs}: builds its graph and implements its facade. Do not edit. */
             @GeneratedCompanion
@@ -174,6 +175,36 @@ class TypedRecoveryRuntimeTest {
                     graph = graph.transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED)\
             .asyncAction("archive", (context) -> docActions.archiveAsync(context)).timeout(Duration.parse("PT2S"))\
             .endTransition();
+                    return graph.build();
+                }
+
+                /**
+                 * The definition as the annotations of {@link Docs} declare it, with no collaborator bound, for
+                 * inspection, structural tests and diagrams. An action, guard, hook or lookup that calls an instance
+                 * member of a class throws {@code IllegalStateException} when it runs; a static member, a property
+                 * read and a built-in watch condition run as in {@code graph(...)}. Build machines from {@code
+                 * graph(...)}.
+                 *
+                 * @return the definition, with no collaborator bound
+                 */
+                public static GraphDefinition<Doc, DocStatus, DocTransition> structure() {
+                    GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(KEY);
+                    graph = graph.initial(DocStatus.DRAFT);
+                    graph = graph.terminal(DocStatus.ARCHIVED);
+                    graph = graph.allowsCycle(DocStatus.REVIEW);
+                    graph = graph.statePolicy(DocStatus.DRAFT, "a draft is sent to review");
+                    graph = graph.statePolicy(DocStatus.REVIEW, "a review is published or sent back");
+                    graph = graph.statePolicy(DocStatus.PUBLISHED, "a published doc can only be archived");
+                    graph = graph.transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).endTransition();
+                    graph = graph.transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW).endTransition();
+                    graph = graph.transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)\
+            .action("publish", (context) -> UnboundCollaborator.<DocActions>of("fx.DocActions", "fx.DocsRuntime")\
+            .publish(context)).guard("approved", (context) -> UnboundCollaborator.<DocActions>of("fx.DocActions", \
+            "fx.DocsRuntime").approved(context)).onFailure(DocTransition.RETURN).afterCommit("notify", (doc) -> \
+            UnboundCollaborator.<DocActions>of("fx.DocActions", "fx.DocsRuntime").notify(doc)).endTransition();
+                    graph = graph.transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED)\
+            .asyncAction("archive", (context) -> UnboundCollaborator.<DocActions>of("fx.DocActions", \
+            "fx.DocsRuntime").archiveAsync(context)).timeout(Duration.parse("PT2S")).endTransition();
                     return graph.build();
                 }
 
