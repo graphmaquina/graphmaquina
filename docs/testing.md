@@ -236,6 +236,10 @@ logic.
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
+A snapshot or a golden only reads the definition, so the definition of an annotated machine can come from its
+companion's [`structure()`](graph-inspection.md#a-definition-without-collaborators), which binds no collaborator, as
+well as from `graph(...)` over the fakes of a test.
+
 Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header. After that
 version line comes one `path TAB value` line per field, each ending in a line feed, with backslash, tab, line feed and
 carriage return escaped; `GraphSnapshot.fields()` returns the path-to-value map in that canonical order. Fields live
