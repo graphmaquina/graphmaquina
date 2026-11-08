@@ -114,6 +114,11 @@ what javac actually accepted, so:
   given. An original source using a preview feature that javac's parser checks, such as string templates on
   JDK 21, is refused with SG601; one using a preview feature javac checks only after parsing, such as primitive
   patterns at release 25, is read like any other source.
+- **Module imports resolve the JDK's modules only.** The generator resolves a name that a declaration such as
+  `import module java.base;` brings when the module is one of the JDK's at the compilation's release, as javac
+  resolves it. It reads the classpath, so a module of the project's own module path is invisible to it: a name only
+  such an import brings stays unresolved, and the processor reports `SG602` for the signature that uses it. Import
+  those types with single-type imports.
 - **The generator reads Java sources only.** It parses the `.java` sources of the compilation, so a marker on a
   Kotlin declaration is never read. In a Gradle source set that mixes Kotlin and Java, a Java machine whose entity
   or state enum a Kotlin source declares is refused with SG601, that type unresolved. Declare the machines, the

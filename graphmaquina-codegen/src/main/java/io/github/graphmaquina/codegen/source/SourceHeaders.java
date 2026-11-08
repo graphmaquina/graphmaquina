@@ -19,6 +19,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import io.github.graphmaquina.codegen.model.SourceLocation;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -38,6 +39,9 @@ import lombok.RequiredArgsConstructor;
  * says what is read and which bodies are visited; the types are read through {@link TreeTypeUses}.
  */
 final class SourceHeaders {
+
+    /** {@code ImportTree.isModule()}, empty on a javac below Java 23, which has no module imports. */
+    private static final Optional<Method> IS_MODULE = isModuleMethod();
 
     private SourceHeaders() {
     }
@@ -249,9 +253,12 @@ final class SourceHeaders {
     private static TypeHeader.Scope scope(CompilationUnitTree tree) {
         List<String> singleImports = new ArrayList<>();
         List<String> onDemandImports = new ArrayList<>();
+        List<String> moduleImports = new ArrayList<>();
         for (ImportTree imported : tree.getImports()) {
             String spelled = TreeTypeUses.spell(imported.getQualifiedIdentifier());
-            if (spelled.endsWith(".*")) {
+            if (isModuleImport(imported)) {
+                moduleImports.add(spelled);
+            } else if (spelled.endsWith(".*")) {
                 onDemandImports.add(spelled.substring(0, spelled.length() - 2));
             } else {
                 singleImports.add(spelled);
@@ -259,7 +266,31 @@ final class SourceHeaders {
         }
         ExpressionTree packageName = tree.getPackageName();
         return new TypeHeader.Scope(packageName == null ? "" : TreeTypeUses.spell(packageName), singleImports,
-                onDemandImports);
+                onDemandImports, moduleImports);
+    }
+
+    /**
+     * Whether {@code imported} is a single-module-import declaration, such as {@code import module java.base;}, whose
+     * qualified identifier names a module. {@code ImportTree.isModule()} tells, from Java 23 on; this generator is
+     * built for Java 21, so it is called reflectively, and a javac that lacks it parses no module import at all.
+     */
+    private static boolean isModuleImport(ImportTree imported) {
+        if (IS_MODULE.isEmpty()) {
+            return false;
+        }
+        try {
+            return (Boolean) IS_MODULE.get().invoke(imported);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("javac cannot tell whether an import names a module", failure);
+        }
+    }
+
+    private static Optional<Method> isModuleMethod() {
+        try {
+            return Optional.of(ImportTree.class.getMethod("isModule"));
+        } catch (NoSuchMethodException absent) {
+            return Optional.empty();
+        }
     }
 
     private static SourceLocation location(SourceUnit unit, SourcePositions positions, Tree tree) {

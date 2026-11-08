@@ -146,15 +146,19 @@ public record TypeHeader(@NonNull String canonicalName, @NonNull ElementKind kin
      * @param packageName the declaring package, empty for the unnamed package and for a classpath header
      * @param singleImports the fully spelled targets of every single import, for example {@code a.b.C}
      * @param onDemandImports the prefixes of every on-demand import, for example {@code a.b}
+     * @param moduleImports the modules every single-module-import declaration names, Java 25 syntax, for example
+     *     {@code java.base}
      */
-    public record Scope(@NonNull String packageName, List<String> singleImports, List<String> onDemandImports) {
+    public record Scope(@NonNull String packageName, List<String> singleImports, List<String> onDemandImports,
+            List<String> moduleImports) {
 
         /** The scope of a classpath header, which spells every name canonically already. */
-        public static final Scope BINARY = new Scope("", List.of(), List.of());
+        public static final Scope BINARY = new Scope("", List.of(), List.of(), List.of());
 
         public Scope {
             singleImports = List.copyOf(singleImports);
             onDemandImports = List.copyOf(onDemandImports);
+            moduleImports = List.copyOf(moduleImports);
         }
     }
 }

@@ -168,9 +168,24 @@ final class Compilation {
         return prepare(project, sources, extraClasspath, GenerationRequest.DEFAULT_ENCODING);
     }
 
+    /**
+     * The same, for a compilation at {@code release}: the generator parses the sources at that release, so a fixture
+     * may use its syntax. javac takes the release from the options a test compiles with.
+     */
+    static Prepared prepare(Map<String, String> sources, int release) {
+        GenerationRequest request = materialize(temporaryDirectory(), sources, List.of(), release,
+                GenerationRequest.DEFAULT_ENCODING);
+        try {
+            return new Prepared(request, StateGraphCodegen.generate(request));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     private static Prepared prepare(Path project, Map<String, String> sources, List<Path> extraClasspath,
             Charset encoding) {
-        GenerationRequest request = materialize(project, sources, extraClasspath, encoding);
+        GenerationRequest request = materialize(project, sources, extraClasspath, GenerationRequest.DEFAULT_RELEASE,
+                encoding);
         try {
             return new Prepared(request, StateGraphCodegen.generate(request));
         } catch (IOException e) {
@@ -281,7 +296,7 @@ final class Compilation {
      */
     static Result compileRaw(Map<String, String> sources, List<String> extra) {
         GenerationRequest request = materialize(temporaryDirectory(), sources, List.of(),
-                GenerationRequest.DEFAULT_ENCODING);
+                GenerationRequest.DEFAULT_RELEASE, GenerationRequest.DEFAULT_ENCODING);
         List<String> options = new ArrayList<>(standardOptions(request));
         options.addAll(extra);
         return run(javaFiles(request.sources().get(0)), options, request);
@@ -289,17 +304,17 @@ final class Compilation {
 
     /**
      * Writes {@code sources} under {@code project} in {@code encoding} and describes the compilation they belong
-     * to, which reads them in that encoding.
+     * to, which reads them in that encoding at {@code release}.
      */
     private static GenerationRequest materialize(Path project, Map<String, String> sources,
-            List<Path> extraClasspath, Charset encoding) {
+            List<Path> extraClasspath, int release, Charset encoding) {
         try {
             Path originals = write(project.resolve("originals"), sources, encoding);
             List<Path> classpath = new ArrayList<>(classpath());
             classpath.addAll(extraClasspath);
             return new GenerationRequest(project, List.of(originals), List.copyOf(classpath),
                     project.resolve("bootstrap"), project.resolve("processor"), project.resolve("classes"),
-                    project.resolve("work"), COMPILATION_ID, GenerationRequest.DEFAULT_RELEASE, encoding);
+                    project.resolve("work"), COMPILATION_ID, release, encoding);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
