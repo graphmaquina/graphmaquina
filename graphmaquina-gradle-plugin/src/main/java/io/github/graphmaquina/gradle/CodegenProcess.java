@@ -26,8 +26,9 @@ import java.util.Objects;
  *
  * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher and over the
  * classpath the generation task of the source set holds — by convention the launcher of the JDK the source set's
- * javac compiles with and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the
- * generator's JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
+ * javac compiles with and the {@code graphmaquinaGenerator} configuration — or the export task, which takes the
+ * generation task's by convention, so the build's daemon JVM and the generator's JVM stay independent, and the
+ * classes of the application the export draws are loaded in the generator's JVM alone. Its command line is fixed — {@code <operation> --request <file>} — and so is its
  * contract: status {@code 0} means the operation completed, anything else means the build must fail rather than
  * compile against the vocabulary of a previous run. Whatever the generator wrote on its error stream is never
  * dropped: it ends the message of the exception this class throws when the operation failed, and it is a warning

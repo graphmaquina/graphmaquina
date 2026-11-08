@@ -40,7 +40,9 @@ import java.util.Set;
  * this plugin itself declares — {@code graphmaquina-codegen} and what that pulls in — never over the dependencies
  * of the project being built, and its command line is fixed: {@code <operation> --request <file>}. Status
  * {@code 0} means the operation completed; any other status fails the build with what the generator reported on
- * its error stream, because a build that continued would compile against the vocabulary of a previous run.</p>
+ * its error stream, because a build that continued would compile against the vocabulary of a previous run. The
+ * export is the one operation that reads the project's classes: its request names the project's runtime classpath,
+ * which the generator loads the machines from in a class loader of its own, inside that separate process.</p>
  *
  * <p>The request is serialized by the small encoder below rather than through the generator's own codec: this
  * plugin depends on the documented JSON shape, not on the {@code graphmaquina-codegen} classes. Strings are
@@ -67,6 +69,18 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /** The directory, under the build directory, that holds the manifests and inventories of a compilation. */
     private static final String WORK = "graphmaquina";
+
+    /** The request of the export, inside the compilation's directory under {@link #WORK}. */
+    private static final String EXPORT_REQUEST = "export-request.json";
+
+    /** The directory, inside the compilation's directory under {@link #WORK}, the export writes the diagrams into. */
+    private static final String DIAGRAMS = "dot";
+
+    /**
+     * The index a completed compilation publishes beside its classes: a copy of the generator's own constant, which
+     * this plugin never loads, as every name it shares with the generator is.
+     */
+    private static final String PUBLISHED_INDEX = "META-INF/graphmaquina/exports.json";
 
     /**
      * The names the default excludes of Ant 1.10 name outright, which the generator's walk of a whole root leaves out
@@ -328,12 +342,53 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final void run(String operation, Request request) throws MojoExecutionException {
         Path requestFile = Path.of(request.workDirectory()).resolve(REQUEST);
+        write(requestFile, encode(request));
+        launch(operation, requestFile);
+    }
+
+    /**
+     * Writes the Graphviz DOT of every machine the compilation of {@code execution} published into
+     * {@code target/graphmaquina/<sourceSet>/dot}, through the generator's {@code export-dot} operation over the
+     * runtime classpath of that compilation, the test classpath for {@code test}. A compilation that publishes no
+     * index, as a module of the build that binds none of this plugin's goals leaves it, is skipped, and the goal says
+     * so at info level.
+     *
+     * @param execution the compilation whose machines are drawn
+     * @throws MojoExecutionException if the classpath is not resolved, the request cannot be written, or the generator
+     *     cannot be started or leaves a nonzero status
+     */
+    protected final void export(CompilerExecution execution) throws MojoExecutionException {
+        boolean main = execution == CompilerExecution.MAIN;
+        Path classes = absolute(main ? project.getBuild().getOutputDirectory()
+            : project.getBuild().getTestOutputDirectory());
+        Path index = classes.resolve(PUBLISHED_INDEX);
+        if (!Files.isRegularFile(index)) {
+            getLog().info("StateGraph skips " + compilationId(execution.sourceSet()) + ": the compilation publishes"
+                + " no StateGraph index at " + index + ", so it declares no machine to export");
+            return;
+        }
+        Path work = buildDirectory().resolve(WORK).resolve(execution.sourceSet());
+        List<String> classpath = new ArrayList<>();
+        for (String element : main ? runtimeClasspathElements() : testClasspathElements()) {
+            classpath.add(absolute(element).toString());
+        }
+        Path requestFile = work.resolve(EXPORT_REQUEST);
+        write(requestFile, encodeExport(classes.toString(), classpath, work.resolve(DIAGRAMS).toString()));
+        launch("export-dot", requestFile);
+    }
+
+    /** Writes {@code json} into {@code requestFile}, creating its directory. */
+    private static void write(Path requestFile, String json) throws MojoExecutionException {
         try {
             Files.createDirectories(requestFile.getParent());
-            Files.writeString(requestFile, encode(request), StandardCharsets.UTF_8);
+            Files.writeString(requestFile, json, StandardCharsets.UTF_8);
         } catch (IOException failure) {
             throw new MojoExecutionException("cannot write the StateGraph request " + requestFile, failure);
         }
+    }
+
+    /** Runs {@code operation} of the generator over {@code requestFile}. */
+    private void launch(String operation, Path requestFile) throws MojoExecutionException {
         List<String> command = new ArrayList<>();
         command.add(javaExecutable());
         command.add("-cp");
@@ -690,6 +745,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
         return List.copyOf(classpath);
     }
 
+    private List<String> runtimeClasspathElements() throws MojoExecutionException {
+        try {
+            return project.getRuntimeClasspathElements();
+        } catch (DependencyResolutionRequiredException failure) {
+            throw new MojoExecutionException("the runtime classpath of " + project.getArtifactId()
+                + " is not resolved, so the StateGraph export cannot load its machines", failure);
+        }
+    }
+
     private List<String> compileClasspathElements() throws MojoExecutionException {
         try {
             return project.getCompileClasspathElements();
@@ -744,6 +808,27 @@ public abstract class StateGraphMojo extends AbstractMojo {
             json.append(",\n");
             member(json, "encoding", request.encoding());
         }
+        json.append("\n}\n");
+        return json.toString();
+    }
+
+    /**
+     * Encodes the request of the generator's {@code export-dot} operation as the flat JSON object its manifest codec
+     * documents: the class output of the compilation, its runtime classpath and the directory of the diagrams, in that
+     * order.
+     *
+     * @param classesOutput where javac wrote the classes of the compilation, its published index among them
+     * @param classpath the runtime classpath of the compilation
+     * @param outputDirectory where the diagrams are written
+     * @return the JSON document, ending with a newline
+     */
+    static String encodeExport(@NonNull String classesOutput, @NonNull List<String> classpath,
+            @NonNull String outputDirectory) {
+        StringBuilder json = new StringBuilder(256);
+        json.append("{\n");
+        member(json, "classesOutput", classesOutput).append(",\n");
+        array(json, "classpath", classpath).append(",\n");
+        member(json, "outputDirectory", outputDirectory);
         json.append("\n}\n");
         return json.toString();
     }

@@ -4,14 +4,14 @@
   The goal descriptor of the StateGraph Maven plugin, maintained by hand.
 
   A Gradle build does not run Maven's maven-plugin-plugin, so no descriptor is generated from Java annotations;
-  these six goals declare here what Maven needs to look them up, inject them and place them in a lifecycle. The
+  these eight goals declare here what Maven needs to look them up, inject them and place them in a lifecycle. The
   ${project}, ${session} and ${plugin.artifacts} expressions below are read by Maven at execution time and must
   reach it unchanged: only @GRAPHMAQUINA_VERSION@ is replaced, while this file is copied into the jar.
 -->
 
 <plugin>
   <name>StateGraph Maven Plugin</name>
-  <description>Generates the StateGraph typed API of a Maven project and runs the verified compilation lifecycle around javac.</description>
+  <description>Generates the StateGraph typed API of a Maven project, runs the verified compilation lifecycle around javac and exports the Graphviz DOT of its machines.</description>
   <groupId>io.github.graphmaquina</groupId>
   <artifactId>graphmaquina-maven-plugin</artifactId>
   <version>@GRAPHMAQUINA_VERSION@</version>
@@ -387,6 +387,148 @@
       <inheritedByDefault>true</inheritedByDefault>
       <phase>test-compile</phase>
       <implementation>io.github.graphmaquina.maven.CompleteTestCompileMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${graphmaquina.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${graphmaquina.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>export-dot</goal>
+      <description>Writes the Graphviz DOT of every StateGraph machine of the main compilation into target/graphmaquina/main/dot: one file per machine, named after the qualified name of its facade followed by .dot, holding what GraphvizExporter.render(GraphView.of(...)) returns for the definition its companion's structure() builds. The generator loads the machines in a JVM of its own, over the runtime classpath of the project, and draws them with the graphmaquina-core that classpath holds; before writing, it removes the .dot files directly in that directory and touches nothing else there. Binds to no phase and forks the default lifecycle up to compile first, so mvn graphmaquina:export-dot alone generates, compiles and completes the main compilation. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, when maven.main.skip or &lt;skipMain&gt; switches the main compilation off, or when the compilation publishes no StateGraph index, as a module that binds none of this plugin's goals leaves it.</description>
+      <requiresDependencyResolution>runtime</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <executePhase>compile</executePhase>
+      <implementation>io.github.graphmaquina.maven.ExportDotMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${graphmaquina.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${graphmaquina.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.lifecycle.DefaultLifecycles</role>
+          <field-name>lifecycles</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>export-dot-test</goal>
+      <description>Writes the Graphviz DOT of every StateGraph machine of the test compilation into target/graphmaquina/test/dot, as export-dot does for the main one, over the test classpath of the project. Binds to no phase and forks the default lifecycle up to test-compile first. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's testCompile goal, when maven.test.skip or &lt;skip&gt; switches the test compilation off, or when the compilation publishes no StateGraph index.</description>
+      <requiresDependencyResolution>test</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <executePhase>test-compile</executePhase>
+      <implementation>io.github.graphmaquina.maven.ExportDotTestMojo</implementation>
       <language>java</language>
       <instantiationStrategy>per-lookup</instantiationStrategy>
       <executionStrategy>once-per-session</executionStrategy>

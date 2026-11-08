@@ -253,8 +253,8 @@ running set, or through [`TicketsRuntime.structure()`](#a-definition-without-col
 
 ## Export from the command line
 
-The build adapter writes the diagram of every machine a compilation declares, with no code of yours: it compiles the
-source set, draws each machine through its companion's [`structure()`](#a-definition-without-collaborators) and writes
+Both build adapters write the diagram of every machine a compilation declares, with no code of yours: they compile
+the source set, draw each machine through its companion's [`structure()`](#a-definition-without-collaborators) and write
 one DOT file per machine, holding exactly what `GraphvizExporter.render(GraphView.of(...))` returns for it.
 
 With Gradle:
@@ -269,6 +269,23 @@ With Gradle:
 and writes into `build/graphmaquina/<sourceSet>/dot`, which its `outputDirectory` property moves. A source set that
 declares no StateGraph processor skips its task, as it skips its generation, and the task is up to date while the
 source set's runtime classpath, its compiled classes included, does not change.
+
+With Maven:
+
+```sh
+mvn graphmaquina:export-dot
+mvn graphmaquina:export-dot-test
+```
+
+`export-dot` exports the machines of the main compilation into `target/graphmaquina/main/dot`, and `export-dot-test`
+those of the test compilation into `target/graphmaquina/test/dot`. Neither goal is bound to a phase: each forks the
+default lifecycle up to `compile`, or `test-compile`, so the goal alone generates, compiles and completes that
+compilation first, and there is no need to run `compile` before it. Each does nothing where the
+[other goals](build-maven.md#the-eight-goals) do nothing, and for a compilation that publishes no StateGraph index.
+Maven resolves the `graphmaquina:` prefix only in a project that declares the plugin. In a multi-module build where
+some modules do not declare it, run the goal from the parent by the plugin's coordinates,
+`mvn io.github.graphmaquina:graphmaquina-maven-plugin:<version>:export-dot`: every module resolves them, and each
+module whose compilation publishes no index is skipped.
 
 What every export writes:
 

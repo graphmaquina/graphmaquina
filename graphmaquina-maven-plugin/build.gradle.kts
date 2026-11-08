@@ -70,7 +70,7 @@ publishing {
             pom {
                 packaging = "maven-plugin"
                 name.set("graphmaquina-maven-plugin")
-                description.set("Maven plugin that generates the StateGraph typed API and runs the verified"
+                description.set("Maven plugin that generates the StateGraph typed API, runs the verified"
                         + " compilation lifecycle around javac")
             }
         }
