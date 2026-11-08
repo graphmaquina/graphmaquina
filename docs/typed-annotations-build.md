@@ -196,7 +196,7 @@ All of them are in the `graphmaquina` task group, and a source set that takes no
 | `build/graphmaquina/<sourceSet>/owned-outputs.pending.json` | the pending inventory: what the preparation is retiring; left behind by a compilation javac rejects, and consumed by the next preparation |
 | `build/graphmaquina/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
 | `build/graphmaquina/<sourceSet>/dot` | the diagrams the export task writes, one `.dot` per machine; the task's `outputDirectory`, which a build may move |
-| `build/graphmaquina/<sourceSet>/export-request.json` | the request the export task wrote for the generator |
+| `build/graphmaquina/<sourceSet>/export-request.json` | the request the export task wrote for the generator, in the generation task's work directory |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/pending-exports.json` | the provisional index the processor writes during javac, which the completion promotes to `exports.json` |
 

@@ -41,7 +41,8 @@ import lombok.NonNull;
  * platform class loader as its parent, so neither this tool's classes nor its own {@code graphmaquina-core} are
  * visible to them: the view and the rendering are those of the {@code graphmaquina-core} that classpath holds, the
  * application's. Loading a companion initializes it and whatever its {@code structure()} reaches, the enums of its
- * machine among them; its callables never run.</p>
+ * machine among them; its callables never run. An index that lists no machine loads nothing at all, so its
+ * classpath need not hold {@code graphmaquina-core}.</p>
  *
  * <p>The index must have been written by this very tool version, as a dependency's is: an index of another version is
  * refused with {@code SG602}, and so is a class output that holds none. Every diagram is rendered before anything is
@@ -73,11 +74,14 @@ public final class DotExport {
     public static List<Path> export(@NonNull ExportRequest request) throws IOException {
         ExportIndex index = index(request.classesOutput());
         Map<String, String> diagrams = new LinkedHashMap<>();
-        try (URLClassLoader loader = new URLClassLoader(urls(request.classpath()),
-                ClassLoader.getPlatformClassLoader())) {
-            Renderer renderer = Renderer.of(loader);
-            for (GraphDescriptor graph : index.model().graphs()) {
-                diagrams.put(graph.facade() + EXTENSION, renderer.render(graph.facade(), companion(graph), loader));
+        if (!index.model().graphs().isEmpty()) {
+            try (URLClassLoader loader = new URLClassLoader(urls(request.classpath()),
+                    ClassLoader.getPlatformClassLoader())) {
+                Renderer renderer = Renderer.of(loader);
+                for (GraphDescriptor graph : index.model().graphs()) {
+                    diagrams.put(graph.facade() + EXTENSION,
+                            renderer.render(graph.facade(), companion(graph), loader));
+                }
             }
         }
         Path output = request.outputDirectory();

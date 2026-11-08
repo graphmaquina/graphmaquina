@@ -4,6 +4,7 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
@@ -44,7 +45,7 @@ public abstract class ExportStateGraphDot extends DefaultTask {
     /** The directory, under {@code build/graphmaquina/<sourceSet>}, the diagrams are written into by convention. */
     private static final String DIAGRAMS = "dot";
 
-    /** The request the task writes for the generator, beside the directory of its diagrams. */
+    /** The request the task writes for the generator, in the work directory of the source set's generation. */
     private static final String EXPORT_REQUEST = "export-request.json";
 
     /**
@@ -73,8 +74,8 @@ public abstract class ExportStateGraphDot extends DefaultTask {
             task.getJavaLauncher().convention(generate.flatMap(GenerateGraphApi::getJavaLauncher));
             task.getOutputDirectory().convention(project.getLayout().getBuildDirectory()
                     .dir("graphmaquina/" + sourceSet.getName() + "/" + DIAGRAMS));
-            task.getRequestFile().convention(project.getLayout().getBuildDirectory()
-                    .file("graphmaquina/" + sourceSet.getName() + "/" + EXPORT_REQUEST));
+            task.getRequestFile().convention(generate.flatMap(GenerateGraphApi::getWorkDirectory)
+                    .map((Directory work) -> work.file(EXPORT_REQUEST)));
         });
     }
 
@@ -130,8 +131,8 @@ public abstract class ExportStateGraphDot extends DefaultTask {
     public abstract DirectoryProperty getOutputDirectory();
 
     /**
-     * The request this task writes for the generator; by convention
-     * {@code build/graphmaquina/<sourceSet>/export-request.json}.
+     * The request this task writes for the generator; by convention the {@code export-request.json} of the generation
+     * task's work directory, {@code build/graphmaquina/<sourceSet>} unless a build moves it.
      *
      * @return the request file
      */

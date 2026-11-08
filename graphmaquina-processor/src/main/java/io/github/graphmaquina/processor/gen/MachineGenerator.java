@@ -86,7 +86,9 @@ import javax.lang.model.util.Elements;
  * own {@code structure()}, and an instance member of a class with instance members is called on the receiver
  * {@code UnboundCollaborator.of} returns, which throws when the callable runs. A graph of more than
  * {@value #DECLARATIONS_PER_METHOD} declarations is declared by the private methods {@code structurePart1},
- * {@code structurePart2}, …, which take the builder alone and are named as the ones of {@code graph(...)} are. The
+ * {@code structurePart2}, …, which take the builder and the definition of each child, which {@code structure()} reads
+ * once into a variable named as the parameter of {@code graph(...)} that takes it, and are named as the ones of
+ * {@code graph(...)} are. The
  * companion claims {@code UnboundCollaborator} through {@link Names} only when the machine binds a class with instance
  * members, and the companion of each child it binds.</p>
  *

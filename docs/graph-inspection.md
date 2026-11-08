@@ -130,8 +130,9 @@ a class throws `IllegalStateException` when it runs, naming that class and the c
 com.example.tickets.TicketsRuntime.graph(...)`. A static member, a property read, such as a watch's peers or a
 sub-machine's child, and a built-in watch condition run as they do in `graph(...)`. Building, reading or exporting the
 definition runs none of them, so `structure()` answers every query on this page and draws exactly as `graph(...)` does.
-Build the machines you run from `graph(...)` or from the generated set. A facade method named `structure` that takes
-no parameter would clash with this static method and is refused as [`SG504`](diagnostics.md).
+Build the machines you run from `graph(...)` or from the generated set. An instance method of the facade, declared or
+inherited, named `structure` and taking no parameter, would clash with this static method and is refused as
+[`SG504`](diagnostics.md).
 
 ## Query the topology
 
@@ -267,8 +268,9 @@ With Gradle:
 `exportStateGraphDot` exports the machines of `main`, `exportTestStateGraphDot` those of `test`, and
 `export<SourceSet>StateGraphDot` those of any other source set. Each task runs after the compilation of its source set
 and writes into `build/graphmaquina/<sourceSet>/dot`, which its `outputDirectory` property moves. A source set that
-declares no StateGraph processor skips its task, as it skips its generation, and the task is up to date while the
-source set's runtime classpath, its compiled classes included, does not change.
+declares no StateGraph processor skips its task, as it skips its generation, and the task is up to date while its
+inputs, the source set's runtime classpath and its compiled classes among them, and its output directory do not
+change.
 
 With Maven:
 

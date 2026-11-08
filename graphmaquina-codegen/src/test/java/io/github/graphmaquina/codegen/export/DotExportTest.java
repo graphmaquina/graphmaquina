@@ -99,6 +99,17 @@ class DotExportTest {
     }
 
     @Test
+    void aCompilationWithoutMachinesLoadsNothingSoItsClasspathNeedsNoCore() throws Exception {
+        Path classes = compile(Map.of("p.ThingsRuntime", companion("p", "ThingsRuntime", "")));
+        publish(classes, List.of());
+
+        ExportRequest withoutCore = new ExportRequest(classes, List.of(classes), directory.resolve("dot"));
+
+        assertEquals(List.of(), DotExport.export(withoutCore));
+        assertTrue(Files.isDirectory(directory.resolve("dot")));
+    }
+
+    @Test
     void aClassOutputWithoutAnIndexIsRefused() throws Exception {
         Path classes = compile(Map.of("p.ThingsRuntime", companion("p", "ThingsRuntime", "")));
 

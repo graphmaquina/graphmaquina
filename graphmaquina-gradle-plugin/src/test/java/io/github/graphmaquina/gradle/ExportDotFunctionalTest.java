@@ -103,6 +103,34 @@ class ExportDotFunctionalTest {
     }
 
     @Test
+    void exportTestStateGraphDotWritesTheDiagramsOfTheTestSourceSet() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.writeTestSource("fx.Audits", PluginFixture.orders("Audits", "Approve", "approve"));
+
+        BuildResult result = fixture.run("exportTestStateGraphDot");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":exportTestStateGraphDot").getOutcome());
+        Path diagrams = fixture.projectDirectory().resolve("build/graphmaquina/test/dot");
+        assertTrue(Files.isRegularFile(diagrams.resolve("fx.Audits.dot")), result.getOutput());
+        assertFalse(Files.exists(diagrams.resolve("fx.Orders.dot")), result.getOutput());
+    }
+
+    @Test
+    void theExportRequestFollowsTheWorkDirectoryOfTheGeneration() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.named<io.github.graphmaquina.gradle.GenerateGraphApi>("generateStateGraphApi") {
+                    workDirectory = layout.buildDirectory.dir("moved-work")
+                }
+                """);
+
+        fixture.run("exportStateGraphDot");
+
+        assertTrue(Files.isRegularFile(fixture.projectDirectory().resolve("build/moved-work/export-request.json")));
+        assertTrue(Files.isRegularFile(fixture.projectDirectory().resolve(ORDERS_DIAGRAM)));
+    }
+
+    @Test
     void aSourceSetWithoutTheProcessorSkipsItsExport() throws IOException {
         PluginFixture fixture = PluginFixture.plainJUnitTests(tempDirectory, FIXTURE_REPOSITORY);
 
