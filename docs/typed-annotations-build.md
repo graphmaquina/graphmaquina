@@ -22,7 +22,8 @@ The adapters run the three generator steps as a separate Java process,
 request file the adapter writes. It exits with `0` on success, with `1` when the operation fails, writing a message on
 its error stream that carries the `SG` code and the source location when the failure has them, and with `2` for
 arguments it does not accept. A build that ignored either failure status would compile against the vocabulary of a
-previous run.
+previous run. The same process runs a fourth operation, `export-dot`: it reads a request of its own and writes the Graphviz DOT of
+every machine a completed compilation published, under the same exit statuses.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |

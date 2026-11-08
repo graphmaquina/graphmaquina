@@ -93,6 +93,33 @@ class CodegenMainTest {
     }
 
     @Test
+    void namesTheExportAmongTheOperationsItAccepts() throws IOException {
+        Invocation unknown = run("export", request());
+
+        assertEquals(2, unknown.exitCode(), unknown.errors());
+        assertTrue(unknown.errors().contains("expected one of generate, prepare-compile, complete-compile, export-dot"),
+                unknown.errors());
+        assertTrue(unknown.errors().contains("<generate|prepare-compile|complete-compile|export-dot> --request <file>"),
+                unknown.errors());
+    }
+
+    @Test
+    void reportsAnExportOfAClassOutputThatPublishesNoIndex() throws IOException {
+        Path classes = Files.createDirectories(directory.resolve("classes"));
+        Path request = directory.resolve("export-request.json");
+        ManifestCodec.writeExportRequest(request,
+                new ExportRequest(classes, List.of(classes), directory.resolve("dot")));
+
+        Invocation invocation = run("export-dot", request);
+
+        assertEquals(1, invocation.exitCode(), invocation.errors());
+        assertTrue(invocation.errors().contains("graphmaquina: export-dot failed for " + request + ": ["
+                + DiagnosticCode.SG602 + "] the compilation whose classes are in " + classes
+                + " publishes no StateGraph index at " + classes.resolve(PUBLISHED)), invocation.errors());
+        assertFalse(Files.exists(directory.resolve("dot")));
+    }
+
+    @Test
     void reportsARequestItCannotRead() throws IOException {
         Path corrupt = directory.resolve("corrupt-request.json");
         Files.writeString(corrupt, "{\"projectDirectory\": \"" + directory + "\"}", StandardCharsets.UTF_8);

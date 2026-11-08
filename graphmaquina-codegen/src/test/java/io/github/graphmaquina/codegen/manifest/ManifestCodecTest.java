@@ -12,6 +12,7 @@ import com.google.gson.JsonParser;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.ExportRequest;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -278,6 +279,38 @@ class ManifestCodecTest {
         assertEquals("malformed JSON in " + file
             + ": content that strict JSON does not allow at line 1 column 23 path $.schemaVersion",
             failure.getMessage());
+    }
+
+    @Test
+    void anExportRequestRoundTripsKeepingTheOrderOfItsClasspath() throws IOException {
+        Path file = directory.resolve("export-request.json");
+        ExportRequest request = new ExportRequest(Path.of("/b/classes"),
+                List.of(Path.of("/b/classes"), Path.of("/z/core.jar"), Path.of("/a/lib.jar")), Path.of("/b/dot"));
+
+        ManifestCodec.writeExportRequest(file, request);
+
+        assertEquals(request, ManifestCodec.readExportRequest(file));
+        assertEquals("""
+            {
+              "classesOutput": "/b/classes",
+              "classpath": [
+                "/b/classes",
+                "/z/core.jar",
+                "/a/lib.jar"
+              ],
+              "outputDirectory": "/b/dot"
+            }""", Files.readString(file));
+    }
+
+    @Test
+    void rejectsAnExportRequestWithoutItsOutputDirectory() throws IOException {
+        Path file = directory.resolve("export-request.json");
+        Files.writeString(file, "{\"classesOutput\": \"/b/classes\", \"classpath\": []}");
+
+        CodegenException refused = assertThrows(CodegenException.class, () -> ManifestCodec.readExportRequest(file));
+
+        assertEquals(DiagnosticCode.SG602.name(), refused.code());
+        assertTrue(refused.getMessage().contains("outputDirectory"), refused.getMessage());
     }
 
     @Test

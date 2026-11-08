@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.ExportRequest;
 import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
@@ -82,6 +83,19 @@ import java.util.List;
  * feature that javac's parser checks, such as string templates on JDK 21, is refused with {@code SG601}; one using
  * a preview feature javac checks only after parsing, such as primitive patterns at release 25, is read like any
  * other source.</p>
+ *
+ * <h2>{@code ExportRequest} JSON (readExportRequest/writeExportRequest)</h2>
+ *
+ * <p>The request of the {@code export-dot} operation, a flat JSON object of the record's three components, all of
+ * them required, which a build plugin produces with its own encoder too; {@code classpath} keeps its order:</p>
+ *
+ * <pre>{@code
+ * {
+ *   "classesOutput": "<string, Path.toString()>",
+ *   "classpath": ["<string, Path.toString()>", ...],
+ *   "outputDirectory": "<string, Path.toString()>"
+ * }
+ * }</pre>
  *
  * <h2>{@code ExportIndex} JSON (readExports/writeExports)</h2>
  *
@@ -230,6 +244,37 @@ public final class ManifestCodec {
             writer.name("compilationId").value(request.compilationId());
             writer.name("release").value(request.release());
             writer.name("encoding").value(request.encoding().name());
+            writer.endObject();
+        }
+    }
+
+    /**
+     * Reads an {@link ExportRequest} from {@code path}, the flat JSON object documented on this class.
+     *
+     * @throws CodegenException with {@code SG602} if the document is malformed or a member is missing or of the
+     *     wrong type
+     * @throws IllegalArgumentException if a path member is not a valid path
+     * @throws IOException if {@code path} cannot be read
+     */
+    public static ExportRequest readExportRequest(Path path) throws IOException {
+        JsonObject object = JsonSupport.readObject(path);
+        return new ExportRequest(Path.of(JsonSupport.requireString(object, "classesOutput", path)),
+            toPaths(JsonSupport.requireStringArray(object, "classpath", path)),
+            Path.of(JsonSupport.requireString(object, "outputDirectory", path)));
+    }
+
+    /**
+     * Writes {@code request} as the flat JSON object documented on this class.
+     *
+     * @throws IOException if {@code path} cannot be written
+     */
+    public static void writeExportRequest(Path path, ExportRequest request) throws IOException {
+        try (JsonWriter writer = JsonSupport.newWriter(path)) {
+            writer.beginObject();
+            writer.name("classesOutput").value(request.classesOutput().toString());
+            writer.name("classpath");
+            JsonSupport.writeStringArray(writer, toStrings(request.classpath()));
+            writer.name("outputDirectory").value(request.outputDirectory().toString());
             writer.endObject();
         }
     }
