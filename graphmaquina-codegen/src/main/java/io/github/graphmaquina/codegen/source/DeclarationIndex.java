@@ -121,9 +121,9 @@ public final class DeclarationIndex implements AutoCloseable {
 
     /**
      * Resolves {@code spelledName} as {@code context} spells it in its body: enclosing and inherited member types
-     * first, then single imports, the declaring package, on-demand imports and finally {@code java.lang}. An
-     * import only offers the types it can access, and a name that two imports offer at once is reported as
-     * {@code SG601} instead of being chosen by order.
+     * first, then single imports, the declaring package, on-demand imports, {@code java.lang} and finally module
+     * imports. An import only offers the types it can access, and a name that two imports offer at once is reported
+     * as {@code SG601} instead of being chosen by order.
      */
     public Optional<TypeHeader> resolve(@NonNull TypeHeader context, @NonNull String spelledName) {
         return lookup(context, spelledName, false, new HashSet<>());
@@ -525,8 +525,18 @@ public final class DeclarationIndex implements AutoCloseable {
             if (onDemand.isPresent()) {
                 return onDemand;
             }
-            return declared("java.lang." + name, false)
+            Optional<TypeHeader> javaLang = declared("java.lang." + name, false)
                     .filter((TypeHeader type) -> importable(type, scope.packageName()));
+            if (javaLang.isPresent()) {
+                return javaLang;
+            }
+            // Every other declaration in scope shadows a module import, the implicit import of java.lang included.
+            return unique(scope.moduleImports().stream()
+                    .flatMap((String module) -> classpath.exportedPackages(module).stream())
+                    .distinct()
+                    .map((String exported) -> qualified(List.of((exported + '.' + name).split("\\.", -1)), pending)
+                            .filter((TypeHeader type) -> importable(type, scope.packageName())))
+                    .toList(), name, context);
         } finally {
             pending.remove(token);
         }

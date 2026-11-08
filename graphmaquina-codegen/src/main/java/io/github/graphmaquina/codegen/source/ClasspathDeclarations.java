@@ -80,6 +80,8 @@ final class ClasspathDeclarations implements AutoCloseable {
     private final SourcePositions sourcePositions;
     private final Map<String, Optional<TypeHeader>> namedHeaders = new HashMap<>();
     private final Map<String, Optional<TypeHeader>> unnamedHeaders = new HashMap<>();
+    /** The packages {@link #exportedPackages} found for each module, by the module's name. */
+    private final Map<String, List<String>> exportedPackages = new HashMap<>();
     /** The package of every header materialized here, by identity, since two headers can be equal records. */
     private final Map<TypeHeader, String> packages = new IdentityHashMap<>();
     /** The element every header materialized here was materialized from, by identity. */
@@ -176,6 +178,16 @@ final class ClasspathDeclarations implements AutoCloseable {
                             segments, 0)).map(this::materialize));
         }
         return unnamedHeaders.get(canonicalName);
+    }
+
+    /**
+     * The packages a single-module-import declaration of {@code module}, Java 25 syntax, imports on demand, as
+     * {@link ModuleExports#packages} reads them from the module javac finds under that name at this task's release.
+     * Empty for a module javac does not find, which javac reports itself once it compiles the import.
+     */
+    List<String> exportedPackages(String module) {
+        return exportedPackages.computeIfAbsent(module,
+                (String name) -> ModuleExports.packages(Optional.ofNullable(elements.getModuleElement(name))));
     }
 
     /**
