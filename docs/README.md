@@ -16,6 +16,7 @@ time; each page links the next one in that order.
 - [After the commit](#after-the-commit)
 - [Observe and debug](#observe-and-debug)
 - [Test your machines](#test-your-machines)
+- [Migrate an existing machine](#migrate-an-existing-machine)
 - [Build tooling reference](#build-tooling-reference)
 - [Find a feature](#find-a-feature)
 - [Illustrations](#illustrations)
@@ -79,6 +80,13 @@ time; each page links the next one in that order.
 | [Testing samples: graphs, outcomes, probes and async](testing-samples.md) | Verified samples for graph, outcome, failure, recorder, probe, input and controlled async assertions |
 | [Testing samples: recovery, sub-machines, automatic transitions and the call's flow](testing-advanced.md) | Verified samples for recovery rules, sub-machines and the flow and trail of a call, and the assertions on automatic transitions |
 
+## Migrate an existing machine
+
+| Page | What it covers |
+| --- | --- |
+| [Migrate a machine from another library](migrate-from-another-library.md) | The model, the procedure and every general state-machine concept: what GraphMaquina offers for it, where it is documented and what changes |
+| [Migration patterns for concepts without an equivalent](migration-patterns.md) | Built and tested patterns for entry and exit actions, history states, parallel regions, timers and deferred events |
+
 ## Build tooling reference
 
 | Page | What it covers |
@@ -110,6 +118,7 @@ time; each page links the next one in that order.
 | See what a call did, step by step | [Logs](logs.md) and [the call's trail](call-flow.md#record-the-calls-trail) |
 | Draw the graph | [Inspect graphs and export diagrams](graph-inspection.md) |
 | Build a graph at runtime, without annotations | [Programmatic DSL](dsl.md) |
+| Move a machine from another library to GraphMaquina | [Migrate a machine from another library](migrate-from-another-library.md) |
 | Pin a graph's structure in a test | [Goldens and structural snapshots](testing.md#goldens-and-structural-snapshots) |
 | Decide in a test when an async callback answers | [Controlled asynchronous invocations](testing-samples.md#controlled-asynchronous-invocations) |
 | Understand an `SG` error code | [Diagnostics](diagnostics.md) |

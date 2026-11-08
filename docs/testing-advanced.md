@@ -490,4 +490,4 @@ clock, so it asserts the entries of a trail and their order, never their instant
 
 ---
 
-Next: [Building with the typed graph API](typed-annotations-build.md). Back to the [documentation index](README.md).
+Next: [Migrate a machine from another library](migrate-from-another-library.md). Back to the [documentation index](README.md).

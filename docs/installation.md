@@ -29,6 +29,7 @@ flowchart LR
 - [Configure Gradle](#configure-gradle)
 - [Configure Maven](#configure-maven)
 - [Multiple modules and published JARs](#multiple-modules-and-published-jars)
+- [Use GraphMaquina from an AI coding agent](#use-graphmaquina-from-an-ai-coding-agent)
 
 ## Configure Gradle
 
@@ -406,6 +407,67 @@ entity a property that returns it, so the way back is a lookup of the consumer: 
 `ownerLookup` for a watch. A watch can still use `owner` when the producer also publishes the owner's entity and
 the peer's entity has a property that returns the owner.
 [Compose machines across modules and JARs](cross-module-composition.md) walks through both.
+
+## Use GraphMaquina from an AI coding agent
+
+GraphMaquina publishes an [Agent Skill](https://agentskills.io) that helps a coding agent create, change, migrate,
+debug and test GraphMaquina machines in your Java project. Each GraphMaquina release from 2.0.4 on has its own skill,
+which documents exactly that version. The skills live in
+[github.com/graphmaquina/graphmaquina-skills](https://github.com/graphmaquina/graphmaquina-skills), whose README holds the details. Replace
+`<version>` below with the GraphMaquina version your project uses.
+
+### Claude Code
+
+```text
+/plugin marketplace add graphmaquina/graphmaquina-skills
+/plugin install graphmaquina@graphmaquina
+```
+
+`/plugin install` opens the plugin's details, where you choose the install scope. This installs the skill of the
+latest GraphMaquina release. To pin the skill of one release, add its tag to the first command:
+`/plugin marketplace add graphmaquina/graphmaquina-skills#v<version>`.
+
+To update the skill, use one of these:
+
+- in `/plugin`, open `graphmaquina` on the **Installed** tab and choose **Update now**;
+- in your shell, run `claude plugin update graphmaquina@graphmaquina`;
+- in `/plugin`, select the `graphmaquina` marketplace on the **Marketplaces** tab and choose **Update marketplace**,
+  which refreshes its listing and updates the plugins installed from it;
+- on that same tab, choose **Enable auto-update** for the marketplace. Claude Code leaves auto-update off for
+  third-party marketplaces.
+
+The [Claude Code plugin documentation](https://code.claude.com/docs/en/plugins/install#keep-plugins-updated)
+describes each route.
+
+### Other agents
+
+Copy the folder `plugins/graphmaquina/skills/graphmaquina/` of the tag `v<version>` into your project's skills folder.
+From the project root, this line puts it in `.agents/skills/graphmaquina/`, replacing an older copy:
+
+```bash
+SKILLS=.agents/skills; git clone --depth 1 --branch v<version> https://github.com/graphmaquina/graphmaquina-skills .graphmaquina-skills && rm -rf "$SKILLS/graphmaquina" && mkdir -p "$SKILLS" && cp -R .graphmaquina-skills/plugins/graphmaquina/skills/graphmaquina "$SKILLS/"; rm -rf .graphmaquina-skills
+```
+
+Set `SKILLS=.claude/skills` instead for `.claude/skills/graphmaquina/`. Pick the folder your agent reads:
+
+| Folder | Read by, according to each agent's skills documentation |
+| --- | --- |
+| `.agents/skills/graphmaquina/` | [Codex](https://learn.chatgpt.com/docs/build-skills), [Cursor](https://cursor.com/docs/context/skills), [Gemini CLI](https://geminicli.com/docs/cli/skills/), [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
+| `.claude/skills/graphmaquina/` | [Claude Code](https://code.claude.com/docs/en/skills), [Cursor](https://cursor.com/docs/context/skills), [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
+
+### claude.ai
+
+Download `graphmaquina-skill-<version>.zip` from the
+[GitHub release](https://github.com/graphmaquina/graphmaquina-skills/releases) of `v<version>`, and add it to claude.ai as
+Anthropic's article [How to create custom skills](https://support.claude.com/en/articles/12512198-creating-custom-skills)
+describes. The zip already holds the skill folder, `graphmaquina/`, at its root, the layout that article asks for.
+
+### Tested agents
+
+Tested with Claude Code. Codex, Cursor, Gemini CLI and GitHub Copilot read skills from the folders above according to
+their own documentation, linked in the table; this skill has not been tested with them. It has not been tested on
+claude.ai either: uploading the zip there has not been tried, and the zip is only known to hold the skill folder at
+its root, as Anthropic's article describes.
 
 ---
 
