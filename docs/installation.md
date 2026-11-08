@@ -411,9 +411,10 @@ the peer's entity has a property that returns the owner.
 ## Use GraphMaquina from an AI coding agent
 
 GraphMaquina publishes an [Agent Skill](https://agentskills.io) that helps a coding agent create, change, migrate,
-debug and test GraphMaquina machines in your Java project. Each GraphMaquina release has its own skill, which
-documents exactly that release. The skills live in [github.com/graphmaquina/skills](https://github.com/graphmaquina/skills),
-whose README holds the details. Replace `<version>` below with the GraphMaquina version your project uses.
+debug and test GraphMaquina machines in your Java project. Each GraphMaquina release from 2.0.4 on has its own skill,
+which documents exactly that version. The skills live in
+[github.com/graphmaquina/skills](https://github.com/graphmaquina/skills), whose README holds the details. Replace
+`<version>` below with the GraphMaquina version your project uses.
 
 ### Claude Code
 
@@ -464,7 +465,9 @@ describes. The zip already holds the skill folder, `graphmaquina/`, at its root,
 ### Tested agents
 
 Tested with Claude Code. Codex, Cursor, Gemini CLI and GitHub Copilot read skills from the folders above according to
-their own documentation, linked in the table; this skill has not been tested with them.
+their own documentation, linked in the table; this skill has not been tested with them. It has not been tested on
+claude.ai either: uploading the zip there has not been tried, and the zip is only known to hold the skill folder at
+its root, as Anthropic's article describes.
 
 ---
 
