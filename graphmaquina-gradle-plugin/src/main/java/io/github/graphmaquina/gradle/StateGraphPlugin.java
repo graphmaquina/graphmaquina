@@ -55,7 +55,10 @@ import java.util.concurrent.Callable;
  * that source set's {@code JavaCompile} compile what it generated, pass it the annotation manifest and run the
  * two steps of {@link CompilationLifecycle} around javac. The generation task is registered whether or not the
  * source set participates, so it is always there to be named and to be listed, and skips itself with the
- * declaration it is waiting for as its reason.</p>
+ * declaration it is waiting for as its reason. So is one {@link ExportStateGraphDot} task per source set,
+ * {@code exportStateGraphDot} for {@code main} and {@code export<SourceSet>StateGraphDot} for any other, which writes
+ * the Graphviz DOT of the machines the completed compilation published, over the source set's runtime classpath and
+ * under the launcher and the generator classpath of the generation task, and takes part when that task does.</p>
  *
  * <p>The generation parses the original sources javac compiles: the files of every source directory of the source
  * set but the generated ones, as the include and exclude patterns and the filter of the source set's java sources,
@@ -173,6 +176,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
         addGeneratedSources(project, sourceSet, participates, generate);
         wireLifecycle(project, declarations, participates, compile, generate);
         excludeCarrier(project, sourceSet);
+        ExportStateGraphDot.register(project, sourceSet, compile, generate);
     }
 
     /**

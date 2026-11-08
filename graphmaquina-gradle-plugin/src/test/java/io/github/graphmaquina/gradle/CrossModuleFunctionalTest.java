@@ -124,6 +124,26 @@ class CrossModuleFunctionalTest {
     }
 
     /**
+     * The consumer's booking binds the producer's payment machine as a sub-machine: its exported diagram draws that
+     * child as a cluster, from the {@code structure()} of the producer's companion, and the producer exports its own.
+     */
+    @Test
+    void theConsumersExportDrawsTheChildOfTheProducer() throws IOException {
+        PluginFixture build = PluginFixture.multiProject(tempDirectory, FIXTURE_REPOSITORY);
+
+        BuildResult result = build.run(":consumer:exportStateGraphDot", ":producer:exportStateGraphDot",
+                "--refresh-dependencies", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":consumer:exportStateGraphDot").getOutcome());
+        Path diagram = build.projectDirectory().resolve("consumer/build/graphmaquina/main/dot/book.Bookings.dot");
+        String bookings = Files.readString(diagram, StandardCharsets.UTF_8);
+        assertTrue(bookings.contains("subgraph cluster"), bookings);
+        assertTrue(bookings.contains(": Payment/PaymentStatus\""), bookings);
+        assertTrue(Files.isRegularFile(
+                build.projectDirectory().resolve("producer/build/graphmaquina/main/dot/pay.Payments.dot")));
+    }
+
+    /**
      * The same build with a producer that applies {@code java-library}, as a library module does: the consumer then
      * compiles against the producer's directory of classes, where the producer's compilation published its export
      * index, instead of against its jar. The consumer's generation request lists that directory and nothing else of

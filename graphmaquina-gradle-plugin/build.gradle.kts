@@ -111,7 +111,7 @@ publishing {
     publications.withType<MavenPublication>().configureEach {
         pom {
             name = "GraphMaquina Gradle plugin"
-            description = "Gradle plugin that generates the typed graph API before javac and runs the verified compilation lifecycle around it"
+            description = "Gradle plugin that generates the typed graph API before javac, runs the verified compilation lifecycle around it and exports the Graphviz DOT of its machines"
             url = "https://github.com/graphmaquina/graphmaquina"
             licenses {
                 license {

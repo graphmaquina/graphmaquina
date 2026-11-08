@@ -182,8 +182,9 @@ processor without a manifest, and a compilation that declares graphs is refused 
 | `generateStateGraphApi` | `main` |
 | `generateTestStateGraphApi` | `test` |
 | `generate<SourceSet>StateGraphApi` | any other source set |
+| `exportStateGraphDot`, `exportTestStateGraphDot`, `export<SourceSet>StateGraphDot` | the same, writing the Graphviz DOT of the source set's machines once it compiled: see [Export from the command line](graph-inspection.md#export-from-the-command-line) |
 
-All of them are in the `graphmaquina` task group.
+All of them are in the `graphmaquina` task group, and a source set that takes no part skips both of its tasks.
 
 | Path | Content |
 | --- | --- |
@@ -194,6 +195,8 @@ All of them are in the `graphmaquina` task group.
 | `build/graphmaquina/<sourceSet>/owned-outputs.json` | the sealed inventory of everything that compilation owns |
 | `build/graphmaquina/<sourceSet>/owned-outputs.pending.json` | the pending inventory: what the preparation is retiring; left behind by a compilation javac rejects, and consumed by the next preparation |
 | `build/graphmaquina/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
+| `build/graphmaquina/<sourceSet>/dot` | the diagrams the export task writes, one `.dot` per machine; the task's `outputDirectory`, which a build may move |
+| `build/graphmaquina/<sourceSet>/export-request.json` | the request the export task wrote for the generator |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/pending-exports.json` | the provisional index the processor writes during javac, which the completion promotes to `exports.json` |
 
