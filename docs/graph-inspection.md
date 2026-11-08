@@ -129,7 +129,8 @@ a class throws `IllegalStateException` when it runs, naming that class and the c
 com.example.tickets.TicketsRuntime.graph(...)`. A static member, a property read, such as a watch's peers or a
 sub-machine's child, and a built-in watch condition run as they do in `graph(...)`. Building, reading or exporting the
 definition runs none of them, so `structure()` answers every query on this page and draws exactly as `graph(...)` does.
-Build the machines you run from `graph(...)` or from the generated set.
+Build the machines you run from `graph(...)` or from the generated set. A facade method named `structure` that takes
+no parameter would clash with this static method and is refused as [`SG504`](diagnostics.md).
 
 ## Query the topology
 
