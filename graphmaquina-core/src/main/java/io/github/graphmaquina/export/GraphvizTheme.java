@@ -16,8 +16,8 @@ import lombok.NonNull;
  *
  * @param canvas the background
  * @param ink state names and outlines, the initial dot, the fill of terminal states, edge identifiers and titles
- * @param muted the arrows of edges that are not automatic, the text under an edge identifier, and the child
- *     machine in a sub-machine's title
+ * @param muted the arrows of edges that are not automatic and the initial arrow, the text under an edge identifier,
+ *     and the child machine in a sub-machine's title
  * @param stateFill the body of a state that is not terminal, and the names written on terminal states
  * @param automatic the arrow and identifier of an automatic edge
  * @param clusterFill the body of the region that holds a sub-machine

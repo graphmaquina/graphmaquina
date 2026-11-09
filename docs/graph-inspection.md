@@ -297,7 +297,7 @@ role transparent, such as `withCanvas("#ffffff00")` for a diagram with no backgr
 |------|---------|----------------|
 | `canvas` | `#ffffff` | the background |
 | `ink` | `#1b1f3a` | state names and outlines, the initial dot, the fill of terminal states, edge identifiers and titles |
-| `muted` | `#4f5677` | the arrows of edges that are not automatic, the text under an edge identifier, and the child machine in a sub-machine's title |
+| `muted` | `#4f5677` | the arrows of edges that are not automatic and the initial arrow, the text under an edge identifier, and the child machine in a sub-machine's title |
 | `stateFill` | `#ffffff` | the body of a state that is not terminal, and the names written on terminal states |
 | `automatic` | `#2457d6` | the arrow and identifier of an automatic edge |
 | `clusterFill` | `#f5f6fb` | the body of the region that holds a sub-machine |
