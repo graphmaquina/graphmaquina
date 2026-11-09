@@ -212,9 +212,9 @@ The shop's order machine exports as:
 
 ```text
 digraph "Order/OrderStatus" {
-    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", fontname="Helvetica,Arial,sans-serif", fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, label=<<b>Order/OrderStatus</b>>];
-    node [shape=box, style="rounded,filled", color="#1b1f3a", fillcolor="#ffffff", fontcolor="#1b1f3a", fontname="Helvetica,Arial,sans-serif", fontsize=12, penwidth=1.2, margin="0.18,0.06"];
-    edge [color="#4f5677", fontcolor="#1b1f3a", fontname="Helvetica,Arial,sans-serif", fontsize=10, penwidth=1.1, arrowsize=0.7];
+    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", fontname=Helvetica, fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, label=<<b>Order/OrderStatus</b>>];
+    node [shape=box, style="rounded,filled", color="#1b1f3a", fillcolor="#ffffff", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=12, penwidth=1.2, margin="0.18,0.06"];
+    edge [color="#4f5677", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=10, penwidth=1.1, arrowsize=0.7];
     initial [shape=point, width=0.14, height=0.14, fillcolor="#1b1f3a", label=""];
     n0 [label="NEW", tooltip="otherwise: cannot ship without payment"];
     n1 [label="PAID", tooltip="otherwise: money was charged: requires a refund"];
@@ -243,8 +243,9 @@ dot -Tpng tickets.dot -o tickets.png
 
 The Java exporter needs no external library or native executable. Image rendering is a separate step. To have the
 build write these files for every machine instead, see [Export from the command line](#export-from-the-command-line).
-The text is set in `Helvetica,Arial,sans-serif`, and Graphviz uses the first of these the machine has. Helvetica and
-Arial share their character widths, so an SVG laid out with one still fits its text where the viewer shows the other.
+The text is set in Helvetica, a font Graphviz knows by name: it sizes each box with Helvetica's widths even in a build
+without a font library, such as a browser-based renderer, and writes the font of SVG text as `Helvetica,sans-Serif`, so
+a viewer without Helvetica shows its own sans-serif font, Arial on Windows.
 `GraphView.of(definition)` is a public record of what the exporter draws, as text: `name()`, `initial()`,
 `terminals()`, `states()`, `transitions()`, `policies()`, `watches()` and `submachines()`, so a renderer of your own
 can read the same data, and its public constructors build a view by hand. States come in node order, edges in definition order, rules and exits in declaration order,

@@ -14,8 +14,7 @@ import lombok.NonNull;
  *
  * <p>The text opens with three default statements. {@code graph} lays the drawing out left to right and titles it
  * with the view's name in bold at the top left. {@code node} draws states as rounded boxes, and {@code edge} draws
- * arrows. Together they set the font {@code Helvetica,Arial,sans-serif}, whose first two faces share their character
- * widths, the sizes and spacing, and the common colors. Each node or edge then carries only what
+ * arrows. Together they set the font {@code Helvetica}, the sizes and spacing, and the common colors. Each node or edge then carries only what
  * sets it apart. State names are escaped labels on internal node IDs. A terminal state is filled with the theme's
  * {@code ink}, written in its {@code canvas} color and drawn with a double outline. The initial state has an
  * incoming arrow from a solid dot, and each watch is a note in the theme's watch colors joined to its state by a
@@ -50,8 +49,11 @@ import lombok.NonNull;
  */
 public final class GraphvizExporter {
 
-    /** The font of every text, quoted; Helvetica and Arial share their character widths. */
-    private static final String FONT = "\"Helvetica,Arial,sans-serif\"";
+    /**
+     * The font of every text: a PostScript name Graphviz knows, so that it sizes boxes with Helvetica's widths even
+     * where it has no font library, and writes SVG text as {@code Helvetica,sans-Serif}.
+     */
+    private static final String FONT = "Helvetica";
 
     /** The end of a left-aligned line in an HTML-like label. */
     private static final String LINE = "<br align=\"left\"/>";

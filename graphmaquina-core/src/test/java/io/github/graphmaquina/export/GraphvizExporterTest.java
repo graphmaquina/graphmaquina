@@ -737,12 +737,12 @@ class GraphvizExporterTest {
     static String defaults(String name) {
         return "digraph " + baseQuote(name) + " {\n"
                 + "    graph [rankdir=LR, bgcolor=\"#ffffff\", pad=\"0.3\", nodesep=\"0.45\", ranksep=\"0.7\", "
-                + "fontname=\"Helvetica,Arial,sans-serif\", fontsize=12, fontcolor=\"#1b1f3a\", labelloc=t, "
+                + "fontname=Helvetica, fontsize=12, fontcolor=\"#1b1f3a\", labelloc=t, "
                 + "labeljust=l, label=<<b>" + baseHtml(name) + "</b>>];\n"
                 + "    node [shape=box, style=\"rounded,filled\", color=\"#1b1f3a\", fillcolor=\"#ffffff\", "
-                + "fontcolor=\"#1b1f3a\", fontname=\"Helvetica,Arial,sans-serif\", fontsize=12, penwidth=1.2, "
+                + "fontcolor=\"#1b1f3a\", fontname=Helvetica, fontsize=12, penwidth=1.2, "
                 + "margin=\"0.18,0.06\"];\n"
-                + "    edge [color=\"#4f5677\", fontcolor=\"#1b1f3a\", fontname=\"Helvetica,Arial,sans-serif\", "
+                + "    edge [color=\"#4f5677\", fontcolor=\"#1b1f3a\", fontname=Helvetica, "
                 + "fontsize=10, penwidth=1.1, arrowsize=0.7];\n";
     }
 

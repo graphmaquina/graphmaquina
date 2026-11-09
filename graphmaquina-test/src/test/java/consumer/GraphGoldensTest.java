@@ -158,16 +158,16 @@ class GraphGoldensTest {
                 @@ -1,14 +1,10 @@
                 -digraph "Entity/State" {
                 -    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", \
-                fontname="Helvetica,Arial,sans-serif", fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, \
+                fontname=Helvetica, fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, \
                 label=<<b>Entity/State</b>>];
                 +digraph "String/Flow" {
                 +    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", \
-                fontname="Helvetica,Arial,sans-serif", fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, \
+                fontname=Helvetica, fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, \
                 label=<<b>String/Flow</b>>];
                      node [shape=box, style="rounded,filled", color="#1b1f3a", fillcolor="#ffffff", \
-                fontcolor="#1b1f3a", fontname="Helvetica,Arial,sans-serif", fontsize=12, penwidth=1.2, \
+                fontcolor="#1b1f3a", fontname=Helvetica, fontsize=12, penwidth=1.2, \
                 margin="0.18,0.06"];
-                     edge [color="#4f5677", fontcolor="#1b1f3a", fontname="Helvetica,Arial,sans-serif", fontsize=10, \
+                     edge [color="#4f5677", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=10, \
                 penwidth=1.1, arrowsize=0.7];
                      initial [shape=point, width=0.14, height=0.14, fillcolor="#1b1f3a", label=""];
                 -    n0 [label="NEW", tooltip="otherwise: prepare first"];
