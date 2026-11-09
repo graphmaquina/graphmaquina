@@ -96,7 +96,8 @@ class GraphViewAutomaticTest {
         assertEquals(Optional.empty(), edge(view, "DISCARD").automaticPosition());
         assertTrue(edge(view, "DISCARD").automatic());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("[label=\"DISCARD [auto]\"]"), rendered);
+        assertTrue(rendered.contains("[label=" + GraphvizExporterTest.html("DISCARD", "[auto]")
+                + GraphvizExporterTest.AUTOMATIC + "]"), rendered);
         assertFalse(rendered.contains("[auto 0]"), rendered);
     }
 }

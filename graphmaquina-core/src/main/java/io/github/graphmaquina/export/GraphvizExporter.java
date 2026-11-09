@@ -8,57 +8,93 @@ import java.util.Optional;
 import lombok.NonNull;
 
 /**
- * Renders a {@link GraphView} as Graphviz DOT text with deterministic ordering and LF line endings.
- * Export requires no Graphviz installation; use Graphviz separately to render DOT as an image.
- * State names are escaped labels on internal node IDs. The initial state has an incoming arrow from a point,
- * terminals use double circles, and watches use notes with dashed connections. Only declared edges are
- * drawn; a rejection policy is a tooltip on its node, never an arrow.
+ * Renders a {@link GraphView} as Graphviz DOT text with deterministic ordering and LF line endings, drawn with the
+ * colors of a {@link GraphvizTheme}; {@link #render(GraphView)} uses {@link GraphvizTheme#defaults()}. Export
+ * requires no Graphviz installation; use Graphviz separately to render DOT as an image.
  *
- * <p>An edge's label is its identifier, then {@code [auto]} when it is automatic, or {@code [auto n]} when its state
- * declares an order among two or more automatic edges, with {@code n} counted from 1 in that order, then its action,
- * {@code [async]}, {@code [if <guards>]}, one {@code [recover <kind> -> <transition>]} per recovery rule in
- * declaration order, {@code [onFailure <transition>]} and {@code [watches <rules>]}, leaving out the parts the edge
- * does not have. A route that continues the chain of automatic attempts ends its fragment with {@code continues}, as
- * in {@code [recover <kind> -> <transition> continues]} and {@code [onFailure <transition> continues]}. A rule's kind
- * is its binary name without the package, such as {@code PublicationFailures$Unavailable}. The throwable types of
- * failsOn and of the rules are not drawn, and a rule adds no arrow and no node.
+ * <p>The text opens with three default statements. {@code graph} lays the drawing out left to right and titles it
+ * with the view's name in bold at the top left. {@code node} draws states as rounded boxes, and {@code edge} draws
+ * arrows. Together they set the font {@code Helvetica,Arial,sans-serif}, whose first two faces share their character
+ * widths, the sizes and spacing, and the common colors. Each node or edge then carries only what
+ * sets it apart. State names are escaped labels on internal node IDs. A terminal state is filled with the theme's
+ * {@code ink}, written in its {@code canvas} color and drawn with a double outline. The initial state has an
+ * incoming arrow from a solid dot, and each watch is a note in the theme's watch colors joined to its state by a
+ * dashed line. Only declared edges are drawn; a rejection policy is a tooltip on its node, never an arrow.
  *
- * <p>A state that holds a sub-machine is drawn as a cluster instead of a node, labelled {@code <STATE>: <child>} after
- * the child's view name, with the state's policy as its tooltip. The cluster holds an invisible anchor and the child's
- * own graph, its initial arrow, edges, watches and sub-machines included, whose IDs carry the prefix {@code s<j>_},
- * where {@code j} counts the bound states of the view in node order, and one more such prefix per level of nesting.
- * An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
- * one's initial state, and so on down; an exit, an edge whose identifier the binding maps a terminal state of the
- * child to, is drawn once from each such terminal state; any other edge leaving the state, and the state's watch
- * note, start at the anchor. Arrows entering a cluster use {@code lhead}; edges leaving an anchor and its watch
- * connections use {@code ltail}. An exit starts at the selected terminal without clipping at its source cluster.
- * Arrows whose ends lie in the same cluster omit clipping. The {@code compound=true} attribute enables cluster
- * clipping; a view without sub-machines has no cluster and no {@code compound} attribute.
+ * <p>An edge's label is an HTML-like label: its identifier in bold on the first line, then one line per part, in
+ * the theme's {@code muted} color: {@code [auto]} when the edge is automatic, or {@code [auto n]} when its state
+ * declares an order among two or more automatic edges, with {@code n} counted from 1 in that order, then its
+ * action, {@code [async]}, {@code [if <guards>]}, one {@code [recover <kind> -> <transition>]} per recovery rule in
+ * declaration order, {@code [onFailure <transition>]} and {@code [watches <rules>]}. The parts the edge does not
+ * have are left out. A route that continues the chain of automatic attempts ends its part with {@code continues},
+ * as in {@code [recover <kind> -> <transition> continues]} and {@code [onFailure <transition> continues]}. A rule's
+ * kind is its binary name without the package, such as {@code PublicationFailures$Unavailable}. The throwable types
+ * of failsOn and of the rules are not drawn, and a rule adds no arrow and no node. An automatic edge's arrow and
+ * identifier take the theme's {@code automatic} color. In an HTML-like label, {@code &}, {@code <}, {@code >} and
+ * {@code "} are written as entities, a line break starts a new left-aligned line, and a control character that XML
+ * forbids is drawn as U+FFFD. Every other text is a quoted string with backslashes, quotes and line breaks escaped.
+ *
+ * <p>A state that holds a sub-machine is drawn as a cluster instead of a node: a rounded region in the theme's
+ * {@code clusterFill} and {@code clusterBorder}, titled with the state in bold followed by {@code : <child>} in the
+ * {@code muted} color, after the child's view name, with the state's policy as its tooltip. The cluster holds an
+ * invisible anchor and the child's own graph, its initial arrow, edges, watches and sub-machines included, whose IDs
+ * carry the prefix {@code s<j>_}, where {@code j} counts the bound states of the view in node order, and one more
+ * such prefix per level of nesting. An edge into the state points at the child's initial state, or, when that state
+ * holds a sub-machine too, at that one's initial state, and so on down; an exit, an edge whose identifier the
+ * binding maps a terminal state of the child to, is drawn once from each such terminal state; any other edge
+ * leaving the state, and the state's watch note, start at the anchor. Arrows entering a cluster use {@code lhead};
+ * edges leaving an anchor and its watch connections use {@code ltail}. An exit starts at the selected terminal
+ * without clipping at its source cluster. Arrows whose ends lie in the same cluster omit clipping. The
+ * {@code compound=true} attribute enables cluster clipping; a view without sub-machines has no cluster and no
+ * {@code compound} attribute.
  */
 public final class GraphvizExporter {
 
+    /** The font of every text, quoted; Helvetica and Arial share their character widths. */
+    private static final String FONT = "\"Helvetica,Arial,sans-serif\"";
+
+    /** The end of a left-aligned line in an HTML-like label. */
+    private static final String LINE = "<br align=\"left\"/>";
+
     private GraphvizExporter() { }
 
-    /** Every declared edge, parallels included, in the view's order, and every sub-machine as a cluster. */
+    /**
+     * Every declared edge, parallels included, in the view's order, and every sub-machine as a cluster, drawn with
+     * {@link GraphvizTheme#defaults()}.
+     */
     public static String render(@NonNull GraphView view) {
+        return render(view, GraphvizTheme.defaults());
+    }
+
+    /** Every declared edge, parallels included, in the view's order, and every sub-machine as a cluster. */
+    public static String render(@NonNull GraphView view, @NonNull GraphvizTheme theme) {
         StringBuilder out = new StringBuilder("digraph ").append(quote(view.name())).append(" {\n");
-        out.append("    rankdir=LR;\n");
+        out.append("    graph [rankdir=LR, bgcolor=").append(quote(theme.canvas()))
+                .append(", pad=\"0.3\", nodesep=\"0.45\", ranksep=\"0.7\", fontname=").append(FONT)
+                .append(", fontsize=12, fontcolor=").append(quote(theme.ink()))
+                .append(", labelloc=t, labeljust=l, label=<<b>").append(html(view.name())).append("</b>>];\n");
+        out.append("    node [shape=box, style=\"rounded,filled\", color=").append(quote(theme.ink()))
+                .append(", fillcolor=").append(quote(theme.stateFill())).append(", fontcolor=")
+                .append(quote(theme.ink())).append(", fontname=").append(FONT)
+                .append(", fontsize=12, penwidth=1.2, margin=\"0.18,0.06\"];\n");
+        out.append("    edge [color=").append(quote(theme.muted())).append(", fontcolor=").append(quote(theme.ink()))
+                .append(", fontname=").append(FONT).append(", fontsize=10, penwidth=1.1, arrowsize=0.7];\n");
         if (!view.submachines().isEmpty()) {
             out.append("    compound=true;\n");
         }
-        Level.of(view, "").render(out, "    ");
+        Level.of(view, "", theme).render(out, "    ");
         return out.append("}\n").toString();
     }
 
     /**
-     * One graph of the drawing, the view's own or a sub-machine's, whose IDs carry {@code prefix}: its states by
-     * internal ID in allocation order, the index of each bound state among the view's sub-machines, and each state's
-     * policy.
+     * One graph of the drawing, the view's own or a sub-machine's, whose IDs carry {@code prefix}, drawn with
+     * {@code theme}: its states by internal ID in allocation order, the index of each bound state among the view's
+     * sub-machines, and each state's policy.
      */
-    private record Level(GraphView view, String prefix, Map<String, String> nodes, Map<String, Integer> bound,
-                         Map<String, PolicyView> policies) {
+    private record Level(GraphView view, String prefix, GraphvizTheme theme, Map<String, String> nodes,
+                         Map<String, Integer> bound, Map<String, PolicyView> policies) {
 
-        static Level of(GraphView view, String prefix) {
+        static Level of(GraphView view, String prefix, GraphvizTheme theme) {
             Map<String, String> nodes = new LinkedHashMap<>();
             view.states().forEach((String state) -> addState(nodes, state));
             for (TransitionView transition : view.transitions()) {
@@ -79,7 +115,7 @@ public final class GraphvizExporter {
             for (PolicyView policy : view.policies()) {
                 policies.putIfAbsent(policy.state(), policy);
             }
-            return new Level(view, prefix, nodes, bound, policies);
+            return new Level(view, prefix, theme, nodes, bound, policies);
         }
 
         private static void addState(Map<String, String> nodes, String state) {
@@ -87,13 +123,17 @@ public final class GraphvizExporter {
         }
 
         void render(StringBuilder out, String indent) {
-            out.append(indent).append(prefix).append("initial [shape=point, label=\"\"];\n");
+            out.append(indent).append(prefix).append("initial [shape=point, width=0.14, height=0.14, fillcolor=")
+                    .append(quote(theme.ink())).append(", label=\"\"];\n");
             nodes.forEach((String state, String id) -> {
                 if (bound.containsKey(state)) {
                     return;
                 }
-                out.append(indent).append(prefix).append(id).append(" [label=").append(quote(state)).append(", shape=")
-                        .append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
+                out.append(indent).append(prefix).append(id).append(" [label=").append(quote(state));
+                if (view.terminals().contains(state)) {
+                    out.append(", peripheries=2, fillcolor=").append(quote(theme.ink())).append(", fontcolor=")
+                            .append(quote(theme.canvas()));
+                }
                 Optional<PolicyView> policy = policy(state);
                 if (policy.isPresent()) {
                     out.append(", tooltip=").append(quote(tooltip(policy.get())));
@@ -105,14 +145,21 @@ public final class GraphvizExporter {
             renderWatches(out, indent);
         }
 
-        /** Each sub-machine as a cluster: its label, its policy's tooltip, its anchor and the child's own graph. */
+        /**
+         * Each sub-machine as a cluster: its title, its region's colors, its policy's tooltip, its anchor and the
+         * child's own graph.
+         */
         private void renderClusters(StringBuilder out, String indent) {
             for (int j = 0; j < view.submachines().size(); j++) {
                 String inner = indent + "    ";
                 SubmachineView submachine = view.submachines().get(j);
                 out.append(indent).append("subgraph ").append(cluster(j)).append(" {\n");
-                out.append(inner).append("label=").append(quote(submachine.state() + ": " + submachine.child().name()))
-                        .append(";\n");
+                out.append(inner).append("label=<<b>").append(html(submachine.state())).append("</b><font color=")
+                        .append(quote(theme.muted())).append(">: ").append(html(submachine.child().name()))
+                        .append("</font>>;\n");
+                out.append(inner).append("graph [style=\"rounded,filled\", color=")
+                        .append(quote(theme.clusterBorder())).append(", fillcolor=").append(quote(theme.clusterFill()))
+                        .append(", fontsize=11, penwidth=1.2];\n");
                 Optional<PolicyView> policy = policy(submachine.state());
                 if (policy.isPresent()) {
                     out.append(inner).append("tooltip=").append(quote(tooltip(policy.get()))).append(";\n");
@@ -131,7 +178,7 @@ public final class GraphvizExporter {
             arrow(out, indent, prefix + "initial", entry(view.initial()), Optional.empty(),
                     Optional.ofNullable(bound.get(view.initial())), List.of());
             for (TransitionView transition : view.transitions()) {
-                List<String> label = List.of("label=" + quote(label(transition)));
+                List<String> attributes = attributes(transition);
                 Optional<Integer> from = Optional.ofNullable(bound.get(transition.from()));
                 Optional<Integer> to = Optional.ofNullable(bound.get(transition.to()));
                 String head = entry(transition.to());
@@ -141,12 +188,12 @@ public final class GraphvizExporter {
                 if (!terminals.isEmpty()) {
                     Level child = child(from.get());
                     for (String terminal : terminals) {
-                        arrow(out, indent, child.node(terminal), head, from, to, label);
+                        arrow(out, indent, child.node(terminal), head, from, to, attributes);
                     }
                 } else if (from.isPresent()) {
-                    arrow(out, indent, anchor(from.get()), head, from, to, withTail(label, from.get(), to));
+                    arrow(out, indent, anchor(from.get()), head, from, to, withTail(attributes, from.get(), to));
                 } else {
-                    arrow(out, indent, node(transition.from()), head, Optional.empty(), to, label);
+                    arrow(out, indent, node(transition.from()), head, Optional.empty(), to, attributes);
                 }
             }
         }
@@ -156,10 +203,12 @@ public final class GraphvizExporter {
             for (int i = 0; i < view.watches().size(); i++) {
                 WatchView watch = view.watches().get(i);
                 String note = prefix + "watch" + i;
-                out.append(indent).append(note).append(" [shape=note, label=")
+                out.append(indent).append(note).append(" [shape=note, style=filled, color=")
+                        .append(quote(theme.watch())).append(", fillcolor=").append(quote(theme.watchFill()))
+                        .append(", fontcolor=").append(quote(theme.watch())).append(", label=")
                         .append(quote("watches " + watch.peerMachine())).append("];\n");
                 Optional<Integer> at = Optional.ofNullable(bound.get(watch.state()));
-                List<String> dashed = List.of("style=dashed", "arrowhead=none");
+                List<String> dashed = List.of("style=dashed", "arrowhead=none", "color=" + quote(theme.watch()));
                 if (at.isPresent()) {
                     arrow(out, indent, anchor(at.get()), note, Optional.empty(), Optional.empty(),
                             withTail(dashed, at.get(), Optional.empty()));
@@ -167,6 +216,17 @@ public final class GraphvizExporter {
                     arrow(out, indent, node(watch.state()), note, Optional.empty(), Optional.empty(), dashed);
                 }
             }
+        }
+
+        /** An edge's label, then the color of its arrow and identifier when it is automatic. */
+        private List<String> attributes(TransitionView transition) {
+            List<String> attributes = new ArrayList<>();
+            attributes.add("label=" + label(transition, theme.muted()));
+            if (transition.automatic()) {
+                attributes.add("color=" + quote(theme.automatic()));
+                attributes.add("fontcolor=" + quote(theme.automatic()));
+            }
+            return attributes;
         }
 
         private Optional<PolicyView> policy(String state) {
@@ -186,7 +246,7 @@ public final class GraphvizExporter {
         }
 
         private Level child(int j) {
-            return Level.of(view.submachines().get(j).child(), prefix + "s" + j + "_");
+            return Level.of(view.submachines().get(j).child(), prefix + "s" + j + "_", theme);
         }
 
         /** The node an arrow into {@code state} points at: its own, or the entry of the sub-machine bound to it. */
@@ -251,10 +311,12 @@ public final class GraphvizExporter {
         return String.join("; ", parts);
     }
 
-    /** The identifier always leads; the action, guards and routing follow it, every rule before the fallback. */
-    private static String label(TransitionView transition) {
+    /**
+     * An HTML-like label: the identifier in bold on the first line, then the automatic mark, the action, guards and
+     * routing, every rule before the fallback, one per line in the {@code muted} color.
+     */
+    private static String label(TransitionView transition, String muted) {
         List<String> parts = new ArrayList<>();
-        parts.add(transition.transition());
         if (transition.automatic()) {
             parts.add(transition.automaticPosition().map((Integer n) -> "[auto " + n + "]").orElse("[auto]"));
         }
@@ -272,7 +334,32 @@ public final class GraphvizExporter {
         transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id
                 + continuation(transition.failureContinues()) + "]"));
         transition.watch().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
-        return String.join(" ", parts);
+        StringBuilder label = new StringBuilder("<<b>").append(html(transition.transition())).append("</b>");
+        if (!parts.isEmpty()) {
+            label.append(LINE).append("<font color=").append(quote(muted)).append(">");
+            parts.forEach((String part) -> label.append(html(part)).append(LINE));
+            label.append("</font>");
+        }
+        return label.append(">").toString();
+    }
+
+    /**
+     * {@code text} inside an HTML-like label: the four XML specials as entities, each line break as the end of a
+     * left-aligned line, and U+FFFD for a character XML forbids, any of which would make Graphviz drop the label.
+     */
+    private static String html(String text) {
+        StringBuilder out = new StringBuilder();
+        for (char c : text.replace("\r\n", "\n").replace("\r", "\n").toCharArray()) {
+            switch (c) {
+                case '&' -> out.append("&amp;");
+                case '<' -> out.append("&lt;");
+                case '>' -> out.append("&gt;");
+                case '"' -> out.append("&quot;");
+                case '\n' -> out.append(LINE);
+                default -> out.append((c < ' ' && c != '\t') || c == '\uFFFE' || c == '\uFFFF' ? '\uFFFD' : c);
+            }
+        }
+        return out.toString();
     }
 
     /** The word that ends the fragment of a route that continues the chain of automatic attempts. */
