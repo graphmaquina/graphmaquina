@@ -182,7 +182,7 @@ diagram reads left to right under a title, the machine's name in bold at the top
 initial state has an incoming arrow from a solid dot, and a terminal state is a solid box with a double outline.
 Watches appear as notes connected by dashed lines.
 
-Each edge label puts the identifier in bold on its first line. Below it, one per line in a lighter color, come
+Each edge label puts the identifier in bold on its first line. Below it, one per line in the theme's `muted` color, come
 `[auto]` when the edge is automatic, or `[auto n]` when its state declares an order among two or more automatic
 edges, with `n` counted from 1 in that order, then the action name, `[async]` when the action or any guard is
 asynchronous, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in declaration order, `[onFailure ID]`
@@ -295,18 +295,19 @@ role transparent, such as `withCanvas("#ffffff00")` for a diagram with no backgr
 
 | Role | Default | What it colors |
 |------|---------|----------------|
-| `canvas` | `#ffffff` | the background, and the names written on terminal states |
+| `canvas` | `#ffffff` | the background |
 | `ink` | `#1b1f3a` | state names and outlines, the initial dot, the fill of terminal states, edge identifiers and titles |
 | `muted` | `#4f5677` | the arrows of edges that are not automatic, the text under an edge identifier, and the child machine in a sub-machine's title |
-| `stateFill` | `#ffffff` | the body of a state that is not terminal |
+| `stateFill` | `#ffffff` | the body of a state that is not terminal, and the names written on terminal states |
 | `automatic` | `#2457d6` | the arrow and identifier of an automatic edge |
 | `clusterFill` | `#f5f6fb` | the body of the region that holds a sub-machine |
 | `clusterBorder` | `#d4d8ea` | the outline of that region |
 | `watch` | `#a85a00` | the outline and text of a watch note, and its dashed line |
 | `watchFill` | `#fff6e5` | the body of a watch note |
 
-A terminal state is filled with `ink` and written in `canvas`, the reverse of the other states, so the two stay apart
-in any palette where state names can be read. The double outline marks a terminal state even where the colors do not.
+A terminal state is filled with `ink` and written in `stateFill`, the reverse of the other states, so keep `stateFill`
+opaque: a transparent one would hide the names of terminal states. The double outline marks a terminal state even
+where the colors do not.
 A theme changes colors only: the states, edges, labels, fonts, sizes and layout are the same in every theme.
 [Export from the command line](#export-from-the-command-line) and `GraphGoldens` always draw with the defaults.
 

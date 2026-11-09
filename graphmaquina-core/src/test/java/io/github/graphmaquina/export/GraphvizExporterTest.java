@@ -262,6 +262,39 @@ class GraphvizExporterTest {
                 "[recover " + entities + " -&gt; " + entities + "]") + "];"), rendered);
     }
 
+    /**
+     * Graphviz refuses an empty bold element and would drop the whole label, so an empty title, identifier or bound
+     * state is left out of the label rather than drawn in bold; the rest of the label stays.
+     */
+    @Test
+    void emptyTextIsLeftOutRatherThanDrawnInBold() {
+        GraphView child = new GraphView("Child/ChildStatus", "C", Set.of("D"), List.of("C", "D"),
+                List.of(move("C", "", "D")), List.of(), List.of());
+        TransitionView acting = new TransitionView("A", "", "", TransitionKind.ACTION, Optional.of("act"), List.of(),
+                false, Optional.empty(), Optional.empty());
+        GraphView view = new GraphView("", "A", Set.of(), List.of("A", ""), List.of(acting), List.of(), List.of(),
+                List.of(new SubmachineView("", child, Map.of())));
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("labeljust=l, label=<>];\n"), rendered);
+        assertTrue(rendered.contains("        label=<<font color=\"#4f5677\">: Child/ChildStatus</font>>;\n"),
+                rendered);
+        assertTrue(rendered.contains("s0_n0 -> s0_n1 [label=<>];"), rendered);
+        assertTrue(rendered.contains("n0 -> s0_n0 [label=<" + BR + "<font color=\"#4f5677\">act" + BR
+                + "</font>>, lhead=cluster_s0];"), rendered);
+        assertFalse(rendered.contains("<b></b>"), rendered);
+    }
+
+    /** A bound state and its child's name are escaped in the cluster's title like every other label text. */
+    @Test
+    void aClusterTitleIsEscaped() {
+        GraphView child = new GraphView("C&\"D", "C", Set.of(), List.of("C"), List.of(), List.of(), List.of());
+        GraphView view = new GraphView("X", "A<&>B", Set.of(), List.of("A<&>B"), List.of(), List.of(), List.of(),
+                List.of(new SubmachineView("A<&>B", child, Map.of())));
+        assertTrue(GraphvizExporter.render(view).contains(
+                "label=<<b>A&lt;&amp;&gt;B</b><font color=\"#4f5677\">: C&amp;&quot;D</font>>;\n"),
+                GraphvizExporter.render(view));
+    }
+
     @Test
     void multipleWatchesHaveSeparateNotes() {
         GraphView view = new GraphView("X", "A", Set.of(), List.of("A"), List.of(), List.of(), List.of(
@@ -301,7 +334,7 @@ class GraphvizExporterTest {
         assertTrue(rendered.contains("edge [color=\"#000003\", fontcolor=\"#000002\","), rendered);
         assertTrue(rendered.contains("initial [shape=point, width=0.14, height=0.14, fillcolor=\"#000002\", "
                 + "label=\"\"];"), rendered);
-        assertTrue(rendered.contains("[label=\"D2\", peripheries=2, fillcolor=\"#000002\", fontcolor=\"#000001\"]"),
+        assertTrue(rendered.contains("[label=\"D2\", peripheries=2, fillcolor=\"#000002\", fontcolor=\"#000004\"]"),
                 rendered);
         assertTrue(rendered.contains("<font color=\"#000003\">[auto]" + BR + "act" + BR + "</font>>, "
                 + "color=\"#000005\", fontcolor=\"#000005\""), rendered);
@@ -738,7 +771,7 @@ class GraphvizExporterTest {
         return "digraph " + baseQuote(name) + " {\n"
                 + "    graph [rankdir=LR, bgcolor=\"#ffffff\", pad=\"0.3\", nodesep=\"0.45\", ranksep=\"0.7\", "
                 + "fontname=Helvetica, fontsize=12, fontcolor=\"#1b1f3a\", labelloc=t, "
-                + "labeljust=l, label=<<b>" + baseHtml(name) + "</b>>];\n"
+                + "labeljust=l, label=<" + (name.isEmpty() ? "" : "<b>" + baseHtml(name) + "</b>") + ">];\n"
                 + "    node [shape=box, style=\"rounded,filled\", color=\"#1b1f3a\", fillcolor=\"#ffffff\", "
                 + "fontcolor=\"#1b1f3a\", fontname=Helvetica, fontsize=12, penwidth=1.2, "
                 + "margin=\"0.18,0.06\"];\n"
@@ -751,14 +784,15 @@ class GraphvizExporterTest {
      * left-aligned line per part in the muted color.
      */
     static String html(String identifier, String... parts) {
+        String bold = identifier.isEmpty() ? "" : "<b>" + identifier + "</b>";
         if (parts.length == 0) {
-            return "<<b>" + identifier + "</b>>";
+            return "<" + bold + ">";
         }
         StringBuilder lines = new StringBuilder();
         for (String part : parts) {
             lines.append(part).append(BR);
         }
-        return "<<b>" + identifier + "</b>" + BR + "<font color=\"#4f5677\">" + lines + "</font>>";
+        return "<" + bold + BR + "<font color=\"#4f5677\">" + lines + "</font>>";
     }
 
     // --- DOT escaping oracles (quote, restored to 278640e, and HTML-like labels) -----------------------------
@@ -774,11 +808,12 @@ class GraphvizExporterTest {
 
     /**
      * The text of an HTML-like label, written independently of production: the four XML specials as entities, line
-     * breaks normalized and ended as left-aligned lines, and U+FFFD for the characters XML 1.0 forbids.
+     * breaks normalized and ended as left-aligned lines, tabs as spaces, since Graphviz drops a tab, and U+FFFD for
+     * the characters XML 1.0 forbids.
      */
     static String baseHtml(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-                .replace("\r\n", "\n").replace("\r", "\n").replace("\n", BR)
+                .replace("\r\n", "\n").replace("\r", "\n").replace("\n", BR).replace("\t", " ")
                 .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x{FFFE}\\x{FFFF}]", "\uFFFD");
     }
 

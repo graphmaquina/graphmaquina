@@ -14,11 +14,12 @@ import lombok.NonNull;
  *
  * <p>The text opens with three default statements. {@code graph} lays the drawing out left to right and titles it
  * with the view's name in bold at the top left. {@code node} draws states as rounded boxes, and {@code edge} draws
- * arrows. Together they set the font {@code Helvetica}, the sizes and spacing, and the common colors. Each node or edge then carries only what
- * sets it apart. State names are escaped labels on internal node IDs. A terminal state is filled with the theme's
- * {@code ink}, written in its {@code canvas} color and drawn with a double outline. The initial state has an
- * incoming arrow from a solid dot, and each watch is a note in the theme's watch colors joined to its state by a
- * dashed line. Only declared edges are drawn; a rejection policy is a tooltip on its node, never an arrow.
+ * arrows. Together they set the font {@code Helvetica}, the sizes and spacing, and the common colors. Each node or
+ * edge then carries only what sets it apart. State names are escaped labels on internal node IDs. A terminal state is
+ * drawn as the reverse of the others, filled with the theme's {@code ink} and written in its {@code stateFill} color,
+ * with a double outline. The initial state has an incoming arrow from a solid dot, and each watch is a note in the
+ * theme's watch colors joined to its state by a dashed line. Only declared edges are drawn; a rejection policy is a
+ * tooltip on its node, never an arrow.
  *
  * <p>An edge's label is an HTML-like label: its identifier in bold on the first line, then one line per part, in
  * the theme's {@code muted} color: {@code [auto]} when the edge is automatic, or {@code [auto n]} when its state
@@ -30,8 +31,10 @@ import lombok.NonNull;
  * kind is its binary name without the package, such as {@code PublicationFailures$Unavailable}. The throwable types
  * of failsOn and of the rules are not drawn, and a rule adds no arrow and no node. An automatic edge's arrow and
  * identifier take the theme's {@code automatic} color. In an HTML-like label, {@code &}, {@code <}, {@code >} and
- * {@code "} are written as entities, a line break starts a new left-aligned line, and a control character that XML
- * forbids is drawn as U+FFFD. Every other text is a quoted string with backslashes, quotes and line breaks escaped.
+ * {@code "} are written as entities, a line break starts a new left-aligned line, a tab becomes a space, and a
+ * character that XML forbids, such as a control character, is drawn as U+FFFD; an empty title, state or identifier
+ * is left out rather than drawn in bold, which Graphviz refuses. Every other text is a quoted string with
+ * backslashes, quotes and line breaks escaped.
  *
  * <p>A state that holds a sub-machine is drawn as a cluster instead of a node: a rounded region in the theme's
  * {@code clusterFill} and {@code clusterBorder}, titled with the state in bold followed by {@code : <child>} in the
@@ -74,7 +77,7 @@ public final class GraphvizExporter {
         out.append("    graph [rankdir=LR, bgcolor=").append(quote(theme.canvas()))
                 .append(", pad=\"0.3\", nodesep=\"0.45\", ranksep=\"0.7\", fontname=").append(FONT)
                 .append(", fontsize=12, fontcolor=").append(quote(theme.ink()))
-                .append(", labelloc=t, labeljust=l, label=<<b>").append(html(view.name())).append("</b>>];\n");
+                .append(", labelloc=t, labeljust=l, label=<").append(bold(view.name())).append(">];\n");
         out.append("    node [shape=box, style=\"rounded,filled\", color=").append(quote(theme.ink()))
                 .append(", fillcolor=").append(quote(theme.stateFill())).append(", fontcolor=")
                 .append(quote(theme.ink())).append(", fontname=").append(FONT)
@@ -134,7 +137,7 @@ public final class GraphvizExporter {
                 out.append(indent).append(prefix).append(id).append(" [label=").append(quote(state));
                 if (view.terminals().contains(state)) {
                     out.append(", peripheries=2, fillcolor=").append(quote(theme.ink())).append(", fontcolor=")
-                            .append(quote(theme.canvas()));
+                            .append(quote(theme.stateFill()));
                 }
                 Optional<PolicyView> policy = policy(state);
                 if (policy.isPresent()) {
@@ -156,7 +159,7 @@ public final class GraphvizExporter {
                 String inner = indent + "    ";
                 SubmachineView submachine = view.submachines().get(j);
                 out.append(indent).append("subgraph ").append(cluster(j)).append(" {\n");
-                out.append(inner).append("label=<<b>").append(html(submachine.state())).append("</b><font color=")
+                out.append(inner).append("label=<").append(bold(submachine.state())).append("<font color=")
                         .append(quote(theme.muted())).append(">: ").append(html(submachine.child().name()))
                         .append("</font>>;\n");
                 out.append(inner).append("graph [style=\"rounded,filled\", color=")
@@ -336,7 +339,7 @@ public final class GraphvizExporter {
         transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id
                 + continuation(transition.failureContinues()) + "]"));
         transition.watch().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
-        StringBuilder label = new StringBuilder("<<b>").append(html(transition.transition())).append("</b>");
+        StringBuilder label = new StringBuilder("<").append(bold(transition.transition()));
         if (!parts.isEmpty()) {
             label.append(LINE).append("<font color=").append(quote(muted)).append(">");
             parts.forEach((String part) -> label.append(html(part)).append(LINE));
@@ -345,9 +348,15 @@ public final class GraphvizExporter {
         return label.append(">").toString();
     }
 
+    /** {@code text} in bold inside an HTML-like label, or nothing when it is empty: Graphviz refuses an empty bold. */
+    private static String bold(String text) {
+        return text.isEmpty() ? "" : "<b>" + html(text) + "</b>";
+    }
+
     /**
      * {@code text} inside an HTML-like label: the four XML specials as entities, each line break as the end of a
-     * left-aligned line, and U+FFFD for a character XML forbids, any of which would make Graphviz drop the label.
+     * left-aligned line, a tab as a space, since Graphviz drops tabs there, and U+FFFD for a character XML forbids,
+     * any of which would make Graphviz drop the label.
      */
     private static String html(String text) {
         StringBuilder out = new StringBuilder();
@@ -358,7 +367,8 @@ public final class GraphvizExporter {
                 case '>' -> out.append("&gt;");
                 case '"' -> out.append("&quot;");
                 case '\n' -> out.append(LINE);
-                default -> out.append((c < ' ' && c != '\t') || c == '\uFFFE' || c == '\uFFFF' ? '\uFFFD' : c);
+                case '\t' -> out.append(' ');
+                default -> out.append(c < ' ' || c == '\uFFFE' || c == '\uFFFF' ? '\uFFFD' : c);
             }
         }
         return out.toString();

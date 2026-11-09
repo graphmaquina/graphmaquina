@@ -9,17 +9,16 @@ import lombok.NonNull;
  * the roles you need with their {@code with} methods, each of which returns a copy with that one role changed:
  *
  * <pre>{@code
- * GraphvizTheme dark = GraphvizTheme.defaults()
- *         .withCanvas("#1b1f3a").withInk("#f3f4fb").withMuted("#b8bedb").withStateFill("#222747");
+ * GraphvizTheme green = GraphvizTheme.defaults().withInk("#0b3d2e").withAutomatic("#087a62");
  * }</pre>
  *
  * <p>The defaults are the light palette of graphmaquina.dev. Fonts, sizes and spacing are not part of a theme.
  *
- * @param canvas the background, and the names written on terminal states
+ * @param canvas the background
  * @param ink state names and outlines, the initial dot, the fill of terminal states, edge identifiers and titles
  * @param muted the arrows of edges that are not automatic, the text under an edge identifier, and the child
  *     machine in a sub-machine's title
- * @param stateFill the body of a state that is not terminal
+ * @param stateFill the body of a state that is not terminal, and the names written on terminal states
  * @param automatic the arrow and identifier of an automatic edge
  * @param clusterFill the body of the region that holds a sub-machine
  * @param clusterBorder the outline of that region

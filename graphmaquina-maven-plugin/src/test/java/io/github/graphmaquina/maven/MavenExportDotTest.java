@@ -107,7 +107,7 @@ class MavenExportDotTest {
                 parent.projectDirectory().resolve("consumer/target/graphmaquina/main/dot/book.Bookings.dot"),
                 StandardCharsets.UTF_8);
         assertTrue(bookings.contains("subgraph cluster"), bookings);
-        assertTrue(bookings.contains(": Payment/PaymentStatus\""), bookings);
+        assertTrue(bookings.contains(": Payment/PaymentStatus</font>>;"), bookings);
         assertTrue(parent.exists("producer/target/graphmaquina/main/dot/pay.Payments.dot"), result.output());
     }
 

@@ -138,7 +138,7 @@ class CrossModuleFunctionalTest {
         Path diagram = build.projectDirectory().resolve("consumer/build/graphmaquina/main/dot/book.Bookings.dot");
         String bookings = Files.readString(diagram, StandardCharsets.UTF_8);
         assertTrue(bookings.contains("subgraph cluster"), bookings);
-        assertTrue(bookings.contains(": Payment/PaymentStatus\""), bookings);
+        assertTrue(bookings.contains(": Payment/PaymentStatus</font>>;"), bookings);
         assertTrue(Files.isRegularFile(
                 build.projectDirectory().resolve("producer/build/graphmaquina/main/dot/pay.Payments.dot")));
     }
