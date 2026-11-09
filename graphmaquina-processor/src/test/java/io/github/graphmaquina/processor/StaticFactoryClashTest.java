@@ -107,6 +107,51 @@ class StaticFactoryClashTest {
                 erased.describe());
     }
 
+    /** A default {@code structure()} of Pages takes what the companion's static {@code structure()} takes: nothing. */
+    @Test
+    void sg504AStructureMethodTheFacadeDeclares() {
+        Map<String, String> sources = pages("    default String structure() { return \"pages\"; }\n");
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[" + DiagnosticCode.SG504
+                + "] structure() is the static structure() the generated PagesRuntime declares, which takes no"
+                + " parameter: give the method another name"),
+                result.errors(), result.describe());
+        assertEquals(line(sources, "fx.Pages", "default String structure()"), at(result, DiagnosticCode.SG504.name()),
+                result.describe());
+        assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
+    }
+
+    /** A {@code structure()} Pages inherits is reported at Pages, naming the interface that declares it. */
+    @Test
+    void sg504AStructureMethodTheFacadeInherits() {
+        Map<String, String> named = pages("");
+        named.put("fx.Named",
+                "package fx;\npublic interface Named {\n    default String structure() { return \"named\"; }\n}\n");
+        named.put("fx.Pages", named.get("fx.Pages").replace("extends Machine<Page, PageStatus, PageTransition>",
+                "extends Machine<Page, PageStatus, PageTransition>, Named"));
+
+        Compilation.Result inherited = Compilation.compileTyped(named);
+
+        assertEquals(List.of("[" + DiagnosticCode.SG504
+                + "] Pages inherits structure() from fx.Named, but the generated PagesRuntime declares a static"
+                + " structure(), which takes no parameter: give that method another name"),
+                inherited.errors(), inherited.describe());
+        assertEquals(line(named, "fx.Pages", "public interface Pages"), at(inherited, DiagnosticCode.SG504.name()),
+                inherited.describe());
+    }
+
+    /** A {@code structure} method that takes a parameter only overloads the companion's, so it compiles. */
+    @Test
+    void aStructureMethodThatTakesAParameterIsAccepted() {
+        Compilation.Result result = Compilation.compileTyped(
+                pages("    default String structure(Page page) { return \"pages\"; }\n"));
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
+    }
+
     /** The entity hosts the instance action of Docs, so {@code graph(Doc)} is what the companion declares. */
     @Test
     void sg504AnOperationNamedGraphThatTakesWhatTheCompanionsGraphTakes() {

@@ -26,8 +26,9 @@ import java.util.Objects;
  *
  * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher and over the
  * classpath the generation task of the source set holds — by convention the launcher of the JDK the source set's
- * javac compiles with and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the
- * generator's JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
+ * javac compiles with and the {@code graphmaquinaGenerator} configuration — or the export task, which takes the
+ * generation task's by convention, so the build's daemon JVM and the generator's JVM stay independent, and the
+ * classes of the application the export draws are loaded in the generator's JVM alone. Its command line is fixed — {@code <operation> --request <file>} — and so is its
  * contract: status {@code 0} means the operation completed, anything else means the build must fail rather than
  * compile against the vocabulary of a previous run. Whatever the generator wrote on its error stream is never
  * dropped: it ends the message of the exception this class throws when the operation failed, and it is a warning
@@ -101,7 +102,8 @@ public final class CodegenProcess {
      * Runs {@code operation} over {@code requestFile}. What a completed operation wrote on its error stream is
      * logged as a warning.
      *
-     * @param operation one of {@code generate}, {@code prepare-compile} and {@code complete-compile}
+     * @param operation one of {@code generate}, {@code prepare-compile}, {@code complete-compile} and
+     *        {@code export-dot}
      * @param requestFile the request the generator reads
      * @throws GradleException if the generator left a nonzero status, carrying what it reported
      */
@@ -176,6 +178,40 @@ public final class CodegenProcess {
         return json.toString();
     }
 
+    /**
+     * Writes {@code request} to {@code file} as the flat JSON object the generator's {@code export-dot} operation
+     * reads, creating the directory it belongs to.
+     *
+     * @param file the request file to write
+     * @param request the values of the request
+     * @throws UncheckedIOException if the file cannot be written
+     */
+    public static void writeExport(@NonNull Path file, ExportRequest request) {
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, encodeExport(request), StandardCharsets.UTF_8);
+        } catch (IOException failure) {
+            throw new UncheckedIOException("cannot write the StateGraph export request " + file, failure);
+        }
+    }
+
+    /**
+     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: its three
+     * members, in the order the codec lists them.
+     *
+     * @param request the values of the request
+     * @return the JSON document, ending with a newline
+     */
+    public static String encodeExport(@NonNull ExportRequest request) {
+        StringBuilder json = new StringBuilder(256);
+        json.append("{\n");
+        member(json, "classesOutput", request.classesOutput()).append(",\n");
+        array(json, "classpath", request.classpath()).append(",\n");
+        member(json, "outputDirectory", request.outputDirectory());
+        json.append("\n}\n");
+        return json.toString();
+    }
+
     private static StringBuilder member(StringBuilder json, String name, String value) {
         json.append("  ");
         string(json, name).append(": ");
@@ -239,6 +275,23 @@ public final class CodegenProcess {
             entries.add(file);
         }
         return entries;
+    }
+
+    /**
+     * The values of one export request, as the generator's flat JSON object carries them. Every path is an absolute
+     * execution path, written exactly as the build resolved it.
+     *
+     * @param classesOutput where javac wrote the classes of the source set, its published index among them
+     * @param classpath the runtime classpath of the source set, its class output and {@code graphmaquina-core} included
+     * @param outputDirectory where the diagrams are written
+     */
+    public record ExportRequest(@NonNull String classesOutput, List<String> classpath,
+            @NonNull String outputDirectory) {
+
+        /** Copies the classpath, so a request never reflects a later change of the collection it was built from. */
+        public ExportRequest {
+            classpath = List.copyOf(Objects.requireNonNull(classpath, "classpath"));
+        }
     }
 
     /**

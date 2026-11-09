@@ -7,8 +7,10 @@ a Graphviz diagram. None of it runs a guard, an action, a hook or a sub-machine'
 ## Contents
 
 - [Read a definition](#read-a-definition)
+- [A definition without collaborators](#a-definition-without-collaborators)
 - [Query the topology](#query-the-topology)
 - [Export Graphviz DOT](#export-graphviz-dot)
+- [Export from the command line](#export-from-the-command-line)
 - [Diagrams and contracts in tests](#diagrams-and-contracts-in-tests)
 
 ## Read a definition
@@ -110,6 +112,28 @@ An `ActionRef` and a `GuardRef` are either `Sync` or `Async` records, with their
 is a named hook that takes the entity and its `CommitContext`, which `run(entity, context)` calls, and
 `HookRef.of(name, consumer)` adapts a hook that takes the entity alone.
 
+## A definition without collaborators
+
+`TicketsRuntime.graph(new TicketActions())` needs the collaborators the machine calls, and a companion whose machine
+binds sub-machines also takes the definition of each of them. To read, test or draw the graph without any of them,
+every machine's companion also declares `structure()`:
+
+```java
+GraphDefinition<Ticket, TicketState, TicketTransition> structure = TicketsRuntime.structure();
+```
+
+`structure()` makes the very declarations `graph(...)` makes and takes nothing. It reads the definition of each
+machine it binds as a sub-machine from the `structure()` of that machine's companion, once, as `graph(...)` binds the
+one definition it is given. It binds no collaborator: an action, guard, hook or lookup that calls an instance member of
+a class throws `IllegalStateException` when it runs, naming that class and the companion, as in
+`com.example.tickets.TicketsRuntime.structure() binds no com.example.tickets.TicketActions: build a machine from
+com.example.tickets.TicketsRuntime.graph(...)`. A static member, a property read, such as a watch's peers or a
+sub-machine's child, and a built-in watch condition run as they do in `graph(...)`. Building, reading or exporting the
+definition runs none of them, so `structure()` answers every query on this page and draws exactly as `graph(...)` does.
+Build the machines you run from `graph(...)` or from the generated set. An instance method of the facade, declared or
+inherited, named `structure` and taking no parameter, would clash with this static method and is refused as
+[`SG504`](diagnostics.md).
+
 ## Query the topology
 
 `graph()` returns the `DirectedGraph<S, T>`, which keeps every declared state as a node and every edge as a
@@ -208,7 +232,8 @@ dot -Tsvg tickets.dot -o tickets.svg
 dot -Tpng tickets.dot -o tickets.png
 ```
 
-The Java exporter needs no external library or native executable. Image rendering is a separate step.
+The Java exporter needs no external library or native executable. Image rendering is a separate step. To have the
+build write these files for every machine instead, see [Export from the command line](#export-from-the-command-line).
 `GraphView.of(definition)` is a public record of what the exporter draws, as text: `name()`, `initial()`,
 `terminals()`, `states()`, `transitions()`, `policies()`, `watches()` and `submachines()`, so a renderer of your own
 can read the same data, and its public constructors build a view by hand. States come in node order, edges in definition order, rules and exits in declaration order,
@@ -225,7 +250,65 @@ kind and the `failsOn` types as binary names, the recovery identifier and whethe
 parent identifier it selects, in the given order.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
-running set.
+running set, or through [`TicketsRuntime.structure()`](#a-definition-without-collaborators) without any collaborator.
+
+## Export from the command line
+
+Both build adapters write the diagram of every machine a compilation declares, with no code of yours: they compile
+the source set, draw each machine through its companion's [`structure()`](#a-definition-without-collaborators) and write
+one DOT file per machine, holding exactly what `GraphvizExporter.render(GraphView.of(...))` returns for it.
+
+With Gradle:
+
+```sh
+./gradlew exportStateGraphDot
+./gradlew exportTestStateGraphDot
+```
+
+`exportStateGraphDot` exports the machines of `main`, `exportTestStateGraphDot` those of `test`, and
+`export<SourceSet>StateGraphDot` those of any other source set. Each task runs after the compilation of its source set
+and writes into `build/graphmaquina/<sourceSet>/dot`, which its `outputDirectory` property moves. A source set that
+declares no StateGraph processor skips its task, as it skips its generation, and the task is up to date while its
+inputs, the source set's runtime classpath and its compiled classes among them, and its output directory do not
+change.
+
+With Maven:
+
+```sh
+mvn graphmaquina:export-dot
+mvn graphmaquina:export-dot-test
+```
+
+`export-dot` exports the machines of the main compilation into `target/graphmaquina/main/dot`, and `export-dot-test`
+those of the test compilation into `target/graphmaquina/test/dot`. Neither goal is bound to a phase: each forks the
+default lifecycle up to `compile`, or `test-compile`, so the goal alone generates, compiles and completes that
+compilation first, and there is no need to run `compile` before it. Each does nothing where the
+[other goals](build-maven.md#the-eight-goals) do nothing, and for a compilation that publishes no StateGraph index.
+Maven resolves the `graphmaquina:` prefix only in a project that declares the plugin. In a multi-module build where
+some modules do not declare it, run the goal from the parent by the plugin's coordinates,
+`mvn io.github.graphmaquina:graphmaquina-maven-plugin:<version>:export-dot`: every module resolves them, and each
+module whose compilation publishes no index is skipped.
+
+What every export writes:
+
+- One file per machine of the compilation, named after the qualified name of its facade, such as
+  `com.example.tickets.Tickets.dot`, in UTF-8 with LF line endings. The path of each file written is printed.
+- The directory belongs to the export: before writing, it removes the `.dot` files directly in it, so a machine you
+  renamed or removed leaves no diagram behind. Nothing else there is touched.
+- A machine bound as a sub-machine is drawn as a cluster in its parent's diagram, a machine of another module or jar
+  included, and has a file of its own in the export of the compilation that declares it.
+- Only machines declared with `@GenerateGraphApi` have a companion, so only they are exported. Draw a graph built with
+  the [programmatic DSL](dsl.md) with `GraphvizExporter` in code, as above; a set has no graph of its own.
+
+The machines are loaded by the generator, in a JVM of its own, over the runtime classpath of the compilation, and
+drawn with the `graphmaquina-core` that classpath holds. Loading a companion initializes it and the enums its graph
+names; no action, guard, hook or lookup runs. A companion that cannot be loaded or drawn, such as one whose machine's
+enum throws while it initializes, fails the export, naming the machine and the cause, and nothing is written. Then
+render the files you need:
+
+```sh
+dot -Tsvg build/graphmaquina/main/dot/com.example.tickets.Tickets.dot -o tickets.svg
+```
 
 ## Diagrams and contracts in tests
 

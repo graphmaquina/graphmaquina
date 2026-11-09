@@ -501,7 +501,7 @@ class MavenPluginIntegrationTest {
         assertEquals(text(pom, "artifactId"), text(descriptor, "artifactId"));
         assertEquals(text(pom, "version"), text(descriptor, "version"));
         assertEquals(List.of("generate", "prepare", "complete", "generate-test", "prepare-test",
-                "complete-test"), goals(descriptor));
+                "complete-test", "export-dot", "export-dot-test"), goals(descriptor));
 
         // Maven's own API and core are supplied by Maven at execution time and must not be published; the
         // generator is a dependency of the plugin alone, so nothing it carries reaches a consumer's classpath.

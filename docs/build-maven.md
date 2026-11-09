@@ -118,14 +118,14 @@ reads `<testRelease>`, `<testSource>` and `<testTarget>`, or their `maven.compil
 
 ## Contents
 
-- [The six goals](#the-six-goals)
+- [The eight goals](#the-eight-goals)
 - [The compiler execution the goals read](#the-compiler-execution-the-goals-read)
 - [Outputs](#outputs)
 - [Sources, release and encoding](#sources-release-and-encoding)
 - [Configuration parameters](#configuration-parameters)
 - [What the Maven adapter requires, and refuses](#what-the-maven-adapter-requires-and-refuses)
 
-## The six goals
+## The eight goals
 
 | Goal | Phase | What it does |
 | --- | --- | --- |
@@ -135,19 +135,22 @@ reads `<testRelease>`, `<testSource>` and `<testTarget>`, or their `maven.compil
 | `generate-test` | `generate-test-sources` | the same for the test source set, into `target/generated-test-sources/graphmaquina` |
 | `prepare-test` | `process-test-sources` | the same for the test source set |
 | `complete-test` | `test-compile` | the same for the test source set |
+| `export-dot` | none; forks the lifecycle up to `compile` first | writes the Graphviz DOT of every machine of the main compilation into `target/graphmaquina/main/dot`, as [Export from the command line](graph-inspection.md#export-from-the-command-line) describes |
+| `export-dot-test` | none; forks the lifecycle up to `test-compile` first | the same for the test compilation, into `target/graphmaquina/test/dot` |
 
 The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for example
 `mvn graphmaquina:generate`.
 
 A goal does nothing, and says so at info level (`StateGraph skips <compilationId>: …`), for a compilation the build
-switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for the three
-main goals, `maven.test.skip` or `<skip>` for the three test goals. So does it for a compilation the default
+switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for the four
+main goals, `maven.test.skip` or `<skip>` for the four test goals. So does it for a compilation the default
 lifecycle runs no execution of the compiler's goal for, as when `default-compile` is bound to the phase `none`, or
 to a phase of another lifecycle such as `pre-site`, and nothing else compiles the main sources. Nothing is
-generated, retired or published then. All six do nothing in a project packaged as `pom`, such as the parent of a
-multi-module build whose modules inherit the executions.
+generated, retired or published then. All eight do nothing in a project packaged as `pom`, such as the parent of a
+multi-module build whose modules inherit the executions, and the two export goals also do nothing for a compilation
+that publishes no StateGraph index.
 
-The six goals across the default lifecycle's phases:
+The six lifecycle goals across the default lifecycle's phases:
 
 ```mermaid
 flowchart LR
@@ -218,6 +221,7 @@ written, as the [compiler arguments](#what-the-maven-adapter-requires-and-refuse
 | `target/graphmaquina/main/{request,annotation-manifest,owned-outputs,processor-inventory}.json` | the main cycle's request, manifest, sealed inventory and the processor's own inventory |
 | `target/graphmaquina/main/annotation-manifest.pending.json` | the generation's recovery ownership; not a manifest javac may consume |
 | `target/graphmaquina/main/owned-outputs.pending.json` | the pending inventory: what the preparation is retiring; left behind by a compilation javac rejects, and consumed by the next preparation |
+| `target/graphmaquina/main/dot`, `target/graphmaquina/main/export-request.json` | the diagrams `export-dot` writes and the request it wrote for the generator |
 | `target/graphmaquina/test/…` | the same for the test compilation |
 | `target/classes/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 | `target/classes/META-INF/graphmaquina/pending-exports.json` | the provisional index the processor writes during javac, which `complete` promotes to `exports.json` |
@@ -309,8 +313,9 @@ the configured one, as listed below.
 | `compilationId` | `graphmaquina.compilationId` | `groupId:artifactId:main`, and `groupId:artifactId:test` for the test source set; a value that is set, as through `-Dgraphmaquina.compilationId`, applies to the main and the test compilation alike |
 
 Both parameters can also be set in the `<configuration>` of one execution, which is how the main and the test
-compilation get distinct identities of your choice. Each goal binds to its default phase, the one in the table of
-[the six goals](#the-six-goals), so an execution may leave `<phase>` out. The goals are thread-safe, so a parallel
+compilation get distinct identities of your choice. Each lifecycle goal binds to its default phase, the one in the
+table of [the eight goals](#the-eight-goals), so an execution may leave `<phase>` out; the two export goals bind to
+none. The goals are thread-safe, so a parallel
 build (`mvn -T`) can run them, and the plugin requires Maven to run on Java 21 or later. The generator is a dependency of
 the plugin, at the plugin's own version, which Maven resolves with the plugin from the plugin repositories. `mvn -X` logs the generator's command line, and anything the
 generator writes to its error stream while it succeeds is logged as a warning.

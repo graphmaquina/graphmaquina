@@ -55,6 +55,24 @@ class CodegenProcessTest {
                 List.copyOf(decoded.keySet()));
     }
 
+    /** The export request carries its three members in the order the generator's codec documents them. */
+    @Test
+    void encodesTheExportRequestInTheDocumentedOrder() {
+        String json = CodegenProcess.encodeExport(new CodegenProcess.ExportRequest("/p q/classes",
+                List.of("/p q/classes", "/r/\"core\".jar"), "/p q/dot ñ"));
+
+        assertEquals("""
+                {
+                  "classesOutput": "/p q/classes",
+                  "classpath": [
+                    "/p q/classes",
+                    "/r/\\"core\\".jar"
+                  ],
+                  "outputDirectory": "/p q/dot ñ"
+                }
+                """, json);
+    }
+
     /**
      * The release and the encoding of the compilation follow the eight members when the build knows them: the
      * release as a number and the encoding as the name of its charset.

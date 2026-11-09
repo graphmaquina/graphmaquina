@@ -37,7 +37,7 @@ publishing {
             from(components["java"])
             pom {
                 name.set("graphmaquina-codegen")
-                description.set("Pre-javac generator that resolves typed graph annotations and publishes deterministic compilation manifests")
+                description.set("Pre-javac generator that resolves typed graph annotations, publishes deterministic compilation manifests and exports Graphviz DOT")
             }
         }
     }

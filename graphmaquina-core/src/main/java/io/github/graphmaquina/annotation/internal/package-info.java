@@ -1,6 +1,6 @@
 /**
- * Internal metadata shared by StateGraph generators and annotation processors, and the registry of every diagnostic
- * code they and the DSL report.
+ * Internal metadata shared by StateGraph generators and annotation processors, the receiver the generated companions
+ * stand in for an unbound collaborator with, and the registry of every diagnostic code they and the DSL report.
  *
  * <p>This package is an implementation SPI and is not an application extension point.
  */
