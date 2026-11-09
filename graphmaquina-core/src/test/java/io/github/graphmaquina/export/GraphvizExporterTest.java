@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -51,8 +52,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The Graphviz text of a {@code GraphView}: the golden output of the order graph, what the view carries, parallel
- * edges, terminals and initial states, the escaping of user text, watch notes, and the recovery rules of an edge,
- * which the view keeps in declaration order and the label draws between the guards and the fallback.
+ * edges, terminals and initial states, the escaping of user text, watch notes, the recovery rules of an edge, which
+ * the view keeps in declaration order and the label draws between the guards and the fallback, and the colors of a
+ * theme, each of which reaches the text only through its role.
  */
 class GraphvizExporterTest {
 
@@ -152,40 +154,32 @@ class GraphvizExporterTest {
                 .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED).endTransition()
                 .build();
         String rendered = GraphvizExporter.render(GraphView.of(graph));
-        assertTrue(rendered.contains("[label=\"SUBMIT A [onFailure DISCARD]\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"PUBLISH B [onFailure DISCARD]\"]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("SUBMIT", "A", "[onFailure DISCARD]") + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("PUBLISH", "B", "[onFailure DISCARD]") + "]"), rendered);
     }
 
     @Test
     void terminalWithNoOutgoingEdgesIsDeclared() {
         GraphView view = new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
                 List.of(), List.of());
-        assertEquals("""
-                digraph "X" {
-                    rankdir=LR;
-                    initial [shape=point, label=""];
-                    n0 [label="A", shape=ellipse];
-                    n1 [label="B", shape=doublecircle];
-                    initial -> n0;
-                    n0 -> n1 [label="GO"];
-                }
-                """, GraphvizExporter.render(view));
+        assertEquals(opening("X")
+                + "    n0 [label=\"A\"];\n"
+                + "    n1 [label=\"B\"" + TERMINAL + "];\n"
+                + "    initial -> n0;\n"
+                + "    n0 -> n1 [label=<<b>GO</b>>];\n"
+                + "}\n", GraphvizExporter.render(view));
     }
 
     @Test
     void nonFirstInitialStateDoesNotReorderTheStates() {
         GraphView view = new GraphView("X", "B", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
                 List.of(), List.of());
-        assertEquals("""
-                digraph "X" {
-                    rankdir=LR;
-                    initial [shape=point, label=""];
-                    n0 [label="A", shape=ellipse];
-                    n1 [label="B", shape=doublecircle];
-                    initial -> n1;
-                    n0 -> n1 [label="GO"];
-                }
-                """, GraphvizExporter.render(view));
+        assertEquals(opening("X")
+                + "    n0 [label=\"A\"];\n"
+                + "    n1 [label=\"B\"" + TERMINAL + "];\n"
+                + "    initial -> n1;\n"
+                + "    n0 -> n1 [label=<<b>GO</b>>];\n"
+                + "}\n", GraphvizExporter.render(view));
     }
 
     /** Only declared edges are drawn: one arrow per edge of the view, whatever the state policies say. */
@@ -197,7 +191,7 @@ class GraphvizExporterTest {
         assertEquals(1,
                 rendered.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count());
         assertTrue(rendered.contains(
-                "n1 [label=\"B\", shape=doublecircle, tooltip=\"otherwise: no way back; GO: B is final\"];"),
+                "n1 [label=\"B\"" + TERMINAL + ", tooltip=\"otherwise: no way back; GO: B is final\"];"),
                 rendered);
     }
 
@@ -205,27 +199,23 @@ class GraphvizExporterTest {
     void isolatedStatesAndUnorderedTerminalsAreAlwaysDeclaredDeterministically() {
         GraphView view = new GraphView("X", "initial", Set.of("Z", "B"), List.of("island"), List.of(),
                 List.of(), List.of(new WatchView("watch0", "Peer", List.of())));
-        assertEquals("""
-                digraph "X" {
-                    rankdir=LR;
-                    initial [shape=point, label=""];
-                    n0 [label="island", shape=ellipse];
-                    n1 [label="initial", shape=ellipse];
-                    n2 [label="B", shape=doublecircle];
-                    n3 [label="Z", shape=doublecircle];
-                    n4 [label="watch0", shape=ellipse];
-                    initial -> n1;
-                    watch0 [shape=note, label="watches Peer"];
-                    n4 -> watch0 [style=dashed, arrowhead=none];
-                }
-                """, GraphvizExporter.render(view));
+        assertEquals(opening("X")
+                + "    n0 [label=\"island\"];\n"
+                + "    n1 [label=\"initial\"];\n"
+                + "    n2 [label=\"B\"" + TERMINAL + "];\n"
+                + "    n3 [label=\"Z\"" + TERMINAL + "];\n"
+                + "    n4 [label=\"watch0\"];\n"
+                + "    initial -> n1;\n"
+                + "    watch0 [" + NOTE + ", label=\"watches Peer\"];\n"
+                + "    n4 -> watch0 [" + DASHED + "];\n"
+                + "}\n", GraphvizExporter.render(view));
     }
 
     @Test
     void initialCanAlsoBeTerminalWithoutAnyEdges() {
         String rendered = GraphvizExporter.render(
                 new GraphView("X", "done", Set.of("done"), List.of(), List.of(), List.of(), List.of()));
-        assertTrue(rendered.contains("n0 [label=\"done\", shape=doublecircle];"), rendered);
+        assertTrue(rendered.contains("n0 [label=\"done\"" + TERMINAL + "];"), rendered);
         assertTrue(rendered.contains("initial -> n0;"), rendered);
     }
 
@@ -233,6 +223,7 @@ class GraphvizExporterTest {
     void userTextIsEscapedAndNeverUsedAsNodeIds() {
         String special = "quote\" slash\\N\r\nnext\rline\n雪";
         String escaped = "quote\\\" slash\\\\N\\nnext\\nline\\n雪";
+        String inHtml = "quote&quot; slash\\N" + BR + "next" + BR + "line" + BR + "雪";
         GraphView view = new GraphView(special, special, Set.of("n0"), List.of(special, "n0"), List.of(
                 new TransitionView(special, special, "n0", TransitionKind.ACTION, Optional.of(special),
                         List.of(special), true, Optional.of(special), Optional.of(special))),
@@ -240,13 +231,68 @@ class GraphvizExporterTest {
                 List.of(new WatchView(special, special, List.of())));
         String rendered = GraphvizExporter.render(view);
         assertTrue(rendered.startsWith("digraph \"" + escaped + "\" {\n"), rendered);
-        assertTrue(rendered.contains("n0 [label=\"" + escaped + "\", shape=ellipse];"), rendered);
-        assertTrue(rendered.contains("n1 [label=\"n0\", shape=doublecircle, tooltip=\"otherwise: " + escaped + "\"];"),
+        assertTrue(rendered.contains("label=<<b>" + inHtml + "</b>>];\n"), rendered);
+        assertTrue(rendered.contains("n0 [label=\"" + escaped + "\"];"), rendered);
+        assertTrue(rendered.contains("n1 [label=\"n0\"" + TERMINAL + ", tooltip=\"otherwise: " + escaped + "\"];"),
                 rendered);
-        assertTrue(rendered.contains("n0 -> n1 [label=\"" + escaped + " " + escaped + " [async] [if " + escaped
-                + "] [onFailure " + escaped + "] [watches " + escaped + "]\"];"), rendered);
-        assertTrue(rendered.contains("watch0 [shape=note, label=\"watches " + escaped + "\"];"), rendered);
+        assertTrue(rendered.contains("n0 -> n1 [label=" + html(inHtml, inHtml, "[async]", "[if " + inHtml + "]",
+                "[onFailure " + inHtml + "]", "[watches " + inHtml + "]") + "];"), rendered);
+        assertTrue(rendered.contains("watch0 [" + NOTE + ", label=\"watches " + escaped + "\"];"), rendered);
         assertFalse(rendered.contains("\r"), rendered);
+    }
+
+    /**
+     * The four XML specials of an HTML-like label are entities wherever user text enters one, the arrow of a recovery
+     * part included, so Graphviz never drops a label; quoted strings keep them as they are.
+     */
+    @Test
+    void xmlSpecialsAreEntitiesInHtmlLabels() {
+        String special = "A<&>\"B";
+        String entities = "A&lt;&amp;&gt;&quot;B";
+        GraphView view = new GraphView(special, special, Set.of("n0"), List.of(special, "n0"), List.of(
+                new TransitionView(special, special, "n0", TransitionKind.ACTION, Optional.of(special),
+                        List.of(special), false, Optional.empty(), Optional.empty(),
+                        List.of(new RecoveryView("p." + special, special, List.of(), false)), false,
+                        Optional.empty(), false)),
+                List.of(), List.of());
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("label=<<b>" + entities + "</b>>];\n"), rendered);
+        assertTrue(rendered.contains("n0 [label=\"A<&>\\\"B\"];"), rendered);
+        assertTrue(rendered.contains("n0 -> n1 [label=" + html(entities, entities, "[if " + entities + "]",
+                "[recover " + entities + " -&gt; " + entities + "]") + "];"), rendered);
+    }
+
+    /**
+     * Graphviz refuses an empty bold element and would drop the whole label, so an empty title, identifier or bound
+     * state is left out of the label rather than drawn in bold; the rest of the label stays.
+     */
+    @Test
+    void emptyTextIsLeftOutRatherThanDrawnInBold() {
+        GraphView child = new GraphView("Child/ChildStatus", "C", Set.of("D"), List.of("C", "D"),
+                List.of(move("C", "", "D")), List.of(), List.of());
+        TransitionView acting = new TransitionView("A", "", "", TransitionKind.ACTION, Optional.of("act"), List.of(),
+                false, Optional.empty(), Optional.empty());
+        GraphView view = new GraphView("", "A", Set.of(), List.of("A", ""), List.of(acting), List.of(), List.of(),
+                List.of(new SubmachineView("", child, Map.of())));
+        String rendered = GraphvizExporter.render(view);
+        assertTrue(rendered.contains("labeljust=l, label=<>];\n"), rendered);
+        assertTrue(rendered.contains("        label=<<font color=\"#4f5677\">: Child/ChildStatus</font>>;\n"),
+                rendered);
+        assertTrue(rendered.contains("s0_n0 -> s0_n1 [label=<>];"), rendered);
+        assertTrue(rendered.contains("n0 -> s0_n0 [label=<" + BR + "<font color=\"#4f5677\">act" + BR
+                + "</font>>, lhead=cluster_s0];"), rendered);
+        assertFalse(rendered.contains("<b></b>"), rendered);
+    }
+
+    /** A bound state and its child's name are escaped in the cluster's title like every other label text. */
+    @Test
+    void aClusterTitleIsEscaped() {
+        GraphView child = new GraphView("C&\"D", "C", Set.of(), List.of("C"), List.of(), List.of(), List.of());
+        GraphView view = new GraphView("X", "A<&>B", Set.of(), List.of("A<&>B"), List.of(), List.of(), List.of(),
+                List.of(new SubmachineView("A<&>B", child, Map.of())));
+        assertTrue(GraphvizExporter.render(view).contains(
+                "label=<<b>A&lt;&amp;&gt;B</b><font color=\"#4f5677\">: C&amp;&quot;D</font>>;\n"),
+                GraphvizExporter.render(view));
     }
 
     @Test
@@ -254,10 +300,51 @@ class GraphvizExporterTest {
         GraphView view = new GraphView("X", "A", Set.of(), List.of("A"), List.of(), List.of(), List.of(
                 new WatchView("A", "Peer1", List.of()), new WatchView("A", "Peer2", List.of())));
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("watch0 [shape=note, label=\"watches Peer1\"];"), rendered);
-        assertTrue(rendered.contains("watch1 [shape=note, label=\"watches Peer2\"];"), rendered);
-        assertTrue(rendered.contains("n0 -> watch0 [style=dashed, arrowhead=none];"), rendered);
-        assertTrue(rendered.contains("n0 -> watch1 [style=dashed, arrowhead=none];"), rendered);
+        assertTrue(rendered.contains("watch0 [" + NOTE + ", label=\"watches Peer1\"];"), rendered);
+        assertTrue(rendered.contains("watch1 [" + NOTE + ", label=\"watches Peer2\"];"), rendered);
+        assertTrue(rendered.contains("n0 -> watch0 [" + DASHED + "];"), rendered);
+        assertTrue(rendered.contains("n0 -> watch1 [" + DASHED + "];"), rendered);
+    }
+
+    /**
+     * Every color of a drawing comes from its theme, each through its role: with nine colors of its own, none of
+     * the defaults remains, and each one sits where its role says.
+     */
+    @Test
+    void everyColorComesFromItsRoleInTheTheme() {
+        GraphvizTheme theme = new GraphvizTheme("#000001", "#000002", "#000003", "#000004", "#000005", "#000006",
+                "#000007", "#000008", "#000009");
+        GraphView child = new GraphView("Child/ChildStatus", "C", Set.of("D"), List.of("C", "D"),
+                List.of(move("C", "END", "D")), List.of(), List.of());
+        TransitionView automatic = new TransitionView("A", "GO", "B", TransitionKind.ACTION, Optional.of("act"),
+                List.of(), false, Optional.empty(), Optional.empty(), List.of(), true, Optional.empty(), false);
+        GraphView view = new GraphView("X", "A", Set.of("D2"), List.of("A", "B", "D2"),
+                List.of(automatic, move("B", "DONE", "D2")), List.of(),
+                List.of(new WatchView("A", "Peer", List.of())),
+                List.of(new SubmachineView("B", child, Map.of("D", "DONE"))));
+        String rendered = GraphvizExporter.render(view, theme);
+        for (String color : List.of("#ffffff", "#1b1f3a", "#4f5677", "#2457d6", "#f5f6fb", "#d4d8ea", "#a85a00",
+                "#fff6e5")) {
+            assertFalse(rendered.contains(color), color + "\n" + rendered);
+        }
+        assertTrue(rendered.contains("graph [rankdir=LR, bgcolor=\"#000001\","), rendered);
+        assertTrue(rendered.contains("fontsize=12, fontcolor=\"#000002\", labelloc=t"), rendered);
+        assertTrue(rendered.contains("node [shape=box, style=\"rounded,filled\", color=\"#000002\", "
+                + "fillcolor=\"#000004\", fontcolor=\"#000002\","), rendered);
+        assertTrue(rendered.contains("edge [color=\"#000003\", fontcolor=\"#000002\","), rendered);
+        assertTrue(rendered.contains("initial [shape=point, width=0.14, height=0.14, fillcolor=\"#000002\", "
+                + "label=\"\"];"), rendered);
+        assertTrue(rendered.contains("[label=\"D2\", peripheries=2, fillcolor=\"#000002\", fontcolor=\"#000004\"]"),
+                rendered);
+        assertTrue(rendered.contains("<font color=\"#000003\">[auto]" + BR + "act" + BR + "</font>>, "
+                + "color=\"#000005\", fontcolor=\"#000005\""), rendered);
+        assertTrue(rendered.contains("label=<<b>B</b><font color=\"#000003\">: Child/ChildStatus</font>>;\n"),
+                rendered);
+        assertTrue(rendered.contains("graph [style=\"rounded,filled\", color=\"#000007\", fillcolor=\"#000006\", "
+                + "fontsize=11, penwidth=1.2];"), rendered);
+        assertTrue(rendered.contains("watch0 [shape=note, style=filled, color=\"#000008\", fillcolor=\"#000009\", "
+                + "fontcolor=\"#000008\", label=\"watches Peer\"];"), rendered);
+        assertTrue(rendered.contains("n0 -> watch0 [style=dashed, arrowhead=none, color=\"#000008\"];"), rendered);
     }
 
     // --- recovery rules -----------------------------------------------------------------------------------
@@ -277,12 +364,12 @@ class GraphvizExporterTest {
             List.of("io.github.graphmaquina.fixtures.RecoveryFixtures$ProviderRejectedException"), false);
 
     private static final String UNAVAILABLE_FRAGMENT =
-            "[recover RecoveryFixtures$PublicationFailures$Unavailable -> SCHEDULE_RETRY]";
+            "[recover RecoveryFixtures$PublicationFailures$Unavailable -&gt; SCHEDULE_RETRY]";
 
     private static final String REJECTED_FRAGMENT =
-            "[recover RecoveryFixtures$PublicationFailures$Rejected -> RECORD_REJECTION]";
+            "[recover RecoveryFixtures$PublicationFailures$Rejected -&gt; RECORD_REJECTION]";
 
-    /** One rule is one fragment after the action, naming its kind by binary name without the package. */
+    /** One rule is one line after the action, naming its kind by binary name without the package. */
     @Test
     void oneRuleIsOneFragmentOfItsEdgeLabel() {
         GraphView view = GraphView.of(RecoveryFixtures.graph(
@@ -291,15 +378,15 @@ class GraphvizExporterTest {
         assertEquals(List.of(new RecoveryView(UNAVAILABLE_RULE.kind(), "SCHEDULE_RETRY", List.of(), false)),
                 edge(view, "READY", "PUBLISH").recoveries());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("    n0 -> n1 [label=\"PUBLISH publish " + UNAVAILABLE_FRAGMENT + "\"];\n"),
-                rendered);
-        assertEquals(5 + view.states().size() + view.transitions().size(), rendered.lines().count(), rendered);
+        assertTrue(rendered.contains("    n0 -> n1 [label=" + html("PUBLISH", "publish", UNAVAILABLE_FRAGMENT)
+                + "];\n"), rendered);
+        assertEquals(7 + view.states().size() + view.transitions().size(), rendered.lines().count(), rendered);
     }
 
     /**
      * The example's two rules follow the action in the order they were declared and precede the fallback. No
      * throwable type is drawn, neither a rule's nor the failsOn's, no other edge carries a rule, and the rules add
-     * no arrow and no node: the text keeps its five fixed lines, one per state and one per declared edge.
+     * no arrow and no node: the text keeps its seven fixed lines, one per state and one per declared edge.
      */
     @Test
     void severalRulesKeepTheirDeclarationOrderBeforeTheFallback() {
@@ -311,10 +398,10 @@ class GraphvizExporterTest {
             }
         }
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("    n0 -> n1 [label=\"PUBLISH publish " + UNAVAILABLE_FRAGMENT + " "
-                + REJECTED_FRAGMENT + " [onFailure MARK_INTEGRATION_FAILED]\"];\n"), rendered);
+        assertTrue(rendered.contains("    n0 -> n1 [label=" + html("PUBLISH", "publish", UNAVAILABLE_FRAGMENT,
+                REJECTED_FRAGMENT, "[onFailure MARK_INTEGRATION_FAILED]") + "];\n"), rendered);
         assertFalse(rendered.contains("Exception"), rendered);
-        assertEquals(5 + view.states().size() + view.transitions().size(), rendered.lines().count(), rendered);
+        assertEquals(7 + view.states().size() + view.transitions().size(), rendered.lines().count(), rendered);
     }
 
     /**
@@ -336,8 +423,8 @@ class GraphvizExporterTest {
         assertEquals(List.of(UNAVAILABLE_RULE, REJECTED_RULE), edge(declared, "READY", "PUBLISH").recoveries());
         assertEquals(List.of(REJECTED_RULE, UNAVAILABLE_RULE), edge(reordered, "READY", "PUBLISH").recoveries());
         String rendered = GraphvizExporter.render(reordered);
-        assertTrue(rendered.contains("    n0 -> n1 [label=\"PUBLISH publish " + REJECTED_FRAGMENT + " "
-                + UNAVAILABLE_FRAGMENT + "\"];\n"), rendered);
+        assertTrue(rendered.contains("    n0 -> n1 [label=" + html("PUBLISH", "publish", REJECTED_FRAGMENT,
+                UNAVAILABLE_FRAGMENT) + "];\n"), rendered);
         for (boolean reversed : List.of(false, true)) {
             String order = reversed ? "reversed" : "declared";
             assertEquals(List.of(TicketChange.SCHEDULE_RETRY, Optional.of(PublicationFailures.Unavailable.class),
@@ -359,38 +446,39 @@ class GraphvizExporterTest {
                 edge(view, "RETRY_PENDING", "PUBLISH").recoveries());
         assertEquals(List.of(), edge(view, "INTEGRATION_FAILED", "PUBLISH").recoveries());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("    n0 -> n1 [label=\"PUBLISH publish " + UNAVAILABLE_FRAGMENT + " "
-                + REJECTED_FRAGMENT + "\"];\n"), rendered);
-        assertTrue(rendered.contains("    n2 -> n1 [label=\"PUBLISH publish " + REJECTED_FRAGMENT + "\"];\n"),
-                rendered);
-        assertTrue(rendered.contains("    n4 -> n1 [label=\"PUBLISH publish\"];\n"), rendered);
+        assertTrue(rendered.contains("    n0 -> n1 [label=" + html("PUBLISH", "publish", UNAVAILABLE_FRAGMENT,
+                REJECTED_FRAGMENT) + "];\n"), rendered);
+        assertTrue(rendered.contains("    n2 -> n1 [label=" + html("PUBLISH", "publish", REJECTED_FRAGMENT)
+                + "];\n"), rendered);
+        assertTrue(rendered.contains("    n4 -> n1 [label=" + html("PUBLISH", "publish") + "];\n"), rendered);
     }
 
     static Stream<Arguments> recoveryLabels() {
         List<RecoveryView> rules = List.of(new RecoveryView("a.b.First", "R1", List.of("a.b.Thrown"), false),
                 new RecoveryView("Outer$Second", "R2", List.of(), false));
-        String fragments = "[recover First -> R1] [recover Outer$Second -> R2]";
+        String first = "[recover First -&gt; R1]";
+        String second = "[recover Outer$Second -&gt; R2]";
         return Stream.of(
                 Arguments.of("every part", labeled(List.of("g1", "g2"), true, Optional.of("F"),
                         Optional.of("Peer: c"), rules),
-                        "GO act [async] [if g1, g2] " + fragments + " [onFailure F] [watches Peer: c]"),
+                        List.of("act", "[async]", "[if g1, g2]", first, second, "[onFailure F]", "[watches Peer: c]")),
                 Arguments.of("rules alone", labeled(List.of(), false, Optional.empty(), Optional.empty(), rules),
-                        "GO act " + fragments),
+                        List.of("act", first, second)),
                 Arguments.of("guards without a fallback", labeled(List.of("g1"), false, Optional.empty(),
-                        Optional.empty(), rules), "GO act [if g1] " + fragments),
+                        Optional.empty(), rules), List.of("act", "[if g1]", first, second)),
                 Arguments.of("a fallback without guards", labeled(List.of(), false, Optional.of("F"),
-                        Optional.empty(), rules), "GO act " + fragments + " [onFailure F]"),
+                        Optional.empty(), rules), List.of("act", first, second, "[onFailure F]")),
                 Arguments.of("a watch without a fallback", labeled(List.of(), false, Optional.empty(),
-                        Optional.of("Peer: c"), rules), "GO act " + fragments + " [watches Peer: c]"),
+                        Optional.of("Peer: c"), rules), List.of("act", first, second, "[watches Peer: c]")),
                 Arguments.of("no rules", labeled(List.of("g1", "g2"), true, Optional.of("F"),
                         Optional.of("Peer: c"), List.of()),
-                        "GO act [async] [if g1, g2] [onFailure F] [watches Peer: c]"),
+                        List.of("act", "[async]", "[if g1, g2]", "[onFailure F]", "[watches Peer: c]")),
                 Arguments.of("aContinuingRouteIsMarked", continuing(true, true),
-                        "GO act [recover First -> R1 continues] [recover Outer$Second -> R2] [onFailure F continues]"),
+                        List.of("act", "[recover First -&gt; R1 continues]", second, "[onFailure F continues]")),
                 Arguments.of("a continuing rule alone", continuing(true, false),
-                        "GO act [recover First -> R1 continues] [recover Outer$Second -> R2] [onFailure F]"),
+                        List.of("act", "[recover First -&gt; R1 continues]", second, "[onFailure F]")),
                 Arguments.of("a continuing fallback alone", continuing(false, true),
-                        "GO act [recover First -> R1] [recover Outer$Second -> R2] [onFailure F continues]"));
+                        List.of("act", first, second, "[onFailure F continues]")));
     }
 
     /** GO with two rules, the first one continuing or not, and the fallback F, continuing or not. */
@@ -402,39 +490,40 @@ class GraphvizExporterTest {
     }
 
     /**
-     * The fragments sit between the guards and the fallback whichever other parts the edge has, the kind keeps
+     * The rule lines sit between the guards and the fallback whichever other parts the edge has, the kind keeps
      * its nested names after the last dot, and a kind with no package is shown whole.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("recoveryLabels")
     void theRuleFragmentsSitBetweenTheGuardsAndTheFallback(String caseName, TransitionView transition,
-            String label) {
-        assertEquals(singleEdgeDot(baseQuote(label)), GraphvizExporter.render(singleEdgeView(transition)));
+            List<String> parts) {
+        assertEquals(singleEdgeDot(html("GO", parts.toArray(String[]::new))),
+                GraphvizExporter.render(singleEdgeView(transition)));
     }
 
     /**
-     * A rule's kind and recovery identifier are escaped with the rest of the label, like the oracle below. Each
-     * corpus text follows a package, so the fragment shows it whole, and the rule's throwable type is not drawn.
+     * A rule's kind and recovery identifier are escaped with the rest of the label, like the HTML oracle below.
+     * Each corpus text follows a package, so the line shows it whole, and the rule's throwable type is not drawn.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("dotEscapingCorpus")
     void aRecoveryFragmentIsEscapedLikeTheRestOfTheLabel(String caseName, String text) {
         TransitionView transition = labeled(List.of(), false, Optional.empty(), Optional.empty(),
                 List.of(new RecoveryView("some.pkg." + text, text, List.of("some.pkg.Hidden" + text), false)));
-        assertEquals(singleEdgeDot(baseQuote("GO act [recover " + text + " -> " + text + "]")),
+        assertEquals(singleEdgeDot(html("GO", "act", baseHtml("[recover " + text + " -> " + text + "]"))),
                 GraphvizExporter.render(singleEdgeView(transition)));
     }
 
     /**
-     * Without rules nothing changes: the nine-argument view is the view without rules, its label is the one this
-     * exporter has always drawn, and no edge of a graph that declares no rule views one.
+     * Without rules nothing changes: the nine-argument view is the view without rules, its label holds no rule
+     * line, and no edge of a graph that declares no rule views one.
      */
     @Test
     void anEdgeWithoutRulesIsDrawnAsBefore() {
         TransitionView nine = new TransitionView("A", "GO", "B", TransitionKind.ACTION, Optional.of("act"),
                 List.of("g1", "g2"), true, Optional.of("F"), Optional.of("Peer: c"));
         assertEquals(labeled(List.of("g1", "g2"), true, Optional.of("F"), Optional.of("Peer: c"), List.of()), nine);
-        assertEquals(singleEdgeDot("\"GO act [async] [if g1, g2] [onFailure F] [watches Peer: c]\""),
+        assertEquals(singleEdgeDot(html("GO", "act", "[async]", "[if g1, g2]", "[onFailure F]", "[watches Peer: c]")),
                 GraphvizExporter.render(singleEdgeView(nine)));
         for (TransitionView edge : GraphView.of(orderGraph()).transitions()) {
             assertEquals(List.of(), edge.recoveries(), edge.transition());
@@ -476,7 +565,10 @@ class GraphvizExporterTest {
                 .statePolicy(DocStatus.PUBLISHED, "a publication is archived");
     }
 
-    /** The only automatic edge of its state is marked {@code [auto]} right after its identifier, with no number. */
+    /**
+     * The only automatic edge of its state is marked {@code [auto]} on the line right after its identifier, with no
+     * number, and its arrow and identifier take the automatic color.
+     */
     @Test
     void anAutomaticEdgeIsMarkedAuto() {
         GraphView view = GraphView.of(docs()
@@ -492,9 +584,9 @@ class GraphvizExporterTest {
         assertEquals(Optional.empty(), submit.automaticPosition());
         assertFalse(edge(view, "REVIEW", "PUBLISH").automatic());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("[label=\"SUBMIT [auto] submit\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"PUBLISH publish\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"ARCHIVE [auto]\"]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("SUBMIT", "[auto]", "submit") + AUTOMATIC + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("PUBLISH", "publish") + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("ARCHIVE", "[auto]") + AUTOMATIC + "]"), rendered);
         assertFalse(rendered.contains("[auto "), rendered);
     }
 
@@ -519,10 +611,10 @@ class GraphvizExporterTest {
         assertEquals(Optional.empty(), edge(view, "DRAFT", "RETOUCH").automaticPosition());
         assertEquals(Optional.empty(), edge(view, "REVIEW", "PUBLISH").automaticPosition());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("[label=\"SUBMIT [auto 1] [if open]\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"DISCARD [auto 2]\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"RETOUCH\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"PUBLISH [auto]\"]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("SUBMIT", "[auto 1]", "[if open]") + AUTOMATIC + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("DISCARD", "[auto 2]") + AUTOMATIC + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("RETOUCH") + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("PUBLISH", "[auto]") + AUTOMATIC + "]"), rendered);
     }
 
     /** A graph's continuing recovery rule and continuing {@code onFailure} reach the view and the label. */
@@ -543,9 +635,10 @@ class GraphvizExporterTest {
         assertFalse(edge(view, "DRAFT", "SUBMIT").failureContinues());
         assertTrue(edge(view, "REVIEW", "PUBLISH").failureContinues());
         String rendered = GraphvizExporter.render(view);
-        assertTrue(rendered.contains("[label=\"SUBMIT [auto] submit [recover GraphvizExporterTest$Declined"
-                + " -> RETOUCH continues]\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"PUBLISH publish [onFailure SEND_BACK continues]\"]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("SUBMIT", "[auto]", "submit",
+                "[recover GraphvizExporterTest$Declined -&gt; RETOUCH continues]") + AUTOMATIC + "]"), rendered);
+        assertTrue(rendered.contains("[label=" + html("PUBLISH", "publish", "[onFailure SEND_BACK continues]") + "]"),
+                rendered);
     }
 
     /** The action edge GO from A to B with the given parts and the action {@code act}. */
@@ -560,15 +653,13 @@ class GraphvizExporterTest {
         return new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(transition), List.of(), List.of());
     }
 
-    /** The whole text {@link #singleEdgeView} renders to, given its edge's label already quoted. */
-    private static String singleEdgeDot(String quotedLabel) {
-        return "digraph \"X\" {\n"
-                + "    rankdir=LR;\n"
-                + "    initial [shape=point, label=\"\"];\n"
-                + "    n0 [label=\"A\", shape=ellipse];\n"
-                + "    n1 [label=\"B\", shape=doublecircle];\n"
+    /** The whole text {@link #singleEdgeView} renders to, given its edge's label already written. */
+    private static String singleEdgeDot(String label) {
+        return opening("X")
+                + "    n0 [label=\"A\"];\n"
+                + "    n1 [label=\"B\"" + TERMINAL + "];\n"
                 + "    initial -> n0;\n"
-                + "    n0 -> n1 [label=" + quotedLabel + "];\n"
+                + "    n0 -> n1 [label=" + label + "];\n"
                 + "}\n";
     }
 
@@ -642,15 +733,88 @@ class GraphvizExporterTest {
                 .build();
     }
 
-    // --- DOT escaping oracle (quote, restored to 278640e) -------------------------------------------------
+    // --- the default theme, as the expected text writes it ----------------------------------------------------
+
+    /** The end of a left-aligned line in an HTML-like label. */
+    static final String BR = "<br align=\"left\"/>";
+
+    /** What a terminal state carries after its label, with the default theme. */
+    static final String TERMINAL = ", peripheries=2, fillcolor=\"#1b1f3a\", fontcolor=\"#ffffff\"";
+
+    /** What an automatic edge carries after its label, with the default theme. */
+    static final String AUTOMATIC = ", color=\"#2457d6\", fontcolor=\"#2457d6\"";
+
+    /** The shape and colors of a watch note, with the default theme. */
+    static final String NOTE = "shape=note, style=filled, color=\"#a85a00\", fillcolor=\"#fff6e5\", "
+            + "fontcolor=\"#a85a00\"";
+
+    /** The link of a watch note to its state, with the default theme. */
+    static final String DASHED = "style=dashed, arrowhead=none, color=\"#a85a00\"";
+
+    /** The initial dot of a level, with the default theme, without its prefix and indentation. */
+    static final String INITIAL = "initial [shape=point, width=0.14, height=0.14, fillcolor=\"#1b1f3a\", label=\"\"];";
+
+    /** The region of a sub-machine, with the default theme. */
+    static final String CLUSTER = "graph [style=\"rounded,filled\", color=\"#d4d8ea\", fillcolor=\"#f5f6fb\", "
+            + "fontsize=11, penwidth=1.2];";
+
+    /** The first five lines of a drawing named {@code name} with the default theme, the initial dot last. */
+    private static String opening(String name) {
+        return defaults(name) + "    " + INITIAL + "\n";
+    }
+
+    /**
+     * The first four lines of a drawing named {@code name} with the default theme: the digraph and the three default
+     * statements, which carry the title.
+     */
+    static String defaults(String name) {
+        return "digraph " + baseQuote(name) + " {\n"
+                + "    graph [rankdir=LR, bgcolor=\"#ffffff\", pad=\"0.3\", nodesep=\"0.45\", ranksep=\"0.7\", "
+                + "fontname=Helvetica, fontsize=12, fontcolor=\"#1b1f3a\", labelloc=t, "
+                + "labeljust=l, label=<" + (name.isEmpty() ? "" : "<b>" + baseHtml(name) + "</b>") + ">];\n"
+                + "    node [shape=box, style=\"rounded,filled\", color=\"#1b1f3a\", fillcolor=\"#ffffff\", "
+                + "fontcolor=\"#1b1f3a\", fontname=Helvetica, fontsize=12, penwidth=1.2, "
+                + "margin=\"0.18,0.06\"];\n"
+                + "    edge [color=\"#4f5677\", fontcolor=\"#1b1f3a\", fontname=Helvetica, "
+                + "fontsize=10, penwidth=1.1, arrowsize=0.7];\n";
+    }
+
+    /**
+     * An edge label with the default theme, from text already written for HTML: the identifier in bold, then one
+     * left-aligned line per part in the muted color.
+     */
+    static String html(String identifier, String... parts) {
+        String bold = identifier.isEmpty() ? "" : "<b>" + identifier + "</b>";
+        if (parts.length == 0) {
+            return "<" + bold + ">";
+        }
+        StringBuilder lines = new StringBuilder();
+        for (String part : parts) {
+            lines.append(part).append(BR);
+        }
+        return "<" + bold + BR + "<font color=\"#4f5677\">" + lines + "</font>>";
+    }
+
+    // --- DOT escaping oracles (quote, restored to 278640e, and HTML-like labels) -----------------------------
 
     /**
      * Verbatim copy of {@link GraphvizExporter}'s {@code quote} helper at 278640e, kept as an oracle independent
      * of production so the full public {@code render} is checked byte for byte against it for every corpus case.
      */
-    private static String baseQuote(String text) {
+    static String baseQuote(String text) {
         return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n") + "\"";
+    }
+
+    /**
+     * The text of an HTML-like label, written independently of production: the four XML specials as entities, line
+     * breaks normalized and ended as left-aligned lines, tabs as spaces, since Graphviz drops a tab, and U+FFFD for
+     * the characters XML 1.0 forbids.
+     */
+    static String baseHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+                .replace("\r\n", "\n").replace("\r", "\n").replace("\n", BR).replace("\t", " ")
+                .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x{FFFE}\\x{FFFF}]", "\uFFFD");
     }
 
     static Stream<Arguments> dotEscapingCorpus() {
@@ -665,20 +829,24 @@ class GraphvizExporterTest {
                 Arguments.of("LFCR", "a\n\rb"),
                 Arguments.of("mixed triples", "a\r\n\rb\r\r\nc\n\r\nd\n\n\re"),
                 Arguments.of("unicode", "café 雪 😀"),
-                Arguments.of("control characters", "a\u0000\u0001\u001fb\u007f"));
+                Arguments.of("control characters", "a\u0000\u0001\u001fb\u007f"),
+                Arguments.of("tab", "a\tb"),
+                Arguments.of("XML specials", "a<b>&c\"d -> e"),
+                Arguments.of("noncharacters", "a\uFFFEb\uFFFFc"));
     }
 
     /**
-     * Differential test kept from the withdrawn T10 experiment: production {@code quote} must escape exactly like
-     * this oracle through the full public {@code render}. {@code text} is the only thing that varies per case;
-     * every other byte of the expected DOT is fixed by this view's shape, so a mismatch points at the escaping.
+     * Differential test kept from the withdrawn T10 experiment: production {@code quote} and the HTML-like label
+     * text must escape exactly like these oracles through the full public {@code render}. {@code text} is the only
+     * thing that varies per case; every other byte of the expected DOT is fixed by this view's shape, so a mismatch
+     * points at the escaping.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("dotEscapingCorpus")
     void quoteMatchesTheInlineOracleThroughFullRender(String caseName, String text) {
         String rawTooltip = "otherwise: " + text;
-        String rawLabel = text + " " + text + " [async] [if " + text + "] [onFailure " + text
-                + "] [watches " + text + "]";
+        String label = html(baseHtml(text), baseHtml(text), "[async]", baseHtml("[if " + text + "]"),
+                baseHtml("[onFailure " + text + "]"), baseHtml("[watches " + text + "]"));
         String rawWatchLabel = "watches " + text;
         GraphView view = new GraphView(text, text, Set.of("n0"), List.of(text, "n0"),
                 List.of(new TransitionView(text, text, "n0", TransitionKind.ACTION, Optional.of(text),
@@ -688,15 +856,13 @@ class GraphvizExporterTest {
 
         String rendered = GraphvizExporter.render(view);
 
-        assertEquals("digraph " + baseQuote(text) + " {\n"
-                + "    rankdir=LR;\n"
-                + "    initial [shape=point, label=\"\"];\n"
-                + "    n0 [label=" + baseQuote(text) + ", shape=ellipse];\n"
-                + "    n1 [label=\"n0\", shape=doublecircle, tooltip=" + baseQuote(rawTooltip) + "];\n"
+        assertEquals(opening(text)
+                + "    n0 [label=" + baseQuote(text) + "];\n"
+                + "    n1 [label=\"n0\"" + TERMINAL + ", tooltip=" + baseQuote(rawTooltip) + "];\n"
                 + "    initial -> n0;\n"
-                + "    n0 -> n1 [label=" + baseQuote(rawLabel) + "];\n"
-                + "    watch0 [shape=note, label=" + baseQuote(rawWatchLabel) + "];\n"
-                + "    n0 -> watch0 [style=dashed, arrowhead=none];\n"
+                + "    n0 -> n1 [label=" + label + "];\n"
+                + "    watch0 [" + NOTE + ", label=" + baseQuote(rawWatchLabel) + "];\n"
+                + "    n0 -> watch0 [" + DASHED + "];\n"
                 + "}\n", rendered);
     }
 

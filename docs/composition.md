@@ -414,8 +414,8 @@ test `AsyncExitTest` holds the exit open with a `ControlledAsyncAction`.
 
 ## Diagrams, concurrency and tests
 
-`GraphvizExporter` draws each bound state as a cluster labelled with the state and the child machine, such as
-`DEPOSIT: Payment/PaymentStatus`, which holds the child's own diagram.
+`GraphvizExporter` draws each bound state as a cluster, a rounded, tinted region titled with the state and the child
+machine, such as `DEPOSIT: Payment/PaymentStatus` with the state in bold, which holds the child's own diagram.
 [Inspect graphs and export diagrams](graph-inspection.md) says how each edge is drawn, and the core
 tests pin a booking with one payment machine bound in two states in
 [submachine-shared-child.dot](../graphmaquina-core/src/test/resources/golden/submachine-shared-child.dot).

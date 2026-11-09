@@ -230,8 +230,8 @@ logic.
   child's definition a snapshot of its own. Use typed graph assertions for focused expectations. Neither approach
   executes domain logic; test guards, actions, cascades and watches through real operations and assert their
   outcomes, records, reactions and observed entity states.
-- `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
-  `.dot` file. There is no detail mode: the export draws the declared edges, draws a state that holds a
+- `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output, drawn with the
+  [default theme](graph-inspection.md#change-the-colors), with a checked-in `.dot` file. There is no detail mode: the export draws the declared edges, draws a state that holds a
   sub-machine as a cluster containing the child's own graph, so the parent's golden changes with the child's graph, and renders each node's policy as that node's tooltip, or as the
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.

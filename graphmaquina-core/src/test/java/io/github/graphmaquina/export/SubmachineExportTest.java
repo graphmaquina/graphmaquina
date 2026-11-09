@@ -1,5 +1,10 @@
 package io.github.graphmaquina.export;
 
+import static io.github.graphmaquina.export.GraphvizExporterTest.CLUSTER;
+import static io.github.graphmaquina.export.GraphvizExporterTest.DASHED;
+import static io.github.graphmaquina.export.GraphvizExporterTest.INITIAL;
+import static io.github.graphmaquina.export.GraphvizExporterTest.NOTE;
+import static io.github.graphmaquina.export.GraphvizExporterTest.TERMINAL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -137,38 +142,37 @@ class SubmachineExportTest {
                 List.of(new WatchView("A", "Peer", List.of())),
                 List.of(new SubmachineView("A", child, Map.of("Y", "AGAIN")),
                         new SubmachineView("B", child, Map.of("Y", "DONE"))));
-        assertEquals("""
-                digraph "Parent/ParentStatus" {
-                    rankdir=LR;
-                    compound=true;
-                    initial [shape=point, label=""];
-                    n2 [label="C", shape=doublecircle];
-                    subgraph cluster_s0 {
-                        label="A: Child/ChildStatus";
-                        tooltip="otherwise: a waits for its child";
-                        s0_anchor [shape=point, style=invis, label=""];
-                        s0_initial [shape=point, label=""];
-                        s0_n0 [label="X", shape=ellipse];
-                        s0_n1 [label="Y", shape=doublecircle];
-                        s0_initial -> s0_n0;
-                        s0_n0 -> s0_n1 [label="GO"];
-                    }
-                    subgraph cluster_s1 {
-                        label="B: Child/ChildStatus";
-                        s1_anchor [shape=point, style=invis, label=""];
-                        s1_initial [shape=point, label=""];
-                        s1_n0 [label="X", shape=ellipse];
-                        s1_n1 [label="Y", shape=doublecircle];
-                        s1_initial -> s1_n0;
-                        s1_n0 -> s1_n1 [label="GO"];
-                    }
-                    initial -> s0_n0 [lhead=cluster_s0];
-                    s0_n1 -> s0_n0 [label="AGAIN"];
-                    s0_anchor -> s1_n0 [label="NEXT", ltail=cluster_s0, lhead=cluster_s1];
-                    s1_n1 -> n2 [label="DONE"];
-                    watch0 [shape=note, label="watches Peer"];
-                    s0_anchor -> watch0 [style=dashed, arrowhead=none, ltail=cluster_s0];
-                }
-                """, GraphvizExporter.render(view));
+        assertEquals(GraphvizExporterTest.defaults("Parent/ParentStatus")
+                + "    compound=true;\n"
+                + "    " + INITIAL + "\n"
+                + "    n2 [label=\"C\"" + TERMINAL + "];\n"
+                + "    subgraph cluster_s0 {\n"
+                + "        label=<<b>A</b><font color=\"#4f5677\">: Child/ChildStatus</font>>;\n"
+                + "        " + CLUSTER + "\n"
+                + "        tooltip=\"otherwise: a waits for its child\";\n"
+                + "        s0_anchor [shape=point, style=invis, label=\"\"];\n"
+                + "        s0_" + INITIAL + "\n"
+                + "        s0_n0 [label=\"X\"];\n"
+                + "        s0_n1 [label=\"Y\"" + TERMINAL + "];\n"
+                + "        s0_initial -> s0_n0;\n"
+                + "        s0_n0 -> s0_n1 [label=<<b>GO</b>>];\n"
+                + "    }\n"
+                + "    subgraph cluster_s1 {\n"
+                + "        label=<<b>B</b><font color=\"#4f5677\">: Child/ChildStatus</font>>;\n"
+                + "        " + CLUSTER + "\n"
+                + "        s1_anchor [shape=point, style=invis, label=\"\"];\n"
+                + "        s1_" + INITIAL + "\n"
+                + "        s1_n0 [label=\"X\"];\n"
+                + "        s1_n1 [label=\"Y\"" + TERMINAL + "];\n"
+                + "        s1_initial -> s1_n0;\n"
+                + "        s1_n0 -> s1_n1 [label=<<b>GO</b>>];\n"
+                + "    }\n"
+                + "    initial -> s0_n0 [lhead=cluster_s0];\n"
+                + "    s0_n1 -> s0_n0 [label=<<b>AGAIN</b>>];\n"
+                + "    s0_anchor -> s1_n0 [label=<<b>NEXT</b>>, ltail=cluster_s0, lhead=cluster_s1];\n"
+                + "    s1_n1 -> n2 [label=<<b>DONE</b>>];\n"
+                + "    watch0 [" + NOTE + ", label=\"watches Peer\"];\n"
+                + "    s0_anchor -> watch0 [" + DASHED + ", ltail=cluster_s0];\n"
+                + "}\n", GraphvizExporter.render(view));
     }
 }

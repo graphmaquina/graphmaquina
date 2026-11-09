@@ -1,18 +1,20 @@
 digraph "String/TicketState" {
-    rankdir=LR;
-    initial [shape=point, label=""];
-    n0 [label="READY", shape=ellipse, tooltip="otherwise: publish the ticket"];
-    n1 [label="PUBLISHED", shape=doublecircle, tooltip="otherwise: terminal state PUBLISHED accepts no transitions"];
-    n2 [label="RETRY_PENDING", shape=ellipse, tooltip="otherwise: retry the publication explicitly"];
-    n3 [label="REJECTED_BY_PROVIDER", shape=ellipse, tooltip="otherwise: close the rejected ticket"];
-    n4 [label="INTEGRATION_FAILED", shape=ellipse, tooltip="otherwise: close after manual review"];
-    n5 [label="CLOSED", shape=doublecircle, tooltip="otherwise: terminal state CLOSED accepts no transitions"];
+    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", fontname=Helvetica, fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, label=<<b>String/TicketState</b>>];
+    node [shape=box, style="rounded,filled", color="#1b1f3a", fillcolor="#ffffff", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=12, penwidth=1.2, margin="0.18,0.06"];
+    edge [color="#4f5677", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=10, penwidth=1.1, arrowsize=0.7];
+    initial [shape=point, width=0.14, height=0.14, fillcolor="#1b1f3a", label=""];
+    n0 [label="READY", tooltip="otherwise: publish the ticket"];
+    n1 [label="PUBLISHED", peripheries=2, fillcolor="#1b1f3a", fontcolor="#ffffff", tooltip="otherwise: terminal state PUBLISHED accepts no transitions"];
+    n2 [label="RETRY_PENDING", tooltip="otherwise: retry the publication explicitly"];
+    n3 [label="REJECTED_BY_PROVIDER", tooltip="otherwise: close the rejected ticket"];
+    n4 [label="INTEGRATION_FAILED", tooltip="otherwise: close after manual review"];
+    n5 [label="CLOSED", peripheries=2, fillcolor="#1b1f3a", fontcolor="#ffffff", tooltip="otherwise: terminal state CLOSED accepts no transitions"];
     initial -> n0;
-    n0 -> n1 [label="PUBLISH publish [recover SnapshotGraphs$PublicationFailures$Unavailable -> SCHEDULE_RETRY] [recover SnapshotGraphs$PublicationFailures$Rejected -> RECORD_REJECTION] [onFailure MARK_INTEGRATION_FAILED]"];
-    n0 -> n2 [label="SCHEDULE_RETRY"];
-    n0 -> n3 [label="RECORD_REJECTION"];
-    n0 -> n4 [label="MARK_INTEGRATION_FAILED"];
-    n2 -> n0 [label="RETRY"];
-    n3 -> n5 [label="CLOSE"];
-    n4 -> n5 [label="CLOSE"];
+    n0 -> n1 [label=<<b>PUBLISH</b><br align="left"/><font color="#4f5677">publish<br align="left"/>[recover SnapshotGraphs$PublicationFailures$Unavailable -&gt; SCHEDULE_RETRY]<br align="left"/>[recover SnapshotGraphs$PublicationFailures$Rejected -&gt; RECORD_REJECTION]<br align="left"/>[onFailure MARK_INTEGRATION_FAILED]<br align="left"/></font>>];
+    n0 -> n2 [label=<<b>SCHEDULE_RETRY</b>>];
+    n0 -> n3 [label=<<b>RECORD_REJECTION</b>>];
+    n0 -> n4 [label=<<b>MARK_INTEGRATION_FAILED</b>>];
+    n2 -> n0 [label=<<b>RETRY</b>>];
+    n3 -> n5 [label=<<b>CLOSE</b>>];
+    n4 -> n5 [label=<<b>CLOSE</b>>];
 }

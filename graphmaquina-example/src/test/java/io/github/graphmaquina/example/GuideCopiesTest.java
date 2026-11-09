@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,7 +28,7 @@ import org.junit.jupiter.api.Test;
  * facades declare, and the tests that ask them. Every Java block of the automatic transitions page follows a link to a
  * source or a test of the onboarding and appears verbatim in that file, with or without the file's Javadoc comments. A
  * block may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing,
- * so it fails.
+ * so it fails. The export of the shop's order machine that the inspection page shows is the order golden, verbatim.
  */
 class GuideCopiesTest {
 
@@ -66,6 +67,9 @@ class GuideCopiesTest {
     private static final String AUTOMATIC_PAGE = "automatic-transitions.md";
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
+    /** The inspection page's export of the shop's order machine: the text block right after its introduction. */
+    private static final Pattern ORDER_EXPORT =
+            Pattern.compile("The shop's order machine exports as:\n\n```text\n(.*?)```", Pattern.DOTALL);
 
     private static Path path(String property, String relative) {
         return Path.of(System.getProperty(property)).resolve(relative);
@@ -183,6 +187,15 @@ class GuideCopiesTest {
             }
         }
         assertEquals(List.of(), missing);
+    }
+
+    @Test
+    void theInspectionGuideShowsTheOrderGoldenVerbatim() throws IOException {
+        Matcher export = ORDER_EXPORT.matcher(read(path("graphmaquina.docs", "graph-inspection.md")));
+        assertTrue(export.find(), "the inspection page no longer shows the export of the order machine");
+        try (InputStream golden = GuideCopiesTest.class.getResourceAsStream("/golden/order.dot")) {
+            assertEquals(new String(golden.readAllBytes(), UTF_8), export.group(1));
+        }
     }
 
     @Test

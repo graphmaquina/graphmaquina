@@ -63,8 +63,9 @@ class GraphExportTest {
         GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
                 .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
         String dot = GraphvizExporter.render(GraphView.of(graph));
-        assertTrue(dot.contains("n1 -> n2 [label=\"APPROVE manual\"];"), dot);
-        assertTrue(dot.contains("n1 -> n2 [label=\"AUTO_APPROVE\"];"), dot);
+        assertTrue(dot.contains("n1 -> n2 [label=<<b>APPROVE</b><br align=\"left\"/><font color=\"#4f5677\">manual"
+                + "<br align=\"left\"/></font>>];"), dot);
+        assertTrue(dot.contains("n1 -> n2 [label=<<b>AUTO_APPROVE</b>>];"), dot);
     }
 
     /** The order of the view is origin index, then identifier index, then destination index. */
@@ -159,7 +160,9 @@ class GraphExportTest {
         assertEquals(List.of("ready"), auto.guards());
         assertEquals(Optional.of("APPROVE"), auto.failureTransition());
         assertTrue(GraphvizExporter.render(GraphView.of(graph))
-                .contains("[label=\"AUTO_APPROVE auto [if ready] [onFailure APPROVE]\"]"));
+                .contains("[label=<<b>AUTO_APPROVE</b><br align=\"left\"/><font color=\"#4f5677\">auto"
+                        + "<br align=\"left\"/>[if ready]<br align=\"left\"/>[onFailure APPROVE]"
+                        + "<br align=\"left\"/></font>>]"));
     }
 
     /**

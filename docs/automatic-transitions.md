@@ -411,8 +411,9 @@ an automatic chain.
 
 `TransitionSpec.automatic()` and `onFailureContinues()`, and `RecoveryRule.continueChain()`, read the marks, as
 [read a definition](graph-inspection.md#read-a-definition) shows. The [Graphviz export](graph-inspection.md#export-graphviz-dot)
-prints `[auto]` after the identifier of a state's only automatic edge, `[auto 1]`, `[auto 2]` and so on, in the
-declared order, when there are several, and `continues` in a route that continues. The onboarding's
+draws an automatic edge in the theme's `automatic` color, blue by default, and prints `[auto]` on the line under the
+identifier of a state's only automatic edge, `[auto 1]`, `[auto 2]` and so on, in the declared order, when there are
+several, and `continues` in a route that continues. The onboarding's
 [golden diagram](../graphmaquina-example/src/test/resources/golden/account.dot) and
 [contract snapshot](../graphmaquina-example/src/test/resources/contracts/account.graph) pin its marks and its order.
 An eligibility check answers for an automatic edge as for any other. The assertions of `graphmaquina-test` on automatic

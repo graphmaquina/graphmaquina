@@ -10,9 +10,10 @@ import io.github.graphmaquina.test.snapshot.GoldenOptions;
 import java.util.Objects;
 
 /**
- * Compares the Graphviz DOT rendering of a graph against a checked-in golden resource, and rewrites that
- * resource when the run is in update mode. A mismatch fails with the lines that changed, not with both
- * diagrams in full, so a review reads what moved.
+ * Compares the Graphviz DOT rendering of a graph, drawn with
+ * {@link io.github.graphmaquina.export.GraphvizTheme#defaults()}, against a checked-in golden resource, and rewrites
+ * that resource when the run is in update mode. A mismatch fails with the lines that changed, not with both diagrams
+ * in full, so a review reads what moved.
  *
  * <p>The rendering draws every state as a node, or as a cluster that holds the child's own rendering when a
  * sub-machine is bound to it, as {@link GraphvizExporter} describes. It draws an arrow into the initial state, a

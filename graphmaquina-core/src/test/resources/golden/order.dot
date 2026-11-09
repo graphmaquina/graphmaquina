@@ -1,18 +1,20 @@
 digraph "Order/OrderStatus" {
-    rankdir=LR;
-    initial [shape=point, label=""];
-    n0 [label="NEW", shape=ellipse, tooltip="otherwise: cannot ship without payment"];
-    n1 [label="PAID", shape=ellipse, tooltip="otherwise: money was charged: requires a refund"];
-    n2 [label="PAYMENT_DECLINED", shape=ellipse, tooltip="otherwise: go back to NEW to retry the charge"];
-    n3 [label="SHIPPED", shape=doublecircle, tooltip="otherwise: terminal state SHIPPED accepts no transitions"];
-    n4 [label="CANCELLED", shape=doublecircle, tooltip="otherwise: terminal state CANCELLED accepts no transitions"];
+    graph [rankdir=LR, bgcolor="#ffffff", pad="0.3", nodesep="0.45", ranksep="0.7", fontname=Helvetica, fontsize=12, fontcolor="#1b1f3a", labelloc=t, labeljust=l, label=<<b>Order/OrderStatus</b>>];
+    node [shape=box, style="rounded,filled", color="#1b1f3a", fillcolor="#ffffff", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=12, penwidth=1.2, margin="0.18,0.06"];
+    edge [color="#4f5677", fontcolor="#1b1f3a", fontname=Helvetica, fontsize=10, penwidth=1.1, arrowsize=0.7];
+    initial [shape=point, width=0.14, height=0.14, fillcolor="#1b1f3a", label=""];
+    n0 [label="NEW", tooltip="otherwise: cannot ship without payment"];
+    n1 [label="PAID", tooltip="otherwise: money was charged: requires a refund"];
+    n2 [label="PAYMENT_DECLINED", tooltip="otherwise: go back to NEW to retry the charge"];
+    n3 [label="SHIPPED", peripheries=2, fillcolor="#1b1f3a", fontcolor="#ffffff", tooltip="otherwise: terminal state SHIPPED accepts no transitions"];
+    n4 [label="CANCELLED", peripheries=2, fillcolor="#1b1f3a", fontcolor="#ffffff", tooltip="otherwise: terminal state CANCELLED accepts no transitions"];
     initial -> n0;
-    n0 -> n1 [label="CHARGE ChargeCard [async] [if RetryBudgetLeft] [onFailure DECLINE]"];
-    n0 -> n2 [label="DECLINE"];
-    n0 -> n4 [label="CANCEL CancelOrder"];
-    n1 -> n3 [label="SHIP ShipOrder [if AllItemsPacked] [watches Item: allIn PACKED]"];
-    n2 -> n0 [label="RETRY [if RetryBudgetLeft]"];
-    n2 -> n4 [label="CANCEL CancelOrder"];
-    watch0 [shape=note, label="watches Item"];
-    n1 -> watch0 [style=dashed, arrowhead=none];
+    n0 -> n1 [label=<<b>CHARGE</b><br align="left"/><font color="#4f5677">ChargeCard<br align="left"/>[async]<br align="left"/>[if RetryBudgetLeft]<br align="left"/>[onFailure DECLINE]<br align="left"/></font>>];
+    n0 -> n2 [label=<<b>DECLINE</b>>];
+    n0 -> n4 [label=<<b>CANCEL</b><br align="left"/><font color="#4f5677">CancelOrder<br align="left"/></font>>];
+    n1 -> n3 [label=<<b>SHIP</b><br align="left"/><font color="#4f5677">ShipOrder<br align="left"/>[if AllItemsPacked]<br align="left"/>[watches Item: allIn PACKED]<br align="left"/></font>>];
+    n2 -> n0 [label=<<b>RETRY</b><br align="left"/><font color="#4f5677">[if RetryBudgetLeft]<br align="left"/></font>>];
+    n2 -> n4 [label=<<b>CANCEL</b><br align="left"/><font color="#4f5677">CancelOrder<br align="left"/></font>>];
+    watch0 [shape=note, style=filled, color="#a85a00", fillcolor="#fff6e5", fontcolor="#a85a00", label="watches Item"];
+    n1 -> watch0 [style=dashed, arrowhead=none, color="#a85a00"];
 }

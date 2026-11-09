@@ -118,6 +118,7 @@ time; each page links the next one in that order.
 | See what a call did, step by step | [Logs](logs.md) and [the call's trail](call-flow.md#record-the-calls-trail) |
 | Draw the graph | [Inspect graphs and export diagrams](graph-inspection.md) |
 | Write every machine's diagram from Gradle or Maven | [Export from the command line](graph-inspection.md#export-from-the-command-line) |
+| Draw a diagram in your own colors | [Change the colors](graph-inspection.md#change-the-colors) |
 | Build a graph at runtime, without annotations | [Programmatic DSL](dsl.md) |
 | Move a machine from another library to GraphMaquina | [Migrate a machine from another library](migrate-from-another-library.md) |
 | Pin a graph's structure in a test | [Goldens and structural snapshots](testing.md#goldens-and-structural-snapshots) |

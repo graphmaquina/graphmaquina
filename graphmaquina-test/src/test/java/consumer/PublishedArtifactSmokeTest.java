@@ -538,12 +538,13 @@ class PublishedArtifactSmokeTest {
                         throw new AssertionError("the snapshot must hold and read back the two rules: " + fields);
                     }
 
-                    // The DOT draws one fragment per rule, in declaration order, before the fallback.
+                    // The DOT draws one line per rule, in declaration order, before the fallback.
                     String dot = GraphvizExporter.render(GraphView.of(definition));
-                    String label = "PUBLISH publish"
-                            + " [recover RecoveryConsumer$PublicationFailures$Unavailable -> SCHEDULE_RETRY]"
-                            + " [recover RecoveryConsumer$PublicationFailures$Rejected -> RECORD_REJECTION]"
-                            + " [onFailure MARK_INTEGRATION_FAILED]";
+                    String br = "<br align=\\"left\\"/>";
+                    String label = "<<b>PUBLISH</b>" + br + "<font color=\\"#4f5677\\">publish" + br
+                            + "[recover RecoveryConsumer$PublicationFailures$Unavailable -&gt; SCHEDULE_RETRY]" + br
+                            + "[recover RecoveryConsumer$PublicationFailures$Rejected -&gt; RECORD_REJECTION]" + br
+                            + "[onFailure MARK_INTEGRATION_FAILED]" + br + "</font>>";
                     int fragments = 0;
                     for (int at = dot.indexOf("[recover "); at >= 0; at = dot.indexOf("[recover ", at + 1)) {
                         fragments++;
