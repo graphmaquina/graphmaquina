@@ -9,10 +9,11 @@ import lombok.NonNull;
 /**
  * The watch of a state: which machine it looks at, how to reach the peers and back, and which rules advance it.
  * {@code peersOf}, {@code ownerOf} and the rules' conditions run while the thread evaluates the watch, where execute,
- * reevaluate and advance throw {@code ReentrantTransitionException}, as they do in a guard. A throwable that is not an
- * Error and that {@code peersOf} or a condition throws ends the reevaluation in a {@code TransitionAbortedException} of
- * phase RESOLVE that carries it, once unwrapped from CompletionException and ExecutionException, which a watch reaction
- * reports as {@code Reaction.Aborted}; an InterruptedException that either throws interrupts the thread again. A
+ * reevaluate, advance and choose throw {@code ReentrantTransitionException}, as they do in a guard, and so does a
+ * check, which a synchronous guard may start. A throwable that is not an Error and that {@code peersOf} or a condition
+ * throws ends the reevaluation in a {@code TransitionAbortedException} of phase RESOLVE that carries it, once unwrapped
+ * from CompletionException and ExecutionException, which a watch reaction reports as {@code Reaction.Aborted}; an
+ * InterruptedException that either throws interrupts the thread again. A
  * throwable that is not an Error and that {@code ownerOf} throws, while the commit that triggered the reaction looks
  * the owner up, is the cause of a {@code Reaction.Aborted} itself, a checked one wrapped in
  * {@code UndeclaredThrowableException}, and an InterruptedException interrupts the thread again. A {@code peersOf} that

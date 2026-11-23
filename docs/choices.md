@@ -176,7 +176,11 @@ the first that is `Eligible`. Each is a check of its own: it reads the state aga
 logs its own `check=<id>` lines. Whatever it answers or throws, it writes no state and runs no action, hook, watch
 reaction or automatic attempt, and it is no call, so no observer hears of it. A check that cannot answer throws its
 `EligibilityCheckException`, and the candidates after it are not checked. An answer reserves nothing: the choice runs
-every admission again.
+every admission again. A choice check may run where a check may, as
+[where a check may run](eligibility.md#where-a-check-may-run) says: unlike `observe`, it may be asked by a synchronous
+guard, for an entity that no enclosing call or check holds, and each candidate's check is then nested in the guard's
+call or check. A held entity is refused with `ReentrantTransitionException` before the first check starts, and such an
+answer logs nothing.
 
 In [ShipmentFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/shipment/ShipmentFlowTest.java),
 the check of a delivery report chooses `DELIVER` once `RETURN` was refused, and moves nothing:

@@ -170,7 +170,9 @@ The `committed` and `started` lines follow the order the call took its hops and 
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
 the `committed` lines and the `end` line of the call that triggered it, and so is each automatic attempt, whose lines
 come after those of the reactions. A cascade is part of the call that runs it: it
-logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A request refused
+logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A check that a
+guard starts logs its own `check=<id>` lines while that guard runs, between the lines of the call or check the guard
+runs for. A request refused
 before it starts, as [observers](commit-and-persistence.md#observers) see it, logs nothing. Each call, and each check, logs
 on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the submission itself logs
 nothing.

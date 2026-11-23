@@ -116,7 +116,11 @@ state from the current unit of work before falling back to the entity's getter. 
 during a cascade can therefore miss an uncommitted state change. The view a watch condition receives reads only the
 entity's getter, since a watch runs outside any transaction. `PeerView.key()` names the peer machine. `stateOf` calls the
 peer machine's identity function and, when the call holds no pending state for the peer, its getter, on the calling
-thread; what either throws reaches the guard or action as it is.
+thread; what either throws reaches the guard or action as it is. A peer view answers with a state; to ask whether
+another machine would admit an operation now, its guards included, a synchronous guard can call that machine's check,
+as [check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) shows. That check reads
+stored states only, so in its scope a peer read of an entity that an enclosing call or check holds, whose state
+the enclosing call may be about to replace, throws `ReentrantTransitionException`.
 
 | Peer helper | Empty collection | Nonempty collection |
 | --- | --- | --- |
@@ -191,7 +195,8 @@ transaction. Your action can still end the call in another failure, such as an a
 declared type accepts, or an `Error` it throws as itself. A cascade that names an unknown machine poisons too, by key or
 by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue, and neither does a
-cascade refused because the commit has begun or a step is being rolled back. A `VirtualMachineError`, such as a
+cascade refused because the commit has begun or a step is being rolled back, or because it is made through a kept
+action context in the scope of a check that a guard started. A `VirtualMachineError`, such as a
 `StackOverflowError`, that strikes while these checks run, while `cascadeAll` copies its collection or while a
 cascade by facade type looks its machine up, poisons nothing either: the cascade has not started. `cascadeAll`
 makes these checks before its first element runs: from then on, any failure that ends it poisons the unit of work,
@@ -371,7 +376,8 @@ the registry's `maxWatchChain` evaluates no rule and ends as a `Reaction.Aborted
 The watch's `owner` reader or `ownerLookup` and its `peers` reader (`ownerOf` and `peersOf` in the DSL) and its
 conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition or an eligibility check on their own
-thread: `execute`, `reevaluate` or `eligibility` called from one of them throws `ReentrantTransitionException`; a call
+thread: `execute`, `reevaluate`, `advance`, `choose`, `eligibility` or `chooseEligibility`, through a facade too,
+called from one of them throws `ReentrantTransitionException`; a call
 submitted through `async(...)` runs as a separate call on the executor's thread, unless it runs on the function's own
 thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, in which case
 the returned future fails with that exception as its cause. Inside a reevaluation, a refusal that one of these

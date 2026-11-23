@@ -216,12 +216,12 @@ can when the call ended in one: telling them can need the stack or the memory th
 effort, and that `Error` propagates. That warning is the only record
 logged on `io.github.graphmaquina` itself: the lines of each call, and of each eligibility check, go to its child
 logger `io.github.graphmaquina.runtime`, as [debug a call](logs.md) describes. An observer cannot
-start a transition on its own thread either: an operation or an eligibility check called from an observer throws
-`ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread
-as a call of its own, unless it runs on the observer's own thread, through an executor that runs tasks inline or a
-wait that runs a `ForkJoinPool`'s queued tasks, in which case the returned future fails with that exception as its
-cause. When a failure
-must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
+start a call or a check on its own thread either: `execute`, `reevaluate`, `advance`, `choose`, `eligibility` or
+`chooseEligibility`, through a facade too, called from an observer throws `ReentrantTransitionException`, which is
+contained. One submitted through `async(...)` runs on the executor's thread as a call or a check of its own, unless it
+runs on the observer's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s
+queued tasks, in which case the returned future fails with that exception as its cause. When a failure must fail the
+call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
 the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order
 they were added.
 

@@ -236,9 +236,12 @@ A call submitted through `async(...)` is queued as a plain task, never as one of
 runs it on its own thread. While such a call is queued on the waiting worker, another worker has to take it, as for a
 stage's task, and so has a `CompletableFuture` task queued behind it: a callback that waits for either waits, under no
 timeout but its own, while every other worker is busy or blocked where the pool cannot see it. Two waits can still run
-a queued call on the waiting thread, where the call fails with `ReentrantTransitionException`: a worker that joins a
-`ForkJoinTask` may run a task queued by another worker that stole work from it, and waiting for a pool to quiesce,
-through `ForkJoinTask.helpQuiesce()` or `ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread.
+a queued call on the waiting thread: a worker that joins a `ForkJoinTask` may run a task queued by another worker that
+stole work from it, and waiting for a pool to quiesce, through `ForkJoinTask.helpQuiesce()` or
+`ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread. There a call or a check runs, or is
+refused with `ReentrantTransitionException`, as it would if the callback that waits made it itself: a guard or an
+action starts no call, and of the two only a synchronous guard may start a check, as
+[where a check may run](eligibility.md#where-a-check-may-run) says.
 Given `ForkJoinPool.commonPool()` while the common pool's parallelism is below two, a machine runs each call on a new
 thread instead, as `CompletableFuture.supplyAsync` does with that pool on JDK 21. On JDK 25, `CompletableFuture`
 raises the common pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs

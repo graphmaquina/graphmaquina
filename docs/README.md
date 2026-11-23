@@ -103,6 +103,7 @@ time; each page links the next one in that order.
 | Allow two different operations between the same pair of states | [Identity, not destination](graph-model.md#identity-not-destination) |
 | Explain why a state refuses an operation | [Policies](graph-model.md#policies-every-node-answers) |
 | Show whether an operation is available, and why not | [Check an operation before you call it](eligibility.md) |
+| Admit an edge only while another machine would admit an operation | [Check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) |
 | Run the first of several identifiers that is admitted | [Choose the first admitted transition](choices.md) |
 | Pass a value from the caller to guards and actions | [Operations and internal edges](graph-model.md#operations-and-internal-edges) |
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
