@@ -114,9 +114,10 @@ the commit, the hooks and the watch reactions. Its outcome is:
 A choice never returns `Rejected`: its call requests no identifier. A failure throws what `execute` would throw, an
 `UnhandledFailureException` for a domain failure that no route takes included, and a guard that throws fails the call,
 so the candidates after it are not tried. A choice blocks on an asynchronous edge;
-`shipments.async(() -> shipments.observe(shipment, report))` runs it on the machine's executor. It may start where a
-call may start: inside a call, from a guard, an action or an observer for instance, it is refused before it starts
-with `ReentrantTransitionException`, as `execute` is.
+`shipments.async(() -> shipments.observe(shipment, report))` runs it on the machine's executor. A `StateMachine` built
+with the DSL does the same with `machine.supplyAsync(() -> machine.choose(entity, candidates))`, since
+`AsyncStateMachine` has no `choose`. It may start where a call may start: inside a call, from a guard, an action or an
+observer for instance, it is refused before it starts with `ReentrantTransitionException`, as `execute` is.
 
 In [ShipmentFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/shipment/ShipmentFlowTest.java),
 a report of a delivery delivers the shipment:

@@ -215,8 +215,9 @@ identity could not be read and `?` for a state not read. It is no `CallFailedExc
 has no call, phase, states written, journal or flow. An `Error` propagates as itself, and so do the refusals before a
 check starts: a null argument, an identifier of another catalogue, and a check made
 [where no check may run](#where-a-check-may-run). So do, for a check that a guard starts, what the entity's identity
-function or its identity's `equals` throws and the `NullPointerException` of a function that returns null, since that
-check runs both before it starts, as [check another machine from a guard](#check-another-machine-from-a-guard) says.
+function throws, the `NullPointerException` of a function that returns null and what its identity's `equals` throws,
+since that check runs them before it starts, the `equals` only when an enclosing call or check holds an entity of that
+machine, as [check another machine from a guard](#check-another-machine-from-a-guard) says.
 
 A screen can tell such a failure apart from a refusal:
 
@@ -377,9 +378,10 @@ the account's edge gets a new guard.
 A check started from a guard is a facade's check method, a choice check, `StateMachine.eligibility` or
 `StateMachine.chooseEligibility`, made by the code of a synchronous guard on the thread that called its `test`. The
 guard may run for a root call, a cascade step, the exit of a sub-machine, an automatic attempt, a check, or a check
-that another guard started, at any depth. Before the check starts, it runs its entity's identity function, and the
-`equals` of the identity it returns, to tell whether that entity is held: what either throws, and the
-`NullPointerException` of a function that returns null, reach the guard as they are.
+that another guard started, at any depth. Before the check starts, it runs its entity's identity function and, when
+an enclosing call or check holds an entity of that machine, the `equals` of the identity it returns, to tell whether
+that entity is held: what either throws, and the `NullPointerException` of a function that returns null, reach the
+guard as they are.
 
 The check is refused before it starts, with `ReentrantTransitionException`, and logs nothing, when its entity is held
 on the thread: when it has the machine key and an identity equal to those of the root entity of an enclosing call or
@@ -395,25 +397,26 @@ logged while the guard runs. It reads its entity's state through the getter, and
 these same rules. Its answer returns to the guard. A check that cannot answer throws its `EligibilityCheckException`
 into the guard, which fails as a guard that throws unless it catches it.
 
-The check's scope is its own step, from the read of its entity's identity to its last guard, with its state read,
-its binding lookups, its guards and everything they run, and that step's `TRACE` lines and the texts they and the
-step's failures print. Code in that scope cannot read a held entity through a context's peer view or a binding
-lookup: `stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw `ReentrantTransitionException`
-into the code that made the read, whichever live context on this thread made the view, an enclosing guard's or
-action's context handed over included. A binding lookup that finds a held parent fails the check with an
-`EligibilityCheckException` whose cause is that exception. So a nested check never reads, through a context's peer view or a binding lookup, an
-entity that an enclosing call or check has in flight, or whose hop or start is pending there. Any other read is not
-refused: a guard that calls a held entity's getter itself, or reads it through a watch condition's view that it kept,
-reads its stored state, which the enclosing call may be about to replace. And the answer holds for the states as they
-stood when the check ran: a step that the enclosing call runs after the guard can change them, and a cascade to the
-checked entity runs its admission again.
+The check's scope is its own step, from the read of its entity's identity to its last guard, with its state read, its
+binding lookups, its guards and everything they run, and that step's `TRACE` lines and the texts they and the step's
+failures print. Code in that scope cannot read a held entity through a context's peer view or a binding lookup:
+`stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw `ReentrantTransitionException` into the code
+that made the read, whichever live context on this thread made the view, an enclosing guard's or action's context handed
+over included. A binding lookup that finds a held parent fails the check with an `EligibilityCheckException` whose cause
+is that exception. So a nested check never reads, through a context's peer view or a binding lookup, an entity that an
+enclosing call or check has in flight, or whose hop or start is pending there. Any other read is not refused: a guard
+that calls a held entity's getter itself, or reads it through a watch condition's view that it kept, reads its stored
+state, which the enclosing call may be about to replace. And the answer holds for the states as they stood when the
+check ran: a step that the enclosing call runs after the guard can change them, and a cascade to the checked entity runs
+its admission again.
 
-Nor can code in that scope cascade through a kept action context of an enclosing call: `cascade` and `cascadeAll`
-throw `ReentrantTransitionException`, naming the action's machine and entity, before they stage anything or poison the
-call. The code the engine runs for the check outside that scope runs under the rules of the enclosing scope, except
-that it cannot start a check: the entity's identity function and its identity's `equals` before the check starts, the
-log's backend as the check reads its levels and logs its start, verdict and failed lines, and the identity text and
-the failure reason that those lines and the check's `EligibilityCheckException` print.
+Nor can code in that scope cascade through a kept action context of an enclosing call: `cascade` and `cascadeAll` throw
+`ReentrantTransitionException`, naming the action's machine and entity, before they stage anything or poison the call.
+The code the engine runs for the check outside that scope runs under the rules of the enclosing scope, except that it
+cannot start a check: the entity's identity function and, when an enclosing scope holds an entity of that machine, its
+identity's `equals`, before the check starts, the log's backend as the check reads its levels and logs its start,
+verdict and failed lines, and the identity text and the failure reason that those lines and the check's
+`EligibilityCheckException` print.
 
 Everything else stays refused:
 

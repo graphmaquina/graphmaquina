@@ -140,8 +140,8 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * now, as an {@link Eligibility}: {@link Eligibility.Eligible}, or {@link Eligibility.Ineligible} with the reason,
      * the kind and the guard of the refusal. This default supports no eligibility check: it throws instead of
      * answering. The machines the runtime builds implement it with the admission of execute's own step, and nothing
-     * after it: the binding check of a sub-machine, the edge lookup, the refusal of a reserved exit, then the guards
-     * in declaration order until one rejects, each with the context it gets in execute; asynchronous guards are awaited
+     * after it: the binding check of a sub-machine, the edge lookup, the refusal of a reserved exit, then the guards in
+     * declaration order until one rejects, each with the context it gets in execute; asynchronous guards are awaited
      * under this machine's asyncTimeout, counted from the start of the check. A check is no call: whatever it answers
      * or throws, it writes no state, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine,
      * runs no exit and tells no observer, and a context its guards got is stale once it ends. It answers for any
@@ -149,16 +149,17 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * check made where it may not start are refused before the check starts and throw as themselves. A check may not
      * start where no call may, such as from an action, an observer or the test call of an asynchronous guard, with one
      * exception: a synchronous guard may check an entity that no enclosing call or check holds, as
-     * {@code ReentrantTransitionException} says. To tell, it runs the entity's identity function, and the equals of the
-     * identity it returns, before it starts: what either throws, and the {@code NullPointerException} of a function
-     * that returns null, propagate as they are. Such a check runs as any check, nested in the guard's call or check; in
-     * its scope, its own step, from the read of its entity's identity to its last guard, and everything that step runs,
-     * a read of a held entity through a context's peer view or a binding lookup and a cascade through a kept action
-     * context of the enclosing call throw, and its failure throws into the guard. While a check runs, no call may start
-     * on its thread, and a check may start only from a synchronous guard of that check or of a check nested in it. A
-     * check that started and cannot reach an answer throws an {@code EligibilityCheckException}, never a
-     * {@code CallFailedException}; an Error propagates as itself. A check logs lines of its own on the runtime logger,
-     * at DEBUG and TRACE, which start with {@code check=<id>} in place of {@code call=<id>}.
+     * {@code ReentrantTransitionException} says. To tell, it runs the entity's identity function and, when an enclosing
+     * call or check holds an entity of this machine, the equals of the identity it returns, before it starts: what
+     * either throws, and the {@code NullPointerException} of a function that returns null, propagate as they are. Such
+     * a check runs as any check, nested in the guard's call or check; in its scope, its own step, from the read of its
+     * entity's identity to its last guard, and everything that step runs, a read of a held entity through a context's
+     * peer view or a binding lookup and a cascade through a kept action context of the enclosing call throw, and its
+     * failure throws into the guard. While a check runs, no call may start on its thread, and a check may start only
+     * from a synchronous guard of that check or of a check nested in it. A check that started and cannot reach an
+     * answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error propagates as
+     * itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
+     * {@code check=<id>} in place of {@code call=<id>}.
      *
      * @throws NullPointerException if {@code entity} or {@code transition} is null
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass
@@ -252,8 +253,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * no call and tells no observer. A null argument or candidate, an empty list, a candidate listed twice, a candidate
      * of another catalogue and a check made where it may not start, as {@code eligibility} says, are refused before the
      * first check starts and throw as themselves; such an answer logs nothing. From a synchronous guard, each
-     * candidate's check is nested in the guard's call or check, and what the entity's identity function or its
-     * identity's equals throws before it starts propagates as it is, as {@code eligibility} says. This default supports
+     * candidate's check is nested in the guard's call or check, and what the entity's identity function throws before
+     * it starts propagates as it is, and so does what its identity's equals throws, which runs only when an enclosing
+     * call or check holds an entity of this machine, as {@code eligibility} says. This default supports
      * no choice check: it throws instead of answering; the machines the runtime builds implement it.
      *
      * @throws NullPointerException if {@code entity}, {@code candidates} or one of its elements is null

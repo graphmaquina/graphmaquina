@@ -201,8 +201,9 @@ type-level `Transition` may add further branches of an identifier a method owns 
 a branch whose `(from, id)` key is already declared is a duplicate key, `SG102`.
 
 A `Transition` on the interface itself declares an edge with no facade method. It is how failure routes,
-cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and `PAYMENT_DECLINED` in the
-shop are exactly that. Omitting `action` makes the edge a `MOVE`.
+cascade-only and watch-only edges are declared, and the candidates that only a choice runs: `DECLINE` in the quickstart
+and `PAYMENT_DECLINED` in the shop are exactly that, and so are `DELIVER` and `RETURN` in the example's `Shipments`.
+Omitting `action` makes the edge a `MOVE`.
 
 A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
@@ -342,9 +343,10 @@ origin in its `from`, whether it is written on an operation or on the interface,
 for each. `onFailureContinues = true` makes the `onFailure` route a continuing one, emitted as
 `onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with `continueChain = true` is emitted as
 `recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is emitted as one
-`automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders included, to the
-validator the DSL runs in `build()`, so the structural rules above are reported with the same codes for an annotated
-graph.
+`automaticOrder(state, List.of(...))` call, and `automaticChain = AutomaticChain.ON_ADVANCE` on the `Definition` as
+`automaticChain(AutomaticChain.ON_ADVANCE)` on the graph's builder; the default, `AFTER_COMMIT`, emits nothing. The
+processor hands the whole outline, marks and orders included, to the validator the DSL runs in `build()`, so the
+structural rules above are reported with the same codes for an annotated graph.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and

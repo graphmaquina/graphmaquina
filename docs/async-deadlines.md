@@ -33,7 +33,7 @@ machine's budget and for an action's `@Timeout` alike.
 | --- | --- | --- |
 | Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root, its nested cascades and the sub-machine exits it runs |
 | Action `@Timeout` | After the action method returns its stage | That action's pending wait, capped by the root's remaining deadline |
-| Async guard | Uses the existing root deadline | That guard's pending wait; an action's `@Timeout` does not cover its guards |
+| Async guard | In a call, the root's deadline; in an eligibility check, a check nested in a guard included, the check's own: its machine's `asyncTimeout`, counted from the check's start | That guard's pending wait; an action's `@Timeout` does not cover its guards |
 | Service/client timeout | Defined by your service client | The service request according to that client's cancellation/timeout contract |
 
 ![An eight-second root budget starts with root execution. If an action returns its stage at second four, a five-second action timeout still allows only four seconds of waiting; a two-second action timeout allows two seconds.](images/async-deadlines.svg)

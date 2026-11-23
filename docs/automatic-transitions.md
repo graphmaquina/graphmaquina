@@ -10,9 +10,10 @@ rejections to ignore and no bound against a loop that never ends.
 
 The library reports and the caller decides. What goes wrong in a chain never throws, an `Error` aside, to the caller
 whose call committed: its outcome carries the failure, the abort or the guard that stopped the chain, and the
-application answers with its own error or calls `advance` later. The examples come from the onboarding of the
-example module, whose tests are in
-[OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java).
+application answers with its own error or calls `advance` later. The examples come from the onboarding and the
+profile of the example module, whose tests are in
+[OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java)
+and [ProfileFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/profile/ProfileFlowTest.java).
 
 ## Contents
 
