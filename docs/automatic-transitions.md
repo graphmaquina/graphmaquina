@@ -12,8 +12,8 @@ The library reports and the caller decides. What goes wrong in a chain never thr
 whose call committed: its outcome carries the failure, the abort or the guard that stopped the chain, and the
 application answers with its own error or calls `advance` later. The examples come from the onboarding and the
 profile of the example module, whose tests are in
-[OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java)
-and [ProfileFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/profile/ProfileFlowTest.java).
+[OnboardingFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/onboarding/OnboardingFlowTest.java) and
+[ProfileFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/profile/ProfileFlowTest.java).
 
 ## Contents
 
@@ -107,11 +107,11 @@ marked automatic, it is a candidate of every attempt from its origin.
 
 On a machine that chains after every commit, the default, each entity with a hop or a sub-machine start in the commit of
 any root call runs its chain, in the order of the commit's log. Every call counts: an operation, an `execute`, a
-`choose`, a `reevaluate`, an `advance`, a watch reaction and an attempt, and so does every entity they move, a peer that a cascade
-moved, a child that its parent started and a parent that a child's exit moved. A watch reacts only to a peer whose
-final state differs from its original one, but a chain also runs after a self-loop, such as the account's `TOUCH`, and
-after hops that bring the entity back where it started: a self-loop often means that data changed. A machine declared
-`ON_ADVANCE` chains only after an `advance`, as [chain only on advance](#chain-only-on-advance) says.
+`choose`, a `reevaluate`, an `advance`, a watch reaction and an attempt, and so does every entity they move, a peer that
+a cascade moved, a child that its parent started and a parent that a child's exit moved. A watch reacts only to a peer
+whose final state differs from its original one, but a chain also runs after a self-loop, such as the account's `TOUCH`,
+and after hops that bring the entity back where it started: a self-loop often means that data changed. A machine
+declared `ON_ADVANCE` chains only after an `advance`, as [chain only on advance](#chain-only-on-advance) says.
 
 The chain starts from the state the commit left the entity in, read from the commit's log, not from the entity. While
 that state has an automatic edge, it makes an attempt, a root call of its own, which reads the entity's state as any
@@ -218,8 +218,9 @@ A machine takes its automatic edges after every commit unless its graph says oth
 DSL builder, makes `advance(entity)` the only call after which the machine takes them on its own;
 `definition().automaticChain()` reads the setting, which is `AFTER_COMMIT` when the graph declares nothing. A request
 that names an automatic edge, an `execute` of its identifier, a choice's candidate, a watch rule or a cascade, still
-runs that edge, and its commit chains nothing. A profile fits: saving what the user typed must not complete it behind
-the user's back. The guards `hasName` and `hasAddress` are static methods of
+runs that edge, and its commit chains no entity of that machine, while the entities of an `AFTER_COMMIT` machine that it
+moved chain as usual. A profile fits: saving what the user typed must not complete it behind the user's back. The guards
+`hasName` and `hasAddress` are static methods of
 [ProfileGuards](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/ProfileGuards.java). In
 [Profiles](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/Profiles.java), `NAME` and
 `COMPLETE` are the automatic edges that they guard, and the operation `edit` is a self-loop of `DRAFT` and of `NAMED`:
@@ -318,13 +319,14 @@ warns; the library keeps no count per thread.
 
 A failure route, an `onFailure` or a recovery rule, stops its entity's chain by default: the entity stays in the
 recovery state until an operation or an `advance` moves it. A route declared to continue lets the chain go on from the
-recovery state instead. It may be declared on any edge, automatic or not: when the call of the application fails by
-such a route, its entity runs its chain from the recovery state too. On a machine declared `ON_ADVANCE`, the route is
-declared on an automatic edge only, since a manual edge never chains there (`SG306`): an `advance`, or an attempt of
-its chain, that fails by it goes on from the recovery state, while an `execute` of that automatic edge, or any other
-request that names it, fails by it to the recovery state and runs no chain. With annotations, a `Recovery` takes
-`continueChain = true`, as `COMPLETE_ADDRESS` declares above, and a `Transition` takes `onFailureContinues = true`,
-which needs an `onFailure`. A continuing route leads to a state with an automatic edge, or the build fails.
+recovery state instead. It may be declared on any edge, automatic or not: when the call of the application fails by such
+a route, its entity runs its chain from the recovery state too. On a machine declared `ON_ADVANCE`, the route is
+declared on an automatic edge only, since a manual edge never chains there (`SG306`): an `advance`, or an attempt of its
+chain, that fails by it goes on from the recovery state, while an `execute` of that automatic edge, or any other request
+that names it, fails by it to the recovery state, and its commit chains no entity of that machine. With annotations, a
+`Recovery` takes `continueChain = true`, as `COMPLETE_ADDRESS` declares above, and a `Transition` takes
+`onFailureContinues = true`, which needs an `onFailure`. A continuing route leads to a state with an automatic edge, or
+the build fails.
 
 The action of `COMPLETE_ADDRESS`, in
 [AccountActions](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/onboarding/AccountActions.java),

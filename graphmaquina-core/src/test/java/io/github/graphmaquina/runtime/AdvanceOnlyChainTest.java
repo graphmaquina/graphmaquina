@@ -59,11 +59,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * An {@link AutomaticChain#ON_ADVANCE} machine takes its automatic edges on its own only when the application advances
- * one of its entities: the attempt, then that entity's chain. A request that names an automatic edge still runs it and
- * chains nothing. The commit of any other call chains no entity of that machine, not even another entity that the
- * advance moved, while the entities of an {@link AutomaticChain#AFTER_COMMIT} machine that the same commit moved chain
- * as before. Accounts, the onboarding fixture, and desks, whose INVITE and SETTLE cascade where a test says and whose
- * watch reacts to their accounts, show each case.
+ * one of its entities: the attempt, then that entity's chain. The other entities of that machine that the advance moved
+ * do not chain, and the commit of any other call, a request that names an automatic edge and runs it included, chains
+ * no entity of that machine, while the entities of an {@link AutomaticChain#AFTER_COMMIT} machine that the same commit
+ * moved chain as before. Accounts, the onboarding fixture, and desks, whose INVITE and SETTLE cascade where a test says
+ * and whose watch reacts to their accounts, show each case.
  */
 class AdvanceOnlyChainTest {
 
@@ -187,7 +187,7 @@ class AdvanceOnlyChainTest {
         assertEquals(PASSWORD_SET, account.status());
     }
 
-    /** A self-loop on PASSWORD_SET, which an AFTER_COMMIT machine would chain from there, chains nothing. */
+    /** A self-loop on PASSWORD_SET, which an AFTER_COMMIT machine would chain from there, chains no account. */
     @Test
     void aSelfLoopOnAnOnAdvanceMachineRunsNoChain() {
         Account account = account(PASSWORD_SET);
@@ -270,7 +270,7 @@ class AdvanceOnlyChainTest {
         assertEquals(List.of(FLAGGED, DeskStatus.SETTLED), List.of(account.status(), desk.status()));
     }
 
-    /** An execute that names an automatic edge runs it, from PASSWORD_SET, and its commit chains nothing. */
+    /** An execute that names an automatic edge runs it, from PASSWORD_SET, and its commit chains no account. */
     @Test
     void anExecuteOfAnAutomaticIdentifierOnAnOnAdvanceMachineChainsNothing() {
         Account account = account(PASSWORD_SET);
@@ -291,7 +291,7 @@ class AdvanceOnlyChainTest {
         assertEquals(REVIEW, account.status());
     }
 
-    /** An execute of the same automatic edge fails by the same continuing route, and its commit chains nothing. */
+    /** An execute of the same automatic edge fails by the same continuing route, and its commit chains no account. */
     @Test
     void aContinuingRouteOnAnExecutedAutomaticEdgeChainsNothing() {
         Account account = account(INFO_SET);
@@ -373,7 +373,7 @@ class AdvanceOnlyChainTest {
     }
 
     /**
-     * SET_PASSWORD's hook advances its own account: the operation's commit chains nothing, and the hook's advance
+     * SET_PASSWORD's hook advances its own account: the operation's commit chains no account, and the hook's advance
      * takes every automatic edge, which its own outcome lists.
      */
     @Test

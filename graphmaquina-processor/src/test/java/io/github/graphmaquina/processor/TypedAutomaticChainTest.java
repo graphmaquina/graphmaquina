@@ -93,7 +93,7 @@ class TypedAutomaticChainTest {
         assertTrue(result.hasError(DiagnosticCode.SG306.name()), result.describe());
     }
 
-    /** The commit of an operation runs no chain, and {@code advance} runs the whole ladder to its end. */
+    /** The commit of an operation chains no doc, and {@code advance} runs the whole ladder to its end. */
     @Test
     void theGeneratedSetChainsOnlyOnAdvance() throws Exception {
         Compilation.Result result = Compilation.compileTyped(ladder());
