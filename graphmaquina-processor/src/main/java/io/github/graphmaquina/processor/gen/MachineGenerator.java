@@ -623,9 +623,8 @@ public final class MachineGenerator {
      * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code Eligibility},
      * {@code ChoiceEligibility} and {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two
      * throwable types or more, an automatic order, a check, a choice or a chain that runs only on advance needs them,
-     * then the model's
-     * other types, then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas
-     * catch.
+     * then the model's other types, then, where a lambda catches what a call throws, {@code Throwable} and the types
+     * the lambdas catch.
      */
     private static Map<String, String> types(MachineModel model, BoundInvocation invocations) {
         Map<String, String> types = new LinkedHashMap<>();

@@ -1,13 +1,13 @@
 # Debug a call with logs
 
-The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
-machine sets alike, at two levels. `DEBUG` logs how each call started, the candidate an `advance` or a `choose`
-admitted, the hops and starts it committed and how it ended; `TRACE` adds each step the call took on the way.
-Nothing is logged on this logger at `INFO` or above: the caller already receives the outcome or the exception. An
-eligibility check is no call, but it logs lines of its own on the same logger, as
-[What a check logs](#what-a-check-logs) shows. The library's only other record is a `WARNING` on
-the logger `io.github.graphmaquina` for an observer that threw. The logger is off by default. `java.util.logging`, the JDK's default backend for
-`System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to `FINER`, and its default configuration logs neither.
+The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and machine
+sets alike, at two levels. `DEBUG` logs how each call started, the candidate an `advance` or a `choose` admitted, the
+hops and starts it committed and how it ended; `TRACE` adds each step the call took on the way. Nothing is logged on
+this logger at `INFO` or above: the caller already receives the outcome or the exception. An eligibility check is no
+call, but it logs lines of its own on the same logger, as [What a check logs](#what-a-check-logs) shows. The library's
+only other record is a `WARNING` on the logger `io.github.graphmaquina` for an observer that threw. The logger is off by
+default. `java.util.logging`, the JDK's default backend for `System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to
+`FINER`, and its default configuration logs neither.
 
 ## Contents
 

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.dsl.AutomaticOrderOutline;
 import io.github.graphmaquina.dsl.ExitOutline;
 import io.github.graphmaquina.dsl.MachineOutline;
@@ -7,7 +8,6 @@ import io.github.graphmaquina.dsl.PolicyOutline;
 import io.github.graphmaquina.dsl.SubmachineOutline;
 import io.github.graphmaquina.dsl.TransitionOutline;
 import io.github.graphmaquina.dsl.WatchOutline;
-import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.RecoveryModel;

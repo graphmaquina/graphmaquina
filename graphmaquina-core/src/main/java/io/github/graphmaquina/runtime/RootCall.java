@@ -55,14 +55,14 @@ final class RootCall {
      * hear of that Error, in the phase the call reached; so does an Error that printing the failure throws while the
      * call classifies it, such as one from a message whose read throws it.
      * The observers hear of the call's start before its log does, and of its end after it: the start line follows
-     * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
-     * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
-     * its start line here; a reevaluation or an advance logged its own before it read the state, and a choice its own
+     * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of an
+     * Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs its
+     * start line here; a reevaluation or an advance logged its own before it read the state, and a choice its own
      * before it called this, inside a try of its own that tells them of an Error. Phase 2 moves the call on to HOOK
-     * once its last setter returned, so that whatever fails from then on reports every state written:
-     * building the committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no
-     * failed line. At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its
-     * writes to the call's flow as it makes it, and the watch dispatch logs each owner lookup.
+     * once its last setter returned, so that whatever fails from then on reports every state written: building the
+     * committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no failed line.
+     * At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its writes to
+     * the call's flow as it makes it, and the watch dispatch logs each owner lookup.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> run(
             DefaultStateMachine<E, S, T> machine, E entity, CallRequest request, Optional<Enum<?>> requested,

@@ -213,12 +213,12 @@ An operation that commits a self-loop does the same with a hop of its own: `touc
 
 ## Chain only on advance
 
-A machine takes its automatic edges after every commit unless its graph says otherwise. `automaticChain =
-AutomaticChain.ON_ADVANCE` on the `Definition`, or `automaticChain(AutomaticChain.ON_ADVANCE)` on the DSL builder,
-makes `advance(entity)` the only call after which the machine takes them on its own; `definition().automaticChain()`
-reads the setting, which is `AFTER_COMMIT` when the graph declares nothing. A request that names an automatic edge, an
-`execute` of its identifier, a choice's candidate, a watch rule or a cascade, still runs that edge, and its commit
-chains nothing. A profile fits: saving what the user typed must not complete it behind
+A machine takes its automatic edges after every commit unless its graph says otherwise.
+`automaticChain = AutomaticChain.ON_ADVANCE` on the `Definition`, or `automaticChain(AutomaticChain.ON_ADVANCE)` on the
+DSL builder, makes `advance(entity)` the only call after which the machine takes them on its own;
+`definition().automaticChain()` reads the setting, which is `AFTER_COMMIT` when the graph declares nothing. A request
+that names an automatic edge, an `execute` of its identifier, a choice's candidate, a watch rule or a cascade, still
+runs that edge, and its commit chains nothing. A profile fits: saving what the user typed must not complete it behind
 the user's back. The guards `hasName` and `hasAddress` are static methods of
 [ProfileGuards](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/ProfileGuards.java). In
 [Profiles](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/Profiles.java), `NAME` and
