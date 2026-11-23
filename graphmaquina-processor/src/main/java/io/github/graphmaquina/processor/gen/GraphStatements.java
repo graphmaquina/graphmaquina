@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.gen.MachineGenerator.Variables;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
@@ -211,8 +212,8 @@ final class GraphStatements {
 
     /**
      * The declarations the companion makes on the graph's builder, in the order the DSL takes them: the initial
-     * state, the terminals, the cycle allowances, the policies, the rejections, each edge from each of its origins,
-     * the automatic orders, the watches and the sub-machines. Each declaration is the lines of its chain, the first
+     * state, the chain when it is not the default, the terminals, the cycle allowances, the policies, the rejections,
+     * each edge from each of its origins, the automatic orders, the watches and the sub-machines. Each declaration is the lines of its chain, the first
      * starting with the call that opens it and every other with a call it makes on what the previous one returned.
      */
     private static List<List<String>> statements(MachineModel model, Names names, Variables variables,
@@ -221,6 +222,10 @@ final class GraphStatements {
         TypeElement transitions = model.types().transitionsElement();
         List<List<String>> statements = new ArrayList<>();
         statements.add(List.of(".initial(" + MachineGenerator.constant(names, states, model.initial()) + ")"));
+        if (declaresChain(model)) {
+            statements.add(List.of(".automaticChain(" + names.of(MachineGenerator.AUTOMATIC_CHAIN) + "."
+                    + model.automaticChain() + ")"));
+        }
         for (String terminal : model.terminals()) {
             statements.add(List.of(".terminal(" + MachineGenerator.constant(names, states, terminal) + ")"));
         }
@@ -254,11 +259,16 @@ final class GraphStatements {
         return statements;
     }
 
+    /** Whether the graph declares its chain: only an {@code ON_ADVANCE} one, since the default is the builder's. */
+    static boolean declaresChain(MachineModel model) {
+        return !model.automaticChain().equals(AutomaticChain.AFTER_COMMIT.name());
+    }
+
     /** How many declarations {@link #statements} makes for {@code model}, counted before any of them is written. */
     static int declarations(MachineModel model) {
-        int declarations = 1 + model.terminals().size() + model.cycleAllowed().size() + model.policies().size()
-                + model.rejections().size() + model.automaticOrders().size() + model.watches().size()
-                + model.submachines().size();
+        int declarations = 1 + (declaresChain(model) ? 1 : 0) + model.terminals().size()
+                + model.cycleAllowed().size() + model.policies().size() + model.rejections().size()
+                + model.automaticOrders().size() + model.watches().size() + model.submachines().size();
         for (TransitionModel transition : model.allTransitions()) {
             declarations += transition.from().size();
         }

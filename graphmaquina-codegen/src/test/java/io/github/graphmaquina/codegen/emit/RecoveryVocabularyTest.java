@@ -188,6 +188,17 @@ class RecoveryVocabularyTest {
         assertEquals(List.of(), compilation.messages());
     }
 
+    /** The {@code Definition} declares when the machine takes its automatic edges, after a commit unless it says. */
+    @Test
+    void definitionDeclaresAutomaticChain() {
+        List<String> definition = declaration(content(emitted(), "fx.DocsGraph"), "Definition");
+
+        assertTrue(definition.contains("io.github.graphmaquina.api.AutomaticChain automaticChain() default "
+                + "io.github.graphmaquina.api.AutomaticChain.AFTER_COMMIT;"), definition::toString);
+        assertTrue(definition.contains("/** {@return when the machine takes its automatic edges; after a commit by "
+                + "default} */"), definition::toString);
+    }
+
     /**
      * The automatic marks: {@code Transition} gains the two flags and {@code Recovery} the one that continues the
      * chain, each with its default, and {@code AutomaticOrder} is a repeatable annotation of a type that names a state

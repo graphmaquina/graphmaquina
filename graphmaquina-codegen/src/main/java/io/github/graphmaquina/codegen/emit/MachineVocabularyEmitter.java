@@ -4,6 +4,7 @@ import io.github.graphmaquina.annotation.Timeout;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -148,14 +149,18 @@ final class MachineVocabularyEmitter {
 
     private static void definition(JavaSource source, String machine, String state) {
         describe(source, "Declares the graph of {@link " + machine + "}: its initial state, its terminal states,",
-            "the states a cycle may return to, the properties reading the entity's identity and state,",
-            "and the default hook edges inherit unless they declare their own.");
+            "the states a cycle may return to, when the machine takes its automatic edges, the properties",
+            "reading the entity's identity and state, and the default hook edges inherit unless they declare their",
+            "own.");
         annotation(source, machine, "DEFINITION", TYPE_TARGET, Optional.empty(), "Definition");
         element(source, state + " initial();", "the initial state, from which every state must be reachable");
         element(source, state + "[] terminals() default {};",
             "the terminal states, which no edge leaves; none by default");
         element(source, state + "[] allowsCycle() default {};",
             "the states that allow a cycle, one of which every cycle must pass through; none by default");
+        element(source, AutomaticChain.class.getName() + " automaticChain() default "
+            + AutomaticChain.class.getName() + ".AFTER_COMMIT;",
+            "when the machine takes its automatic edges; after a commit by default");
         element(source, symbolClass(PropertySymbol.class) + " state();",
             "the property that reads and writes the state of the entity");
         element(source, symbolClass(PropertySymbol.class) + " id();",

@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CheckModel;
@@ -215,7 +216,19 @@ final class TypedMachineModelBuilder {
                 ? Optional.empty()
                 : Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
                         cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies,
-                        rejections, declared, operations, watched, bound, declaredChecks, orders));
+                        rejections, declared, operations, watched, bound, declaredChecks, orders,
+                        automaticChain(definition)));
+    }
+
+    /**
+     * The name of the {@code AutomaticChain} constant {@code definition} declares, and the default when javac could
+     * not read the value, which it has already reported.
+     */
+    private String automaticChain(AnnotationMirror definition) {
+        return annotations.find(definition, "automaticChain")
+                .filter((AnnotationValue value) -> value.getValue() instanceof VariableElement)
+                .map((AnnotationValue value) -> TypedValues.enumConstant(value).getSimpleName().toString())
+                .orElse(AutomaticChain.AFTER_COMMIT.name());
     }
 
     /** The policy of each state: the reason every identifier it declares no edge for is refused with. */

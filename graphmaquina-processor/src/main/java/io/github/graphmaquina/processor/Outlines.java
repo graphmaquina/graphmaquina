@@ -7,6 +7,7 @@ import io.github.graphmaquina.dsl.PolicyOutline;
 import io.github.graphmaquina.dsl.SubmachineOutline;
 import io.github.graphmaquina.dsl.TransitionOutline;
 import io.github.graphmaquina.dsl.WatchOutline;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.RecoveryModel;
@@ -71,7 +72,8 @@ final class Outlines {
         }
         return new MachineOutline(model.facadeName(), model.types().stateNames(), model.types().transitionNames(),
                 model.initial(), Set.copyOf(model.terminals()), Set.copyOf(model.cycleAllowed()), edges,
-                policies(model), watches, submachines, orders(model));
+                policies(model), watches, submachines, orders(model),
+                AutomaticChain.valueOf(model.automaticChain()));
     }
 
     /** The orders as declared, in declaration order and repeats included, for the validator to judge. */

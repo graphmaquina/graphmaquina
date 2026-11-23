@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
 import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -139,6 +140,7 @@ public final class MachineGenerator {
 
     static final String GRAPH_DEFINITION = GraphDefinition.class.getName();
     static final String MACHINE_KEY = MachineKey.class.getName();
+    static final String AUTOMATIC_CHAIN = AutomaticChain.class.getName();
     private static final String OUTCOME = Outcome.class.getName();
     private static final String ELIGIBILITY = Eligibility.class.getName();
     private static final String STATE_MACHINE = StateMachine.class.getName();
@@ -561,8 +563,9 @@ public final class MachineGenerator {
     /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
      * claims them: its own first, then the fixed ones, then the types of the watched peers and of the children, then
-     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List} and {@code Eligibility} where an
-     * edge, a watch, a recovery rule that lists two throwable types or more or a check needs them, then the model's
+     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code Eligibility} and
+     * {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two throwable types or more, a check
+     * or a chain that runs only on advance needs them, then the model's
      * other types, then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas
      * catch.
      */
@@ -609,7 +612,8 @@ public final class MachineGenerator {
      * Claims in {@code types}, in this order, {@code Duration} when an edge of {@code model} has a timeout,
      * {@code Optional} when the owner reader of a watch returns the owner itself, {@code WatchCondition} when a watch
      * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more or the graph declares
-     * an automatic order, and {@code Eligibility} when the facade declares a check.
+     * an automatic order, {@code Eligibility} when the facade declares a check and {@code AutomaticChain} when the
+     * graph chains only on advance.
      */
     private static void claimWhereNeeded(Map<String, String> types, MachineModel model) {
         boolean anyTimeout = false;
@@ -642,6 +646,9 @@ public final class MachineGenerator {
         }
         if (!model.checks().isEmpty()) {
             Names.claim(types, ELIGIBILITY);
+        }
+        if (GraphStatements.declaresChain(model)) {
+            Names.claim(types, AUTOMATIC_CHAIN);
         }
     }
 
