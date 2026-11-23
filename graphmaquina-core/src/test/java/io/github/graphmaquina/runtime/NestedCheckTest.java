@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -22,6 +23,7 @@ import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
@@ -36,6 +38,7 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocMachines;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.Facades;
 import io.github.graphmaquina.fixtures.GuardProbe;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -419,6 +422,52 @@ class NestedCheckTest {
             onShow.run();
             return id;
         }
+    }
+
+    /**
+     * The root's action keeps its context and cascades to a step, whose guard starts a check. The guard of that check
+     * cascades through the kept context, to one doc, to a collection, and through a facade the registry does not know,
+     * and each is refused before it stages anything or poisons the call, naming the action's machine and entity. The
+     * step's own guard, which no nested check encloses, still cascades through it, as before.
+     */
+    @Test
+    void aNestedChecksCascadeThroughAnEnclosingActionsContextIsRefused() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        AtomicReference<TransitionContext<Doc, DocStatus, DocTransition>> kept = new AtomicReference<>();
+        Doc root = new Doc("1", DRAFT);
+        Doc step = new Doc("2", DRAFT);
+        Doc other = new Doc("3", DRAFT);
+        Doc target = new Doc("4", DRAFT);
+        Doc moved = new Doc("5", DRAFT);
+        List<Object> seen = new ArrayList<>();
+        List<ReentrantTransitionException> refused = new ArrayList<>();
+        self.set(machine(asking(Map.of(step, (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+            seen.add(self.get().eligibility(other, DISCARD));
+            seen.add(kept.get().cascade(DOCS, moved, SUBMIT).code());
+        })), (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> asking(Map.of(other,
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                        refused.addAll(cascadesThrough(kept.get(), target))))
+                .apply(discard).action("keeps", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    kept.set(ctx);
+                    ctx.cascade(DOCS, step, SUBMIT);
+                    return ActionOutcome.ok();
+                })));
+        assertInstanceOf(Outcome.Applied.class, self.get().execute(root, DISCARD));
+        assertEquals(List.of(new Eligibility.Eligible<>(other, DRAFT, DISCARD), OutcomeCode.APPLIED), seen);
+        assertEquals(3, refused.size());
+        assertEquals(List.of(DOCS, root), List.of(refused.get(0).key(), refused.get(0).entity()));
+        assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(target.status(), moved.status(), step.status()));
+    }
+
+    /** What a cascade through {@code kept} to {@code target}, by key, by collection and by facade, each throws. */
+    private static List<ReentrantTransitionException> cascadesThrough(
+            TransitionContext<Doc, DocStatus, DocTransition> kept, Doc target) {
+        return List.of(
+                assertThrows(ReentrantTransitionException.class, () -> kept.cascade(DOCS, target, SUBMIT)),
+                assertThrows(ReentrantTransitionException.class,
+                        () -> kept.cascadeAll(DOCS, List.of(target), SUBMIT, CascadePolicy.FAIL_FAST)),
+                assertThrows(ReentrantTransitionException.class,
+                        () -> kept.cascade(Facades.Docs.class, target, SUBMIT)));
     }
 
     /** An execute, a choice, a reevaluation and an advance from a nested check's guard are each refused. */

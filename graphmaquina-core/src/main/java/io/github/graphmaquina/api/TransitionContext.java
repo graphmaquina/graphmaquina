@@ -29,7 +29,10 @@ import java.util.Optional;
  * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
  * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
  * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
- * the rollback is undoing them.
+ * the rollback is undoing them. Nor can a retained context cascade while a check that a guard started runs on its
+ * thread, from that check's code: there {@code cascade} and {@code cascadeAll} throw
+ * {@code ReentrantTransitionException} before they stage anything or poison the transaction, since that check must not
+ * move entities of the call it is nested in.
  * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
  * is its own failure. A throwable of the edge's action, other than a recovery action, that a type its edge declares
  * accepts, in {@link TransitionSpec#failsOn()} or in one of its {@link TransitionSpec#recoveryRules()}, takes the route

@@ -22,7 +22,8 @@ import java.util.Optional;
  *       says: it runs as a scope of its own, where it starts with no guard running, so its state getter, its identity
  *       function and its binding lookups can start nothing, while its own guards follow the same rule. Inside such a
  *       nested check, a read of an entity that a scope below holds is refused, as
- *       {@link #requireNotHeldOutside} says, whichever context's view makes it. The application code a nested check
+ *       {@link #requireNotHeldOutside} says, whichever context's view makes it, and so is a cascade through a retained
+ *       context of an enclosing call, as {@link #requireInnermost} says. The application code a nested check
  *       runs outside its own scope, its log's backend and the text of its entity's identity or of its failure, runs
  *       with the enclosing scope's guard count held at 0, as {@link Checks#check} says.</li>
  * </ul>
@@ -152,14 +153,29 @@ final class Reentrancy {
     /**
      * Rejects a read of {@code ref} made while {@code current} is the thread's innermost scope when a scope below it
      * holds {@code ref}, as {@link UnitOfWork#holds} says, with ReentrantTransitionException: such a read could see a
-     * state that the enclosing call is about to replace. The caller passes the innermost scope, whatever unit of work
-     * it reads through, so a view of an enclosing context handed to a nested check is refused too. A scope with none
-     * below it, as a root call or a check that no guard started, rejects nothing. Only the equals of {@code ref}'s
-     * identity runs.
+     * state that the enclosing call is about to replace. Each caller passes the innermost scope: a peer view the
+     * thread's, whatever unit of work it reads through, so a view of an enclosing context handed to a nested check is
+     * refused too; a binding lookup its step's, the innermost one, since no step of an enclosing call can run while a
+     * nested check does: a write is refused, and so is a cascade through an enclosing action's context, as
+     * {@link #requireInnermost} says. A scope with none below it, as a root call or a check that no guard started,
+     * rejects nothing. Only the equals of {@code ref}'s identity runs.
      */
     static void requireNotHeldOutside(UnitOfWork current, EntityRef ref) {
         if (heldBy(current.below, ref)) {
             throw new ReentrantTransitionException(ref.key(), ref.instance());
+        }
+    }
+
+    /**
+     * Rejects a cascade through a context of the call or check whose unit of work is {@code uow} while that unit of
+     * work is not the thread's innermost scope, which happens only while a check that a guard started runs: a retained
+     * action context of the enclosing call, used by that check's code, would stage hops in the call the check is
+     * nested in. The ReentrantTransitionException names {@code key} and {@code entity}, the context's own. With no
+     * nested check, the context's own unit of work is the innermost scope, and nothing changes.
+     */
+    static void requireInnermost(UnitOfWork uow, MachineKey<?, ?, ?> key, Object entity) {
+        if (CELL.get().top.orElseThrow() != uow) {
+            throw new ReentrantTransitionException(key, entity);
         }
     }
 

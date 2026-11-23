@@ -58,7 +58,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(@NonNull MachineKey<P, Q, U> key,
                                                                               @NonNull P peer, @NonNull U transition) {
-        check();
+        checkCascade();
         return Cascades.cascade(tx, this, key, peer, transition);
     }
 
@@ -66,7 +66,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     public <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull MachineKey<P, Q, U> key, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
-        check();
+        checkCascade();
         return Cascades.cascadeAll(tx, this, key, peers, transition, policy);
     }
 
@@ -85,7 +85,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
             @NonNull Class<M> peer, @NonNull P entity, @NonNull U transition) {
-        check();
+        checkCascade();
         return Cascades.cascade(tx, this, tx.cascadeKeyFor(this, peer), entity, transition);
     }
 
@@ -98,7 +98,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
-        check();
+        checkCascade();
         return Cascades.cascadeAll(tx, this, peer, peers, transition, policy);
     }
 
@@ -122,6 +122,16 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             throw new WrongThreadException("the context of " + machine.key()
                     + " can only be used from the thread running process(): " + owner.getName());
         }
+    }
+
+    /**
+     * Checks this context, then refuses a cascade while a check that a guard started runs on this thread, as
+     * {@link Reentrancy#requireInnermost} says, before the cascade checks anything else, so before it can poison the
+     * transaction or stage a hop.
+     */
+    private void checkCascade() {
+        check();
+        Reentrancy.requireInnermost(tx.uow(), machine.key(), entity);
     }
 
     /** The call's unit of work, once this context is checked: what its peer views and its flow read and write. */

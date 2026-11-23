@@ -45,10 +45,11 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
     /**
      * The peer's pending state in the unit of work, else what its getter reads. Inside a check that a guard started,
      * a peer that a call or check enclosing the thread's innermost scope holds is refused before either is read, as
-     * {@link Reentrancy#requireNotHeldOutside} says, whichever context made this view: the innermost scope's own, or
-     * that of an enclosing guard that handed it over. The peer's identity function, the identity's equals and hashCode
-     * and its getter run with the guard count of the thread's innermost scope held at 0, restored by a store, so that
-     * none of them can start a check from a guard's read.
+     * {@link Reentrancy#requireNotHeldOutside} says, whichever live context on this thread made this view: the
+     * innermost scope's own, or one of an enclosing call or check, such as an enclosing guard's or action's context
+     * that was handed over or kept. The peer's identity function, the identity's equals and hashCode and its getter
+     * run with the guard count of the thread's innermost scope held at 0, restored by a store, so that none of them
+     * can start a check from a guard's read.
      */
     @Override
     public Q stateOf(@NonNull P peer) {

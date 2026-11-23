@@ -9,7 +9,8 @@ import lombok.NonNull;
  * execute, reevaluate, advance, choose or an eligibility check, of eligibility or chooseEligibility, was called on a
  * thread that is already running a root transaction or an eligibility check, evaluating a watch or notifying an
  * observer, from one of the callbacks that run there, where it may not start; or a check that a guard started read an
- * entity that an enclosing call or check holds.
+ * entity that an enclosing call or check holds, or cascaded through a retained action context of the call it is
+ * nested in.
  * <ul>
  *   <li>The callbacks are: a guard, an action, a state accessor, an identity function or a sub-machine's childOf or
  *       parentOf inside the transaction, or any of them but the action inside the check, which runs none; a watch's
@@ -33,6 +34,10 @@ import lombok.NonNull;
  *       nested check never answers from a state that the enclosing call is about to replace. A guard that lets it
  *       through fails the nested check with an {@code EligibilityCheckException}, and the guard that started that
  *       check fails in turn unless it catches it.</li>
+ *   <li>Nor can a nested check, and everything it runs, move an entity of the call it is nested in: a cascade or a
+ *       cascadeAll through a retained action context of that call throws this exception, whose {@code key()} and
+ *       {@code entity()} are that action's, before it stages anything or poisons the call. With no nested check
+ *       running, such a context cascades as its action could.</li>
  * </ul>
  * After-commit hooks run once the transaction has released the thread, so they can start transitions and checks; a
  * watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done, and each
@@ -51,12 +56,13 @@ public final class ReentrantTransitionException extends StateMachineException {
 
     public ReentrantTransitionException(MachineKey<?, ?, ?> key, @NonNull Object entity) {
         super("execute/reevaluate/advance/choose/eligibility on " + Objects.requireNonNull(key, "key")
-                + ", or a read of it inside a nested check, from within a transition, an eligibility check, a watch"
-                + " evaluation or an observer callback already in progress on this thread: a guard, an action, a"
-                + " sub-machine's childOf or parentOf, a watch's peersOf, ownerOf or condition, a state accessor, an"
-                + " identity function or an observer cannot start another transition or eligibility check, except that"
-                + " a synchronous guard can check an entity that no enclosing call or check holds, and that check"
-                + " cannot read a held entity; an action moves its peers with ctx.cascade(...)");
+                + ", or, inside a nested check, a read of it or a cascade through its action's context, from within a"
+                + " transition, an eligibility check, a watch evaluation or an observer callback already in progress on"
+                + " this thread: a guard, an action, a sub-machine's childOf or parentOf, a watch's peersOf, ownerOf or"
+                + " condition, a state accessor, an identity function or an observer cannot start another transition or"
+                + " eligibility check, except that a synchronous guard can check an entity that no enclosing call or"
+                + " check holds, and that check can neither read a held entity nor cascade through an enclosing"
+                + " action's context; an action moves its peers with ctx.cascade(...)");
         this.key = key;
         this.entity = entity;
     }
