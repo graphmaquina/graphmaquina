@@ -395,16 +395,25 @@ logged while the guard runs. It reads its entity's state through the getter, and
 these same rules. Its answer returns to the guard. A check that cannot answer throws its `EligibilityCheckException`
 into the guard, which fails as a guard that throws unless it catches it.
 
-The check's scope is its own step: its state read, its binding lookups, its guards and everything they run. Code in
-that scope cannot read a held entity: through any live peer view, that of an enclosing guard's or action's context
-handed over included, `stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw
-`ReentrantTransitionException` into the code that made the read. A binding lookup that finds a held parent fails the
-check with an `EligibilityCheckException` whose cause is that exception. So a nested check never answers from a state
-that the enclosing call is about to replace. Nor can code in that scope cascade through a kept action context of an
-enclosing call: `cascade` and `cascadeAll` throw `ReentrantTransitionException`, naming the action's machine and
-entity, before they stage anything or poison the call. The code the engine runs for the check outside that scope, the
-log's backend and the text of the entity's identity or of the check's failure, runs under the rules of the enclosing
-scope, except that it cannot start a check.
+The check's scope is all it runs from its start to its answer: its own step, from the read of its entity's identity
+to its last guard, with its state read, its binding lookups, its guards and everything they run, and that step's
+`TRACE` lines and the texts they and the step's failures print. Code in that scope cannot read a held entity through
+the engine: through any context's peer view, that of an enclosing guard's or action's context handed over included,
+`stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw `ReentrantTransitionException` into the
+code that made the read. A binding lookup that finds a held parent fails the check with an `EligibilityCheckException`
+whose cause is that exception. So a nested check never reads, through a peer view or a binding lookup, an entity that
+an enclosing call or check has in flight, or whose hop or start is pending there. A read the engine does not make is
+not refused: a guard that calls a held entity's getter itself reads its stored state, which the enclosing call may be
+about to replace. And the answer holds for the states as they stood when the check ran: a step that the enclosing
+call runs after the guard, such as a cascade of its action to the checked entity, can change them, and runs that
+entity's admission again.
+
+Nor can code in that scope cascade through a kept action context of an enclosing call: `cascade` and `cascadeAll`
+throw `ReentrantTransitionException`, naming the action's machine and entity, before they stage anything or poison the
+call. The code the engine runs for the check outside that scope runs under the rules of the enclosing scope, except
+that it cannot start a check: the entity's identity function and its identity's `equals` before the check starts, the
+log's backend as the check reads its levels and logs its start, verdict and failed lines, and the identity text and
+the failure reason that those lines and the check's `EligibilityCheckException` print.
 
 Everything else stays refused:
 

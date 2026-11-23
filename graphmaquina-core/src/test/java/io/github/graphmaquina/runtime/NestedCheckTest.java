@@ -433,8 +433,7 @@ class NestedCheckTest {
      * The root's action keeps its context and cascades to a step, whose guard starts a check. The guard of that check
      * cascades through the kept context, to one doc and to a collection, by key and through a facade the registry does
      * not know, and each is refused before it stages anything or poisons the call, naming the action's machine and
-     * entity. The
-     * step's own guard, which no nested check encloses, still cascades through it, as before.
+     * entity. The step's own guard, which no nested check encloses, still cascades through it, as before.
      */
     @Test
     void aNestedChecksCascadeThroughAnEnclosingActionsContextIsRefused() {

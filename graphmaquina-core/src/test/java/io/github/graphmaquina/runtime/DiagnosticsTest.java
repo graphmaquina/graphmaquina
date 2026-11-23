@@ -65,13 +65,14 @@ class DiagnosticsTest {
                 () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
         ReentrantTransitionException reentrant = assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals("execute/reevaluate/advance/choose/eligibility on Doc/DocStatus, or, in a nested check's scope, a"
-                + " read of it or a cascade through its action's context, from within a transition, an eligibility"
-                + " check, a watch evaluation or an observer callback already in progress on this thread: a guard, an"
-                + " action, a sub-machine's childOf or parentOf, a watch's peersOf, ownerOf or condition, a state"
-                + " accessor, an identity function or an observer cannot start another transition or eligibility check,"
-                + " except that a synchronous guard can check an entity that no enclosing call or check holds, and that"
-                + " check's state read, binding lookups and guards can neither read a held entity nor cascade through"
-                + " an enclosing action's context; an action moves its peers with ctx.cascade(...)",
+                + " read of it through a peer view or a binding lookup or a cascade through its action's context, from"
+                + " within a transition, an eligibility check, a watch evaluation or an observer callback already in"
+                + " progress on this thread: a guard, an action, a sub-machine's childOf or parentOf, a watch's"
+                + " peersOf, ownerOf or condition, a state accessor, an identity function or an observer cannot start"
+                + " another transition or eligibility check, except that a synchronous guard can check an entity that"
+                + " no enclosing call or check holds, and in that check's scope a held entity cannot be read through a"
+                + " peer view or a binding lookup, nor can an enclosing action's context cascade; an action moves its"
+                + " peers with ctx.cascade(...)",
                 reentrant.getMessage());
         assertEquals(DRAFT, other.status());
     }

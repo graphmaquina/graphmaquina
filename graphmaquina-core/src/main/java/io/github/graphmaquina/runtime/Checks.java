@@ -33,8 +33,10 @@ final class Checks {
      * propagate as it is; a check so refused, or so failed, logs nothing. Then it runs as {@link #admitted} says, in
      * a unit of work of its own, whose deadline is the machine's counted from now. For a check that a guard started,
      * the guard count of the enclosing scope is held at 0 meanwhile, and restored by a store as the first statement of
-     * the finally. The application code the engine runs for the check outside its own scope, the log's backend and the
-     * text of the entity's identity or of a failure, runs in the enclosing scope, under that scope's rules, but as no
+     * the finally. The application code the engine runs for the check outside its own scope, which runs from the claim
+     * of the cell to its release, as {@link Reentrancy} says, is, besides that identity read, the log's backend, as the
+     * log reads its levels and logs the start, verdict and failed lines, with the identity text and the failure reason
+     * that those lines and {@link #failed} print: it runs in the enclosing scope, under that scope's rules, but as no
      * guard does, so it cannot start a check.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(

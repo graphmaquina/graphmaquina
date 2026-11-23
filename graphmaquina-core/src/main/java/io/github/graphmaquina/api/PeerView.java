@@ -8,10 +8,10 @@ import lombok.NonNull;
  * then the entity; the view a watch condition receives reads the entity only. An exception the entity's identity
  * function or state getter throws reaches the caller of {@code stateOf} as it is; a null state throws
  * {@code UninitializedStateException}, and an identity function that returns null a {@code NullPointerException}.
- * In the scope of a check that a guard started, its state read, binding lookups, guards and everything they run, a
- * context's view refuses an entity that an enclosing call or check holds, whichever live context made it:
- * {@code stateOf}, and {@code allIn} and {@code anyIn} for each peer they read, throw
- * {@code ReentrantTransitionException} before they read it, as that exception says.
+ * In the scope of a check that a guard started, its own step, from the read of its entity's identity to its last
+ * guard, and everything that step runs, a context's view refuses an entity that an enclosing call or check holds,
+ * whichever live context made it: {@code stateOf}, and {@code allIn} and {@code anyIn} for each peer they read,
+ * throw {@code ReentrantTransitionException} before they read it, as that exception says.
  */
 public interface PeerView<P, Q extends Enum<Q>, U extends Enum<U>> {
 

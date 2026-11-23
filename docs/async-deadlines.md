@@ -156,11 +156,15 @@ logs at `DEBUG`: it keeps a value of the flow only when that value is one of the
 once the hook returns or throws. The flow the caller receives once the call ended, in its outcome or its failure, is a
 frozen copy without these checks.
 
-Cascades also require that the commit has not begun and that no step is being rolled back. A retained action context
-used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or
-`hashCode` while a rollback calls it, throws `IllegalStateException` before it stages anything: the commit has already
-fixed the changes it will write, and the rollback is undoing them. Reading peers or the flow does not stage another
-hop, and a write to the flow from a commit getter or setter lands in the flow the call hands out.
+Cascades also require that the commit has not begun, that no step is being rolled back, and that they are not made
+from the scope of a check that a guard started. A retained action context used for `cascade(...)` or
+`cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or `hashCode` while a rollback calls
+it, throws `IllegalStateException` before it stages anything: the commit has already fixed the changes it will write,
+and the rollback is undoing them. One used from the scope of a check that a guard started, the check's own step and
+everything that step runs, throws `ReentrantTransitionException` before it stages anything or poisons the call, as
+[check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) says. Reading peers or the
+flow does not stage another hop, and a write to the flow from a commit getter or setter lands in the flow the call
+hands out.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow

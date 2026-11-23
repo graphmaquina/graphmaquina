@@ -19,16 +19,20 @@ import java.util.Optional;
  *       each linked to the one below it. A unit of work counts the synchronous guards of its steps that run, as
  *       {@link Steps} brackets each one's test call. The one exception to the refusals is a check started while a
  *       synchronous guard of the innermost scope runs, whose entity no scope holds, as {@link #requireCheckMayStart}
- *       says: it runs as a scope of its own, its own step, where it starts with no guard running, so its state
- *       getter, its identity function and its binding lookups can start nothing, while its own guards follow the same
- *       rule. In that scope, its state read, binding lookups, guards and everything they run, a read of an entity that
- *       a scope below holds is refused, as {@link #requireNotHeldOutside} says, whichever context's view makes it, and
- *       so is a cascade through a retained context of an enclosing call, as {@link #requireInnermost} says. The
- *       application code the engine runs for a nested check outside that scope, its log's backend and the text of its
- *       entity's identity or of its failure, runs in the enclosing scope, under that scope's rules, with that scope's
- *       guard count held at 0, as {@link Checks#check} says, so it cannot start a check. A cascade holds its call's
- *       guard count at 0 too, as {@code DefaultTransitionContext} says, so nothing in a step that a guard cascades
- *       to through a kept context starts a check but that step's own guards.</li>
+ *       says: it runs as a scope of its own, from its claim of the cell to its release, which is its own step, from
+ *       the read of its entity's identity to its last guard, with that step's TRACE lines and the texts they and its
+ *       failures print; it starts with no guard running, so its identity function, its state getter and its binding
+ *       lookups can start nothing, while its own guards follow the same rule. In that scope a read of an entity that a
+ *       scope below holds, through a context's peer view or a binding lookup, is refused, as
+ *       {@link #requireNotHeldOutside} says, whichever context's view makes it, and so is a cascade through a
+ *       retained context of an enclosing call, as {@link #requireInnermost} says. The application code the engine
+ *       runs for a nested check outside that scope runs in the enclosing scope, under that scope's rules, with that
+ *       scope's guard count held at 0, so it cannot start a check: the entity's identity function and its identity's
+ *       equals before the check starts, as {@link #requireCheckMayStart} says, and the log's backend, for the check's
+ *       levels and its start, verdict and failed lines, with the identity text and the failure reason that those
+ *       lines and the check's failure print, as {@link Checks#check} says. A cascade holds its call's guard count at 0
+ *       too, as {@code DefaultTransitionContext} says, so nothing in a step that a guard cascades to through a kept
+ *       context starts a check but that step's own guards.</li>
  * </ul>
  * Each holder prepares everything first and claims the cell last; it restores what it found with plain stores, the
  * first statements of a finally, so no failure leaves the cell claimed, not even a StackOverflowError that unwinds
