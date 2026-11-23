@@ -7,6 +7,7 @@ import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CheckModel;
+import io.github.graphmaquina.processor.model.ChoiceModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
@@ -31,7 +32,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
 /**
@@ -63,7 +63,9 @@ import javax.lang.model.type.TypeMirror;
  * method the facade declares or inherits that has the signature of the companion's static {@code graph(...)}, which
  * only a model whose bindings all resolved tells, and only when no vocabulary of the machine is missing from it. An
  * abstract method the facade declares that carries a {@code Check} of its own vocabulary and no {@code Transition} is
- * no operation either, but a check, which {@link TypedChecks} reads against the operations once they are all known. An
+ * no operation either, but a check, which {@link TypedChecks} reads against the operations once they are all known,
+ * and one that carries a {@code Choice} and no {@code Transition} is a choice, which {@link TypedChoices} reads once
+ * the operations and the sub-machines are known; one that carries a {@code Choice} and a {@code Check} is neither. An
  * entity of a parameterized type, which generated code can only name by its class, is refused as {@code SG601}.</p>
  */
 final class TypedMachineModelBuilder {
@@ -79,6 +81,7 @@ final class TypedMachineModelBuilder {
     private final Diagnostics diagnostics;
     private final Annotations annotations;
     private final TypedChecks checks;
+    private final TypedChoices choices;
     private final AutomaticChecks automaticChecks;
 
     TypedMachineModelBuilder(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
@@ -96,6 +99,7 @@ final class TypedMachineModelBuilder {
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
         this.checks = new TypedChecks(vocabulary, signatures, diagnostics);
+        this.choices = new TypedChoices(checks, signatures, diagnostics);
     }
 
     /**
@@ -201,23 +205,37 @@ final class TypedMachineModelBuilder {
         List<RejectionModel> rejections = rejections(type, types);
         List<TransitionModel> declared = declared(type, types, defaultAfterCommit);
         List<ExecutableElement> checkMethods = new ArrayList<>();
-        List<OperationModel> operations = operations(type, types, defaultAfterCommit, checkMethods);
+        List<ExecutableElement> choiceMethods = new ArrayList<>();
+        List<OperationModel> operations = operations(type, types, defaultAfterCommit, checkMethods, choiceMethods);
         List<CheckModel> declaredChecks = checks.read(type, types, checkMethods, operations);
         automaticChecks.checkTypeLevelInput(type, declared, operations);
         List<AutomaticOrderModel> orders = automaticOrders(type, types);
         structure.checkInheritedOperations(type);
-        TypedPairs.Peers peers = pairs.peers(type);
-        Set<String> used = new LinkedHashSet<>();
-        List<SubmachineModel> bound = submachines.read(type, types, peers, used, operations);
-        List<WatchModel> watched = watches.read(type, types, peers, used);
-        pairs.checkUsed(type, peers, used);
+        List<WatchModel> watched = new ArrayList<>();
+        List<SubmachineModel> bound = paired(type, types, operations, watched);
+        List<ChoiceModel> declaredChoices = choices.read(type, types, choiceMethods, declared, operations, bound);
         checkDuplicateKeys(type, declared, operations);
         return state.isEmpty() || id.isEmpty() || diagnostics.errors() > before
                 ? Optional.empty()
                 : Optional.of(new MachineModel(types, packageName(type), initial.get(), terminals.get(),
                         cycleAllowed.get(), state.get().reader(), state.get().writer(), id.get(), policies,
-                        rejections, declared, operations, watched, bound, declaredChecks, orders,
+                        rejections, declared, operations, watched, bound, declaredChecks, declaredChoices, orders,
                         automaticChain(definition)));
+    }
+
+    /**
+     * The sub-machines the facade {@code type} binds and, added to {@code watched}, the watches it declares, both read
+     * from the vocabulary of its pairs, then {@code SG608} for every peer it declares and uses for neither.
+     * {@code operations} are its operations, none of which may execute an exit.
+     */
+    private List<SubmachineModel> paired(TypeElement type, MachineTypes types, List<OperationModel> operations,
+            List<WatchModel> watched) {
+        TypedPairs.Peers peers = pairs.peers(type);
+        Set<String> used = new LinkedHashSet<>();
+        List<SubmachineModel> bound = submachines.read(type, types, peers, used, operations);
+        watched.addAll(watches.read(type, types, peers, used));
+        pairs.checkUsed(type, peers, used);
+        return bound;
     }
 
     /**
@@ -335,11 +353,16 @@ final class TypedMachineModelBuilder {
      * companion's method cannot return, is refused as {@code SG504}. A method that carries a {@code Check} of the
      * facade's own vocabulary and no {@code Transition} is no operation either: it is added to
      * {@code checkMethods}, for {@link TypedChecks} to read once every operation is known. One that carries both is
-     * {@code SG514}, and is still read as the operation its {@code Transition} declares.
+     * {@code SG514}, and is still read as the operation its {@code Transition} declares. Likewise a method that
+     * carries a {@code Choice} and no {@code Transition} is added to {@code choiceMethods}, for {@link TypedChoices};
+     * one that carries a {@code Choice} beside a {@code Transition} is {@code SG516}, and is still read as that
+     * operation, and one that carries a {@code Choice} beside a {@code Check} only is {@code SG516}, and is read as
+     * neither a check nor a choice.
      */
     private List<OperationModel> operations(TypeElement type, MachineTypes types,
                                             Optional<Binding> defaultAfterCommit,
-                                            List<ExecutableElement> checkMethods) {
+                                            List<ExecutableElement> checkMethods,
+                                            List<ExecutableElement> choiceMethods) {
         List<OperationModel> operations = new ArrayList<>();
         Map<String, ExecutableElement> owners = new LinkedHashMap<>();
         for (Element member : type.getEnclosedElements()) {
@@ -352,21 +375,43 @@ final class TypedMachineModelBuilder {
             }
             List<AnnotationMirror> mirrors = own(method, VocabularyKind.TRANSITION, type);
             List<AnnotationMirror> checked = own(method, VocabularyKind.CHECK, type);
+            List<AnnotationMirror> chosen = own(method, VocabularyKind.CHOICE, type);
             Optional<ExecutableElement> builtIn = structure.overriddenBuiltIn(method, type);
             if (builtIn.isPresent()) {
-                structure.checkNotAnOperation(method, builtIn.get(), type, !mirrors.isEmpty() || !checked.isEmpty());
+                structure.checkNotAnOperation(method, builtIn.get(), type,
+                        !mirrors.isEmpty() || !checked.isEmpty() || !chosen.isEmpty());
                 continue;
             }
-            if (!checked.isEmpty() && mirrors.isEmpty()) {
-                checkMethods.add(method);
+            if (mirrors.isEmpty() && !(checked.isEmpty() && chosen.isEmpty())) {
+                apart(method, checked, chosen, checkMethods, choiceMethods);
                 continue;
             }
             if (!checked.isEmpty()) {
                 checks.checkNotOnOperation(method, checked.get(0));
             }
+            if (!chosen.isEmpty()) {
+                choices.checkAlone(method, chosen.get(0), "Transition");
+            }
             operation(method, mirrors, types, defaultAfterCommit, owners).ifPresent(operations::add);
         }
         return operations;
+    }
+
+    /**
+     * Routes {@code method}, which carries no {@code Transition} of the facade's own vocabulary but carries
+     * {@code checked}, its {@code Check} annotations, or {@code chosen}, its {@code Choice} annotations: to
+     * {@code checkMethods} when it carries no {@code Choice}, to {@code choiceMethods} when it carries no
+     * {@code Check}, and to {@code SG516} when it carries both.
+     */
+    private void apart(ExecutableElement method, List<AnnotationMirror> checked, List<AnnotationMirror> chosen,
+            List<ExecutableElement> checkMethods, List<ExecutableElement> choiceMethods) {
+        if (chosen.isEmpty()) {
+            checkMethods.add(method);
+        } else if (checked.isEmpty()) {
+            choiceMethods.add(method);
+        } else {
+            choices.checkAlone(method, chosen.get(0), "Check");
+        }
     }
 
     /**
@@ -470,12 +515,12 @@ final class TypedMachineModelBuilder {
      * and is not interchangeable here: each declaration belongs to the graph whose name it carries.
      */
     private boolean owns(Element element, AnnotationMirror mirror, TypeElement facade) {
+        if (pairs.generatedFor(mirror, facade)) {
+            return true;
+        }
         TypeElement declaration = (TypeElement) mirror.getAnnotationType().asElement();
         AnnotationMirror metadata = annotations.find(declaration, GeneratedVocabulary.class).orElseThrow();
         TypeMirror machine = TypedValues.classLiteral(annotations.value(metadata, "machine"));
-        if (machine instanceof DeclaredType declared && declared.asElement().equals(facade)) {
-            return true;
-        }
         DiagnosticAnchor.of(element, mirror).report(diagnostics, DiagnosticCode.SG606, declaration.getQualifiedName()
                 + " is the vocabulary of " + machine + ", not of " + facade.getQualifiedName());
         return false;

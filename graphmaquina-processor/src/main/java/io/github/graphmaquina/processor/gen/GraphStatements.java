@@ -338,7 +338,7 @@ final class GraphStatements {
      * {@code List.of(A, B)} over the identifiers {@code ids} of {@code transitions}, in their order, with
      * {@code List} written as the file writes the type it claimed.
      */
-    private static String identifiers(Names names, TypeElement transitions, List<String> ids) {
+    static String identifiers(Names names, TypeElement transitions, List<String> ids) {
         List<String> constants = new ArrayList<>();
         for (String id : ids) {
             constants.add(MachineGenerator.constant(names, transitions, id));

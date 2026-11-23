@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor.gen;
 import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
 import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.AutomaticChain;
+import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -14,6 +15,7 @@ import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CheckModel;
+import io.github.graphmaquina.processor.model.ChoiceModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
@@ -53,8 +55,8 @@ import javax.lang.model.util.Elements;
  * <p>Every public member it declares, but the operations and the methods of {@code Machine} it implements, whose
  * comments {@code javadoc} inherits from the facade, carries a documentation comment with the tags its signature
  * calls for, as {@link SourceWriter#javadoc} writes it: the key, the constructor, {@code graph(...)},
- * {@code structure()} and the methods that implement a check, whose comment says what they ask and that they run
- * nothing.</p>
+ * {@code structure()}, the methods that implement a check, whose comment says what they ask and that they run
+ * nothing, and the methods that implement a choice, whose comment says what they run or ask.</p>
  *
  * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
@@ -100,33 +102,40 @@ import javax.lang.model.util.Elements;
  * graph is the one its operations declare. The companion claims {@code Eligibility} through {@link Names} only when
  * the facade declares a check.</p>
  *
- * <p>Types are written along two paths. The types the companion names itself, its {@code java.lang} ones
- * included, are written as {@link Names} decides from what the companion's scope already holds, the member types
- * it inherits from the facade among them: by their simple name where that name resolves to them, qualified
- * otherwise. The types an operation or a check takes as its input, the parameter types that pin a bound overload, the
- * {@code failsOn} classes, and the kind and the throwable classes of each recovery rule are written by
- * {@link TypeSource}, every declared type in them by its qualified name, together with their type annotations.
- * A qualified name starts with a package or, for a type of the unnamed package, with the top-level type it is or is
- * nested in, which is the whole name of a top-level one. A type of the companion's scope takes that first segment
- * wherever it heads a name; a field of that scope takes it, or a simple name, only where an expression reads it: as the
- * qualifier of a member the companion calls or reads, or in an enum constant an annotation value names. So
- * {@link #emit} answers, beside the source, every first segment and simple name the companion writes and which of them
- * an expression reads, and the processor refuses, as {@code SG603} and before writing it, a facade whose companion
- * would write one that its scope takes.</p>
+ * <p>Each choice of the model becomes one method, after the checks, in declaration order. It refuses its null
+ * arguments as an operation does, then returns {@code stateMachine.choose(entity, List.of(A, B))}, or
+ * {@code stateMachine.chooseEligibility(entity, List.of(A, B))} for a choice that returns a
+ * {@code ChoiceEligibility}, with its candidates in the order its {@code Choice} names them, and the input after them
+ * when it has one, which a primitive one reaches boxed. A choice opens no edge, so the graph is the one its edges
+ * declare. The companion claims {@code List} through {@link Names} when the facade declares a choice, and
+ * {@code ChoiceEligibility} only when one of them returns it.</p>
  *
- * <p>Variables are named after the types they hold, or after their role, but for the parameters of an operation or a
- * check, which take the names the facade's method declares them with. The parameter that takes the definition of a
- * child is the decapitalized simple name of the child's facade followed by {@code Graph}. The parameter that takes the
- * entity anywhere else is its decapitalized simple name; when that name is a keyword, or a name the companion already
- * uses, it is that name followed by {@code Entity}, and by the smallest numeric suffix from {@code 2} that frees it
- * should that be used as well: an entity {@code Case} is taken as {@code caseEntity}. Every other variable whose name
- * is a keyword, is taken by another variable in scope, or is an identifier the file writes at the head of a type
- * reference gets the smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as
- * {@code default2}. So does a declared parameter of an operation or a check whose name the companion already uses, as
- * its field's or that of a variable of another of its methods: a parameter {@code stateMachine} is taken as
- * {@code stateMachine2}. An operation, and a check, refuse a null entity, and a null input of a reference type, with a
- * {@code NullPointerException} that names the parameter as the facade declares it. So no variable the companion
- * declares obscures a type or a package it names.</p>
+ * <p>Types are written along two paths. The types the companion names itself, its {@code java.lang} ones included, are
+ * written as {@link Names} decides from what the companion's scope already holds, the member types it inherits from the
+ * facade among them: by their simple name where that name resolves to them, qualified otherwise. The types an
+ * operation, a check or a choice takes as its input, the parameter types that pin a bound overload, the {@code failsOn}
+ * classes, and the kind and the throwable classes of each recovery rule are written by {@link TypeSource}, every
+ * declared type in them by its qualified name, together with their type annotations. A qualified name starts with a
+ * package or, for a type of the unnamed package, with the top-level type it is or is nested in, which is the whole name
+ * of a top-level one. A type of the companion's scope takes that first segment wherever it heads a name; a field of
+ * that scope takes it, or a simple name, only where an expression reads it: as the qualifier of a member the companion
+ * calls or reads, or in an enum constant an annotation value names. So {@link #emit} answers, beside the source, every
+ * first segment and simple name the companion writes and which of them an expression reads, and the processor refuses,
+ * as {@code SG603} and before writing it, a facade whose companion would write one that its scope takes.</p>
+ *
+ * <p>Variables are named after the types they hold, or after their role, but for the parameters of an operation, a
+ * check or a choice, which take the names the facade's method declares them with. The parameter that takes the
+ * definition of a child is the decapitalized simple name of the child's facade followed by {@code Graph}. The parameter
+ * that takes the entity anywhere else is its decapitalized simple name; when that name is a keyword, or a name the
+ * companion already uses, it is that name followed by {@code Entity}, and by the smallest numeric suffix from {@code 2}
+ * that frees it should that be used as well: an entity {@code Case} is taken as {@code caseEntity}. Every other
+ * variable whose name is a keyword, is taken by another variable in scope, or is an identifier the file writes at the
+ * head of a type reference gets the smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is
+ * taken as {@code default2}. So does a declared parameter of an operation, a check or a choice whose name the companion
+ * already uses, as its field's or that of a variable of another of its methods: a parameter {@code stateMachine} is
+ * taken as {@code stateMachine2}. An operation, a check and a choice refuse a null entity, and a null input of a
+ * reference type, with a {@code NullPointerException} that names the parameter as the facade declares it. So no
+ * variable the companion declares obscures a type or a package it names.</p>
  *
  * <p>A bound method or an accessor the companion calls may declare a checked exception, which no functional
  * interface of the DSL declares. The lambda then makes the call in a block that catches what it throws, as
@@ -143,6 +152,7 @@ public final class MachineGenerator {
     static final String AUTOMATIC_CHAIN = AutomaticChain.class.getName();
     private static final String OUTCOME = Outcome.class.getName();
     private static final String ELIGIBILITY = Eligibility.class.getName();
+    private static final String CHOICE_ELIGIBILITY = ChoiceEligibility.class.getName();
     private static final String STATE_MACHINE = StateMachine.class.getName();
     static final String WATCH_CONDITION = WatchCondition.class.getName();
     static final String STATE_GRAPH = StateGraph.class.getName();
@@ -224,9 +234,9 @@ public final class MachineGenerator {
     }
 
     /**
-     * What {@link TypeSource} writes in the companion of {@code model}: the inputs of the operations and of the
-     * checks, the types that pin an overload, the {@code failsOn} classes, and the kind and the throwable classes of
-     * every recovery rule.
+     * What {@link TypeSource} writes in the companion of {@code model}: the inputs of the operations, of the checks and
+     * of the choices, the types that pin an overload, the {@code failsOn} classes, and the kind and the throwable
+     * classes of every recovery rule.
      */
     private static Written rendered(MachineModel model, BoundInvocation invocations) {
         List<TypeMirror> sources = new ArrayList<>();
@@ -235,6 +245,9 @@ public final class MachineGenerator {
         }
         for (CheckModel check : model.checks()) {
             check.inputType().ifPresent(sources::add);
+        }
+        for (ChoiceModel choice : model.choices()) {
+            choice.inputType().ifPresent(sources::add);
         }
         for (TransitionModel transition : model.allTransitions()) {
             sources.addAll(transition.failsOn());
@@ -276,6 +289,9 @@ public final class MachineGenerator {
         }
         for (CheckModel check : model.checks()) {
             check(model, names, variables, objects, check, out);
+        }
+        for (ChoiceModel choice : model.choices()) {
+            choice(model, names, variables, objects, choice, out);
         }
         delegations(model, names, variables, out);
         if (!variables.rethrow().isEmpty()) {
@@ -384,11 +400,57 @@ public final class MachineGenerator {
     }
 
     /**
-     * The parameters of a method that implements an operation or a check, as the companion declares them: the entity
-     * under {@code entity}, and the input, when the method has one, under {@code input}, each taken from the name the
-     * facade's method declares it with, {@code declaredEntity} and {@code declaredInput}, by the smallest numeric
-     * suffix from {@code 2} that frees it should the companion use the name already. {@code inputType} is the type
-     * javac resolved for the input.
+     * The method that implements {@code choice}: it refuses a null entity, and a null input of a reference type,
+     * through {@code objects}, then hands the choice's candidates, in their order, to the state machine's
+     * {@code choose}, or to its {@code chooseEligibility} for a choice that returns a {@code ChoiceEligibility}, with
+     * the input when the choice has one. Its parameters take the names an operation's do, and its documentation
+     * comment says what it runs or asks.
+     */
+    private static void choice(MachineModel model, Names names, Variables variables, String objects,
+                               ChoiceModel choice, SourceWriter out) {
+        String e = names.of(model.types().entityElement().getQualifiedName().toString());
+        TypeElement transitions = model.types().transitionsElement();
+        Parameters parameters = Parameters.of(variables, choice.entityParameter(), choice.inputParameter(),
+                choice.inputType());
+        String target = parameters.entity();
+        List<String> candidates = new ArrayList<>();
+        for (String candidate : choice.candidates()) {
+            candidates.add("{@code " + constant(names, transitions, candidate) + "}");
+        }
+        String named = String.join(", ", candidates);
+        List<String> tags = new ArrayList<>();
+        tags.add("@param " + target + " the entity of the choice");
+        parameters.input().ifPresent((String name) -> tags.add("@param " + name + " the input of the choice"));
+        tags.add(choice.check()
+                ? "@return the answer: the candidate chosen, with the refusals of the candidates before it, or the"
+                        + " refusal of every candidate"
+                : "@return the outcome: applied or failed, with the candidate that ran as its requested transition, or"
+                        + " ignored with the refusal of every candidate when none is admitted");
+        out.blank();
+        out.javadoc((choice.check()
+                ? "Asks which of " + named + " a choice would run for {@code " + target + "} in the state it is in now,"
+                        + " trying them in this order, without running it: it writes no state, runs no action and"
+                        + " tells no observer."
+                : "Runs, as one call, the first of " + named + " that is admitted for {@code " + target + "} in the"
+                        + " state it is in now, trying them in this order.")
+                + " It refuses a null argument with a {@code NullPointerException} that names the parameter.", tags);
+        out.line("@" + names.of(OVERRIDE));
+        out.open("public " + names.of(choice.check() ? CHOICE_ELIGIBILITY : OUTCOME)
+                + typeArguments(model.types(), names) + " " + choice.name() + "(" + e + " " + target
+                + parameters.declaration() + ")");
+        parameters.refuseNull(objects, out);
+        out.line("return " + variables.machine() + (choice.check() ? ".chooseEligibility(" : ".choose(") + target
+                + ", " + GraphStatements.identifiers(names, transitions, choice.candidates()) + parameters.argument()
+                + ");");
+        out.close();
+    }
+
+    /**
+     * The parameters of a method that implements an operation, a check or a choice, as the companion declares them: the
+     * entity under {@code entity}, and the input, when the method has one, under {@code input}, each taken from the
+     * name the facade's method declares it with, {@code declaredEntity} and {@code declaredInput}, by the smallest
+     * numeric suffix from {@code 2} that frees it should the companion use the name already. {@code inputType} is the
+     * type javac resolved for the input.
      */
     private record Parameters(String declaredEntity, String entity, Optional<String> declaredInput,
                               Optional<String> input, Optional<TypeMirror> inputType) {
@@ -563,9 +625,10 @@ public final class MachineGenerator {
     /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
      * claims them: its own first, then the fixed ones, then the types of the watched peers and of the children, then
-     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code Eligibility} and
-     * {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two throwable types or more, a check
-     * or a chain that runs only on advance needs them, then the model's
+     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code Eligibility},
+     * {@code ChoiceEligibility} and {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two
+     * throwable types or more, an automatic order, a check, a choice or a chain that runs only on advance needs them,
+     * then the model's
      * other types, then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas
      * catch.
      */
@@ -611,15 +674,16 @@ public final class MachineGenerator {
     /**
      * Claims in {@code types}, in this order, {@code Duration} when an edge of {@code model} has a timeout,
      * {@code Optional} when the owner reader of a watch returns the owner itself, {@code WatchCondition} when a watch
-     * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more or the graph declares
-     * an automatic order, {@code Eligibility} when the facade declares a check and {@code AutomaticChain} when the
-     * graph chains only on advance.
+     * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more, the graph declares
+     * an automatic order or the facade declares a choice, {@code Eligibility} when the facade declares a check,
+     * {@code ChoiceEligibility} when it declares a choice that returns one and {@code AutomaticChain} when the graph
+     * chains only on advance.
      */
     private static void claimWhereNeeded(Map<String, String> types, MachineModel model) {
         boolean anyTimeout = false;
         boolean anyPlainOwner = false;
         boolean anyBuiltIn = false;
-        boolean anyTypeList = !model.automaticOrders().isEmpty();
+        boolean anyTypeList = !model.automaticOrders().isEmpty() || !model.choices().isEmpty();
         for (TransitionModel transition : model.allTransitions()) {
             anyTimeout |= transition.timeout().isPresent();
             for (RecoveryModel recovery : transition.recoveries()) {
@@ -646,6 +710,9 @@ public final class MachineGenerator {
         }
         if (!model.checks().isEmpty()) {
             Names.claim(types, ELIGIBILITY);
+        }
+        if (model.choices().stream().anyMatch(ChoiceModel::check)) {
+            Names.claim(types, CHOICE_ELIGIBILITY);
         }
         if (GraphStatements.declaresChain(model)) {
             Names.claim(types, AUTOMATIC_CHAIN);

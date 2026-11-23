@@ -206,7 +206,8 @@ shop are exactly that. Omitting `action` makes the edge a `MOVE`.
 
 A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
-admitted without running it, plus what every
+admitted without running it, the choices you declared with the generated `Choice`, each of which runs, or checks, the
+first admitted of the candidate identifiers it names, in their declared order, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
 `advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
 declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
@@ -282,7 +283,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.AutomaticOrder`, `.AutomaticOrders` |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.Choice`, `.AutomaticOrder`, `.AutomaticOrders` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | Marked guard `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.NAME`, the string `"hasTitle"`: the guard's runtime name, the one a rejection, an ineligible check and a test assertion carry. Renaming the guard renames the symbol, so a stale reference fails to compile |

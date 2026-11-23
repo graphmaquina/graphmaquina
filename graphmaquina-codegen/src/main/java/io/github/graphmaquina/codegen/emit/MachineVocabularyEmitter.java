@@ -21,8 +21,8 @@ import java.util.Set;
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
  * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers,
- * {@code Recovery}, which is written only inside a {@code Transition}, {@code Check}, which is written on a
- * method, and {@code AutomaticOrder} with its container, which orders the automatic edges of one state.
+ * {@code Recovery}, which is written only inside a {@code Transition}, {@code Check} and {@code Choice}, each
+ * written on a method, and {@code AutomaticOrder} with its container, which orders the automatic edges of one state.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
@@ -51,7 +51,7 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check",
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check", "Choice",
         "AutomaticOrder", "AutomaticOrders");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
     private static final String METHOD_TARGET = "java.lang.annotation.ElementType.METHOD";
@@ -108,22 +108,29 @@ final class MachineVocabularyEmitter {
         source.line("");
         source.line("private " + simpleName + "() {");
         source.line("}");
-
-        definition(source, machine, state);
-        statePolicy(source, simpleName, machine, state);
-        statePolicies(source, simpleName, machine);
-        transition(source, simpleName, machine, state, transition);
-        transitions(source, simpleName, machine);
-        recovery(source, simpleName, machine, transition);
-        reject(source, simpleName, machine, state, transition);
-        rejects(source, simpleName, machine);
-        check(source, machine, transition);
-        automaticOrder(source, simpleName, machine, state, transition);
-        automaticOrders(source, simpleName, machine);
-
+        nested(source, simpleName, machine, state, transition);
         source.outdent();
         source.line("}");
         return new GeneratedSource(vocabulary, source.toString());
+    }
+
+    /**
+     * Writes the annotations nested in the vocabulary {@code vocabulary} of {@code machine}, whose state and
+     * transition types are {@code state} and {@code transition}, in the order {@link #ANNOTATIONS} names them.
+     */
+    private static void nested(JavaSource source, String vocabulary, String machine, String state, String transition) {
+        definition(source, machine, state);
+        statePolicy(source, vocabulary, machine, state);
+        statePolicies(source, vocabulary, machine);
+        transition(source, vocabulary, machine, state, transition);
+        transitions(source, vocabulary, machine);
+        recovery(source, vocabulary, machine, transition);
+        reject(source, vocabulary, machine, state, transition);
+        rejects(source, vocabulary, machine);
+        check(source, machine, transition);
+        choice(source, machine, transition);
+        automaticOrder(source, vocabulary, machine, state, transition);
+        automaticOrders(source, vocabulary, machine);
     }
 
     /**
@@ -295,6 +302,14 @@ final class MachineVocabularyEmitter {
             "operation that owns {@code id} may pass its admission conditions now.");
         annotation(source, machine, "CHECK", METHOD_TARGET, Optional.empty(), "Check");
         element(source, transition + " id();", "the identifier of the operation the method checks");
+        close(source);
+    }
+
+    private static void choice(JavaSource source, String machine, String transition) {
+        describe(source, "Declares a method of {@link " + machine + "} that runs, or checks without running it,",
+            "the first of its candidate identifiers that is admitted for the entity in the state it is in now.");
+        annotation(source, machine, "CHOICE", METHOD_TARGET, Optional.empty(), "Choice");
+        element(source, transition + "[] value();", "the candidate identifiers, in the order a call tries them");
         close(source);
     }
 

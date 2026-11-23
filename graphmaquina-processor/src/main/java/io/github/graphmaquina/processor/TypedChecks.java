@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
@@ -23,8 +24,8 @@ import javax.lang.model.util.ElementFilter;
 
 /**
  * Reads the checks a facade declares: its abstract methods that carry the {@code Check} generated for that very
- * machine and no {@code Transition}, each of which asks whether one operation of the facade may pass its admission
- * conditions now, without running it.
+ * machine and neither a {@code Transition} nor a {@code Choice}, each of which asks whether one operation of the
+ * facade may pass its admission conditions now, without running it.
  *
  * <p>A check is no operation. It owns no identifier, so it never takes part in {@code SG703}, and opens no edge, so
  * it never takes part in {@code SG804} either. Its {@code id} names the identifier one of the facade's operations
@@ -59,11 +60,11 @@ final class TypedChecks {
 
     /**
      * The checks of {@code facade}, in the order {@code declared} holds them. {@code declared} are the abstract
-     * methods the facade declares that carry a {@code Check} of its own vocabulary and no {@code Transition}, and
-     * {@code operations} the operations read from the same facade. A check with a problem is reported and left out;
-     * one whose {@code id} javac could not read is left out, since javac has refused it already, and so is one whose
-     * operation was refused: a method of the facade declares a {@code Transition} of that identifier, and the error
-     * that refused it was reported already.
+     * methods the facade declares that carry a {@code Check} of its own vocabulary and neither a {@code Transition}
+     * nor a {@code Choice}, and {@code operations} the operations read from the same facade. A check with a problem
+     * is reported and left out; one whose {@code id} javac could not read is left out, since javac has refused it
+     * already, and so is one whose operation was refused: a method of the facade declares a {@code Transition} of
+     * that identifier, and the error that refused it was reported already.
      */
     List<CheckModel> read(TypeElement facade, MachineTypes types, List<ExecutableElement> declared,
             List<OperationModel> operations) {
@@ -114,7 +115,7 @@ final class TypedChecks {
      * vocabulary that names {@code identifier}. When no operation executes that identifier, the operation the method
      * declares was refused, as {@code SG504}, {@code SG703} or an error of one of its edges, which was reported.
      */
-    private boolean declaredOnAMethod(TypeElement facade, String identifier, MachineTypes types) {
+    boolean declaredOnAMethod(TypeElement facade, String identifier, MachineTypes types) {
         for (ExecutableElement method : ElementFilter.methodsIn(facade.getEnclosedElements())) {
             for (AnnotationMirror transition : own(method, VocabularyKind.TRANSITION, facade)) {
                 Optional<String> named = annotations.find(transition, "id").flatMap((AnnotationValue value) ->
@@ -127,10 +128,10 @@ final class TypedChecks {
         return false;
     }
 
-    /** Every vocabulary of {@code kind} on {@code method} that was generated for {@code facade}. Reports nothing. */
-    private List<AnnotationMirror> own(ExecutableElement method, VocabularyKind kind, TypeElement facade) {
+    /** Every vocabulary of {@code kind} on {@code element} that was generated for {@code facade}. Reports nothing. */
+    List<AnnotationMirror> own(Element element, VocabularyKind kind, TypeElement facade) {
         List<AnnotationMirror> own = new ArrayList<>();
-        for (AnnotationMirror mirror : vocabulary.findAll(method, kind)) {
+        for (AnnotationMirror mirror : vocabulary.findAll(element, kind)) {
             TypeElement declaration = (TypeElement) mirror.getAnnotationType().asElement();
             AnnotationMirror metadata = annotations.find(declaration, GeneratedVocabulary.class).orElseThrow();
             TypeMirror machine = TypedValues.classLiteral(annotations.value(metadata, "machine"));

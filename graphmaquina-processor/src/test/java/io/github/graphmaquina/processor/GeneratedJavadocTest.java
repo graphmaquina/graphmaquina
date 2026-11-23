@@ -55,6 +55,18 @@ class GeneratedJavadocTest {
         assertEquals("", javadoc(sources, doclint));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", "-Xdoclint:all"})
+    void aMachineWithChoicesDocumentsTheMethodsThatImplementThem(String doclint) {
+        Map<String, String> sources = TypedChoiceGenerationTest.choosing(
+                TypedChoiceGenerationTest.choice("{REJECT, APPROVE}", "Outcome<Doc, DocStatus, DocTransition>",
+                        "review(Doc doc, external.Verdict verdict)")
+                + TypedChoiceGenerationTest.choice("{REJECT, APPROVE}",
+                        "ChoiceEligibility<Doc, DocStatus, DocTransition>", "canReview(Doc doc)"));
+
+        assertEquals("", javadoc(sources, doclint));
+    }
+
     /**
      * Compiles {@code sources} as a consumer build does, then runs {@code javadoc} over the generated sources alone
      * with {@code doclint}, when not empty, and answers every warning and error it reports, one per line.

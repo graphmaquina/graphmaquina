@@ -127,6 +127,9 @@ public enum DiagnosticCode {
     /** An automatic transition's identifier runs an operation that takes an input, which an automatic attempt lacks. */
     SG515,
 
+    /** Invalid choice declaration: its signature, its vocabulary or one of its candidate identifiers. */
+    SG516,
+
     /** The processor could not write a generated source, provisional export index or processor inventory. */
     SG599,
 

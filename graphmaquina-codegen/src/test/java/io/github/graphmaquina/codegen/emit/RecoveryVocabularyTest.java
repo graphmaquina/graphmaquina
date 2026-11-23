@@ -175,7 +175,7 @@ class RecoveryVocabularyTest {
 
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
                 "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
-                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.AutomaticOrder",
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.Choice", "fx.DocsGraph.AutomaticOrder",
                 "fx.DocsGraph.AutomaticOrders"), ApiEmitter.annotationTypes(model));
         assertEquals(ApiEmitter.annotationTypes(model), declared);
     }
