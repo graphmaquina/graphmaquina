@@ -18,6 +18,11 @@ import java.util.Optional;
  * A guard also runs for an eligibility check, which {@link StateMachine#eligibility} answers without the call: there
  * the check stands for the root transaction, so the context works until the check ends, and what would abort the call
  * fails the check with an {@link io.github.graphmaquina.error.EligibilityCheckException} instead.
+ * A synchronous guard may itself start a check, through a facade's check method, a choice check,
+ * {@link StateMachine#eligibility} or {@link StateMachine#chooseEligibility}, of an entity that no enclosing call or
+ * check holds, as {@link io.github.graphmaquina.error.ReentrantTransitionException} says: it runs as any check, nested
+ * in this guard's call or check, and what it throws reaches the guard, which fails as a guard that throws unless it
+ * catches it. Anything else a guard starts, and a check from an asynchronous guard's {@code test}, is refused.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 

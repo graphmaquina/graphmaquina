@@ -473,6 +473,28 @@ class AdvanceTest {
     }
 
     /**
+     * The guard of an automatic attempt may check an entity that the attempt does not hold, nested in the attempt;
+     * the advanced entity itself is held, so its check is refused.
+     */
+    @Test
+    void anAutomaticAttemptsGuardChecksAnotherEntity() {
+        GuardProbe<Lane, LaneStatus, LaneTransition> fast = new GuardProbe<>();
+        StateMachine<Lane, LaneStatus, LaneTransition> machine = lanes(fast, new GuardProbe<>());
+        Lane lane = new Lane("l1", LaneStatus.READY);
+        Lane other = new Lane("l2", LaneStatus.WAITING);
+        List<Object> seen = new ArrayList<>();
+        fast.verdict = (GuardContext<Lane, LaneStatus, LaneTransition> ctx) -> {
+            seen.add(machine.eligibility(other, LaneTransition.PARK));
+            seen.add(refusal(() -> machine.eligibility(lane, LaneTransition.GO_SLOW)));
+            return GuardResult.pass();
+        };
+        assertEquals(OutcomeCode.APPLIED, machine.advance(lane).code());
+        assertEquals(List.of(new Eligibility.Eligible<>(other, LaneStatus.WAITING, LaneTransition.PARK),
+                "ReentrantTransitionException"), seen);
+        assertEquals(LaneStatus.FAST, lane.status());
+    }
+
+    /**
      * A guard and an action that call advance are refused with the very exception reevaluate gets there, and the
      * entity they asked about does not move.
      */

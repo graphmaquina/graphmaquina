@@ -22,7 +22,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
      */
     Lookup lookUpOwner(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
-        boolean[] marker = Reentrancy.enter(spec.peer(), peer);
+        Reentrancy.Cell cell = Reentrancy.enter(spec.peer(), peer);
         try {
             Optional<E> owner = spec.ownerOf().apply(peer);
             if (owner == null) {
@@ -39,7 +39,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
             }
             return new Watched(machine.refOf(entity));
         } finally {
-            marker[0] = false;
+            cell.active = false;
         }
     }
 

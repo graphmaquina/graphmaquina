@@ -59,7 +59,8 @@ final class Choices {
      * Which of {@code candidates} a choice would run for {@code entity}, with {@code input} as the operation input its
      * guards read, empty when it carries none. A list that {@link #accepted} refuses is refused before any check
      * starts, with nothing logged. Then each candidate in order gets the check {@link Checks#check} runs, which refuses
-     * a check where no call may start before it starts, and logs as such a check does: the first eligible one answers
+     * a check that may not start on this thread before it starts, and logs as such a check does; from a synchronous
+     * guard, each is a check nested in that guard's call or check. The first eligible one answers
      * {@link ChoiceEligibility.Chosen}, with the refusals before it; otherwise the answer is
      * {@link ChoiceEligibility.NoneAdmitted}, with every refusal, from the state the first check read. What a check
      * throws propagates, and no later candidate is checked.

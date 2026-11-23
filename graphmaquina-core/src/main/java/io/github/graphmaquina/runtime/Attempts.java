@@ -54,12 +54,12 @@ final class Attempts {
             if (log.debug()) {
                 log.start(machine.key(), "advance");
             }
-            boolean[] marker = Reentrancy.enter(machine.key(), entity);
+            Reentrancy.Cell cell = Reentrancy.enter(machine.key(), entity);
             try {
                 state = Reevaluation.stateOf(machine, entity, observed, CallRequest.ADVANCE, origin);
                 candidates = candidatesOf(machine, entity, observed, origin, state);
             } finally {
-                marker[0] = false;
+                cell.active = false;
             }
         } catch (Throwable thrown) {
             Reevaluation.unresolvedEnd(machine, entity, observed, log, thrown);

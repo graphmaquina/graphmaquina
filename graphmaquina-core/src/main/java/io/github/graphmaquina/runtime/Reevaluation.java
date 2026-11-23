@@ -67,7 +67,7 @@ final class Reevaluation {
             if (log.debug()) {
                 log.start(machine.key(), "reevaluate");
             }
-            boolean[] marker = Reentrancy.enter(machine.key(), entity);
+            Reentrancy.Cell cell = Reentrancy.enter(machine.key(), entity);
             try {
                 state = stateOf(machine, entity, observed, CallRequest.REEVALUATE, origin);
                 requireChain(machine, entity, observed, origin, state, levels.watch());
@@ -76,7 +76,7 @@ final class Reevaluation {
                     selected = selection(machine, watch.get(), entity, observed, origin, state);
                 }
             } finally {
-                marker[0] = false;
+                cell.active = false;
             }
         } catch (Throwable thrown) {
             unresolvedEnd(machine, entity, observed, log, thrown);

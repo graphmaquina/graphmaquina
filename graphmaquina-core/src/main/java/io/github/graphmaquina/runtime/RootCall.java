@@ -26,12 +26,13 @@ final class RootCall {
     private RootCall() { }
 
     /**
-     * Root transaction of {@code machine}: new UoW with its deadline, reentrancy marker, step, phase 2, context
-     * invalidation, then the hooks, the watch reactions and the automatic chains of what it committed, as
-     * {@link PostCommit#after} says. Everything is prepared before the marker is set, so that from
-     * {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, with a store
-     * before it invalidates the contexts, whatever the step throws, a StackOverflowError included. The transaction
-     * keeps the phase of the call, which the observers are told when it throws.
+     * Root transaction of {@code machine}: new UoW with its deadline, reentrancy marker and scope, step, phase 2,
+     * context invalidation, then the hooks, the watch reactions and the automatic chains of what it committed, as
+     * {@link PostCommit#after} says. Everything is prepared before the marker is set and the UoW pushed as the
+     * thread's scope, so that from {@code Reentrancy.enterCall} on, the only way out runs through the {@code finally}
+     * that releases them, with stores of the values it found before it invalidates the contexts, whatever the step
+     * throws, a StackOverflowError included. The transaction keeps the phase of the call, which the observers are told
+     * when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * The automatic chains run after them, each attempt a root of its own.
@@ -89,11 +90,11 @@ final class RootCall {
     }
 
     /**
-     * The step and phase 2 under the reentrancy marker, released, with the contexts invalidated, whatever they throw;
-     * then, once something was committed, its line, its hooks, its watch reactions and its automatic chains, the
-     * advanced entity being the reference the root's step registered for {@code entity} when the call is an advance
-     * the application made; then the outcome, with the summary of the commit and what the commits nested in its
-     * post-commit reported.
+     * The step and phase 2 under the reentrancy marker, in the call's scope, both released, with the contexts
+     * invalidated, whatever they throw; then, once something was committed, its line, its hooks, its watch reactions
+     * and its automatic chains, the advanced entity being the reference the root's step registered for {@code entity}
+     * when the call is an advance the application made; then the outcome, with the summary of the commit and what the
+     * commits nested in its post-commit reported.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> stepAndCommit(
             DefaultStateMachine<E, S, T> machine, Transaction tx, E entity, CallRequest request,
@@ -103,7 +104,10 @@ final class RootCall {
         List<SubmachineStart<?, ?, ?>> starts;
         List<LogEntry> committed;
         CommitSummary summary;
-        boolean[] marker = Reentrancy.enter(machine.key(), entity);
+        Reentrancy.Cell cell = Reentrancy.cell();
+        boolean active = cell.active;
+        Optional<UnitOfWork> top = cell.top;
+        Reentrancy.enterCall(cell, machine.key(), entity, tx.uow());
         try {
             step = body.apply(tx);
             boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
@@ -120,7 +124,8 @@ final class RootCall {
                 committed = List.of();
             }
         } finally {
-            marker[0] = false;
+            cell.active = active;
+            cell.top = top;
             tx.invalidate();
         }
         Optional<EntityRef> advanced = request == CallRequest.ADVANCE && continuing.isEmpty()

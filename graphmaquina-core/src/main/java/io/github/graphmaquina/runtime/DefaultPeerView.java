@@ -14,7 +14,8 @@ import lombok.RequiredArgsConstructor;
  * The view reaches the UnitOfWork only through {@code unit}, the check of the context that made it, which runs before
  * every read, so a view captured in an action cannot outlive its transaction, and holds nothing of the call once that
  * context is invalidated. The helpers run it first too, so they refuse even over an empty collection, which reads no
- * state; noneIn reads through anyIn.
+ * state; noneIn reads through anyIn, and allIn and anyIn read each peer through stateOf, which refuses, inside a check
+ * that a guard started, a peer that an enclosing call or check holds.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
@@ -41,14 +42,30 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
     @Override
     public MachineKey<P, Q, U> key() { return machine.key(); }
 
+    /**
+     * The peer's pending state in the unit of work, else what its getter reads. Inside a check that a guard started,
+     * a peer that an enclosing call or check holds is refused before either is read, as
+     * {@link Reentrancy#requireNotHeldOutside} says. The peer's identity function, the identity's equals and hashCode
+     * and its getter run with the guard count of the thread's innermost scope held at 0, restored by a store, so that
+     * none of them can start a check from a guard's read.
+     */
     @Override
     public Q stateOf(@NonNull P peer) {
         UnitOfWork uow = unit.get();
-        Optional<Enum<?>> pending = uow.pendingState(machine.refOf(peer));
-        if (pending.isPresent()) {
-            return machine.key().states().cast(pending.get());
+        UnitOfWork innermost = Reentrancy.innermost();
+        int guards = innermost.guards;
+        innermost.guards = 0;
+        try {
+            EntityRef ref = machine.refOf(peer);
+            Reentrancy.requireNotHeldOutside(uow, ref);
+            Optional<Enum<?>> pending = uow.pendingState(ref);
+            if (pending.isPresent()) {
+                return machine.key().states().cast(pending.get());
+            }
+            return machine.readState(peer);
+        } finally {
+            innermost.guards = guards;
         }
-        return machine.readState(peer);
     }
 
     @Override

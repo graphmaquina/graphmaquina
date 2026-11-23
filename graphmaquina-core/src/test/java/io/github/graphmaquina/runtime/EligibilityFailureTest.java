@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
@@ -70,9 +71,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * CompletionException or ExecutionException, a null verdict, a wait past the deadline or ended by an interrupt, a null
  * state, a state of another type, which the engine could not go on with, or an identity that cannot be read, it names
  * the entity, the state it read and the guard in flight when it knew them, and its cause. An Error propagates as
- * itself. A check is refused before it starts where no call may start, from a guard, an action, an observer or a
- * watch's owner lookup, and while it runs, neither its guards nor its state getter can start a call, a reevaluation
- * or a check.
+ * itself. A check is refused before it starts where no call may start, from an action, an observer or a watch's owner
+ * lookup, while a guard may check another entity. While a check runs, its guards can start neither a call nor a
+ * reevaluation, though they may check another entity, and its state getter can start none of the three.
  */
 class EligibilityFailureTest {
 
@@ -383,20 +384,20 @@ class EligibilityFailureTest {
         Optional.ofNullable(thrown.getCause()).ifPresent((Throwable cause) -> collect(cause, chain));
     }
 
+    /** A synchronous guard may check an entity that the call does not hold: the check runs, nested in the call. */
     @Test
-    void checkFromAGuardIsReentrant() {
+    void aCheckFromAGuardOnAnotherEntityRuns() {
         AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
-        List<ReentrantTransitionException> caught = new ArrayList<>();
+        List<Eligibility<Doc, DocStatus, DocTransition>> answers = new ArrayList<>();
         Doc other = new Doc("2", DRAFT);
         self.set(machine((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                 .guard("asks", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                    caught.add(assertThrows(ReentrantTransitionException.class,
-                            () -> self.get().eligibility(other, DISCARD)));
+                    answers.add(self.get().eligibility(other, DISCARD));
                     return GuardResult.pass();
                 })));
         assertInstanceOf(Outcome.Applied.class, self.get().execute(new Doc("1", DRAFT), SUBMIT));
-        assertEquals(1, caught.size());
-        assertSame(other, caught.get(0).entity());
+        assertEquals(List.of(new Eligibility.Eligible<>(other, DRAFT, DISCARD)), answers);
+        assertEquals(DRAFT, other.status());
     }
 
     @Test
@@ -437,22 +438,26 @@ class EligibilityFailureTest {
         assertSame(other, caught.get(0).entity());
     }
 
-    /** Each call that code of a check may try to start on its thread: an execute, a reevaluation and a check. */
-    static Stream<Named<BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object>>> nestedCalls() {
+    /** Each writing call that code of a check may try to start on its thread: an execute and a reevaluation. */
+    static Stream<Named<BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object>>> nestedWrites() {
         BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> execute =
                 (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.execute(other, DISCARD);
         BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> reevaluate =
                 (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.reevaluate(other);
-        BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> eligibility =
-                (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.eligibility(other, DISCARD);
-        return Stream.of(Named.of("execute", execute), Named.of("reevaluate", reevaluate),
-                Named.of("eligibility", eligibility));
+        return Stream.of(Named.of("execute", execute), Named.of("reevaluate", reevaluate));
     }
 
-    /** While a check runs, its guard can start neither a call nor another check; the refusal it lets through fails it. */
+    /** Each call that code of a check may try to start on its thread: an execute, a reevaluation and a check. */
+    static Stream<Named<BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object>>> nestedCalls() {
+        BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> eligibility =
+                (StateMachine<Doc, DocStatus, DocTransition> m, Doc other) -> m.eligibility(other, DISCARD);
+        return Stream.concat(nestedWrites(), Stream.of(Named.of("eligibility", eligibility)));
+    }
+
+    /** While a check runs, its guard cannot start a call; the refusal it lets through fails it. */
     @ParameterizedTest(name = "{0}")
-    @MethodSource("nestedCalls")
-    void guardThatStartsACallOrACheckDuringACheckIsReentrant(
+    @MethodSource("nestedWrites")
+    void guardThatStartsACallDuringACheckIsReentrant(
             BiFunction<StateMachine<Doc, DocStatus, DocTransition>, Doc, Object> nested) {
         AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
         AtomicReference<ReentrantTransitionException> caught = new AtomicReference<>();
@@ -468,6 +473,22 @@ class EligibilityFailureTest {
         assertSame(other, caught.get().entity());
         assertEquals(Optional.of("moves"), error.guard());
         assertEquals(DRAFT, other.status());
+    }
+
+    /** While a check runs, its guard may check another entity, nested in the check, and the check goes on. */
+    @Test
+    void guardThatChecksAnotherEntityDuringACheckRuns() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        List<Eligibility<Doc, DocStatus, DocTransition>> answers = new ArrayList<>();
+        Doc doc = new Doc("1", DRAFT);
+        Doc other = new Doc("2", DRAFT);
+        self.set(machine((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                .guard("asks", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    answers.add(self.get().eligibility(other, DISCARD));
+                    return GuardResult.pass();
+                })));
+        assertEquals(new Eligibility.Eligible<>(doc, DRAFT, SUBMIT), self.get().eligibility(doc, SUBMIT));
+        assertEquals(List.of(new Eligibility.Eligible<>(other, DRAFT, DISCARD)), answers);
     }
 
     /** A state getter that starts a call or a check while a check reads it is refused, and the check fails with it. */

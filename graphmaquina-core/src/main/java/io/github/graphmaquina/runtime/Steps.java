@@ -361,8 +361,8 @@ final class Steps {
     }
 
     /**
-     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline, as
-     * {@link #asyncVerdict} says. For whatever the guard throws or completes its stage with, an Error inside the stage
+     * Sync guards run inline, as {@link #syncVerdict} says; async ones return a stage that is awaited under the
+     * transaction's deadline, as {@link #asyncVerdict} says. For whatever the guard throws or completes its stage with, an Error inside the stage
      * included, the engine throws what {@link #guardFailure} says: a library exception of another call is a cause like
      * any other. An InterruptedException that the guard throws on the calling thread interrupts the thread again; one
      * that completes its stage leaves the thread as it is. An Error thrown as itself propagates. A verdict is logged at
@@ -375,16 +375,7 @@ final class Steps {
         Optional<Enum<?>> id = Optional.of(transition.transition());
         Optional<Enum<?>> to = Optional.of(transition.to());
         GuardResult verdict = switch (guard) {
-            case GuardRef.Sync<E, S, T> sync -> {
-                try {
-                    yield sync.guard().test(ctx);
-                } catch (Error fatal) {
-                    throw fatal;
-                } catch (Throwable e) {
-                    Interrupts.keep(e);
-                    throw guardFailure(tx, machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
-                }
-            }
+            case GuardRef.Sync<E, S, T> sync -> syncVerdict(tx, machine, ref, transition, depth, sync, ctx);
             case GuardRef.Async<E, S, T> async -> asyncVerdict(tx, machine, ref, transition, depth, async, ctx, id, to);
         };
         if (verdict == null) {
@@ -401,9 +392,36 @@ final class Steps {
     }
 
     /**
+     * The verdict of the synchronous {@code guard}, which runs inline. Its test call alone is bracketed: the guard
+     * count of the transaction's unit of work, the thread's innermost scope, goes up by one before it and back by a
+     * store as the finally's first statement, so a check may start from the guard's own code, as {@link Reentrancy}
+     * says, and from nothing the engine runs afterwards, such as the guard's failure while it is classified.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> GuardResult syncVerdict(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
+            int depth, GuardRef.Sync<E, S, T> guard, DefaultGuardContext<E, S, T> ctx) {
+        UnitOfWork uow = tx.uow();
+        int guards = uow.guards;
+        try {
+            uow.guards = guards + 1;
+            try {
+                return guard.guard().test(ctx);
+            } finally {
+                uow.guards = guards;
+            }
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Interrupts.keep(e);
+            throw guardFailure(tx, machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
+        }
+    }
+
+    /**
      * The verdict of the asynchronous {@code guard}: the stage it returns, awaited under the transaction's deadline,
      * where {@code id} and {@code to} name the edge in the aborts. A null stage, a null verdict and a wait that timed
-     * out, was interrupted or was refused abort the call, the last three poisoning it at once when nested.
+     * out, was interrupted or was refused abort the call, the last three poisoning it at once when nested. Its test
+     * call runs on this thread unbracketed, unlike a synchronous guard's, so no check may start from it.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> GuardResult asyncVerdict(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,

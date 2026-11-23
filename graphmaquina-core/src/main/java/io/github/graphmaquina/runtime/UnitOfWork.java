@@ -90,6 +90,18 @@ final class UnitOfWork {
     private Optional<CallFlow> flow = Optional.empty();
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
+    /**
+     * The scope below this one on its thread, as {@link Reentrancy} links them: the unit of work of the call or check
+     * whose synchronous guard started the check this unit of work belongs to; empty for a root call and for a check
+     * that no guard started. Stored once, as the scope is entered, and read directly, never through a call.
+     */
+    Optional<UnitOfWork> below = Optional.empty();
+    /**
+     * How many synchronous guards of this unit of work's steps are running on its thread, as {@link Steps} brackets
+     * each one's test call; {@link Reentrancy} lets a check start only while the innermost scope's count is above 0.
+     * Every change is a plain store that a finally undoes with another one.
+     */
+    int guards;
 
     /**
      * Registers the identity and returns the canonical reference. A second object with the same identity is an
@@ -391,6 +403,26 @@ final class UnitOfWork {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether this unit of work holds {@code ref}, for {@link Reentrancy}: an entity in flight, the root's own step,
+     * a cascade's or an exit's, or one with an entry in the log, a hop or a start, which gives it a pending state. An
+     * entity only registered is not held. Only the equals of {@code ref}'s identity runs, never another identity's
+     * equals or hashCode, and the pending index is neither built nor read.
+     */
+    boolean holds(EntityRef ref) {
+        for (InFlight flight : inFlight) {
+            if (ref.equals(flight.ref())) {
+                return true;
+            }
+        }
+        for (int i = 0; i < log.size(); i++) {
+            if (ref.equals(log.get(i).ref())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     List<String> path() {

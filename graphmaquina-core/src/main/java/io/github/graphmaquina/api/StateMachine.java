@@ -145,15 +145,21 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * or throws, it writes no state, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine,
      * runs no exit and tells no observer, and a context its guards got is stale once it ends. It answers for any
      * identifier of the catalogue, as execute does. A {@code null} argument, an identifier of another catalogue and a
-     * check made where no call may start, such as from a guard, an action or an observer, are refused before the check
-     * starts and throw as themselves; while a check runs, no call or check may start on its thread either. A check that
-     * cannot reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
-     * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
-     * {@code check=<id>} in place of {@code call=<id>}.
+     * check made where it may not start are refused before the check starts and throw as themselves. A check may not
+     * start where no call may, such as from an action, an observer or the test call of an asynchronous guard, with one
+     * exception: a synchronous guard may check an entity that no enclosing call or check holds, as
+     * {@code ReentrantTransitionException} says. To tell, it runs the entity's identity function before it starts:
+     * what that function throws, and the {@code NullPointerException} of one that returns null, propagate as they
+     * are. Such a check runs as any check, nested in the guard's call or check; a read of a held entity throws inside
+     * it, and its failure throws into the guard. While a check runs, no call may start on its thread, and no check
+     * either but from its own synchronous guards. A check that started and cannot reach an answer throws an
+     * {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error propagates as itself. A check
+     * logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with {@code check=<id>} in place of
+     * {@code call=<id>}.
      *
      * @throws NullPointerException if {@code entity} or {@code transition} is null
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass
-     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where it may not start
      * @throws io.github.graphmaquina.error.EligibilityCheckException if the check cannot reach an answer
      * @throws UnsupportedOperationException if this machine does not support eligibility checks
      */
@@ -170,7 +176,7 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      *
      * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass
-     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where it may not start
      * @throws io.github.graphmaquina.error.EligibilityCheckException if the check cannot reach an answer
      * @throws UnsupportedOperationException if this machine does not support eligibility checks
      */
@@ -241,14 +247,16 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * and, whatever it answers or throws, writes no state and runs no action, hook, watch reaction or automatic
      * attempt. A check that throws ends the answer, and the candidates after it are not checked. Like a check, it is
      * no call and tells no observer. A null argument or candidate, an empty list, a candidate listed twice, a candidate
-     * of another catalogue and a check made where no call may start are refused before the first check starts and
-     * throw as themselves; such an answer logs nothing. This default supports no choice check: it throws instead of
-     * answering; the machines the runtime builds implement it.
+     * of another catalogue and a check made where it may not start, as {@code eligibility} says, are refused before the
+     * first check starts and throw as themselves; such an answer logs nothing. From a synchronous guard, each
+     * candidate's check is nested in the guard's call or check, and what the entity's identity function throws before
+     * it starts propagates as it is, as {@code eligibility} says. This default supports no choice check: it throws
+     * instead of answering; the machines the runtime builds implement it.
      *
      * @throws NullPointerException if {@code entity}, {@code candidates} or one of its elements is null
      * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
      *     another catalogue, which only raw types pass
-     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where it may not start
      * @throws io.github.graphmaquina.error.EligibilityCheckException if the check of a candidate cannot reach an answer
      * @throws UnsupportedOperationException if this machine does not support choice checks
      */
@@ -266,7 +274,7 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * @throws NullPointerException if {@code entity}, {@code candidates}, one of its elements or {@code input} is null
      * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
      *     another catalogue, which only raw types pass
-     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where it may not start
      * @throws io.github.graphmaquina.error.EligibilityCheckException if the check of a candidate cannot reach an answer
      * @throws UnsupportedOperationException if this machine does not support choice checks
      */

@@ -295,6 +295,33 @@ class SubmachineExitTest {
         }
     }
 
+    /**
+     * The guard of an exit may check an entity that the call does not hold, nested in the call. The child, whose hop
+     * is pending though its step is over, and the parent, whose exit step runs, are held: their checks are refused.
+     */
+    @Test
+    void anExitsGuardChecksAnEntityTheCallDoesNotHold() {
+        Billing billing = new Billing();
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Payment unrelated = new Payment("u1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        List<Object> seen = new ArrayList<>();
+        try (MachineRegistry registry = billing.registry()) {
+            billing.settled.verdict = (GuardContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+                seen.add(registry.of(PAYMENTS).eligibility(unrelated, PaymentTransition.VOID).isEligible());
+                seen.add(assertThrows(RuntimeException.class, () -> registry.of(PAYMENTS)
+                        .eligibility(deposit, PaymentTransition.VOID)).getClass().getSimpleName());
+                seen.add(assertThrows(RuntimeException.class, () -> registry.of(BOOKINGS)
+                        .eligibility(booking, BookingTransition.CANCEL)).getClass().getSimpleName());
+                return GuardResult.pass();
+            };
+            assertEquals(OutcomeCode.APPLIED, registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE).code());
+            assertEquals(List.of(true, "ReentrantTransitionException", "ReentrantTransitionException"), seen);
+            assertEquals(BookingStatus.BALANCE, booking.status());
+        }
+    }
+
     /** A guard of the exit rejects: the call aborts in ACTION and nothing is written. */
     @Test
     void anExitThatAGuardRejectsAbortsTheCall() {

@@ -1,21 +1,33 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
+import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
+import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.fixtures.Cell;
 import io.github.graphmaquina.fixtures.CellChains;
 import io.github.graphmaquina.fixtures.CellStatus;
 import io.github.graphmaquina.fixtures.CellTransition;
+import io.github.graphmaquina.fixtures.Doc;
+import io.github.graphmaquina.fixtures.DocGraphs;
+import io.github.graphmaquina.fixtures.DocMachines;
+import io.github.graphmaquina.fixtures.DocStatus;
+import io.github.graphmaquina.fixtures.DocTransition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
@@ -102,6 +114,99 @@ class ReentrancyOverflowTest {
         }
         assertEquals(List.of(), stuck);
         assertTrue(overflowed > 0, "no watch chain overflowed");
+    }
+
+    /**
+     * Calls whose guard starts a check, whose guard starts another, three deep, that start deeper and deeper on the
+     * thread, from where the call fits to where it no longer does: the overflow strikes in a guard, in the identity
+     * read before a check starts, in a check's step, or as a check or a guard unwinds. Each check restores the cell
+     * and each guard its count with stores, so the thread is left running nothing, and a call whose guard starts one
+     * nested check runs on it.
+     */
+    @Test
+    void aCallWithNestedChecksThatOverflowsReleasesTheCellOfItsThread() throws InterruptedException {
+        StateMachine<Doc, DocStatus, DocTransition> nested = deeper(4);
+        StateMachine<Doc, DocStatus, DocTransition> bounded = deeper(2);
+        for (int call = 0; call < 300; call++) {
+            nested.execute(new Doc("0", DRAFT), SUBMIT);
+        }
+        List<String> stuck = new ArrayList<>();
+        int overflowed = 0;
+        for (int round = 0; round < 8 && stuck.isEmpty(); round++) {
+            int[] overflows = new int[1];
+            Throwable thrown = CellChains.onStack(STACK, () -> sweepTheNestedChecks(nested, bounded, stuck, overflows));
+            assertEquals(null, thrown);
+            overflowed += overflows[0];
+        }
+        assertEquals(List.of(), stuck);
+        assertTrue(overflowed > 0, "no call with nested checks overflowed");
+    }
+
+    /** Runs a call with nested checks at each depth of the band where it ends in an overflow, then a shallow one. */
+    private static void sweepTheNestedChecks(StateMachine<Doc, DocStatus, DocTransition> nested,
+                                             StateMachine<Doc, DocStatus, DocTransition> bounded, List<String> stuck,
+                                             int[] overflows) {
+        int threshold = firstPaddingThatDoesNotFit(nested);
+        for (int frames = Math.max(0, threshold - 96); frames <= threshold + 200 && stuck.isEmpty(); frames++) {
+            Throwable deep = deepChain(frames, nested);
+            if (deep instanceof StackOverflowError) {
+                overflows[0]++;
+            }
+            shallowNested(bounded, "a call " + frames + " frames deep ended in " + deep, stuck);
+        }
+    }
+
+    /** The first padding, in steps of 32 frames, under which SUBMIT for a doc of id 0 of {@code nested} overflows. */
+    private static int firstPaddingThatDoesNotFit(StateMachine<Doc, DocStatus, DocTransition> nested) {
+        int threshold = 0;
+        while (threshold < 1_000_000 && !(deepChain(threshold, nested) instanceof StackOverflowError)) {
+            threshold += 32;
+        }
+        return threshold;
+    }
+
+    /**
+     * A doc machine whose SUBMIT guard, for the doc of id {@code n}, checks SUBMIT for a new doc of id {@code n + 1}
+     * while that id is below {@code limit}.
+     */
+    private static StateMachine<Doc, DocStatus, DocTransition> deeper(int limit) {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        self.set(DocMachines.registry(DocGraphs.docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
+                submit.guard("deeper", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    int next = Integer.parseInt(ctx.entity().id()) + 1;
+                    if (next < limit) {
+                        self.get().eligibility(new Doc(String.valueOf(next), DRAFT), SUBMIT);
+                    }
+                    return GuardResult.pass();
+                }))).of(DOCS));
+        return self.get();
+    }
+
+    /** What SUBMIT for a doc of id 0 of {@code docs} threw under {@code padding} frames, if anything. */
+    private static Throwable deepChain(int padding, StateMachine<Doc, DocStatus, DocTransition> docs) {
+        try {
+            CellChains.padded(padding, () -> docs.execute(new Doc("0", DRAFT), SUBMIT));
+            return null;
+        } catch (Throwable error) {
+            return error;
+        }
+    }
+
+    /**
+     * The thread's cell, which must be released, then a call whose guard starts one nested check, which must run; when
+     * either is not so, {@code stuck} records why.
+     */
+    private static void shallowNested(StateMachine<Doc, DocStatus, DocTransition> bounded, String before,
+                                      List<String> stuck) {
+        Reentrancy.Cell cell = Reentrancy.cell();
+        if (cell.active || cell.top.isPresent()) {
+            stuck.add(before + " and left the cell claimed");
+        }
+        try {
+            bounded.execute(new Doc("0", DRAFT), SUBMIT);
+        } catch (RuntimeException refused) {
+            stuck.add(before + ", then a call with a nested check on the same thread threw " + refused);
+        }
     }
 
     /** Runs a deep call at each depth of the band where a call ends in an overflow, then a shallow one. */
