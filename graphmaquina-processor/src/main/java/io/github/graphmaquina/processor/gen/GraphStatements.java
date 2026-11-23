@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor.gen;
 import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.codegen.SharedTypeNames;
 import io.github.graphmaquina.processor.gen.MachineGenerator.Variables;
 import io.github.graphmaquina.processor.model.AutomaticOrderModel;
 import io.github.graphmaquina.processor.model.Binding;
@@ -223,7 +224,7 @@ final class GraphStatements {
         List<List<String>> statements = new ArrayList<>();
         statements.add(List.of(".initial(" + MachineGenerator.constant(names, states, model.initial()) + ")"));
         if (declaresChain(model)) {
-            statements.add(List.of(".automaticChain(" + names.of(MachineGenerator.AUTOMATIC_CHAIN) + "."
+            statements.add(List.of(".automaticChain(" + names.of(SharedTypeNames.AUTOMATIC_CHAIN) + "."
                     + model.automaticChain() + ")"));
         }
         for (String terminal : model.terminals()) {

@@ -2,8 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
-import io.github.graphmaquina.api.ChoiceEligibility;
-import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.processor.gen.ResultTypes;
 import io.github.graphmaquina.processor.model.ChoiceModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
@@ -44,11 +43,15 @@ import javax.lang.model.type.TypeMirror;
  */
 final class TypedChoices {
 
-    private static final String OUTCOME = Outcome.class.getName();
-    private static final String CHOICE_ELIGIBILITY = ChoiceEligibility.class.getName();
-
-    /** The reason of a candidate whose refusal was reported already, which is not reported again. */
-    private static final String REPORTED = "";
+    /** What the method of a choice does, as its result says, or that its result is neither of the two. */
+    private enum Role {
+        /** It returns {@code Outcome<E, S, T>}: it runs the choice. */
+        RUNS,
+        /** It returns {@code ChoiceEligibility<E, S, T>}: it checks the choice without running it. */
+        CHECKS,
+        /** It returns anything else, which SG516 reported. */
+        REFUSED
+    }
 
     private final TypedChecks checks;
     private final Signatures signatures;
@@ -99,10 +102,10 @@ final class TypedChoices {
                 // javac has already refused a candidate it could not read as a constant of this machine's own enum.
                 continue;
             }
-            Optional<Boolean> check = role(method, types);
+            Role role = role(method, types);
             boolean shaped = shaped(method, types);
-            if (check.isPresent() && shaped && admits(method, choice.get(), values, candidates.get(), graph)) {
-                choices.add(model(method, candidates.get(), check.get()));
+            if (role != Role.REFUSED && shaped && admits(method, choice.get(), values, candidates.get(), graph)) {
+                choices.add(model(method, candidates.get(), role == Role.CHECKS));
             }
         }
         return choices;
@@ -119,24 +122,24 @@ final class TypedChoices {
     }
 
     /**
-     * Whether {@code method} checks its choice, true, or runs it, false, as its result says: empty after SG516 when
-     * the result is neither {@code Outcome<E, S, T>} nor {@code ChoiceEligibility<E, S, T>} of the machine's own
-     * types, as javac resolved them.
+     * What {@code method} does with its choice, as its result says: {@link Role#REFUSED} after SG516 when the result
+     * is neither {@code Outcome<E, S, T>} nor {@code ChoiceEligibility<E, S, T>} of the machine's own types, as javac
+     * resolved them.
      */
-    private Optional<Boolean> role(ExecutableElement method, MachineTypes types) {
+    private Role role(ExecutableElement method, MachineTypes types) {
         TypeMirror result = method.getReturnType();
-        if (signatures.same(result, signatures.declared(OUTCOME, types.entity(), types.states(),
+        if (signatures.same(result, signatures.declared(ResultTypes.OUTCOME, types.entity(), types.states(),
                 types.transitions()))) {
-            return Optional.of(false);
+            return Role.RUNS;
         }
-        if (signatures.same(result, signatures.declared(CHOICE_ELIGIBILITY, types.entity(), types.states(),
+        if (signatures.same(result, signatures.declared(ResultTypes.CHOICE_ELIGIBILITY, types.entity(), types.states(),
                 types.transitions()))) {
-            return Optional.of(true);
+            return Role.CHECKS;
         }
         String arguments = "<" + types.entityName() + ", " + types.statesName() + ", " + types.transitionsName() + ">";
         diagnostics.error(DiagnosticCode.SG516, method.getSimpleName() + " must return Outcome" + arguments
                 + ", to run the choice, or ChoiceEligibility" + arguments + ", to check it", method);
-        return Optional.empty();
+        return Role.REFUSED;
     }
 
     /**
@@ -159,7 +162,8 @@ final class TypedChoices {
 
     /**
      * Whether every candidate of {@code choice}, the {@code Choice} of {@code method}, may be one: SG516 at the
-     * choice when it names none, and at the value of each candidate {@link #refusal} refuses.
+     * choice when it names none, and at the value of each candidate {@link #refusal} refuses. A candidate whose own
+     * declaration was refused, as {@link #reported} says, is no candidate, and draws nothing more.
      */
     private boolean admits(ExecutableElement method, AnnotationMirror choice, List<AnnotationValue> values,
             List<String> candidates, Graph graph) {
@@ -175,10 +179,15 @@ final class TypedChoices {
         boolean admitted = true;
         for (int index = 0; index < candidates.size(); index++) {
             String candidate = candidates.get(index);
-            Optional<String> refusal = named.add(candidate)
+            boolean first = named.add(candidate);
+            if (first && reported(candidate, graph)) {
+                admitted = false;
+                continue;
+            }
+            Optional<String> refusal = first
                     ? refusal(name, candidate, input, graph)
                     : Optional.of(" twice: a Choice names each candidate once");
-            if (refusal.filter((String reason) -> !reason.equals(REPORTED)).isPresent()) {
+            if (refusal.isPresent()) {
                 DiagnosticAnchor.of(method, choice, values.get(index)).report(diagnostics, DiagnosticCode.SG516,
                         name + " names " + candidate + refusal.get());
             }
@@ -188,16 +197,22 @@ final class TypedChoices {
     }
 
     /**
+     * Whether no edge of {@code graph} declares {@code candidate} because its own declaration was refused, which was
+     * reported: the facade or one of its methods carries its {@code Transition}, as {@link #refused} says.
+     */
+    private boolean reported(String candidate, Graph graph) {
+        return !graph.declared().contains(candidate) && refused(candidate, graph);
+    }
+
+    /**
      * Why {@code candidate}, named once by the choice {@code name}, whose input is {@code input}, cannot be one of its
-     * candidates, said after the candidate's name; empty when it can be. {@link #REPORTED} when no edge declares it
-     * but the facade or one of its methods carries its {@code Transition}: that declaration was refused, which was
-     * reported.
+     * candidates, said after the candidate's name; empty when it can be. Only for a candidate that
+     * {@link #reported} does not leave out.
      */
     private Optional<String> refusal(String name, String candidate, Optional<TypeMirror> input, Graph graph) {
         if (!graph.declared().contains(candidate)) {
-            return Optional.of(refused(candidate, graph) ? REPORTED
-                    : ", which no edge of " + graph.facade().getSimpleName() + " declares: each candidate of a"
-                            + " Choice is the identifier of an edge");
+            return Optional.of(", which no edge of " + graph.facade().getSimpleName() + " declares: each candidate of a"
+                    + " Choice is the identifier of an edge");
         }
         for (SubmachineModel submachine : graph.submachines()) {
             for (SubmachineModel.Exit exit : submachine.exits()) {

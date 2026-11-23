@@ -5,12 +5,12 @@ import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
-import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.internal.FailureTypes;
+import io.github.graphmaquina.processor.gen.ResultTypes;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -249,7 +249,7 @@ final class StructuralChecks {
      * facade could declare.
      */
     boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
-        DeclaredType outcome = signatures.declared(Outcome.class.getName(), types.entity(),
+        DeclaredType outcome = signatures.declared(ResultTypes.OUTCOME, types.entity(),
                 types.states(), types.transitions());
         int arity = method.getParameters().size();
         boolean supported = arity == 1 || (arity == 2 && !method.isVarArgs()

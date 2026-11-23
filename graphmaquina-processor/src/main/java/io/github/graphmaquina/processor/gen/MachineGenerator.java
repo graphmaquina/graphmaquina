@@ -2,14 +2,12 @@ package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
 import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
-import io.github.graphmaquina.api.AutomaticChain;
-import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
-import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.WatchCondition;
+import io.github.graphmaquina.codegen.SharedTypeNames;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -149,10 +147,7 @@ public final class MachineGenerator {
 
     static final String GRAPH_DEFINITION = GraphDefinition.class.getName();
     static final String MACHINE_KEY = MachineKey.class.getName();
-    static final String AUTOMATIC_CHAIN = AutomaticChain.class.getName();
-    private static final String OUTCOME = Outcome.class.getName();
     private static final String ELIGIBILITY = Eligibility.class.getName();
-    private static final String CHOICE_ELIGIBILITY = ChoiceEligibility.class.getName();
     private static final String STATE_MACHINE = StateMachine.class.getName();
     static final String WATCH_CONDITION = WatchCondition.class.getName();
     static final String STATE_GRAPH = StateGraph.class.getName();
@@ -359,8 +354,8 @@ public final class MachineGenerator {
                 operation.inputType());
         out.blank();
         out.line("@" + names.of(OVERRIDE));
-        out.open("public " + names.of(OUTCOME) + typeArguments(model.types(), names) + " " + operation.name() + "("
-                + e + " " + parameters.entity() + parameters.declaration() + ")");
+        out.open("public " + names.of(ResultTypes.OUTCOME) + typeArguments(model.types(), names) + " "
+                + operation.name() + "(" + e + " " + parameters.entity() + parameters.declaration() + ")");
         parameters.refuseNull(objects, out);
         out.line("return " + variables.machine() + ".execute(" + parameters.entity() + ", "
                 + constant(names, model.types().transitionsElement(), operation.transitionId())
@@ -435,7 +430,7 @@ public final class MachineGenerator {
                         + " state it is in now, trying them in this order.")
                 + " It refuses a null argument with a {@code NullPointerException} that names the parameter.", tags);
         out.line("@" + names.of(OVERRIDE));
-        out.open("public " + names.of(choice.check() ? CHOICE_ELIGIBILITY : OUTCOME)
+        out.open("public " + names.of(choice.check() ? ResultTypes.CHOICE_ELIGIBILITY : ResultTypes.OUTCOME)
                 + typeArguments(model.types(), names) + " " + choice.name() + "(" + e + " " + target
                 + parameters.declaration() + ")");
         parameters.refuseNull(objects, out);
@@ -510,12 +505,12 @@ public final class MachineGenerator {
                 + ".definition(); }");
         out.blank();
         out.line(override);
-        out.line("public " + names.of(OUTCOME) + generics + " reevaluate(" + e + " " + entity + ") { return " + machine
-                + ".reevaluate(" + entity + "); }");
+        out.line("public " + names.of(ResultTypes.OUTCOME) + generics + " reevaluate(" + e + " " + entity
+                + ") { return " + machine + ".reevaluate(" + entity + "); }");
         out.blank();
         out.line(override);
-        out.line("public " + names.of(OUTCOME) + generics + " advance(" + e + " " + entity + ") { return " + machine
-                + ".advance(" + entity + "); }");
+        out.line("public " + names.of(ResultTypes.OUTCOME) + generics + " advance(" + e + " " + entity
+                + ") { return " + machine + ".advance(" + entity + "); }");
         out.blank();
         out.line(override);
         out.line("public " + names.of(SET) + "<" + t + "> transitionsFrom(" + s + " " + variables.state()
@@ -636,8 +631,8 @@ public final class MachineGenerator {
         Map<String, String> types = new LinkedHashMap<>();
         Names.claim(types, model.types().facade());
         Names.claim(types, qualifiedName(model));
-        for (String fixed : List.of(GRAPH_DEFINITION, MACHINE_KEY, OUTCOME, STATE_MACHINE, STATE_GRAPH, GRAPH_BUILDER,
-                OBJECTS, SET, COMPLETABLE_FUTURE, SUPPLIER, GENERATED, SUPPRESS_WARNINGS, OVERRIDE)) {
+        for (String fixed : List.of(GRAPH_DEFINITION, MACHINE_KEY, ResultTypes.OUTCOME, STATE_MACHINE, STATE_GRAPH,
+                GRAPH_BUILDER, OBJECTS, SET, COMPLETABLE_FUTURE, SUPPLIER, GENERATED, SUPPRESS_WARNINGS, OVERRIDE)) {
             Names.claim(types, fixed);
         }
         for (WatchModel watch : model.watches()) {
@@ -712,10 +707,10 @@ public final class MachineGenerator {
             Names.claim(types, ELIGIBILITY);
         }
         if (model.choices().stream().anyMatch(ChoiceModel::check)) {
-            Names.claim(types, CHOICE_ELIGIBILITY);
+            Names.claim(types, ResultTypes.CHOICE_ELIGIBILITY);
         }
         if (GraphStatements.declaresChain(model)) {
-            Names.claim(types, AUTOMATIC_CHAIN);
+            Names.claim(types, SharedTypeNames.AUTOMATIC_CHAIN);
         }
     }
 

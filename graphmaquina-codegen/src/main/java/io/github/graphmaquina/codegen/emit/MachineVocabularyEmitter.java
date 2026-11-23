@@ -4,9 +4,9 @@ import io.github.graphmaquina.annotation.Timeout;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
-import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.SharedTypeNames;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.symbol.ActionSymbol;
@@ -165,8 +165,8 @@ final class MachineVocabularyEmitter {
             "the terminal states, which no edge leaves; none by default");
         element(source, state + "[] allowsCycle() default {};",
             "the states that allow a cycle, one of which every cycle must pass through; none by default");
-        element(source, AutomaticChain.class.getName() + " automaticChain() default "
-            + AutomaticChain.class.getName() + ".AFTER_COMMIT;",
+        element(source, SharedTypeNames.AUTOMATIC_CHAIN + " automaticChain() default "
+            + SharedTypeNames.AUTOMATIC_CHAIN + ".AFTER_COMMIT;",
             "when the machine takes its automatic edges; after a commit by default");
         element(source, symbolClass(PropertySymbol.class) + " state();",
             "the property that reads and writes the state of the entity");
