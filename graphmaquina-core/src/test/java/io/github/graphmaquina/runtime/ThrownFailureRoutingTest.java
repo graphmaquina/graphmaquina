@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -638,6 +639,11 @@ class ThrownFailureRoutingTest {
         @Override
         public boolean hasAsync() {
             return delegate.hasAsync();
+        }
+
+        @Override
+        public AutomaticChain automaticChain() {
+            return delegate.automaticChain();
         }
     }
 }

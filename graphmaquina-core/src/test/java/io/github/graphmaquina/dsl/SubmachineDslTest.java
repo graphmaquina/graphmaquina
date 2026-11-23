@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -609,6 +610,11 @@ class SubmachineDslTest {
         public boolean hasAsync() {
             return delegate.hasAsync();
         }
+
+        @Override
+        public AutomaticChain automaticChain() {
+            return delegate.automaticChain();
+        }
     }
 
     /** States of one step of a ladder of machines: A leads to B or C, each of which leads to D. */
@@ -735,6 +741,11 @@ class SubmachineDslTest {
         public boolean hasAsync() {
             return delegate.hasAsync();
         }
+
+        @Override
+        public AutomaticChain automaticChain() {
+            return delegate.automaticChain();
+        }
     }
 
     /** A definition that counts how many times its bindings are read, and otherwise answers as its delegate. */
@@ -803,6 +814,11 @@ class SubmachineDslTest {
         @Override
         public boolean hasAsync() {
             return delegate.hasAsync();
+        }
+
+        @Override
+        public AutomaticChain automaticChain() {
+            return delegate.automaticChain();
         }
     }
 }

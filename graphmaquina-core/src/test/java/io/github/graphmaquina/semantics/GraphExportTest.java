@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
@@ -271,6 +272,7 @@ class GraphExportTest {
         }
 
         @Override public boolean hasAsync() { return delegate.hasAsync(); }
+        @Override public AutomaticChain automaticChain() { return delegate.automaticChain(); }
 
         List<S> watchCalls() { return List.copyOf(watchCalls); }
     }

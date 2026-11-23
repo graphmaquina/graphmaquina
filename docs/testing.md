@@ -109,7 +109,7 @@ constant of another machine's catalogue does not compile inside it.
 
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
-| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine, and `automaticFrom(state)`: the automatic identifiers of a state in the order they are tried |
+| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine, `automaticFrom(state)`: the automatic identifiers of a state in the order they are tried, and `hasAutomaticChain(chain)`: when the machine takes its automatic edges |
 | One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook, `isAutomatic()` or `isManual()`, and whether the `onFailure` route or a recovery rule continues the chain |
 | One node's policy | `assertThat(definition).policy(state)` | `hasDefaultReason`, and `rejects(id, reason)`: the reason that identifier gets, its own or the default, which also requires that no edge is keyed by it |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
@@ -118,9 +118,10 @@ constant of another machine's catalogue does not compile inside it.
 | Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the searches `automaticFailure()`, `automaticAbort()` and `automaticBlock()`, also with a `MachineKey` to select one machine's attempts, with their `hasNoAutomatic…` counterparts |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
-| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
-| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per edge the advance tried |
-| [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
+| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, given the guard symbol's `NAME`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
+| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per candidate the `advance` or the `choose` tried |
+| [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed` with the guard symbol's `NAME`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
+| [Choice eligibility](choices.md#test-a-choice) | `assertThat(choiceEligibility)` | `chose(id)` or `admittedNone()`; of both, `from` and `rejections()`, one eligibility view per refusal: of the candidates before the one chosen, or of every candidate |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Automatic steps | `.automaticSteps()`, or `AutomaticStepsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause; [details](testing-advanced.md#automatic-transitions) |
@@ -149,16 +150,16 @@ to confuse, so keep them apart:
 | This origin declares exactly these identifiers | `hasTransitionsExactly(from, ids...)` |
 | This identifier has no edge from this origin | `hasNoTransition(from, id)` |
 | The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
-| The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
+| The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)`, where `name` is the guard symbol's `NAME`, as in `OrderActionsRefs.RetryBudgetLeft.NAME` |
 | The request was refused because the entity is a sub-machine whose parent does not hold it | `isRejected().isDetached()` |
 | The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 
 `hasTransitionsExactly` takes identifiers, so two edges that reach the same state are two entries.
 
 An `Ignored` outcome says which case it is, through `isIgnored().hasReason(...)`: `NO_WATCH` or `NO_RULE_MATCHED`
-for a reevaluation, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for an advance. It is the only outcome with no
-requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
-every other variant.
+for a reevaluation, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for an advance, and `NO_CANDIDATE_ADMITTED`
+for a `choose`. It is the only outcome with no requested identifier, so `hasNoRequestedTransition()` holds on it and
+`requestedTransition(id)` holds on every other variant.
 
 Useful behavior to cover in your own domain:
 
@@ -248,7 +249,8 @@ under `/machine/…`, `/states/<i>`, `/catalog/<i>`, `/transitions/<from>/<id>/�
 `/submachines/<state>/{child/…, exits/<terminal>}`; a missing edge has no path at all. An automatic edge adds
 `/transitions/<from>/<id>/automatic`, a continuing `onFailure` route `onFailureContinues` and a continuing rule
 `recoveries/<i>/continues`, each `true` and written only when set, and a state with two or more automatic edges the
-order they are tried in, at `/automaticOrder/<state>/count` and `/automaticOrder/<state>/<i>`.
+order they are tried in, at `/automaticOrder/<state>/count` and `/automaticOrder/<state>/<i>`. A machine that takes its
+automatic edges on its own only on an `advance` adds `/automaticChain` as `ON_ADVANCE`, written only then.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 
@@ -429,7 +431,8 @@ A test that needs no properties at all can pass options explicitly —
 - **`hasAsyncAction()` is about the action alone.** An edge whose guard is async but whose action is not still
   satisfies `hasSyncAction()`.
 - **A self-loop is asserted like any other edge.** `transition(REVIEW, RETOUCH).hasTarget(REVIEW)` describes
-  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate` or `advance`.
+  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate`, `advance`
+  or `choose`.
 - **Two edges to one state need two expectations.** `transition(from, APPROVE)` and
   `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.

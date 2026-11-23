@@ -1,6 +1,7 @@
 package io.github.graphmaquina.dsl;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.AutomaticChain;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -12,7 +13,8 @@ import java.util.Set;
 
 /**
  * The structural rules about the automatic edges of a state, over a {@link MachineOutline}: its
- * {@code automaticOrder} (SG108), the guards inside that order (SG109) and the sub-machine a state may hold (SG807).
+ * {@code automaticOrder} (SG108), the guards inside that order (SG109), the sub-machine a state may hold (SG807)
+ * and the automatic edge an {@code ON_ADVANCE} machine needs (SG110).
  * Each rule reports at most one problem per state, positioned at that state, but the one that an order names exactly
  * the automatic edges of its state, which reports up to three: the first identifier it names that is not one of them,
  * the first of them it leaves out, and the first identifier it names twice. The problems of one code come in the
@@ -23,7 +25,7 @@ final class AutomaticRules {
 
     private AutomaticRules() { }
 
-    /** Runs the three rules; the caller has already found the outline free of the other structural problems. */
+    /** Runs the rules; the caller has already found the outline free of the other structural problems. */
     static void check(MachineOutline outline, OutlineIndex index, Problems problems) {
         Map<String, List<AutomaticOrderOutline>> orders = new LinkedHashMap<>();
         for (AutomaticOrderOutline order : outline.automaticOrders()) {
@@ -41,6 +43,22 @@ final class AutomaticRules {
             unguardedBeforeAnother(state, automatic, declared.get(0), index, problems);
         }
         boundStates(outline, index, problems);
+        onAdvanceNeedsAnEdge(outline, problems);
+    }
+
+    /** SG110 when the chain is {@code ON_ADVANCE} and no edge of the outline is automatic. */
+    private static void onAdvanceNeedsAnEdge(MachineOutline outline, Problems problems) {
+        if (outline.automaticChain() != AutomaticChain.ON_ADVANCE) {
+            return;
+        }
+        for (TransitionOutline edge : outline.transitions()) {
+            if (edge.automatic()) {
+                return;
+            }
+        }
+        problems.add(DiagnosticCode.SG110,
+                "automaticChain is ON_ADVANCE but the graph declares no automatic edge: declare one, or drop the "
+                        + "setting");
     }
 
     /** The edges leaving {@code state} that are automatic, in the order of the outline. */

@@ -73,10 +73,11 @@ their handwritten declarations:
 
 `TicketsGraph.java` contains the nested annotations `Definition`, `StatePolicy`, `Transition` and `Reject`,
 with `StatePolicies`, `Transitions` and `Rejects` as their repeatable containers, `Recovery`, which is
-written only inside a `Transition`, `Check`, which is written on a method, and `AutomaticOrder`, with
-`AutomaticOrders` as its repeatable container. `TicketRefs` contains
+written only inside a `Transition`, `Check` and `Choice`, each written on a method, and `AutomaticOrder`,
+with `AutomaticOrders` as its repeatable container. `TicketRefs` contains
 symbols for `@GraphProperty` members; `TicketActionsRefs` contains symbols for marked actions, guards and
-hooks. Generation alone does not produce `TicketsRuntime` or `TicketMachinesRuntime`.
+hooks; the symbol of a guard also declares `NAME`, the guard's runtime name. Generation alone does not produce
+`TicketsRuntime` or `TicketMachinesRuntime`.
 
 Refresh the IDE's build model if needed. You can now replace the minimal `Tickets.java` with the
 [complete flow declaration](quickstart.md#ticketsjava), using `@TicketsGraph.Definition`, `@TicketsGraph.StatePolicy` and

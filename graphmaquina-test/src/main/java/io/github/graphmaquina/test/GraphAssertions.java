@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -46,6 +47,12 @@ public final class GraphAssertions {
     public static <E, S extends Enum<S>, T extends Enum<T>> EligibilityAssert<E, S, T> assertThat(
             Eligibility<E, S, T> actual) {
         return EligibilityAssert.assertThat(actual);
+    }
+
+    /** The answer of a choice check: the candidate a choice would run, or that it would run none. */
+    public static <E, S extends Enum<S>, T extends Enum<T>> ChoiceEligibilityAssert<E, S, T> assertThat(
+            ChoiceEligibility<E, S, T> actual) {
+        return ChoiceEligibilityAssert.assertThat(actual);
     }
 
     public static ActionOutcomeAssert assertThat(ActionOutcome actual) {

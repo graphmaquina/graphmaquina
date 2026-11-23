@@ -6,11 +6,10 @@ import lombok.Getter;
 import lombok.NonNull;
 
 /**
- * One call on a machine: an {@code execute}, a {@code reevaluate} or an {@code advance}, made by the application, by
- * a watch reaction or by an automatic step. A cascade is part of the call that runs it, not a call of its own. Each
- * call is an instance of its own and equality is identity, so two calls that ask the same thing of the same entity stay
- * apart in a map or a set.
- * {@link #toString()} names the machine and the request, never the entity.
+ * One call on a machine: an {@code execute}, a {@code reevaluate}, an {@code advance} or a {@code choose}, made by the
+ * application, by a watch reaction or by an automatic step. A cascade is part of the call that runs it, not a call of
+ * its own. Each call is an instance of its own and equality is identity, so two calls that ask the same thing of the
+ * same entity stay apart in a map or a set. {@link #toString()} names the machine and the request, never the entity.
  */
 @Getter
 public final class MachineCall {
@@ -71,7 +70,8 @@ public final class MachineCall {
 
     /**
      * {@code Doc/DocStatus SUBMIT}, {@code Doc/DocStatus reevaluate}, {@code Doc/DocStatus advance},
-     * {@code Doc/DocStatus reevaluate (watch reaction)} or {@code Doc/DocStatus advance (automatic step)}.
+     * {@code Doc/DocStatus choose}, {@code Doc/DocStatus reevaluate (watch reaction)} or
+     * {@code Doc/DocStatus advance (automatic step)}.
      */
     @Override
     public String toString() {

@@ -1,0 +1,41 @@
+graphmaquina-snapshot-v1
+/automaticChain	ON_ADVANCE
+/catalog/0	EDIT
+/catalog/1	NAME
+/catalog/2	COMPLETE
+/catalog/count	3
+/hasAsync	false
+/initial	DRAFT
+/machine/entity	io.github.graphmaquina.example.profile.Profile
+/machine/states	io.github.graphmaquina.example.profile.ProfileStatus
+/machine/transitions	io.github.graphmaquina.example.profile.ProfileTransition
+/policies/COMPLETE/otherwise	terminal state COMPLETE accepts no transitions
+/policies/DRAFT/otherwise	a draft is edited until it has a name
+/policies/NAMED/otherwise	a named profile is edited until it has an address
+/states/0	DRAFT
+/states/1	NAMED
+/states/2	COMPLETE
+/states/count	3
+/terminals/COMPLETE	true
+/transitions/DRAFT/EDIT/failsOn/count	0
+/transitions/DRAFT/EDIT/guards/count	0
+/transitions/DRAFT/EDIT/kind	MOVE
+/transitions/DRAFT/EDIT/to	DRAFT
+/transitions/DRAFT/NAME/automatic	true
+/transitions/DRAFT/NAME/failsOn/count	0
+/transitions/DRAFT/NAME/guards/0/async	false
+/transitions/DRAFT/NAME/guards/0/name	hasName
+/transitions/DRAFT/NAME/guards/count	1
+/transitions/DRAFT/NAME/kind	MOVE
+/transitions/DRAFT/NAME/to	NAMED
+/transitions/NAMED/COMPLETE/automatic	true
+/transitions/NAMED/COMPLETE/failsOn/count	0
+/transitions/NAMED/COMPLETE/guards/0/async	false
+/transitions/NAMED/COMPLETE/guards/0/name	hasAddress
+/transitions/NAMED/COMPLETE/guards/count	1
+/transitions/NAMED/COMPLETE/kind	MOVE
+/transitions/NAMED/COMPLETE/to	COMPLETE
+/transitions/NAMED/EDIT/failsOn/count	0
+/transitions/NAMED/EDIT/guards/count	0
+/transitions/NAMED/EDIT/kind	MOVE
+/transitions/NAMED/EDIT/to	NAMED

@@ -167,8 +167,12 @@ public Optional<Subscription> subscriptionOf(Payment payment) {
 An empty `Optional` means that this binding finds no parent. Lookups and the `child` and `parent` properties are
 synchronous and run inside the call. One that returns `null` instead of an `Optional` aborts the call, so does one
 that throws, with what it threw as the cause, and so does a parent or a child whose identity or state cannot be read;
-`execute`, `reevaluate`, `advance` or `eligibility` called from one of them throws `ReentrantTransitionException`, which aborts
-the call too. An eligibility check that meets any of these fails with an `EligibilityCheckException` instead.
+`execute`, `reevaluate`, `advance`, `choose`, `eligibility` or `chooseEligibility` called from one of them throws
+`ReentrantTransitionException`, which aborts the call too. An eligibility check that meets any of these fails with an
+`EligibilityCheckException` instead. So does a check that a guard started, with a `ReentrantTransitionException` as
+cause, when its binding check finds a parent that an enclosing call or check holds, such as the root entity of the
+call. A parent that a binding check only found is not held, so the guard of a child may ask its parent's check, as
+[check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) says.
 
 ## Build the set
 

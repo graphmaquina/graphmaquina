@@ -24,6 +24,8 @@ public enum VocabularyKind {
     EXIT,
     /** One method of a facade that checks, without running it, the operation that owns the identifier it names. */
     CHECK,
+    /** One method of a facade that runs, or checks, the first admitted of the candidate identifiers it names. */
+    CHOICE,
     /** One state's order of attempts among its automatic edges. */
     AUTOMATIC_ORDER,
     AUTOMATIC_ORDERS

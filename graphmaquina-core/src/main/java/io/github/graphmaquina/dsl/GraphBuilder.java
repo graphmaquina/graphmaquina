@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import java.util.Collection;
@@ -23,6 +24,14 @@ public interface GraphBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     GraphBuilder<E, S, T> terminal(S state);
 
     GraphBuilder<E, S, T> allowsCycle(S state);
+
+    /**
+     * Declares when the machine takes its automatic edges; a graph that declares nothing is
+     * {@link AutomaticChain#AFTER_COMMIT}. {@code build()} refuses {@link AutomaticChain#ON_ADVANCE} on a graph with
+     * no automatic edge, and on a manual edge that declares a failure route that continues the chain, which never
+     * chains. A second call throws {@link IllegalStateException}.
+     */
+    GraphBuilder<E, S, T> automaticChain(AutomaticChain chain);
 
     /** The reason a request with no edge from {@code state} is rejected, unless a more specific one was declared. */
     GraphBuilder<E, S, T> statePolicy(S state, String otherwise);

@@ -6,6 +6,7 @@ import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.SharedTypeNames;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.symbol.ActionSymbol;
@@ -20,8 +21,8 @@ import java.util.Set;
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
  * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers,
- * {@code Recovery}, which is written only inside a {@code Transition}, {@code Check}, which is written on a
- * method, and {@code AutomaticOrder} with its container, which orders the automatic edges of one state.
+ * {@code Recovery}, which is written only inside a {@code Transition}, {@code Check} and {@code Choice}, each
+ * written on a method, and {@code AutomaticOrder} with its container, which orders the automatic edges of one state.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
@@ -50,7 +51,7 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check",
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects", "Check", "Choice",
         "AutomaticOrder", "AutomaticOrders");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
     private static final String METHOD_TARGET = "java.lang.annotation.ElementType.METHOD";
@@ -107,22 +108,29 @@ final class MachineVocabularyEmitter {
         source.line("");
         source.line("private " + simpleName + "() {");
         source.line("}");
-
-        definition(source, machine, state);
-        statePolicy(source, simpleName, machine, state);
-        statePolicies(source, simpleName, machine);
-        transition(source, simpleName, machine, state, transition);
-        transitions(source, simpleName, machine);
-        recovery(source, simpleName, machine, transition);
-        reject(source, simpleName, machine, state, transition);
-        rejects(source, simpleName, machine);
-        check(source, machine, transition);
-        automaticOrder(source, simpleName, machine, state, transition);
-        automaticOrders(source, simpleName, machine);
-
+        nested(source, simpleName, machine, state, transition);
         source.outdent();
         source.line("}");
         return new GeneratedSource(vocabulary, source.toString());
+    }
+
+    /**
+     * Writes the annotations nested in the vocabulary {@code vocabulary} of {@code machine}, whose state and
+     * transition types are {@code state} and {@code transition}, in the order {@link #ANNOTATIONS} names them.
+     */
+    private static void nested(JavaSource source, String vocabulary, String machine, String state, String transition) {
+        definition(source, machine, state);
+        statePolicy(source, vocabulary, machine, state);
+        statePolicies(source, vocabulary, machine);
+        transition(source, vocabulary, machine, state, transition);
+        transitions(source, vocabulary, machine);
+        recovery(source, vocabulary, machine, transition);
+        reject(source, vocabulary, machine, state, transition);
+        rejects(source, vocabulary, machine);
+        check(source, machine, transition);
+        choice(source, machine, transition);
+        automaticOrder(source, vocabulary, machine, state, transition);
+        automaticOrders(source, vocabulary, machine);
     }
 
     /**
@@ -148,14 +156,18 @@ final class MachineVocabularyEmitter {
 
     private static void definition(JavaSource source, String machine, String state) {
         describe(source, "Declares the graph of {@link " + machine + "}: its initial state, its terminal states,",
-            "the states a cycle may return to, the properties reading the entity's identity and state,",
-            "and the default hook edges inherit unless they declare their own.");
+            "the states a cycle may return to, when the machine takes its automatic edges, the properties",
+            "reading the entity's identity and state, and the default hook edges inherit unless they declare their",
+            "own.");
         annotation(source, machine, "DEFINITION", TYPE_TARGET, Optional.empty(), "Definition");
         element(source, state + " initial();", "the initial state, from which every state must be reachable");
         element(source, state + "[] terminals() default {};",
             "the terminal states, which no edge leaves; none by default");
         element(source, state + "[] allowsCycle() default {};",
             "the states that allow a cycle, one of which every cycle must pass through; none by default");
+        element(source, SharedTypeNames.AUTOMATIC_CHAIN + " automaticChain() default "
+            + SharedTypeNames.AUTOMATIC_CHAIN + ".AFTER_COMMIT;",
+            "when the machine takes its automatic edges; after a commit by default");
         element(source, symbolClass(PropertySymbol.class) + " state();",
             "the property that reads and writes the state of the entity");
         element(source, symbolClass(PropertySymbol.class) + " id();",
@@ -219,7 +231,8 @@ final class MachineVocabularyEmitter {
         element(source, Timeout.class.getName() + "[] timeout() default {};",
             "the timeout of the asynchronous action, at most one; none by default");
         element(source, "boolean automatic() default false;",
-            "whether the edge is automatic, tried after a commit from its origin; false by default");
+            "whether the edge is automatic, tried from its origin after a commit, or only on advance when the"
+                + " Definition's automaticChain is ON_ADVANCE; false by default");
         element(source, "boolean onFailureContinues() default false;",
             "whether the {@code onFailure} route continues the chain of automatic attempts; false by default");
         element(source, symbolClass(HookSymbol.class) + "[] afterCommit() default {};",
@@ -290,6 +303,14 @@ final class MachineVocabularyEmitter {
             "operation that owns {@code id} may pass its admission conditions now.");
         annotation(source, machine, "CHECK", METHOD_TARGET, Optional.empty(), "Check");
         element(source, transition + " id();", "the identifier of the operation the method checks");
+        close(source);
+    }
+
+    private static void choice(JavaSource source, String machine, String transition) {
+        describe(source, "Declares a method of {@link " + machine + "} that runs, or checks without running it,",
+            "the first of its candidate identifiers that is admitted for the entity in the state it is in now.");
+        annotation(source, machine, "CHOICE", METHOD_TARGET, Optional.empty(), "Choice");
+        element(source, transition + "[] value();", "the candidate identifiers, in the order a call tries them");
         close(source);
     }
 

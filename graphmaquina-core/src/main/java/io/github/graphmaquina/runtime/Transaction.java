@@ -51,7 +51,7 @@ sealed class Transaction permits Transaction.Admission {
     /** The entity of the root call. */
     @Getter(AccessLevel.PACKAGE)
     private final Object callEntity;
-    /** The identifier the call requested; empty for a reevaluation or an advance, which request none. */
+    /** The identifier the call requested; empty for a reevaluation, an advance or a choice, which request none. */
     private final Optional<Enum<?>> requested;
     /** Makes the call when an exception first needs it and no observer brought it. */
     private final Supplier<MachineCall> newCall;

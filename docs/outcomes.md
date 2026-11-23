@@ -10,7 +10,7 @@ only needs to know what happened and why reads it without narrowing:
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, `GUARD_REJECTED`, `DETACHED` or `RESERVED_EXIT` | the policy's reason, the guard's, or the library's fixed text for the last two | No |
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
-| `Ignored` | `IGNORED` | `NO_WATCH` or `NO_RULE_MATCHED` for `reevaluate`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for `advance` and the attempts of an automatic chain | empty, except for `NO_CANDIDATE_ADMITTED`, which names each candidate's rejection | No |
+| `Ignored` | `IGNORED` | `NO_WATCH` or `NO_RULE_MATCHED` for `reevaluate`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for `advance` and the attempts of an automatic chain, `NO_CANDIDATE_ADMITTED` for `choose` | empty, except for `NO_CANDIDATE_ADMITTED`, which names each candidate's rejection | No |
 
 What each variant adds to the accessors every outcome has:
 
@@ -75,9 +75,10 @@ Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransi
 `reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the three searches of its automatic steps,
 `automaticFailure()`, `automaticAbort()` and `automaticBlock()`. `recordedState()` is `to` for `Applied`, `movedTo` for
 `Failed` and `from` for the other two. `requestedTransition()` is the identifier the caller asked for, the one a reevaluation's watch
-selected, or the automatic edge an `advance` ran; it is empty only for `Ignored`, which ran no edge at all. [Records, journals
-and reactions](#records-journals-and-reactions) describes what `records()`, `reactions()`, `automaticSteps()`,
-`starts()` and `flow()` return, and [find what the automatic steps did](#find-what-the-automatic-steps-did) what the
+selected, the automatic edge an `advance` ran, or the candidate a `choose` ran; it is empty only for `Ignored`, which
+ran no edge at all. [Records, journals and reactions](#records-journals-and-reactions) describes what `records()`,
+`reactions()`, `automaticSteps()`, `starts()` and `flow()` return, and
+[find what the automatic steps did](#find-what-the-automatic-steps-did) what the
 three searches return.
 
 Read the classification with its limits in mind:
@@ -90,10 +91,10 @@ Read the classification with its limits in mind:
   terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, the fixed reasons
   of the two refusals of a sub-machine: `DETACHED`, such as `no parent holds it in DEPOSIT`, and `RESERVED_EXIT`, such
   as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`, and the text of an `advance` that admitted no
-  automatic edge, which joins the rejection of each one it tried, such as
-  `no automatic transition was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete`. When `failsOn` or a
-  recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
-  details; it stays in `Failed.reason()` and `Failed.cause()`.
+  automatic edge, or of a `choose` that admitted none of its candidates, which joins the rejection of each one it
+  tried, such as `no candidate was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete`. When
+  `failsOn` or a recovery rule routes an exception, the failure's reason is composed from that exception and may carry
+  internal details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
   commits later and can still fail.
 - The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send. Each
@@ -173,11 +174,13 @@ Optional<String> guard = outcome.asRejected().flatMap(Outcome.Rejected::guard);
 Optional<TicketTransition> recovery = outcome.asFailed().map(Outcome.Failed::failureTransition);
 ```
 
-`Ignored.rejections()` lists why an `advance` with the reason `NO_CANDIDATE_ADMITTED` ran no automatic edge: one
-`Eligibility.Ineligible` per edge it tried, in the order it tried them, each with the identifier, the state, the
-`RejectionKind`, the guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
+`Ignored.rejections()` lists why an `advance` or a `choose` with the reason `NO_CANDIDATE_ADMITTED` ran no edge: one
+`Eligibility.Ineligible` per candidate it tried, an automatic edge of the state for an `advance` and an identifier its
+caller listed for a `choose`, in the order it tried them, each with the identifier, the state, the `RejectionKind`, the
+guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
 
-A `switch` over the variants reads all of them at once:
+A `switch` over the variants reads all of them at once. A guard's name is the `NAME` of its generated symbol, so the
+switch tells the guard it knows from the rest without a string literal:
 
 ```java
 static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
@@ -185,8 +188,10 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
         case Outcome.Applied<Ticket, TicketState, TicketTransition> applied ->
                 applied.transition() + " moved to " + applied.to();
         case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
-                "Refused " + rejected.transition() + " by "
-                        + rejected.guard().orElse("the state's policy");
+                rejected.guard().filter(TicketActionsRefs.HasTitle.NAME::equals).isPresent()
+                        ? "Refused " + rejected.transition() + ": the ticket has no title"
+                        : "Refused " + rejected.transition() + " by "
+                                + rejected.guard().orElse("the state's policy");
         case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
                 failed.failureTransition() + " moved to " + failed.movedTo() + ": "
                         + failed.reason();
@@ -242,8 +247,8 @@ read them.
 - `automaticSteps()` answers on every outcome too. A root `Applied` or `Failed` returns the automatic attempts its
   commit triggered once its reactions ran; `Rejected`, `Ignored` and a nested `cascade` result return an empty list.
   Each entity with a hop or a sub-machine start in the commit, a self-loop or a round trip included, runs its chain,
-  in log order, unless its last hop there is a failure route that does not continue: from the state the commit left
-  it in, while that state has an automatic edge, one `advance` of the entity after another, each a call of its own
+  in log order, unless its last hop there is a failure route that does not continue, or its machine is `ON_ADVANCE`
+  and the call is no `advance` of that very entity: from the state the commit left it in, while that state has an automatic edge, one `advance` of the entity after another, each a call of its own
   with its own outcome and flow. The list holds each chain whole, flat and in order. A chain stops after an attempt
   that admits no candidate, which the list still holds as `AutomaticStep.Done` with its `Ignored`, whose
   `rejections()` say why; after one whose failure takes a route that does not continue; and after one that aborts,
@@ -259,7 +264,8 @@ read them.
   began, that call decided the chain, so the commit around it does not chain the entity again; and a chain stops
   after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
   triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
-  reaction's outcome. A hook's call on another thread is not made inside the post-commit and decides nothing, as
+  reaction's outcome. On an `ON_ADVANCE` machine, such a call chains the entity only when it is itself an `advance` of
+  it, and otherwise the entity chains nowhere until the next `advance` of it. A hook's call on another thread is not made inside the post-commit and decides nothing, as
   [when the chain runs](automatic-transitions.md#when-the-chain-runs) says. Entities compare as the commit log
   compares them, by machine and identity.
 - Outside any call, the chain decides whether an attempt follows. After an attempt that ended `Ignored`, or whose

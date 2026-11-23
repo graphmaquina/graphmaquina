@@ -1,12 +1,13 @@
 # Debug a call with logs
 
-The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
-machine sets alike, at two levels. `DEBUG` logs how each call started, the hops and starts it committed and how it
-ended; `TRACE` adds each step the call took on the way. Nothing is logged on this logger at `INFO` or above: the
-caller already receives the outcome or the exception. An eligibility check is no call, but it logs lines of its own on
-the same logger, as [What a check logs](#what-a-check-logs) shows. The library's only other record is a `WARNING` on
-the logger `io.github.graphmaquina` for an observer that threw. The logger is off by default. `java.util.logging`, the JDK's default backend for
-`System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to `FINER`, and its default configuration logs neither.
+The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and machine
+sets alike, at two levels. `DEBUG` logs how each call started, the candidate an `advance` or a `choose` admitted, the
+hops and starts it committed and how it ended; `TRACE` adds each step the call took on the way. Nothing is logged on
+this logger at `INFO` or above: the caller already receives the outcome or the exception. An eligibility check is no
+call, but it logs lines of its own on the same logger, as [What a check logs](#what-a-check-logs) shows. The library's
+only other record is a `WARNING` on the logger `io.github.graphmaquina` for an observer that threw. The logger is off by
+default. `java.util.logging`, the JDK's default backend for `System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to
+`FINER`, and its default configuration logs neither.
 
 ## Contents
 
@@ -128,7 +129,8 @@ lines are a call's.
 
 | Level | Line | Logged when |
 | --- | --- | --- |
-| `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, `reevaluate` or `advance`. A `reevaluate` or an `advance` logs it before it reads the state. A watch reaction, and an `advance` of an automatic chain, adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, `reevaluate`, `advance`, or `choose` and its candidates in order, joined by commas, such as `choose PUBLISH,SUBMIT`. A `reevaluate` or an `advance` logs it before it reads the state, and a `choose` before it tries its first candidate. A watch reaction, and an `advance` of an automatic chain, adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `DEBUG` | `call=<id> candidate <T> admitted` | An `advance` or a `choose` admitted the candidate `<T>` and ran it; the candidates it tried before were refused. The candidates of an `advance` are the automatic edges of the state, and those of a `choose` the identifiers its caller listed. The line comes after the lines that candidate's step logged, those of its action included, and before those of the commit. A call that admits no candidate logs none, and neither does one whose admitted step throws. |
 | `DEBUG` | `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
 | `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
 | `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n> automatic=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, the size of its `automaticSteps()`, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
@@ -141,7 +143,7 @@ lines are a call's.
 | `TRACE` | `call=<id> depth=<d> binding <ref> parent=<ref> node=<node>` | The step of a sub-machine's child found the parent that holds it in `<node>`, before it looked up its edge. |
 | `TRACE` | `call=<id> depth=<d> detached <ref> reason="<reason>"` | The step of a sub-machine's child found parents, but none that holds it: the request is rejected as `DETACHED`, for `<reason>`, or, inside a cascade or an exit, the call aborts. |
 | `TRACE` | `call=<id> depth=<d> guard <name> PASS elapsed=<us>` / `call=<id> depth=<d> guard <name> REJECT reason="<reason>" elapsed=<us>` | A guard passed, or rejected the request for `<reason>`, as given and unescaped, with the time it took. A guard that throws logs neither. |
-| `TRACE` | `call=<id> depth=0 candidate <T> refused <kind>[ guard=<name>]: <reason>` | An `advance` did not admit the automatic edge `<T>` it tried, and goes on to the next one, if any: `<kind>` is the `RejectionKind`, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason, as given and unescaped. It comes after the lines that edge's step logged, such as its `detached` line, or its `resolved` line and its `guard` lines. |
+| `TRACE` | `call=<id> depth=0 candidate <T> refused <kind>[ guard=<name>]: <reason>` | An `advance` or a `choose` did not admit the candidate `<T>` it tried, and goes on to the next one, if any: `<kind>` is the `RejectionKind`, `<name>` the guard that rejected, only for the kind `GUARD`, and `<reason>` the reason, as given and unescaped. It comes after the lines that candidate's step logged, such as its `detached` or `no-edge` line, or its `resolved` line and its `guard` lines. |
 | `TRACE` | `call=<id> depth=<d> action <name> start mode=<sync\|async>` | An action starts, synchronous or asynchronous: the edge's own action, or the recovery action of a failure route. |
 | `TRACE` | `call=<id> depth=<d> action <name> awaiting budget=<us\|none>` | An asynchronous action returned its stage, and the step waits for it at most `<us>`: what is left of the edge's `timeout` or of the call's `asyncTimeout`, whichever ends first. `none` when neither sets a limit. |
 | `TRACE` | `call=<id> depth=<d> action <name> OK elapsed=<us>` / `call=<id> depth=<d> action <name> FAILED[ kind=<kind>] reason="<reason>" elapsed=<us>` / `call=<id> depth=<d> action <name> THREW error=<class> elapsed=<us>` | The action ended, after the time since its `start` line. `OK`: it returned `ActionOutcome.ok()`. `FAILED`: it returned a failure, with the simple name of its failure kind when it has one, and its reason. `THREW`: it threw or completed its stage exceptionally, or the step gave up on it, for a null outcome or stage or a wait that timed out, was interrupted or was refused. The line names the class of what the action threw or completed its stage with, once unwrapped from an exact `CompletionException` or `ExecutionException`, or `io.github.graphmaquina.error.TransitionAbortedException` when the step gave up on it, never a message. An `Error` the action throws logs no end. |
@@ -168,7 +170,9 @@ The `committed` and `started` lines follow the order the call took its hops and 
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
 the `committed` lines and the `end` line of the call that triggered it, and so is each automatic attempt, whose lines
 come after those of the reactions. A cascade is part of the call that runs it: it
-logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A request refused
+logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A check that a
+guard starts logs its own `check=<id>` lines while that guard runs, between the lines of the call or check the guard
+runs for. A request refused
 before it starts, as [observers](commit-and-persistence.md#observers) see it, logs nothing. Each call, and each check, logs
 on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the submission itself logs
 nothing.
@@ -188,7 +192,8 @@ begins: a reevaluation that selected no edge names none, and so does one that fa
 read the state, ran its watch or exceeded the watch chain. A reevaluation whose step began names it, even when the step
 failed before its edge ran, in its binding check for instance. Likewise, an `advance` whose state has no automatic
 edge, or that failed while it read the state, names none, and one names it once the step of its first candidate
-began. A check's `end` line always names it, since a verdict
+began. A `choose` names it once the step of its first candidate began, even when it then admits none. A check's `end`
+line always names it, since a verdict
 comes from a step that computed it; its `failed` line names none, but the exception's message does. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,

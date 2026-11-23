@@ -703,12 +703,12 @@ class GeneratedApiCompilationTest {
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
         assertEquals(List.of("fx.DocsGraph.AutomaticOrder", "fx.DocsGraph.AutomaticOrders", "fx.DocsGraph.Check",
-                "fx.DocsGraph.Definition", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects",
-                "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.Transition",
-                "fx.DocsGraph.Transitions", "fx.DocsPages.Exit", "fx.DocsPages.Submachine",
+                "fx.DocsGraph.Choice", "fx.DocsGraph.Definition", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy",
+                "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsPages.Exit", "fx.DocsPages.Submachine",
                 "fx.DocsPages.Submachines", "fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When",
                 "fx.PagesGraph.AutomaticOrder", "fx.PagesGraph.AutomaticOrders", "fx.PagesGraph.Check",
-                "fx.PagesGraph.Definition", "fx.PagesGraph.Recovery", "fx.PagesGraph.Reject",
+                "fx.PagesGraph.Choice", "fx.PagesGraph.Definition", "fx.PagesGraph.Recovery", "fx.PagesGraph.Reject",
                 "fx.PagesGraph.Rejects", "fx.PagesGraph.StatePolicies", "fx.PagesGraph.StatePolicy",
                 "fx.PagesGraph.Transition", "fx.PagesGraph.Transitions"),
                 ApiEmitter.annotationTypes(inspect("peered", withPeer())).stream().sorted().toList());
@@ -736,6 +736,7 @@ class GeneratedApiCompilationTest {
             expected.put(vocabulary + ".Reject", "REJECT");
             expected.put(vocabulary + ".Rejects", "REJECTS");
             expected.put(vocabulary + ".Check", "CHECK");
+            expected.put(vocabulary + ".Choice", "CHOICE");
             expected.put(vocabulary + ".AutomaticOrder", "AUTOMATIC_ORDER");
             expected.put(vocabulary + ".AutomaticOrders", "AUTOMATIC_ORDERS");
         }

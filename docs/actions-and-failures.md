@@ -25,7 +25,9 @@ or an asynchronous one whose stage is null or completes with null, aborts the ca
 and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. In a graph the DSL built, the guards of one
 edge have distinct names, so the name tells which one rejected: a generated guard is named by its member's simple name,
 and two guards of one name on an edge are refused with `SG105`. A definition assembled without the DSL is not checked
-for it. Guard code should be free of mutations and external side effects.
+for it. Guard code should be free of mutations and external side effects. A guard starts no call, but a synchronous
+guard may start a check of an entity that no enclosing call or check holds, as
+[check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) shows.
 
 Without an input the optional is empty. A null input is refused before the call starts, as a null entity is, with a
 `NullPointerException` that names the parameter. A value of an incompatible class throws `ClassCastException`;

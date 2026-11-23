@@ -7,11 +7,11 @@ import lombok.NonNull;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Ignored}, obtained from {@link
- * OutcomeAssert#isIgnored()}. A reevaluation or an advance ran no edge, so no action ran and nothing moved:
+ * OutcomeAssert#isIgnored()}. A reevaluation, an advance or a choice ran no edge, so no action ran and nothing moved:
  * the recorded state is the origin, no identifier was requested, and {@link #hasReason(IgnoreReason)} says
- * whether the state declared no watch at all or no rule of its watch held, for a reevaluation, or whether the
- * state had no automatic edge or none of them was admitted, for an advance, in which case {@link #rejections()} says
- * why each edge was not admitted.
+ * whether the state declared no watch at all or no rule of its watch held, for a reevaluation, whether the state had
+ * no automatic edge or none of them was admitted, for an advance, or that none of the caller's candidates was
+ * admitted, for a choice. When no candidate was admitted, {@link #rejections()} says why each one was refused.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -38,8 +38,8 @@ public final class IgnoredOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * The rejection of each automatic edge the advance tried, in the order it tried them: empty for every reason but
-     * {@link IgnoreReason#NO_CANDIDATE_ADMITTED}.
+     * The rejection of each candidate the call tried, an automatic edge of an advance or an identifier the caller
+     * gave a choice, in the order it tried them: empty for every reason but {@link IgnoreReason#NO_CANDIDATE_ADMITTED}.
      */
     public RejectionsAssert<E, S, T> rejections() {
         return new RejectionsAssert<>(context + ".rejections", ignored.rejections());

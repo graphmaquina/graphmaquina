@@ -22,7 +22,8 @@ import java.util.function.Supplier;
  * fails that future with an empty message and adds what printing threw as a suppressed exception. supplyAsync submits a
  * CompletableFuture.AsynchronousCompletionTask instead, which CompletableFuture's get and join run on a ForkJoinPool
  * worker that waits while the task is queued on it: the call would run inside the callback that waits, on a thread
- * marked as running a transition, and fail with ReentrantTransitionException.
+ * marked as running a transition, and fail with ReentrantTransitionException, unless it is a check that a synchronous
+ * guard may start there, which would run nested in the guard's call.
  * A task submitted to a machine's default executor marks its thread with that executor for as long as it runs, the
  * completion of its future and the dependents that completion runs included, so that {@link #runsTaskOf} tells
  * MachineRegistry.close() not to close that executor from its own task, which would wait for itself forever. A task of

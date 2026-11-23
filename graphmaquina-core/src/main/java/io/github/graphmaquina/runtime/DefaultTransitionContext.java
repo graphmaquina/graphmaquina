@@ -17,7 +17,10 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/** Live {@link TransitionContext} handed to an action: entity, edge, depth, peers, cascading and the call's flow. */
+/**
+ * Live {@link TransitionContext} handed to an action: entity, edge, depth, peers, cascading and the call's flow. Each
+ * cascade first passes {@link #checkCascade}, which also says how it holds the guard count of its call.
+ */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         implements TransitionContext<E, S, T>, ContextHandle {
@@ -58,16 +61,30 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(@NonNull MachineKey<P, Q, U> key,
                                                                               @NonNull P peer, @NonNull U transition) {
-        check();
-        return Cascades.cascade(tx, this, key, peer, transition);
+        checkCascade();
+        UnitOfWork uow = tx.uow();
+        int guards = uow.guards;
+        uow.guards = 0;
+        try {
+            return Cascades.cascade(tx, this, key, peer, transition);
+        } finally {
+            uow.guards = guards;
+        }
     }
 
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull MachineKey<P, Q, U> key, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
-        check();
-        return Cascades.cascadeAll(tx, this, key, peers, transition, policy);
+        checkCascade();
+        UnitOfWork uow = tx.uow();
+        int guards = uow.guards;
+        uow.guards = 0;
+        try {
+            return Cascades.cascadeAll(tx, this, key, peers, transition, policy);
+        } finally {
+            uow.guards = guards;
+        }
     }
 
     /**
@@ -85,8 +102,15 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
             @NonNull Class<M> peer, @NonNull P entity, @NonNull U transition) {
-        check();
-        return Cascades.cascade(tx, this, tx.cascadeKeyFor(this, peer), entity, transition);
+        checkCascade();
+        UnitOfWork uow = tx.uow();
+        int guards = uow.guards;
+        uow.guards = 0;
+        try {
+            return Cascades.cascade(tx, this, tx.cascadeKeyFor(this, peer), entity, transition);
+        } finally {
+            uow.guards = guards;
+        }
     }
 
     /**
@@ -98,8 +122,15 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
-        check();
-        return Cascades.cascadeAll(tx, this, peer, peers, transition, policy);
+        checkCascade();
+        UnitOfWork uow = tx.uow();
+        int guards = uow.guards;
+        uow.guards = 0;
+        try {
+            return Cascades.cascadeAll(tx, this, peer, peers, transition, policy);
+        } finally {
+            uow.guards = guards;
+        }
     }
 
     /**
@@ -122,6 +153,20 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             throw new WrongThreadException("the context of " + machine.key()
                     + " can only be used from the thread running process(): " + owner.getName());
         }
+    }
+
+    /**
+     * Checks this context, then refuses a cascade made inside the scope of a check that a guard started, where the
+     * thread's innermost scope is that check's and not this context's call, as {@link Reentrancy#requireInnermost}
+     * says, before the cascade checks anything else, so before it can poison the transaction or stage a hop. A cascade
+     * that passes then runs with the guard count of its call's unit of work held at 0, restored by a store as the first
+     * statement of a finally: what it runs, its steps' identity functions, state getters, binding lookups and actions,
+     * the text of a failure it records, runs as no guard does, so it cannot start a check even when a guard made the
+     * cascade through a kept context, and the guards of its steps count from 0.
+     */
+    private void checkCascade() {
+        check();
+        Reentrancy.requireInnermost(tx.uow(), machine.key(), entity);
     }
 
     /** The call's unit of work, once this context is checked: what its peer views and its flow read and write. */

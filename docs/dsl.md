@@ -81,7 +81,7 @@ Each call returns the stage the next call continues from:
 
 ```mermaid
 flowchart LR
-    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder"]
+    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder,<br/>automaticChain"]
     graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, onFailureAndContinue, failsOn,<br/>recover, recoverAndContinue, timeout,<br/>automatic, afterCommit, afterCommitWith"]
     edge -- "endTransition()" --> graphStage
     graphStage -- "watch(state, peerKey, peersOf, ownerOf)" --> watch["WatchBuilder<br/>when(condition)"]
@@ -107,7 +107,9 @@ returned failure and for a throwable whose most specific declared type is one of
 identifiers resolve from the failing edge's origin. `recoverAndContinue`, with the overloads of `recover`, and
 `onFailureAndContinue(id)`, which is the edge's `onFailure`, declare routes that let the entity's automatic chain go on
 from the recovery state. `automatic()` marks the edge as one the machine takes on its own, and the graph's
-`automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, as
+`automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, and its
+`automaticChain(chain)` declares, once, whether the machine takes them on its own after every commit, `AFTER_COMMIT`,
+the default, or only on `advance(entity)`, `ON_ADVANCE`, as
 [automatic transitions](automatic-transitions.md) explains. `afterCommit(name, hook)` takes a hook of the entity alone
 and `afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
 second throws `IllegalStateException` at once. `statePolicy` and `reject` word the answers a node gives. A state has
@@ -206,18 +208,21 @@ key; a second `as(...)` and an
 peers and refuses a watch on another machine.
 
 A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)`,
-`advance(entity)`, `eligibility(entity, id)` and `eligibility(entity, id, input)`, `transitionsFrom(state)`,
+`advance(entity)`, `eligibility(entity, id)` and `eligibility(entity, id, input)`, `choose(entity, candidates)` and
+`choose(entity, candidates, input)`, `chooseEligibility(entity, candidates)` and
+`chooseEligibility(entity, candidates, input)`, `transitionsFrom(state)`,
 `definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose
 `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)` and `advance(entity)` return a
 `CompletableFuture`, and
 `supplyAsync(call)`, which runs any call on the machine's executor. The interfaces' default
 `execute(entity, id, input)` refuses an input: `StateMachine`'s throws `UnsupportedOperationException`, and
 `AsyncStateMachine`'s returns a future failed with it; the machines the runtime builds accept one. The two
-`eligibility` methods of `StateMachine` are defaults as well, and throw `UnsupportedOperationException`; the machines
-the runtime builds implement them and return an `Eligibility`. A check runs the admission of `execute` without
-running the edge: `Eligible`, or `Ineligible` with the reason, the `RejectionKind` and the guard that `execute` would
-reject with. It answers for any identifier of the catalogue, as `execute` does, writes no state, runs no action, hook
-or watch reaction, and notifies no observer. A generated
+`eligibility` methods of `StateMachine` are defaults as well, and so are its two `choose` and two `chooseEligibility`
+methods: each throws `UnsupportedOperationException`, and the machines the runtime builds implement them. An
+`eligibility` returns an `Eligibility`, a `choose` an `Outcome` and a `chooseEligibility` a `ChoiceEligibility`. A
+check runs the admission of `execute` without running the edge: `Eligible`, or `Ineligible` with the reason, the
+`RejectionKind` and the guard that `execute` would reject with. It answers for any identifier of the catalogue, as
+`execute` does, writes no state, runs no action, hook or watch reaction, and notifies no observer. A generated
 application facade intentionally presents the domain operations instead. Close the registry when its work is done:
 that closes the default executors it owns. A standalone machine's internal registry cannot be closed, so its default
 executor never is; give it an `asyncExecutor` you close yourself when it runs calls through `async(...)`.

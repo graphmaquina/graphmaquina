@@ -1,6 +1,7 @@
 package consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.export.GraphView;
 import io.github.graphmaquina.export.GraphvizExporter;
+import io.github.graphmaquina.test.fixtures.AutomaticDomain;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Move;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.PublicationFailures;
@@ -196,6 +198,17 @@ class GraphSnapshotTest {
         expected.put("/watches/READY/rules/1/transition", "ABANDON");
         expected.put("/watches/READY/rules/count", "2");
         assertEquals(expected, under(snapshot, "/watches/"));
+    }
+
+    @Test
+    void anOnAdvanceGraphRecordsItsChain() {
+        GraphSnapshot onAdvance = GraphSnapshot.capture(AutomaticDomain.onAdvanceGraph());
+        assertEquals("ON_ADVANCE", onAdvance.fields().get("/automaticChain"));
+        GraphSnapshot afterCommit = GraphSnapshot.capture(AutomaticDomain.graph());
+        assertFalse(afterCommit.fields().containsKey("/automaticChain"));
+        assertEquals("/automaticChain: expected <absent> but was \"ON_ADVANCE\"\n",
+                GraphDiff.compare(afterCommit, onAdvance).render());
+        assertEquals(afterCommit.fields().size() + 1, onAdvance.fields().size());
     }
 
     @Test

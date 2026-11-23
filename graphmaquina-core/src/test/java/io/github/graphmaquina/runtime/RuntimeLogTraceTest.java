@@ -762,8 +762,8 @@ class RuntimeLogTraceTest {
 
     /**
      * An advance logs its start line before it reads the state. Each candidate it tries logs the lines of its step,
-     * and one it does not admit a candidate line after them. A state without automatic edges logs no step, so the end
-     * line names no entity.
+     * and one it does not admit a TRACE candidate line after them, the one it admits a DEBUG one. A state without
+     * automatic edges logs no step, so the end line names no entity.
      */
     @Test
     void eachRejectedCandidateIsTraced() {
@@ -781,6 +781,7 @@ class RuntimeLogTraceTest {
                     "FINER call=A depth=0 candidate ACTIVATE_PREMIUM refused GUARD guard=premium:"
                             + " the account is not premium",
                     "FINER call=A depth=0 resolved Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE-> ACTIVE kind=MOVE",
+                    "FINE call=A candidate ACTIVATE admitted",
                     "FINER call=A commit-check entities=1 hops=1",
                     "FINER call=A setter Account/AccountStatus#a1 ADDRESS_SET -> ACTIVE entries=1",
                     "FINE call=A committed Account/AccountStatus#a1 ADDRESS_SET -ACTIVATE-> ACTIVE depth=0",
@@ -793,8 +794,8 @@ class RuntimeLogTraceTest {
                     "FINER call=B depth=0 candidate COMPLETE_ADDRESS refused GUARD guard=addressComplete:"
                             + " address is incomplete",
                     "FINE call=B end code=NO_CANDIDATE_ADMITTED state=INFO_SET entity=Account/AccountStatus#a2"
-                            + " records=0 starts=0 reactions=0 aborted=0 automatic=0 reason=\"no automatic transition"
-                            + " was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
+                            + " records=0 starts=0 reactions=0 aborted=0 automatic=0 reason=\"no candidate was"
+                            + " admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
                             + " elapsed=<us>",
                     "FINE call=C start Account/AccountStatus advance",
                     "FINE call=C end code=NO_AUTOMATIC_TRANSITION state=REVIEW records=0 starts=0 reactions=0"

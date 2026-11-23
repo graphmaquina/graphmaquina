@@ -17,7 +17,8 @@ import java.util.Optional;
  * writes no state, logs no hop, runs no action, hook, watch reaction or automatic attempt, starts no sub-machine and
  * runs no exit. It logs lines of its own instead, under {@code check=<id>} in place of {@code call=<id>}, as
  * {@link CallLog} says: at DEBUG a start line and a verdict line, or a failed one, and at TRACE the lines of the step
- * it admits.
+ * it admits. A synchronous guard may start one, of an entity that no enclosing call or check holds, as
+ * {@link Reentrancy} says: it runs as any check, nested in the call or check of that guard.
  */
 final class Checks {
 
@@ -25,41 +26,70 @@ final class Checks {
 
     /**
      * Whether {@code machine} admits {@code transition} for {@code entity} in the state it is in now, with
-     * {@code input} as the operation input its guards read, empty when the check carries none. It is refused before
-     * it starts as execute is: an identifier of another catalogue with IllegalArgumentException, and a check where no
-     * call may start with ReentrantTransitionException, and a check so refused logs nothing. Then it opens its log,
-     * which logs its start line at DEBUG; in a unit of work of its own, whose deadline is the machine's counted from
-     * now, the root step runs as {@link Steps#admit} says, with that log, under the reentrancy marker, which the first
-     * statement of the finally releases with a store before the contexts the step handed out are invalidated, whatever
-     * the step throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and the
-     * reason, the kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state it
-     * read. The verdict line is logged once the marker is released, as an end line is; so is the failed line of the
+     * {@code input} as the operation input its guards read, empty when the check carries none. It is refused before it
+     * starts: an identifier of another catalogue with IllegalArgumentException, as execute is, and a check that may not
+     * start on this thread with ReentrantTransitionException, as {@link Reentrancy#requireCheckMayStart} says, which
+     * runs the entity's identity function only for a check that a guard starts, and its identity's equals only when an
+     * enclosing scope holds an entity of this machine, and lets what either throws propagate as it is; a check so
+     * refused, or so failed, logs nothing. Then it runs as {@link #admitted} says, in a unit of work of its own, whose
+     * deadline is the machine's counted from now. For a check that a guard started, the guard count of the enclosing
+     * scope is held at 0 meanwhile, and restored by a store as the first statement of the finally. The application code
+     * the engine runs for the check outside its own scope, which runs from the claim of the cell to its release, as
+     * {@link Reentrancy} says, is, besides that identity function and equals, the log's backend, as the log reads its
+     * levels and logs the start, verdict and failed lines, with the identity text and the failure reason that those
+     * lines and {@link #failed} print: it runs in the enclosing scope, under that scope's rules, but as no guard does,
+     * so it cannot start a check.
+     */
+    static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
+            DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
+        Transaction.requireTransition(machine.key(), transition);
+        Reentrancy.Cell cell = Reentrancy.cell();
+        Reentrancy.requireCheckMayStart(cell, machine, entity);
+        UnitOfWork uow = new UnitOfWork(machine.registry().maxCascadeDepth(), machine.deadlineNanos());
+        UnitOfWork enclosing = cell.top.orElse(uow);
+        int guards = enclosing.guards;
+        enclosing.guards = 0;
+        try {
+            return admitted(cell, uow, machine, entity, transition, input);
+        } finally {
+            enclosing.guards = guards;
+        }
+    }
+
+    /**
+     * The check that {@link #check} let start, in {@code uow}. It opens its log, which logs its start line at DEBUG;
+     * the root step runs as {@link Steps#admit} says, with that log, under the reentrancy marker and in a scope of its
+     * own, {@code uow}, nested in the call or check whose guard started it, if any; the first statements of the finally
+     * restore {@code cell} with stores before the contexts the step handed out are invalidated, whatever the step
+     * throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and the reason, the
+     * kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state it read. The
+     * verdict line is logged once the cell is restored, as an end line is; so is the failed line of the
      * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
      * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
      * backend throws is contained by the log, as {@link CallLog} says: it loses the line and changes nothing in the
      * check, except that an InterruptedException interrupts the thread again, as for a call, so that a later wait of
      * the check, for an asynchronous guard, ends as interrupted and fails the check.
      */
-    static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
-            DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
-        Transaction.requireTransition(machine.key(), transition);
-        Reentrancy.check(machine.key(), entity);
-        MachineRegistry registry = machine.registry();
-        UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
+    private static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> admitted(
+            Reentrancy.Cell cell, UnitOfWork uow, DefaultStateMachine<E, S, T> machine, E entity, T transition,
+            Optional<Object> input) {
         CallLog log = CallLog.openCheck();
-        Transaction.Admission tx = new Transaction.Admission(registry, uow, machine.key(), entity,
+        Transaction.Admission tx = new Transaction.Admission(machine.registry(), uow, machine.key(), entity,
                 Optional.of(transition), () -> new MachineCall(machine.key(), entity, CallRequest.EXECUTE,
                         Optional.of(transition), CallOrigin.APPLICATION), Optional.empty(), log);
         if (log.debug()) {
             log.start(machine.key(), transition.name());
         }
         StepResult<S, T> step;
-        boolean[] marker = Reentrancy.enter(machine.key(), entity);
+        boolean active = cell.active;
+        Optional<UnitOfWork> top = cell.top;
+        Reentrancy.enterCheck(cell, uow);
         try {
             try {
                 step = Steps.admit(tx, machine, entity, transition, input);
             } finally {
-                marker[0] = false;
+                cell.active = active;
+                cell.top = top;
                 tx.invalidate();
             }
         } catch (Error fatal) {
@@ -99,8 +129,8 @@ final class Checks {
      * flight as {@link Transaction.Admission#guardInFlight} keeps it, and has the message
      * {@code eligibility of <ID> for <entity> <FROM> could not be decided: <reason>}. The entity is the reference
      * the step registered, {@code key#identity}, as the messages of a call's failures name it, or the key alone when
-     * the step could not read the identity; the identity function does not run again here, where the marker is
-     * released. {@code ?} stands for a state the check did not read.
+     * the step could not read the identity; the identity function does not run again here, where the cell is
+     * restored. {@code ?} stands for a state the check did not read.
      */
     private static EligibilityCheckException failed(Transaction.Admission tx, DefaultStateMachine<?, ?, ?> machine,
                                                     Object entity, Enum<?> transition, Throwable failure) {

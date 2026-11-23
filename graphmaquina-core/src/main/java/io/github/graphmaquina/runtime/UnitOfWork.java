@@ -90,6 +90,23 @@ final class UnitOfWork {
     private Optional<CallFlow> flow = Optional.empty();
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
+    /**
+     * The scope below this one on its thread, as {@link Reentrancy} links them: the unit of work of the call or check
+     * whose synchronous guard started the check this unit of work belongs to; empty for a root call and for a check
+     * that no guard started. Stored once, as the scope is entered, and read directly, never through a call.
+     */
+    Optional<UnitOfWork> below = Optional.empty();
+    /**
+     * How many synchronous guards of this unit of work's steps are running on its thread, as {@link Steps} brackets
+     * each one's test call, except while the engine runs other application code inside such a guard, which holds it
+     * at 0 meanwhile: a peer read; the identity function and the identity's equals before a nested check starts; a
+     * nested check, from before its log opens until its last line, so both its own scope and the code the engine runs
+     * for it in this scope, the log's backend for its levels and its start, verdict and failed lines, with the identity
+     * text and the failure reason that those lines and its failure print; and a cascade, for the whole of it, its steps
+     * included, whose own guards then count from 0. {@link Reentrancy} lets a check start only while the innermost
+     * scope's count is above 0. Every change is a plain store that a finally undoes with another one.
+     */
+    int guards;
 
     /**
      * Registers the identity and returns the canonical reference. A second object with the same identity is an
@@ -109,7 +126,9 @@ final class UnitOfWork {
     /**
      * The reference {@link #register} kept for {@code instance} under {@code key}, found by walking every reference
      * this unit of work knows and comparing instances by reference: no identity's equals or hashCode runs. Empty when
-     * none was registered, as when reading the identity threw. Only the failure of an eligibility check asks.
+     * none was registered, as when reading the identity threw. Only the failure of an eligibility check asks, and an
+     * advance that the application made on a machine that chains only on advance, once its step ran, for the entity
+     * it advanced.
      */
     Optional<EntityRef> registered(MachineKey<?, ?, ?> key, Object instance) {
         for (EntityRef ref : known.values()) {
@@ -390,6 +409,26 @@ final class UnitOfWork {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether this unit of work holds {@code ref}, for {@link Reentrancy}: an entity in flight, the root's own step,
+     * a cascade's or an exit's, or one with an entry in the log, a hop or a start, which gives it a pending state. An
+     * entity only registered is not held. Only the equals of {@code ref}'s identity runs, never another identity's
+     * equals or hashCode, and the pending index is neither built nor read.
+     */
+    boolean holds(EntityRef ref) {
+        for (InFlight flight : inFlight) {
+            if (ref.equals(flight.ref())) {
+                return true;
+            }
+        }
+        for (int i = 0; i < log.size(); i++) {
+            if (ref.equals(log.get(i).ref())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     List<String> path() {

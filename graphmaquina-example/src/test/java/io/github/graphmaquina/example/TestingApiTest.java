@@ -12,6 +12,7 @@ import io.github.graphmaquina.example.item.Items;
 import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
+import io.github.graphmaquina.example.order.OrderActionsRefs;
 import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
@@ -89,7 +90,7 @@ class TestingApiTest {
                 .isAction()
                 .hasActionNamed("pay")
                 .hasAsyncAction()
-                .hasGuardsExactly(new GuardExpectation("retryBudgetLeft", false))
+                .hasGuardsExactly(new GuardExpectation(OrderActionsRefs.RetryBudgetLeft.NAME, false))
                 .hasTimeout(Duration.ofSeconds(5))
                 .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
                 .failsOnExactly(IOException.class)

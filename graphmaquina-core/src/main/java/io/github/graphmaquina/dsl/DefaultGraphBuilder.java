@@ -1,6 +1,7 @@
 package io.github.graphmaquina.dsl;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.RecoveryRule;
@@ -8,7 +9,6 @@ import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKey;
 import io.github.graphmaquina.api.TransitionSpec;
-import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.InvalidGraphException;
 import java.util.ArrayList;
@@ -46,6 +46,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private int initialDeclarations;
     private final Set<S> terminals;
     private final Set<S> cycleAllowed;
+    private Optional<AutomaticChain> automaticChain = Optional.empty();
     private final Map<S, String> statePolicies;
     private final Map<S, Map<T, String>> rejections;
     private final List<OrderDeclaration<S, T>> automaticOrders = new ArrayList<>();
@@ -121,6 +122,16 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireUnbuilt();
         requireState(state);
         cycleAllowed.add(state);
+        return this;
+    }
+
+    @Override
+    public GraphBuilder<E, S, T> automaticChain(@NonNull AutomaticChain chain) {
+        requireUnbuilt();
+        if (automaticChain.isPresent()) {
+            throw new IllegalStateException("automaticChain is already declared");
+        }
+        automaticChain = Optional.of(chain);
         return this;
     }
 
@@ -249,7 +260,12 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             throw new InvalidGraphException(key, problems.sorted());
         }
         return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs,
-                resolveSubmachines(), firstOrders());
+                resolveSubmachines(), firstOrders(), chain());
+    }
+
+    /** What the graph declared, or {@link AutomaticChain#AFTER_COMMIT}. */
+    private AutomaticChain chain() {
+        return automaticChain.orElse(AutomaticChain.AFTER_COMMIT);
     }
 
     /** The first order declared on each state; the validator has already reported a second one. */
@@ -335,7 +351,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
                     declaration.transitions().stream().map(Enum::name).toList()));
         }
         return new MachineOutline(key.toString(), stateNames, catalogNames, initial.orElseThrow().name(), terminalNames,
-                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines, orderOutlines);
+                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines, orderOutlines, chain());
     }
 
     /** The outline of each edge of {@code ordered}, in that order, with the identifiers its recovery rules name. */
@@ -384,11 +400,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private List<WatchOutline> watchOutlines(Map<S, WatchSpec<E, S, T, ?, ?, ?>> watchSpecs) {
         List<WatchOutline> watchOutlines = new ArrayList<>();
         for (WatchSpec<E, S, T, ?, ?, ?> watch : watchSpecs.values()) {
-            List<String> executed = new ArrayList<>();
-            for (WatchRule<E, S, T, ?, ?, ?> rule : watch.rules()) {
-                executed.add(rule.transition().name());
-            }
-            watchOutlines.add(new WatchOutline(watch.state().name(), executed));
+            watchOutlines.add(WatchOutline.of(watch));
         }
         return watchOutlines;
     }

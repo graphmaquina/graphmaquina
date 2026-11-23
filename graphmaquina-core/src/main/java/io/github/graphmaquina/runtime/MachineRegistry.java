@@ -1,6 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CallRequest;
@@ -18,8 +19,8 @@ import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKind;
-import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.CallFailedException;
+import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
 import io.github.graphmaquina.internal.CallFailureFlows;
@@ -125,17 +126,22 @@ public final class MachineRegistry implements AutoCloseable {
         return new Builder();
     }
 
-    /** A registry of one, assembled as a registry builder would, with the default limits and no observer. */
+    /**
+     * A registry of one, assembled as a registry builder would, with the default limits and no observer. It finds the
+     * machine by the key its builder's validation read, so it reads nothing of the definition once it consumed the
+     * builder.
+     */
     static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(
             StateMachines.Builder<E, S, T> builder) {
-        return assemble(List.of(builder), 10, 10, 10, Observers.NONE).machineFor(builder.key());
+        return assemble(List.of(builder), 10, 10, 10, Observers.NONE).machineFor(builder.validatedKey());
     }
 
     /**
-     * The one way machines join a registry, standalone ones included. Every check runs before the first machine
-     * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
-     * Each machine receives the bindings in which it is the child, in the order of the builders and then of the
-     * parent's states.
+     * The one way machines join a registry, standalone ones included. Every check, and every read of a definition,
+     * runs before the first machine builder is consumed, so a build that fails leaves every builder as it was, ready
+     * to be fixed and built again: once it consumed a builder, the build uses what each builder's validation read, its
+     * key, its automaticChain and its watches among them, and reads nothing of a definition. Each machine receives the
+     * bindings in which it is the child, in the order of the builders and then of the parent's states.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
                                             int maxCascadeDepth, int maxWatchChain, int maxAutomaticChain,
@@ -149,7 +155,7 @@ public final class MachineRegistry implements AutoCloseable {
         Set<Class<?>> facadeTypes = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             builder.validate();
-            checkWatches(builder.definition(), byKey.keySet());
+            builder.checkWatchPeers(byKey.keySet());
             indexBindings(builder.definition(), byKey, bindings, exitsByChild);
             // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key, so a typed caller
             // cannot reach this collision.
@@ -177,19 +183,21 @@ public final class MachineRegistry implements AutoCloseable {
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, maxAutomaticChain, observers,
                 automatic);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            registry.register(builder, bindings.getOrDefault(builder.key(), List.of()));
+            registry.register(builder, bindings);
         }
         registry.indexWatchers();
         return registry;
     }
 
     /**
-     * Builds the machine of {@code builder} into this registry, with a copy of {@code bindingsAsChild}, the bindings
-     * in which it is the child, and registers it under its key, in the order it joined, and under its facade, if any.
+     * Builds the machine of {@code builder} into this registry, with a copy of the bindings in which it is the child,
+     * as {@code bindings} indexes them by child, and registers it under its key, in the order it joined, and under its
+     * facade, if any. It reads the key its builder's validation read, not the definition's.
      */
     private void register(StateMachines.Builder<?, ?, ?> builder,
-                          List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
-        DefaultStateMachine<?, ?, ?> machine = builder.build(this, List.copyOf(bindingsAsChild));
+                          Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings) {
+        DefaultStateMachine<?, ?, ?> machine = builder.build(this,
+                List.copyOf(bindings.getOrDefault(builder.validatedKey(), List.of())));
         machines.put(machine.key(), machine);
         assembled.add(machine);
         Optional<? extends Class<?>> facade = builder.facade();
@@ -208,12 +216,12 @@ public final class MachineRegistry implements AutoCloseable {
      * whose synthetic holder class has a static initializer that no source can name.
      */
     static List<Class<?>> staticallyInitialized() {
-        return List.of(ActionStatus.class, CallOrigin.class, CallPhase.class, CallRequest.class,
-                CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class, RejectionKind.class,
-                StatesWritten.class, TransitionKind.class, CallFailedException.class, CallFailureFlows.class,
-                FrozenFlow.class, Await.class, CallLog.class, CommitSummary.class, FlowHandle.Hook.class,
-                Observers.class, PostCommitScope.class, Reentrancy.class, Submachines.Hold.class, Submit.class,
-                UnitOfWork.class, Watcher.NoOwner.class);
+        return List.of(ActionStatus.class, AutomaticChain.class, CallOrigin.class, CallPhase.class,
+                CallRequest.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class,
+                RejectionKind.class, StatesWritten.class, TransitionKind.class, CallFailedException.class,
+                ReentrantTransitionException.Refusal.class, CallFailureFlows.class, FrozenFlow.class, Await.class,
+                CallLog.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class, PostCommitScope.class,
+                Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
     }
 
     /**
@@ -244,18 +252,6 @@ public final class MachineRegistry implements AutoCloseable {
             automatic |= !definition.automaticFrom(state).isEmpty();
         }
         return automatic;
-    }
-
-    /** A watch must point to one of the machines being assembled; for a standalone machine, that is itself. */
-    private static <E, S extends Enum<S>, T extends Enum<T>> void checkWatches(GraphDefinition<E, S, T> definition,
-                                                                               Set<MachineKey<?, ?, ?>> keys) {
-        for (S state : definition.key().states().getEnumConstants()) {
-            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
-            if (watch.isPresent() && !keys.contains(watch.get().peer())) {
-                throw new IllegalStateException("the watch of " + definition.key() + "." + state.name() + " points to "
-                        + watch.get().peer() + ", which is not in the registry");
-            }
-        }
     }
 
     /**
@@ -364,16 +360,11 @@ public final class MachineRegistry implements AutoCloseable {
         }
     }
 
+    /** Indexes the watches of {@code machine} under their peers, from what its builder's validation read. */
     private <E, S extends Enum<S>, T extends Enum<T>> void indexWatchersOf(DefaultStateMachine<E, S, T> machine) {
-        S[] states = machine.key().states().getEnumConstants();
-        for (S state : states) {
-            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = machine.definition().watch(state);
-            if (watch.isEmpty()) {
-                continue;
-            }
-            MachineKey<?, ?, ?> peer = watch.get().peer();
-            watchers.computeIfAbsent(peer, (MachineKey<?, ?, ?> key) -> new ArrayList<>())
-                    .add(Watcher.of(machine, watch.get()));
+        for (Watcher<E, S, T, ?, ?, ?> watcher : Watcher.ofEach(machine)) {
+            watchers.computeIfAbsent(watcher.spec().peer(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
+                    .add(watcher);
         }
     }
 
@@ -383,11 +374,11 @@ public final class MachineRegistry implements AutoCloseable {
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException, and an
      * InterruptedException interrupts the thread again. Each lookup runs with the reentrancy marker set, so one that
-     * calls execute, reevaluate or advance ends that way too. {@code log} is the log of the call whose commit is
-     * dispatched: at TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner
-     * is a target, the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each
-     * reaction's log names its id as the trigger. Each reaction is one watch level above {@code levels}, at the same
-     * automatic level.
+     * calls execute, reevaluate, advance, choose or a check ends that way too. {@code log} is the log of the call whose
+     * commit is dispatched: at TRACE it logs each lookup once, with what it found, the owner in the watched state once
+     * that owner is a target, the state of an owner outside it, or no owner, or with what it threw, and when that call
+     * logs, each reaction's log names its id as the trigger. Each reaction is one watch level above {@code levels}, at
+     * the same automatic level.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, ChainLevels levels, CallLog log) {
         if (watchers.isEmpty()) {
@@ -547,9 +538,9 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade, and
-         * reads the automatic edges of every state of its graph, before it consumes any of them; only a build that
-         * succeeds marks this builder and its machine builders used.
+         * Checks every machine builder, its identity, accessors, asyncTimeout, automaticChain, watches, sub-machines
+         * and facade, and reads the automatic edges of every state of its graph, before it consumes any of them; only
+         * a build that succeeds marks this builder and its machine builders used.
          */
         public MachineRegistry build() {
             requireUnused();

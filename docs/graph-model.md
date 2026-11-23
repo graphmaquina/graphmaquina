@@ -107,8 +107,8 @@ Four situations are distinct, and each has its own observable result.
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
 the only exit of a non-terminal state, and it is forbidden on a terminal.
 
-`Ignored` is reserved for `reevaluate` and `advance`, which request no identifier. A reevaluation whose selected edge
-is refused returns `Rejected`; an `advance` never does.
+`Ignored` is reserved for `reevaluate`, `advance` and `choose`, which request no identifier. A reevaluation whose
+selected edge is refused returns `Rejected`; an `advance` never does, and neither does a `choose`.
 
 ### Guards and the reason a request is refused
 
@@ -116,7 +116,7 @@ A guard belongs to an edge that exists. It runs after the edge is resolved and b
 declaration order, stopping at the first rejection:
 
 ```java
-assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
+assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME);
 ```
 
 A refusal for lack of an edge is a different kind, and carries no guard:
@@ -170,6 +170,8 @@ You declare what a state can do, and its policy words the answer for everything 
   to continue (`SG305`).
 - A state that holds a sub-machine has no automatic edge (`SG807`). With annotations, the identifier of an automatic
   edge executes no operation that takes an input, because an automatic attempt carries none (`SG515`).
+- A graph that declares `automaticChain` as `ON_ADVANCE` has an automatic edge (`SG110`), and none of its manual edges
+  declares a failure route that continues the chain (`SG306`), since only an `advance` chains there.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 - A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
   an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
@@ -199,12 +201,14 @@ type-level `Transition` may add further branches of an identifier a method owns 
 a branch whose `(from, id)` key is already declared is a duplicate key, `SG102`.
 
 A `Transition` on the interface itself declares an edge with no facade method. It is how failure routes,
-cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and `PAYMENT_DECLINED` in the
-shop are exactly that. Omitting `action` makes the edge a `MOVE`.
+cascade-only and watch-only edges are declared, and the candidates that only a choice runs: `DECLINE` in the quickstart
+and `PAYMENT_DECLINED` in the shop are exactly that, and so are `DELIVER` and `RETURN` in the example's `Shipments`.
+Omitting `action` makes the edge a `MOVE`.
 
 A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
-admitted without running it, plus what every
+admitted without running it, the [choices](choices.md) you declared with the generated `Choice`, each of which runs, or
+checks, the first admitted of the candidate identifiers it names, in their declared order, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
 `advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
 declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
@@ -280,11 +284,12 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.AutomaticOrder`, `.AutomaticOrders` |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.Choice`, `.AutomaticOrder`, `.AutomaticOrders` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
+| Marked guard `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.NAME`, the string `"hasTitle"`: the guard's runtime name, the one a rejection, an ineligible check and a test assertion carry. Renaming the guard renames the symbol, so a stale reference fails to compile |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
-| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction, `graph(...)` and its collaborator-free twin [`structure()`](graph-inspection.md#a-definition-without-collaborators), and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)` and each check its `eligibility(...)`, and refuses a null machine with `NullPointerException` |
+| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction, `graph(...)` and its collaborator-free twin [`structure()`](graph-inspection.md#a-definition-without-collaborators), and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)`, each check its `eligibility(...)`, each choice its `choose(...)` and each choice check its `chooseEligibility(...)`, and refuses a null machine with `NullPointerException` |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
 `KEY` is a `MachineKey<E, S, T>`: entity class, state enum and transition enum. `MachineKey.of(entity, states,
@@ -314,13 +319,14 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 
 | Annotation | Target | Required elements | Optional elements |
 | --- | --- | --- | --- |
-| `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
+| `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol`, `automaticChain: AutomaticChain` |
 | `StatePolicy` | type | `state: S`, `otherwise: String` | None |
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean` |
 | `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn`, `continueChain: boolean` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 | `AutomaticOrder` | type | `from: S`, `transitions: T[]` | None |
 | [`Check`](eligibility.md#check-through-the-facade) | method | `id: T` | None |
+| [`Choice`](choices.md#declare-a-choice) | method | `value: T[]` | None |
 
 `StatePolicy`, `Transition`, `Reject` and `AutomaticOrder` are repeatable, through the generated `StatePolicies`,
 `Transitions`, `Rejects` and `AutomaticOrders` containers. `from` of a `Transition` must contain at least one state.
@@ -337,9 +343,10 @@ origin in its `from`, whether it is written on an operation or on the interface,
 for each. `onFailureContinues = true` makes the `onFailure` route a continuing one, emitted as
 `onFailureAndContinue(...)` in place of `onFailure(...)`, and a `Recovery` with `continueChain = true` is emitted as
 `recoverAndContinue(...)` in place of `recover(...)`. Each `AutomaticOrder` is emitted as one
-`automaticOrder(state, List.of(...))` call. The processor hands the whole outline, marks and orders included, to the
-validator the DSL runs in `build()`, so the structural rules above are reported with the same codes for an annotated
-graph.
+`automaticOrder(state, List.of(...))` call, and `automaticChain = AutomaticChain.ON_ADVANCE` on the `Definition` as
+`automaticChain(AutomaticChain.ON_ADVANCE)` on the graph's builder; the default, `AFTER_COMMIT`, emits nothing. The
+processor hands the whole outline, marks and orders included, to the validator the DSL runs in `build()`, so the
+structural rules above are reported with the same codes for an annotated graph.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, the `child`, `parent` and
@@ -404,17 +411,23 @@ the interface's own symbol, and a static method that the host or a superclass be
 name and parameter types not at all, the hiding method being exported in its place when it is marked. Generated output and JAR
 exports are checked for collisions; do not manually create classes in generated namespaces or edit symbols.
 
-A facade method that carries the generated [`Check`](eligibility.md#check-through-the-facade) has a signature of its
-own, `I` being the input type of the operation it checks:
+A facade method that carries the generated [`Check`](eligibility.md#check-through-the-facade) or
+[`Choice`](choices.md#declare-a-choice) has a signature of its own, `I` being the input type of the operation it checks
+or of the choice:
 
 | Declaration | Supported signature |
 | --- | --- |
 | `Check` on an abstract facade method | `Eligibility<E, S, T> method(E entity)` or `Eligibility<E, S, T> method(E entity, I input)` |
+| `Choice` on an abstract facade method, to run the choice | `Outcome<E, S, T> method(E entity)` or `Outcome<E, S, T> method(E entity, I input)` |
+| `Choice` on an abstract facade method, to check the choice | `ChoiceEligibility<E, S, T> method(E entity)` or `ChoiceEligibility<E, S, T> method(E entity, I input)` |
 
-Its `id` names the identifier of one of the facade's operations, and it repeats that operation's parameters: the
-same entity, and the same input type exactly when the operation takes one, without varargs or method type
-parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
-(`SG512` to `SG514`).
+The `id` of a check names the identifier of one of the facade's operations, and the check repeats that operation's
+parameters: the same entity, and the same input type exactly when the operation takes one, without varargs or method
+type parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
+(`SG512` to `SG514`). A `Choice` names its candidates, at least one and each once, each declared by an edge and none
+the exit of a sub-machine, and a choice over a candidate that an operation of the facade executes takes that
+operation's input, or none when the operation takes none. A method that carries a `Choice` carries neither a
+`Transition` nor a `Check`, and has no varargs or method type parameters (`SG516`).
 
 ---
 

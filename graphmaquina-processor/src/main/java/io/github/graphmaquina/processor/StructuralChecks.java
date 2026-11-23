@@ -5,12 +5,12 @@ import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
-import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.internal.FailureTypes;
+import io.github.graphmaquina.processor.gen.ResultTypes;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -171,10 +171,10 @@ final class StructuralChecks {
     /**
      * SG504 for every abstract method {@code facade} inherits from a super-interface other than {@code Machine},
      * except one that the method the companion writes or inherits for a method of {@code Machine} or a public
-     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations and checks
-     * are read from the facade's own declarations, so the companion would not implement any other inherited method. A
-     * redeclaration of one of those methods whose result the companion's method cannot return is told apart, since
-     * declaring it on the facade would be refused as well.
+     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations, checks and
+     * choices are read from the facade's own declarations, so the companion would not implement any other inherited
+     * method. A redeclaration of one of those methods whose result the companion's method cannot return is told
+     * apart, since declaring it on the facade would be refused as well.
      */
     void checkInheritedOperations(TypeElement facade) {
         for (ExecutableElement method : signatures.inheritedAbstract(facade, BUILT_IN)) {
@@ -192,17 +192,17 @@ final class StructuralChecks {
             }
             diagnostics.error(DiagnosticCode.SG504, facade.getSimpleName() + " inherits the abstract method "
                     + method.getSimpleName() + " from " + from
-                    + ", which the generated companion would not implement: declare every operation and check on "
-                    + facade.getSimpleName() + " itself", facade);
+                    + ", which the generated companion would not implement: declare every operation, check and"
+                    + " choice on " + facade.getSimpleName() + " itself", facade);
         }
     }
 
     /**
      * SG504 when {@code method}, which {@code facade} declares and which overrides {@code builtIn}, carries
-     * vocabulary, since it would be an operation, or a check, the companion cannot declare beside the implementation
-     * of {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
-     * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
-     * not implement it at all.
+     * vocabulary, since it would be an operation, a check or a choice the companion cannot declare beside the
+     * implementation of {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's
+     * {@code builtIn} cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion
+     * would then not implement it at all.
      */
     void checkNotAnOperation(ExecutableElement method, ExecutableElement builtIn, TypeElement facade,
                              boolean declared) {
@@ -219,8 +219,8 @@ final class StructuralChecks {
     }
 
     /**
-     * Whether {@code method} is read for the vocabulary it carries, as an operation or as a check: a default, static
-     * or private declaration is neither.
+     * Whether {@code method} is read for the vocabulary it carries, as an operation, a check or a choice: a default,
+     * static or private declaration is none of them.
      */
     static boolean isOperation(ExecutableElement method) {
         return !method.isDefault() && !method.getModifiers().contains(Modifier.STATIC)
@@ -229,12 +229,12 @@ final class StructuralChecks {
 
     /**
      * SG504 unless the operation carries at least one Transition of its own graph vocabulary. An abstract method of
-     * the facade that carries a Check of that vocabulary instead is a check, and never asked.
+     * the facade that carries a Check or a Choice of that vocabulary instead is a check or a choice, and never asked.
      */
     boolean checkOperationDeclared(ExecutableElement method, boolean declared) {
         if (!declared) {
             diagnostics.error(DiagnosticCode.SG504,
-                    method.getSimpleName() + " must carry at least one Transition, or one Check,"
+                    method.getSimpleName() + " must carry at least one Transition, Check or Choice"
                     + " of its own graph vocabulary", method);
             return false;
         }
@@ -249,7 +249,7 @@ final class StructuralChecks {
      * facade could declare.
      */
     boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
-        DeclaredType outcome = signatures.declared(Outcome.class.getName(), types.entity(),
+        DeclaredType outcome = signatures.declared(ResultTypes.OUTCOME, types.entity(),
                 types.states(), types.transitions());
         int arity = method.getParameters().size();
         boolean supported = arity == 1 || (arity == 2 && !method.isVarArgs()

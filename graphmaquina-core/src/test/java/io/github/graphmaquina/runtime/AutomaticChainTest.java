@@ -403,13 +403,14 @@ class AutomaticChainTest {
                     "FINE call=A start Account/AccountStatus SET_PASSWORD",
                     "FINE call=A committed Account/AccountStatus#a1 NEW -SET_PASSWORD-> PASSWORD_SET depth=0",
                     "FINE call=B start Account/AccountStatus advance trigger=A",
+                    "FINE call=B candidate COMPLETE_INFO admitted",
                     "FINE call=B committed Account/AccountStatus#a1 PASSWORD_SET -COMPLETE_INFO-> INFO_SET depth=0",
                     "FINE call=B end code=APPLIED state=INFO_SET entity=Account/AccountStatus#a1 records=1 starts=0"
                             + " reactions=0 aborted=0 automatic=0 elapsed=<us>",
                     "FINE call=C start Account/AccountStatus advance trigger=A",
                     "FINE call=C end code=NO_CANDIDATE_ADMITTED state=INFO_SET entity=Account/AccountStatus#a1"
-                            + " records=0 starts=0 reactions=0 aborted=0 automatic=0 reason=\"no automatic transition"
-                            + " was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
+                            + " records=0 starts=0 reactions=0 aborted=0 automatic=0 reason=\"no candidate was"
+                            + " admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete\""
                             + " elapsed=<us>",
                     "FINE call=A end code=APPLIED state=PASSWORD_SET entity=Account/AccountStatus#a1 records=1"
                             + " starts=0 reactions=0 aborted=0 automatic=2 elapsed=<us>"), lines(log));

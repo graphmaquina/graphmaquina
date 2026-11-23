@@ -1,14 +1,18 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.WatchSpec;
 import java.time.Duration;
 import java.time.InstantSource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
@@ -22,6 +26,21 @@ import lombok.RequiredArgsConstructor;
 public final class StateMachines {
 
     private StateMachines() { }
+
+    /**
+     * What a builder's validation read from its definition, each answer once, before any builder of the build is
+     * consumed: the key, whether the machine chains only on advance, whether a state holds a sub-machine, and the watch
+     * of each state that declares one, in state order. Building the machine and indexing its watches read these, never
+     * the definition, so a build reads nothing of a definition once it consumed a builder.
+     */
+    record Read<E, S extends Enum<S>, T extends Enum<T>>(MachineKey<E, S, T> key, boolean onAdvanceOnly,
+                                                         boolean bindsSubmachines,
+                                                         List<WatchSpec<E, S, T, ?, ?, ?>> watches) {
+        /** Copies the watches. */
+        Read {
+            watches = List.copyOf(watches);
+        }
+    }
 
     public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(
             @NonNull GraphDefinition<E, S, T> definition) {
@@ -46,6 +65,8 @@ public final class StateMachines {
         @Getter(AccessLevel.PACKAGE)
         private Optional<Class<? extends Machine<E, S, T>>> facade = Optional.empty();
         private Optional<InstantSource> trail = Optional.empty();
+        /** What the last {@link #validate} read from the definition, which {@link #build} uses instead of it. */
+        private Optional<Read<E, S, T>> read = Optional.empty();
         private boolean used;
 
         /**
@@ -131,17 +152,17 @@ public final class StateMachines {
          * automatic attempt. A call that records its trail creates its flow when its step starts, so it hands out its
          * flow, with the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored
          * outcome hands out the empty flow: a reevaluation that selects no edge and an advance whose state has no
-         * automatic edge run no step, and an advance whose automatic edges were all refused wrote nothing. The clock is
-         * read on the thread running the call, once per entry the call appends, an entry a rollback later drops
-         * included, so a clock that advances on each read leaves a gap for each dropped entry; a test can pass a clock
-         * it controls, such as a {@link java.time.Clock}. Anything but an Error that the clock throws, a checked
-         * exception included, fails the call as what an identity function throws does, an InterruptedException
-         * interrupting the thread again: the entry it could not mark is left out of the trail. When it throws while the
-         * call reads the instant of the Failed entry that ends a failed call, whatever failed the call, the call's
-         * {@code CallFailedException} carries what it threw as suppressed, unless it threw that very exception, and its
-         * trail ends without that entry; an InterruptedException suppressed there interrupts the thread again, and an
-         * Error propagates. A clock that answers null counts as one that throws a NullPointerException. A machine that
-         * does not call this reads no clock and keeps no mark.
+         * automatic edge run no step, and an advance whose automatic edges were all refused, or a choice whose
+         * candidates were all refused, wrote nothing. The clock is read on the thread running the call, once per entry
+         * the call appends, an entry a rollback later drops included, so a clock that advances on each read leaves a
+         * gap for each dropped entry; a test can pass a clock it controls, such as a {@link java.time.Clock}. Anything
+         * but an Error that the clock throws, a checked exception included, fails the call as what an identity function
+         * throws does, an InterruptedException interrupting the thread again: the entry it could not mark is left out
+         * of the trail. When it throws while the call reads the instant of the Failed entry that ends a failed call,
+         * whatever failed the call, the call's {@code CallFailedException} carries what it threw as suppressed, unless
+         * it threw that very exception, and its trail ends without that entry; an InterruptedException suppressed there
+         * interrupts the thread again, and an Error propagates. A clock that answers null counts as one that throws a
+         * NullPointerException. A machine that does not call this reads no clock and keeps no mark.
          */
         public Builder<E, S, T> recordTrail(InstantSource clock) {
             requireUnused();
@@ -182,8 +203,11 @@ public final class StateMachines {
         boolean hasAsyncTimeout() { return asyncTimeout.isPresent(); }
 
         /**
-         * Every check build(registry, bindingsAsChild) makes, without consuming the builder, so that a failed build can
-         * be retried.
+         * Every check that building the machine needs, without consuming the builder, so that a failed build can be
+         * retried, and the reads of the definition that building the machine needs, kept as a {@link Read}: its key,
+         * its automaticChain, the sub-machine and the watch of each state, each read once. A read that throws fails the
+         * build with what it threw, and a null automaticChain with a NullPointerException; either leaves the builder
+         * as it was.
          */
         void validate() {
             requireUnused();
@@ -194,23 +218,52 @@ public final class StateMachines {
                 throw new IllegalStateException("the machine " + key()
                         + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
+            MachineKey<E, S, T> key = definition.key();
+            boolean onAdvanceOnly = DefaultStateMachine.automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
+            boolean bindsSubmachines = false;
+            List<WatchSpec<E, S, T, ?, ?, ?>> watches = new ArrayList<>();
+            for (S state : key.states().getEnumConstants()) {
+                bindsSubmachines |= definition.submachine(state).isPresent();
+                definition.watch(state).ifPresent(watches::add);
+            }
+            read = Optional.of(new Read<>(key, onAdvanceOnly, bindsSubmachines, watches));
         }
 
-        /** {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry indexed them. */
+        /** The key that {@link #validate} read, which the registry uses once its build consumed a builder. */
+        MachineKey<E, S, T> validatedKey() { return read.orElseThrow().key(); }
+
+        /**
+         * Refuses a watch that {@link #validate} read whose peer is not among {@code keys}, the machines being
+         * assembled; for a standalone machine, that is itself.
+         */
+        void checkWatchPeers(Set<MachineKey<?, ?, ?>> keys) {
+            for (WatchSpec<E, S, T, ?, ?, ?> watch : read.orElseThrow().watches()) {
+                if (!keys.contains(watch.peer())) {
+                    throw new IllegalStateException("the watch of " + validatedKey() + "." + watch.state().name()
+                            + " points to " + watch.peer() + ", which is not in the registry");
+                }
+            }
+        }
+
+        /**
+         * Consumes the builder and builds its machine from what {@link #validate} read, reading nothing of the
+         * definition: {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry
+         * indexed them.
+         */
         DefaultStateMachine<E, S, T> build(MachineRegistry registry,
                                            List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
-            validate();
+            Read<E, S, T> validated = read.orElseThrow();
             used = true;
             boolean owns = executor.isEmpty();
             Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
                     : Executors.newVirtualThreadPerTaskExecutor();
-            return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
-                    owns, registry, bindingsAsChild, trail);
+            return new DefaultStateMachine<>(definition, validated, getter.get(), setter.get(), identity, asyncTimeout,
+                    resolved, owns, registry, bindingsAsChild, trail);
         }
 
         private void requireUnused() {
             if (used) {
-                throw new IllegalStateException("the builder for " + key() + " was already used");
+                throw new IllegalStateException("the builder for " + validatedKey() + " was already used");
             }
         }
     }

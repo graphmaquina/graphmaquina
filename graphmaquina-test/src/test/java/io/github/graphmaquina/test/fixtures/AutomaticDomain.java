@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test.fixtures;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -36,8 +37,17 @@ public final class AutomaticDomain {
 
     /** The same graph with PREPARE automatic or, when {@code prepareAutomatic} is false, requested by hand. */
     public static GraphDefinition<Entity, State, Id> graph(boolean prepareAutomatic) {
+        return graph(prepareAutomatic, AutomaticChain.AFTER_COMMIT);
+    }
+
+    /** The graph of {@link #graph()}, whose machine takes its automatic edges on its own only on an advance. */
+    public static GraphDefinition<Entity, State, Id> onAdvanceGraph() {
+        return graph(true, AutomaticChain.ON_ADVANCE);
+    }
+
+    private static GraphDefinition<Entity, State, Id> graph(boolean prepareAutomatic, AutomaticChain chain) {
         TransitionBuilder<Entity, State, Id> prepare = StateGraph.define(TestDomain.KEY).initial(State.NEW)
-                .terminal(State.DONE)
+                .terminal(State.DONE).automaticChain(chain)
                 .statePolicy(State.NEW, "prepare first")
                 .statePolicy(State.READY, "finish only")
                 .statePolicy(State.FAILED, "a failed entity only finishes")

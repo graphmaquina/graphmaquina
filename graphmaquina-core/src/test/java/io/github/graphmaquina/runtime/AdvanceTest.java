@@ -288,7 +288,7 @@ class AdvanceTest {
         assertEquals(OutcomeCode.NO_CANDIDATE_ADMITTED, single.code());
         assertEquals(List.of(new Eligibility.Ineligible<>(account, INFO_SET, COMPLETE_ADDRESS, ADDRESS_INCOMPLETE,
                 RejectionKind.GUARD, Optional.of("addressComplete"))), single.rejections());
-        assertEquals(Optional.of("no automatic transition was admitted: COMPLETE_ADDRESS (GUARD addressComplete):"
+        assertEquals(Optional.of("no candidate was admitted: COMPLETE_ADDRESS (GUARD addressComplete):"
                 + " address is incomplete"), single.explanation());
         assertEquals(List.of(), single.records());
         assertEquals(FlowView.empty(), single.flow());
@@ -302,8 +302,8 @@ class AdvanceTest {
                         RejectionKind.GUARD, Optional.of("fast")),
                 new Eligibility.Ineligible<>(lane, LaneStatus.READY, LaneTransition.GO_SLOW, "the slow lane is closed",
                         RejectionKind.GUARD, Optional.of("slow"))), both.rejections());
-        assertEquals(Optional.of("no automatic transition was admitted: GO_FAST (GUARD fast): the fast lane is"
-                + " closed; GO_SLOW (GUARD slow): the slow lane is closed"), both.explanation());
+        assertEquals(Optional.of("no candidate was admitted: GO_FAST (GUARD fast): the fast lane is closed;"
+                + " GO_SLOW (GUARD slow): the slow lane is closed"), both.explanation());
         assertEquals(LaneStatus.READY, lane.status());
     }
 
@@ -325,7 +325,7 @@ class AdvanceTest {
                             RejectionKind.DETACHED, Optional.empty()),
                     new Eligibility.Ineligible<>(lane, LaneStatus.READY, LaneTransition.GO_SLOW, reason,
                             RejectionKind.DETACHED, Optional.empty())), ignored.rejections());
-            assertEquals(Optional.of("no automatic transition was admitted: GO_FAST (DETACHED): " + reason
+            assertEquals(Optional.of("no candidate was admitted: GO_FAST (DETACHED): " + reason
                     + "; GO_SLOW (DETACHED): " + reason), ignored.explanation());
         }
         assertEquals(0, fast.calls);
@@ -470,6 +470,28 @@ class AdvanceTest {
         assertInstanceOf(IllegalStateException.class, error.getCause());
         assertEquals(0, slow.calls);
         assertEquals(LaneStatus.READY, lane.status());
+    }
+
+    /**
+     * The guard of an automatic attempt may check an entity that the attempt does not hold, nested in the attempt;
+     * the advanced entity itself is held, so its check is refused.
+     */
+    @Test
+    void anAutomaticAttemptsGuardChecksAnotherEntity() {
+        GuardProbe<Lane, LaneStatus, LaneTransition> fast = new GuardProbe<>();
+        StateMachine<Lane, LaneStatus, LaneTransition> machine = lanes(fast, new GuardProbe<>());
+        Lane lane = new Lane("l1", LaneStatus.READY);
+        Lane other = new Lane("l2", LaneStatus.WAITING);
+        List<Object> seen = new ArrayList<>();
+        fast.verdict = (GuardContext<Lane, LaneStatus, LaneTransition> ctx) -> {
+            seen.add(machine.eligibility(other, LaneTransition.PARK));
+            seen.add(refusal(() -> machine.eligibility(lane, LaneTransition.GO_SLOW)));
+            return GuardResult.pass();
+        };
+        assertEquals(OutcomeCode.APPLIED, machine.advance(lane).code());
+        assertEquals(List.of(new Eligibility.Eligible<>(other, LaneStatus.WAITING, LaneTransition.PARK),
+                "ReentrantTransitionException"), seen);
+        assertEquals(LaneStatus.FAST, lane.status());
     }
 
     /**

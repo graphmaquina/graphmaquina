@@ -16,6 +16,7 @@ import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.OrdersRuntime;
+import io.github.graphmaquina.example.profile.ProfilesRuntime;
 import io.github.graphmaquina.test.GraphSnapshots;
 import org.junit.jupiter.api.Test;
 
@@ -48,5 +49,11 @@ class GraphContractsTest {
     @Test
     void accountContractMatchesSnapshot() {
         GraphSnapshots.assertMatches(accountGraph(), "contracts/account.graph");
+    }
+
+    /** The profile's graph, whose snapshot records that it chains only on advance. */
+    @Test
+    void profileContractMatchesSnapshot() {
+        GraphSnapshots.assertMatches(ProfilesRuntime.graph(), "contracts/profile.graph");
     }
 }

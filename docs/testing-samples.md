@@ -45,7 +45,7 @@ assertThat(orders.definition())
         .isAction()
         .hasActionNamed("pay")
         .hasAsyncAction()
-        .hasGuardsExactly(new GuardExpectation("retryBudgetLeft", false))
+        .hasGuardsExactly(new GuardExpectation(OrderActionsRefs.RetryBudgetLeft.NAME, false))
         .hasTimeout(Duration.ofSeconds(5))
         .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
         .failsOnExactly(IOException.class)
@@ -109,13 +109,14 @@ assertThat(items.pack(i2)).isApplied().reactions()
         .hasEntityState(Order::status, OrderStatus.SHIPPED);
 ```
 
-A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. The DSL refuses two
+A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. The name is the
+guard symbol's `NAME`, so a renamed guard fails to compile here instead of failing the assertion. The DSL refuses two
 guards of one name on an edge with `SG105`, and so does the annotation processor, so in a graph the DSL built the name
 identifies the guard that rejected. A definition assembled without the DSL is not checked for it. A domain failure
 keeps the very exception instance the action reported, and names the identifier that recovered:
 
 ```java
-assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
+assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME);
 ```
 
 ```java

@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.AutomaticStep;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -114,6 +115,9 @@ class AutomaticEdgesReadFailureTest {
 
         @Override
         public boolean hasAsync() { return delegate.hasAsync(); }
+
+        @Override
+        public AutomaticChain automaticChain() { return delegate.automaticChain(); }
     }
 
     /** An account in NEW whose personal info is complete, so PASSWORD_SET has a candidate that passes. */

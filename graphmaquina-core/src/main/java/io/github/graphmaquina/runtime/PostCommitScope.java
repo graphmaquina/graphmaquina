@@ -10,11 +10,11 @@ import java.util.Set;
 
 /**
  * The post-commit of a root call, from its hooks to its automatic chains, as the entities that calls nested in it
- * commit see it, so that the deepest commit that moved an entity is the one that chains it. Each thread keeps the
- * scopes it has open, each linked to the one around it, the innermost in a cell of the thread: every commit reports
- * its entities to all of them, whether the call that committed is a hook's call, a watch reaction or an automatic
- * attempt, before it opens its own, which only a registry with an automatic edge does. A call made on another thread
- * reports to none of them.
+ * commit see it, so that the deepest commit that moved an entity is the one that decides its chain, as
+ * {@link AutomaticChains} says. Each thread keeps the scopes it has open, each linked to the one around it, the
+ * innermost in a cell of the thread: every commit reports its entities to all of them, whether the call that committed
+ * is a hook's call, a watch reaction or an automatic attempt, before it opens its own, which only a registry with an
+ * automatic edge does. A call made on another thread reports to none of them.
  *
  * <p>The scope holds what was reported as a list, which takes no identity's hashCode or equals, so a commit reports
  * without running code of the application. {@link #movedBelow} compares identities as the commit log does: it indexes

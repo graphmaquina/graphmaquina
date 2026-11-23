@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.dsl.AutomaticOrderOutline;
 import io.github.graphmaquina.dsl.ExitOutline;
 import io.github.graphmaquina.dsl.MachineOutline;
@@ -71,7 +72,8 @@ final class Outlines {
         }
         return new MachineOutline(model.facadeName(), model.types().stateNames(), model.types().transitionNames(),
                 model.initial(), Set.copyOf(model.terminals()), Set.copyOf(model.cycleAllowed()), edges,
-                policies(model), watches, submachines, orders(model));
+                policies(model), watches, submachines, orders(model),
+                AutomaticChain.valueOf(model.automaticChain()));
     }
 
     /** The orders as declared, in declaration order and repeats included, for the validator to judge. */

@@ -2,6 +2,8 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.WatchSpec;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /** A machine that watches a peer machine, possibly itself, from a state. Indexed by the peer's key. */
@@ -13,6 +15,16 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
         return new Watcher<>(machine, spec);
     }
 
+    /** A watcher for each watch of {@code machine}, in state order, as its builder's validation read them. */
+    static <E, S extends Enum<S>, T extends Enum<T>> List<Watcher<E, S, T, ?, ?, ?>> ofEach(
+            DefaultStateMachine<E, S, T> machine) {
+        List<Watcher<E, S, T, ?, ?, ?>> each = new ArrayList<>();
+        for (WatchSpec<E, S, T, ?, ?, ?> watch : machine.watches()) {
+            each.add(of(machine, watch));
+        }
+        return each;
+    }
+
     /**
      * What the owner lookup of the moved peer found: no owner, an owner outside the watched state, or an owner exactly
      * in it, the one to reevaluate. ownerOf, the state read and the identity function run with the reentrancy marker
@@ -22,7 +34,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
      */
     Lookup lookUpOwner(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
-        boolean[] marker = Reentrancy.enter(spec.peer(), peer);
+        Reentrancy.Cell cell = Reentrancy.enter(spec.peer(), peer);
         try {
             Optional<E> owner = spec.ownerOf().apply(peer);
             if (owner == null) {
@@ -39,7 +51,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
             }
             return new Watched(machine.refOf(entity));
         } finally {
-            marker[0] = false;
+            cell.active = false;
         }
     }
 

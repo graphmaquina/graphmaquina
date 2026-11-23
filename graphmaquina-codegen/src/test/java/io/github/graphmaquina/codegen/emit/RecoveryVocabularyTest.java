@@ -175,7 +175,7 @@ class RecoveryVocabularyTest {
 
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
                 "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
-                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.AutomaticOrder",
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.Check", "fx.DocsGraph.Choice", "fx.DocsGraph.AutomaticOrder",
                 "fx.DocsGraph.AutomaticOrders"), ApiEmitter.annotationTypes(model));
         assertEquals(ApiEmitter.annotationTypes(model), declared);
     }
@@ -186,6 +186,17 @@ class RecoveryVocabularyTest {
 
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(List.of(), compilation.messages());
+    }
+
+    /** The {@code Definition} declares when the machine takes its automatic edges, after a commit unless it says. */
+    @Test
+    void definitionDeclaresAutomaticChain() {
+        List<String> definition = declaration(content(emitted(), "fx.DocsGraph"), "Definition");
+
+        assertTrue(definition.contains("io.github.graphmaquina.api.AutomaticChain automaticChain() default "
+                + "io.github.graphmaquina.api.AutomaticChain.AFTER_COMMIT;"), definition::toString);
+        assertTrue(definition.contains("/** {@return when the machine takes its automatic edges; after a commit by "
+                + "default} */"), definition::toString);
     }
 
     /**

@@ -73,7 +73,9 @@ class CallVocabularyTest {
         MachineCall advanced = new MachineCall(DOCS, doc, CallRequest.ADVANCE, Optional.empty(),
                 CallOrigin.APPLICATION);
         assertEquals(CallRequest.ADVANCE, advanced.request());
-        assertEquals(List.of("EXECUTE", "REEVALUATE", "ADVANCE"),
+        MachineCall chosen = new MachineCall(DOCS, doc, CallRequest.CHOOSE, Optional.empty(), CallOrigin.APPLICATION);
+        assertEquals(CallRequest.CHOOSE, chosen.request());
+        assertEquals(List.of("EXECUTE", "REEVALUATE", "ADVANCE", "CHOOSE"),
                 Arrays.stream(CallRequest.values()).map(Enum::name).toList());
         MachineCall step = new MachineCall(DOCS, doc, CallRequest.ADVANCE, Optional.empty(),
                 CallOrigin.AUTOMATIC_STEP);
@@ -133,6 +135,8 @@ class CallVocabularyTest {
                 CallOrigin.APPLICATION).toString());
         assertEquals("Doc/DocStatus advance (automatic step)", new MachineCall(DOCS, doc, CallRequest.ADVANCE,
                 Optional.empty(), CallOrigin.AUTOMATIC_STEP).toString());
+        assertEquals("Doc/DocStatus choose", new MachineCall(DOCS, doc, CallRequest.CHOOSE, Optional.empty(),
+                CallOrigin.APPLICATION).toString());
     }
 
     @Test

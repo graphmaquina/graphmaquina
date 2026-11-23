@@ -1,14 +1,17 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallRequest;
+import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UninitializedStateException;
 import java.time.Duration;
 import java.time.InstantSource;
@@ -32,7 +35,9 @@ import lombok.NonNull;
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
  * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none, and neither does
  * an advance whose state has no automatic edge. An advance tries the automatic edges of the state as {@link Attempts}
- * says. An eligibility check runs the admission of that root step alone, as {@link Checks} says, and is no call.
+ * says, and a choice tries the caller's candidates as {@link Choices} says. An eligibility check runs the admission of
+ * that root step alone, as {@link Checks} says, and is no call; so is the check of a choice, which runs one per
+ * candidate.
  */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
@@ -59,19 +64,30 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild;
     /** See {@link #bindsSubmachines()}. */
     private final boolean bindsSubmachines;
+    /** See {@link #chainsOnAdvanceOnly()}. */
+    private final boolean chainsOnAdvanceOnly;
     /** See {@link #hasBindings()}. */
     private final boolean hasBindings;
     /** See {@link #trail()}. */
     private final Optional<InstantSource> trail;
     /** See {@link #releasedTransaction()}. */
     private final Transaction released;
+    /** The key the builder's validation read from the definition, which {@link #key()} answers. */
+    private final MachineKey<E, S, T> key;
+    /** See {@link #watches()}. */
+    private final List<WatchSpec<E, S, T, ?, ?, ?>> watches;
 
-    DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
-                        BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
-                        Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
-                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
-                        Optional<InstantSource> trail) {
+    /**
+     * A machine over {@code definition} built from what its builder's validation read, {@code validated}, so that the
+     * constructor reads nothing of the definition: a build may already have consumed a builder when it runs.
+     */
+    DefaultStateMachine(GraphDefinition<E, S, T> definition, StateMachines.Read<E, S, T> validated,
+                        Function<? super E, ? extends S> getter, BiConsumer<? super E, ? super S> setter,
+                        Optional<Function<? super E, ?>> identity, Optional<Duration> asyncTimeout, Executor executor,
+                        boolean ownsExecutor, MachineRegistry registry,
+                        List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild, Optional<InstantSource> trail) {
         this.definition = definition;
+        this.key = validated.key();
         this.getter = getter;
         this.setter = setter;
         this.identity = identity;
@@ -80,23 +96,28 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.ownsExecutor = ownsExecutor;
         this.registry = registry;
         this.async = new DefaultAsyncStateMachine<>(this);
-        this.presentTransitions = present(definition.key().transitions());
+        this.presentTransitions = present(key.transitions());
         this.bindingsAsChild = bindingsAsChild;
-        this.bindsSubmachines = bindsSubmachines(definition);
+        this.bindsSubmachines = validated.bindsSubmachines();
+        this.chainsOnAdvanceOnly = validated.onAdvanceOnly();
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
-        this.released = Transaction.released(registry, definition.key());
+        this.watches = validated.watches();
+        this.released = Transaction.released(registry, key);
     }
 
-    /** Whether some state of {@code definition} holds a sub-machine. */
-    private static <E, S extends Enum<S>, T extends Enum<T>> boolean bindsSubmachines(
-            GraphDefinition<E, S, T> definition) {
-        for (S state : definition.key().states().getEnumConstants()) {
-            if (definition.submachine(state).isPresent()) {
-                return true;
-            }
+    /**
+     * What {@code definition} answers for {@link GraphDefinition#automaticChain()}; what that throws propagates, and a
+     * null answer throws NullPointerException. Read once per build, as the machine builder validates, and never by a
+     * call; the machine gets whether that answer is ON_ADVANCE.
+     */
+    static AutomaticChain automaticChainOf(GraphDefinition<?, ?, ?> definition) {
+        AutomaticChain chain = definition.automaticChain();
+        if (chain == null) {
+            throw new NullPointerException("automaticChain() of the definition of " + definition.key()
+                    + " returned null");
         }
-        return false;
+        return chain;
     }
 
     /**
@@ -105,8 +126,16 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      */
     List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild() { return bindingsAsChild; }
 
-    /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
+    /** Whether some state of this machine's own definition holds a sub-machine, as the builder's validation read. */
     boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * Whether this machine's definition is {@link AutomaticChain#ON_ADVANCE}, so only an advance that the application
+     * made chains its entity, as {@link AutomaticChains#run} says; read once per build, as the builder validates, and
+     * handed to the constructor, so the post-commit, which asks outside any attempt, runs no application code to know
+     * it.
+     */
+    boolean chainsOnAdvanceOnly() { return chainsOnAdvanceOnly; }
 
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     Optional<InstantSource> trail() { return trail; }
@@ -132,8 +161,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         return List.copyOf(present);
     }
 
+    /** The key the builder's validation read from the definition, answered without reading the definition. */
     @Override
-    public MachineKey<E, S, T> key() { return definition.key(); }
+    public MachineKey<E, S, T> key() { return key; }
+
+    /** The watch of each state that declares one, in state order, as the builder's validation read them. */
+    List<WatchSpec<E, S, T, ?, ?, ?>> watches() { return watches; }
 
     @Override
     public Set<T> transitionsFrom(@NonNull S state) {
@@ -178,6 +211,27 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         return Checks.check(this, entity, transition, Optional.of(input));
+    }
+
+    @Override
+    public Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates) {
+        return Choices.choose(this, entity, candidates, Optional.empty());
+    }
+
+    @Override
+    public Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates, @NonNull Object input) {
+        return Choices.choose(this, entity, candidates, Optional.of(input));
+    }
+
+    @Override
+    public ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates) {
+        return Choices.check(this, entity, candidates, Optional.empty());
+    }
+
+    @Override
+    public ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates,
+                                                        @NonNull Object input) {
+        return Choices.check(this, entity, candidates, Optional.of(input));
     }
 
     @Override

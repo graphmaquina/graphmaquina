@@ -8,6 +8,7 @@ import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
+import io.github.graphmaquina.example.order.OrderActionsRefs;
 import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
@@ -60,7 +61,7 @@ class EligibilityTest {
         orders.retry(order);
         orders.pay(order);
 
-        assertThat(orders.canRetry(order)).isRejectedByGuardNamed("retryBudgetLeft")
+        assertThat(orders.canRetry(order)).isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME)
                 .hasReason("exhausted the 3 charge attempts");
     }
 

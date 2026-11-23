@@ -15,5 +15,11 @@ public enum CallRequest {
      * An {@code advance}: the machine takes the first automatic edge of the entity's state that is admitted, trying
      * them in their declared order, if any.
      */
-    ADVANCE
+    ADVANCE,
+
+    /**
+     * A {@code choose}: the machine runs the first of the caller's candidate identifiers that is admitted, trying them
+     * in the caller's order.
+     */
+    CHOOSE
 }

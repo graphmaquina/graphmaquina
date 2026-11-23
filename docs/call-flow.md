@@ -302,6 +302,7 @@ The trail follows the rollbacks of the call:
 - A `reevaluate` that fails before it runs an edge, or an `advance` that fails while it reads the state, has the
   `Failed` entry alone, or no entry when the clock threw, beside the entity and no value.
 - An `Error` ends the call without an entry and without a flow.
+- A candidate that an `advance` or a `choose` refused leaves no entry: the trail holds what the candidate it ran took.
 - An `Ignored` outcome and the outcome a cascade returns have no trail: both answer `FlowView.empty()`.
 
 A step reads `ctx.flow().trail()` and a hook `commit.flow().trail()`, under the thread and lifetime checks of the

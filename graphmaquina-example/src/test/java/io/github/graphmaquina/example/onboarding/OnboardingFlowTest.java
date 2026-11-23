@@ -74,7 +74,8 @@ class OnboardingFlowTest {
         Outcome.Ignored<?, ?, ?> block = outcome.automaticBlock().orElseThrow();
         assertEquals("address is incomplete", block.rejections().getFirst().reason());
         assertThat(outcome).isApplied().automaticBlock().hasReason(IgnoreReason.NO_CANDIDATE_ADMITTED)
-                .rejections().single().transition(COMPLETE_ADDRESS).isRejectedByGuardNamed("addressComplete");
+                .rejections().single().transition(COMPLETE_ADDRESS)
+                        .isRejectedByGuardNamed(AccountActionsRefs.AddressComplete.NAME);
     }
 
     @Test

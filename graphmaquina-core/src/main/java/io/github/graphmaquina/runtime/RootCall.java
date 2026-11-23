@@ -26,18 +26,22 @@ final class RootCall {
     private RootCall() { }
 
     /**
-     * Root transaction of {@code machine}: new UoW with its deadline, reentrancy marker, step, phase 2, context
-     * invalidation, then the hooks, the watch reactions and the automatic chains of what it committed, as
-     * {@link PostCommit#after} says. Everything is prepared before the marker is set, so that from
-     * {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, with a store
-     * before it invalidates the contexts, whatever the step throws, a StackOverflowError included. The transaction
-     * keeps the phase of the call, which the observers are told when it throws.
+     * Root transaction of {@code machine}: new UoW with its deadline, reentrancy marker and scope, step, phase 2,
+     * context invalidation, then the hooks, the watch reactions and the automatic chains of what it committed, as
+     * {@link PostCommit#after} says. Everything is prepared before the marker is set and the UoW pushed as the
+     * thread's scope, so that from {@code Reentrancy.enterCall} on, the only way out runs through the {@code finally}
+     * that releases them, with stores of the values it found before it invalidates the contexts, whatever the step
+     * throws, a StackOverflowError included. The transaction keeps the phase of the call, which the observers are told
+     * when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * The automatic chains run after them, each attempt a root of its own.
-     * {@code requested} is the identifier execute was asked for, and empty for a reevaluation or an advance;
+     * {@code requested} is the identifier execute was asked for, and empty for a reevaluation, an advance or a choice;
      * {@code levels} is where the call stands in the watch and automatic chains, and {@code continuing} the entity
      * whose chain made this call an attempt of it, which its own commit chains no further, empty for any other call.
+     * A call whose {@code request} is ADVANCE with no {@code continuing}, an advance the application made, on a
+     * machine that chains only on advance hands its post-commit its own entity as the advanced one, which its commit
+     * chains on that machine; any other call hands it none, which no other machine reads.
      * It returns the outcome with the summary of the commit and the entities that the commits nested in its
      * post-commit reported, as {@link PostCommit} says.
      * When {@code machine}, the root's, records its trail, the call's flow is created before the step runs, and every
@@ -51,13 +55,14 @@ final class RootCall {
      * hear of that Error, in the phase the call reached; so does an Error that printing the failure throws while the
      * call classifies it, such as one from a message whose read throws it.
      * The observers hear of the call's start before its log does, and of its end after it: the start line follows
-     * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
-     * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
-     * its start line here; a reevaluation or an advance logged its own before it read the state. Phase 2 moves the
-     * call on to HOOK once its last setter returned, so that whatever fails from then on reports every state written:
-     * building the committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no
-     * failed line. At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its
-     * writes to the call's flow as it makes it, and the watch dispatch logs each owner lookup.
+     * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of an
+     * Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs its
+     * start line here; a reevaluation or an advance logged its own before it read the state, and a choice its own
+     * before it called this, inside a try of its own that tells them of an Error. Phase 2 moves the call on to HOOK
+     * once its last setter returned, so that whatever fails from then on reports every state written: building the
+     * committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no failed line.
+     * At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its writes to
+     * the call's flow as it makes it, and the watch dispatch logs each owner lookup.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> run(
             DefaultStateMachine<E, S, T> machine, E entity, CallRequest request, Optional<Enum<?>> requested,
@@ -76,7 +81,7 @@ final class RootCall {
             if (log.debug() && requested.isPresent()) {
                 log.start(machine.key(), requested.get().name());
             }
-            committed = stepAndCommit(machine, tx, entity, body, levels, continuing);
+            committed = stepAndCommit(machine, tx, entity, request, body, levels, continuing);
         } catch (Throwable thrown) {
             throw failure(observed, tx, thrown);
         }
@@ -85,19 +90,24 @@ final class RootCall {
     }
 
     /**
-     * The step and phase 2 under the reentrancy marker, released, with the contexts invalidated, whatever they throw;
-     * then, once something was committed, its line, its hooks, its watch reactions and its automatic chains; then the
-     * outcome, with the summary of the commit and what the commits nested in its post-commit reported.
+     * The step and phase 2 under the reentrancy marker, in the call's scope, both released, with the contexts
+     * invalidated, whatever they throw; then, once something was committed, its line, its hooks, its watch reactions
+     * and its automatic chains, the advanced entity being the reference the root's step registered for {@code entity}
+     * when the call is an advance the application made on a machine that chains only on advance; then the outcome,
+     * with the summary of the commit and what the commits nested in its post-commit reported.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> stepAndCommit(
-            DefaultStateMachine<E, S, T> machine, Transaction tx, E entity,
+            DefaultStateMachine<E, S, T> machine, Transaction tx, E entity, CallRequest request,
             Function<Transaction, StepResult<S, T>> body, ChainLevels levels, Optional<EntityRef> continuing) {
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
         List<SubmachineStart<?, ?, ?>> starts;
         List<LogEntry> committed;
         CommitSummary summary;
-        boolean[] marker = Reentrancy.enter(machine.key(), entity);
+        Reentrancy.Cell cell = Reentrancy.cell();
+        boolean active = cell.active;
+        Optional<UnitOfWork> top = cell.top;
+        Reentrancy.enterCall(cell, machine.key(), entity, tx.uow());
         try {
             step = body.apply(tx);
             boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
@@ -114,10 +124,13 @@ final class RootCall {
                 committed = List.of();
             }
         } finally {
-            marker[0] = false;
+            cell.active = active;
+            cell.top = top;
             tx.invalidate();
         }
-        PostCommit post = PostCommit.after(tx, records, starts, committed, summary, levels, continuing);
+        Optional<EntityRef> advanced = request == CallRequest.ADVANCE && continuing.isEmpty()
+                && machine.chainsOnAdvanceOnly() ? tx.uow().registered(tx.callKey(), entity) : Optional.empty();
+        PostCommit post = PostCommit.after(tx, records, starts, committed, summary, levels, continuing, advanced);
         return new Committed<>(post.outcome(tx, entity, step, records, starts), summary, post.movedBelow());
     }
 

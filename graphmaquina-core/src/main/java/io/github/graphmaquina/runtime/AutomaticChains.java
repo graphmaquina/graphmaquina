@@ -12,8 +12,11 @@ import java.util.Optional;
 /**
  * The automatic chains that a root call's commit triggers, which its post-commit runs in the phase AUTOMATIC_STEPS
  * once its watch reactions ran: one chain per entity of the commit, each a loop of automatic attempts, each attempt a
- * root call of its own, as {@link Attempts} makes it. The deepest commit that moved an entity chains it: an entity
- * that a call nested in the post-commit moved is that call's to chain, as its {@link PostCommitScope} tells.
+ * root call of its own, as {@link Attempts} makes it. An entity of a machine that chains only on advance chains only
+ * after the commit of an advance of that very entity that the application made. The deepest commit that moved an
+ * entity decides its chain: an entity that a call nested in the post-commit moved is that call's to chain or not, as
+ * its {@link PostCommitScope} tells, and this commit does not chain it. On a machine that chains only on advance,
+ * that call chains it only when it is itself a call to advance for that entity, such as one a hook makes.
  */
 final class AutomaticChains {
 
@@ -23,32 +26,40 @@ final class AutomaticChains {
      * The chain of each entity that {@code summary} lists, in its order, the steps of each chain whole and in order:
      * every entity with a hop or a start in the commit, a self-loop or a round trip included, but the one whose chain
      * made this call an attempt of it, {@code continuing}, whose loop goes on with it, those whose last entry is a
-     * failure route that stops the chain, and those that a call nested in this post-commit, whose {@code scope} it
-     * is, moved by the time their chain would start. Each chain starts from the state its entity's last entry leaves
+     * failure route that stops the chain, those of a machine that chains only on advance but {@code advanced}, the
+     * entity of an advance the application made, and those that a call nested in this post-commit, whose
+     * {@code scope} it is, moved by the time their chain would start. A machine's mode is the one it read when it was
+     * built, so deciding it runs no application code. Each chain starts from the state its entity's last entry leaves
      * it in, read from the commit and not from the entity, and its attempts are one automatic level after another
      * above {@code levels}, at its watch level; each names the id of the call whose commit ran this, when that call
      * logs, as its trigger.
      */
     static List<AutomaticStep> run(Transaction tx, CommitSummary summary, ChainLevels levels,
-                                   Optional<EntityRef> continuing, PostCommitScope scope) {
+                                   Optional<EntityRef> continuing, Optional<EntityRef> advanced,
+                                   PostCommitScope scope) {
         Optional<Long> trigger = tx.log().id() > 0 ? Optional.of(tx.log().id()) : Optional.empty();
         List<AutomaticStep> steps = new ArrayList<>();
         for (ChainStart start : summary.chainStarts()) {
-            if (start.stopsChain() || continuing.isPresent() && isContinuing(continuing.get(), start.ref())) {
+            if (start.stopsChain() || continuing.isPresent() && isEntity(continuing.get(), start.ref())) {
                 continue;
             }
-            chain(tx.registry().anyMachineFor(start.ref().key()), start, levels, trigger, scope, steps);
+            DefaultStateMachine<?, ?, ?> machine = tx.registry().anyMachineFor(start.ref().key());
+            if (machine.chainsOnAdvanceOnly() && !(advanced.isPresent() && isEntity(advanced.get(), start.ref()))) {
+                continue;
+            }
+            chain(machine, start, levels, trigger, scope, steps);
         }
         return List.copyOf(steps);
     }
 
     /**
-     * Whether {@code ref}, an entity of this commit, is {@code continuing}, the entity of the chain that made this call
-     * an attempt of it: the same machine and the very instance, which a commit registers once, so no identity's equals
-     * runs here, outside any attempt, where nothing could turn what it throws into an aborted step.
+     * Whether {@code ref}, an entity of this commit, is {@code entity}, the one the call names: the entity of the chain
+     * that made this call an attempt of it, or the one this call advanced. The same machine and the very instance,
+     * which a commit registers once, so no identity's equals runs here, outside any attempt, where nothing could turn
+     * what it throws into an aborted step.
      */
-    private static boolean isContinuing(EntityRef continuing, EntityRef ref) {
-        return continuing.instance() == ref.instance() && continuing.key().equals(ref.key());
+    private static boolean isEntity(EntityRef entity, EntityRef ref) {
+        return entity.instance() == ref.instance() && entity.key().equals(ref.key());
     }
 
     /**

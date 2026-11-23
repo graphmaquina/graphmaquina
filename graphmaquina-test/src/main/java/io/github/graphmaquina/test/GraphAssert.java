@@ -1,5 +1,6 @@
 package io.github.graphmaquina.test;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.SubmachineSpec;
@@ -44,6 +45,14 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         String context = context();
         GraphDefinition<E, S, T> definition = Checks.subject(context, "initial", expected, actual);
         Checks.equal(context, "initial", expected, definition.initial());
+        return this;
+    }
+
+    /** When the machine takes its automatic edges, which a graph that declares nothing leaves at AFTER_COMMIT. */
+    public GraphAssert<E, S, T> hasAutomaticChain(@NonNull AutomaticChain expected) {
+        String context = context();
+        GraphDefinition<E, S, T> definition = Checks.subject(context, "automaticChain", expected, actual);
+        Checks.equal(context, "automaticChain", expected, definition.automaticChain());
         return this;
     }
 

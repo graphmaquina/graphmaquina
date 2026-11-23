@@ -33,7 +33,7 @@ machine's budget and for an action's `@Timeout` alike.
 | --- | --- | --- |
 | Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root, its nested cascades and the sub-machine exits it runs |
 | Action `@Timeout` | After the action method returns its stage | That action's pending wait, capped by the root's remaining deadline |
-| Async guard | Uses the existing root deadline | That guard's pending wait; an action's `@Timeout` does not cover its guards |
+| Async guard | In a call, the root's deadline; in an eligibility check, a check nested in a guard included, the check's own: its machine's `asyncTimeout`, counted from the check's start | That guard's pending wait; an action's `@Timeout` does not cover its guards |
 | Service/client timeout | Defined by your service client | The service request according to that client's cancellation/timeout contract |
 
 ![An eight-second root budget starts with root execution. If an action returns its stage at second four, a five-second action timeout still allows only four seconds of waiting; a two-second action timeout allows two seconds.](images/async-deadlines.svg)
@@ -156,11 +156,15 @@ logs at `DEBUG`: it keeps a value of the flow only when that value is one of the
 once the hook returns or throws. The flow the caller receives once the call ended, in its outcome or its failure, is a
 frozen copy without these checks.
 
-Cascades also require that the commit has not begun and that no step is being rolled back. A retained action context
-used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or
-`hashCode` while a rollback calls it, throws `IllegalStateException` before it stages anything: the commit has already
-fixed the changes it will write, and the rollback is undoing them. Reading peers or the flow does not stage another
-hop, and a write to the flow from a commit getter or setter lands in the flow the call hands out.
+Cascades also require that the commit has not begun, that no step is being rolled back, and that they are not made
+from the scope of a check that a guard started. A retained action context used for `cascade(...)` or
+`cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or `hashCode` while a rollback calls
+it, throws `IllegalStateException` before it stages anything: the commit has already fixed the changes it will write,
+and the rollback is undoing them. One used from the scope of a check that a guard started, the check's own step and
+everything that step runs, throws `ReentrantTransitionException` before it stages anything or poisons the call, as
+[check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) says. Reading peers or the
+flow does not stage another hop, and a write to the flow from a commit getter or setter lands in the flow the call
+hands out.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow
@@ -236,9 +240,12 @@ A call submitted through `async(...)` is queued as a plain task, never as one of
 runs it on its own thread. While such a call is queued on the waiting worker, another worker has to take it, as for a
 stage's task, and so has a `CompletableFuture` task queued behind it: a callback that waits for either waits, under no
 timeout but its own, while every other worker is busy or blocked where the pool cannot see it. Two waits can still run
-a queued call on the waiting thread, where the call fails with `ReentrantTransitionException`: a worker that joins a
-`ForkJoinTask` may run a task queued by another worker that stole work from it, and waiting for a pool to quiesce,
-through `ForkJoinTask.helpQuiesce()` or `ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread.
+a queued call on the waiting thread: a worker that joins a `ForkJoinTask` may run a task queued by another worker that
+stole work from it, and waiting for a pool to quiesce, through `ForkJoinTask.helpQuiesce()` or
+`ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread. There a call or a check runs, or is
+refused with `ReentrantTransitionException`, as it would if the callback that waits made it itself: a guard or an
+action starts no call, and of the two only a synchronous guard may start a check, as
+[where a check may run](eligibility.md#where-a-check-may-run) says.
 Given `ForkJoinPool.commonPool()` while the common pool's parallelism is below two, a machine runs each call on a new
 thread instead, as `CompletableFuture.supplyAsync` does with that pool on JDK 21. On JDK 25, `CompletableFuture`
 raises the common pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs

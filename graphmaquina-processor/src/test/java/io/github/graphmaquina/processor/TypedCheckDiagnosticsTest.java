@@ -234,8 +234,8 @@ class TypedCheckDiagnosticsTest {
 
         assertEquals(List.of("[" + DiagnosticCode.SG606
                 + "] fx.PagesGraph.Check is the vocabulary of fx.Pages, not of fx.Docs",
-                "[" + DiagnosticCode.SG504
-                        + "] canFinish must carry at least one Transition, or one Check, of its own graph vocabulary"),
+                "[" + DiagnosticCode.SG504 + "] canFinish must carry at least one Transition, Check or Choice of its"
+                        + " own graph vocabulary"),
                 result.errors(), result.describe());
     }
 

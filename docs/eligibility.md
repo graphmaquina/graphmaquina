@@ -18,6 +18,7 @@ neither a copy of the graph's conditions nor a call made only to see whether it 
 - [Sub-machines](#sub-machines)
 - [Concurrency and transactions](#concurrency-and-transactions)
 - [Where a check may run](#where-a-check-may-run)
+- [Check another machine from a guard](#check-another-machine-from-a-guard)
 - [Test a check](#test-a-check)
 
 ## What a check answers
@@ -42,8 +43,10 @@ An answer promises no more than that:
 - Neither answer names a destination. `Rejected` names none, and an `Eligible` that named one would read as a
   promise the check does not make.
 
-Through a generated facade, you check the operations you declare a check for; through a `StateMachine`, any
-identifier of the machine's catalogue.
+Through a generated facade, you check the operations you declare a check for, and the candidates of the choice checks
+you declare; through a `StateMachine`, any identifier of the machine's catalogue. A
+[choice check](choices.md#check-a-choice) runs this check for each of its candidates in turn, and answers which one a
+choice would run.
 
 ## Check through the facade
 
@@ -65,14 +68,16 @@ and one of `cancel(Order order, String cancellationId)`, whose input is the canc
 Eligibility<Order, OrderStatus, OrderTransition> canCancel(Order order, String cancellationId);
 ```
 
-The processor refuses a check whose `id` no operation of the facade executes, such as an identifier that only a
-failure route declared on the facade itself uses, the exit of a sub-machine, or one without an edge (`SG512`); a
-check that does not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>`
-(`SG513`); and a second check of one operation, or a method that carries both a `Transition` and a `Check`
-(`SG514`). [Method signatures](graph-model.md#method-signatures) gives the signature. An operation you declare no
-check for cannot be checked through the facade. The generated companion implements each check: it refuses a null
-argument with a `NullPointerException` that names the parameter, as the operation does, then calls its
-`StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that takes an input.
+The processor refuses a check whose `id` no operation of the facade executes, such as an identifier that only a failure
+route declared on the facade itself uses, the exit of a sub-machine, or one without an edge (`SG512`); a check that does
+not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>` (`SG513`); and a second check
+of one operation, or a method that carries both a `Transition` and a `Check` (`SG514`). [Method
+signatures](graph-model.md#method-signatures) gives the signature. Through the facade, an operation you declare no check
+for is checked only by a choice check that names it among its candidates, as below. The generated companion implements
+each check: it refuses a null argument with a `NullPointerException` that names the parameter, as the operation does,
+then calls its `StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that
+takes an input. A method that returns `ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a
+`Check` checks a choice instead, as [check a choice](choices.md#check-a-choice) shows.
 
 The shop's
 [EligibilityTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/EligibilityTest.java)
@@ -101,7 +106,7 @@ orders.pay(order);
 orders.retry(order);
 orders.pay(order);
 
-assertThat(orders.canRetry(order)).isRejectedByGuardNamed("retryBudgetLeft")
+assertThat(orders.canRetry(order)).isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME)
         .hasReason("exhausted the 3 charge attempts");
 ```
 
@@ -209,7 +214,10 @@ reads `eligibility of <ID> for <key>#<identity> <FROM> could not be decided: <re
 identity could not be read and `?` for a state not read. It is no `CallFailedException`: a check is not a call, so it
 has no call, phase, states written, journal or flow. An `Error` propagates as itself, and so do the refusals before a
 check starts: a null argument, an identifier of another catalogue, and a check made
-[where no check may run](#where-a-check-may-run).
+[where no check may run](#where-a-check-may-run). So do, for a check that a guard starts, what the entity's identity
+function throws, the `NullPointerException` of a function that returns null and what its identity's `equals` throws,
+since that check runs them before it starts, the `equals` only when an enclosing call or check holds an entity of that
+machine, as [check another machine from a guard](#check-another-machine-from-a-guard) says.
 
 A screen can tell such a failure apart from a refusal:
 
@@ -322,7 +330,8 @@ assertThat(payments.canCapture(deposit)).isDetached()
 `RESERVED_EXIT` is reached through `StateMachine.eligibility` only. On the parent's machine, from a state that binds a
 sub-machine, an identifier that one of its exits names, such as `DEPOSIT_PAID` from `DEPOSIT`, is checked as
 `RESERVED_EXIT`, with the reason `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. A facade can neither
-execute an exit, which `SG804` refuses as an operation, nor check one, which `SG512` refuses.
+execute an exit, which `SG804` refuses as an operation, nor check one, which `SG512` refuses, and `SG516` as the
+candidate of a choice.
 
 A check starts no child and runs no exit. Asked about an edge that enters a bound state, it answers without starting
 the child or calling that binding's `childOf`: when the start fails, the call aborts although the check answered
@@ -345,22 +354,93 @@ call.
 
 A check may run where a call may start: outside any call, in an after-commit hook, which runs once the call that
 committed has released the thread, and on the machine's executor through `supplyAsync` or a facade's `async`. Inside
-a call, where the call runs code of yours on its thread, such as a guard, an action, a watch's owner lookup or an
-observer, a check is refused before it starts with `ReentrantTransitionException`, as `execute` is, and logs
-nothing.
+a call or a check, it may start only from the code of a synchronous guard, for an entity that no enclosing call or
+check holds, as [check another machine from a guard](#check-another-machine-from-a-guard) shows. Anywhere else that a
+call or a check runs code of yours on its thread, such as an action, a state accessor, an identity function, a
+sub-machine's `childOf` or `parentOf`, the `test` call of an asynchronous guard, a watch's owner lookup, peer lookup or
+condition, or an observer, a check is refused before it starts with `ReentrantTransitionException`, as `execute` is,
+and logs nothing.
 
-While a check runs, the code it calls may not start a call or a check on its thread either: `execute`, `reevaluate`,
-`advance` or `eligibility` called from a guard, the state getter or a `parentOf` of the check throws
-`ReentrantTransitionException`. When that code lets the exception through, the check fails with an
-`EligibilityCheckException` whose cause it is.
+No call may start while a check runs, whichever code of the check calls it: `execute`, `reevaluate`, `advance` or
+`choose` called from a guard, the state getter or a `parentOf` of the check throws `ReentrantTransitionException`, and
+so does `eligibility` or `chooseEligibility` called from anything but a synchronous guard. When that code lets the
+exception through, the check fails with an `EligibilityCheckException` whose cause it is.
+
+## Check another machine from a guard
+
+A guard can make an edge depend on whether another machine, or its own machine for another entity, would admit an
+operation now, that machine's guards included. A payout's guard, for instance, admits the payout only while the
+payee's account could be activated: it asks a port of its own, whose implementation calls the check that the account
+machine's facade declares for that activation, and passes on `Eligible` or rejects with the reason of `Ineligible`.
+The guard then follows the account's graph as it stands, instead of a copy of its conditions that stops matching once
+the account's edge gets a new guard.
+
+A check started from a guard is a facade's check method, a choice check, `StateMachine.eligibility` or
+`StateMachine.chooseEligibility`, made by the code of a synchronous guard on the thread that called its `test`. The
+guard may run for a root call, a cascade step, the exit of a sub-machine, an automatic attempt, a check, or a check
+that another guard started, at any depth. Before the check starts, it runs its entity's identity function and, when
+an enclosing call or check holds an entity of that machine, the `equals` of the identity it returns, to tell whether
+that entity is held: what either throws, and the `NullPointerException` of a function that returns null, reach the
+guard as they are.
+
+The check is refused before it starts, with `ReentrantTransitionException`, and logs nothing, when its entity is held
+on the thread: when it has the machine key and an identity equal to those of the root entity of an enclosing call or
+check, of the entity of an enclosing cascade step or sub-machine exit, or of an entity with a pending hop or
+sub-machine start in an enclosing call. So a guard cannot check its own entity, nor an entity that the call has
+already moved or started. An entity the enclosing call only registered is not held: the parent that a sub-machine's
+binding check found, or a cascade target whose step has not run. The guard of a child may therefore ask its parent's
+check.
+
+A check that starts runs as any check, nested in the guard's call or check: in a unit of work of its own, under a
+deadline of its own, its machine's `asyncTimeout` counted from its start, and with `check=<id>` log lines of its own,
+logged while the guard runs. It reads its entity's state through the getter, and its own synchronous guards follow
+these same rules. Its answer returns to the guard. A check that cannot answer throws its `EligibilityCheckException`
+into the guard, which fails as a guard that throws unless it catches it.
+
+The check's scope is its own step, from the read of its entity's identity to its last guard, with its state read, its
+binding lookups, its guards and everything they run, and that step's `TRACE` lines and the texts they and the step's
+failures print. Code in that scope cannot read a held entity through a context's peer view or a binding lookup:
+`stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw `ReentrantTransitionException` into the code
+that made the read, whichever live context on this thread made the view, an enclosing guard's or action's context handed
+over included. A binding lookup that finds a held parent fails the check with an `EligibilityCheckException` whose cause
+is that exception. So a nested check never reads, through a context's peer view or a binding lookup, an entity that an
+enclosing call or check has in flight, or whose hop or start is pending there. Any other read is not refused: a guard
+that calls a held entity's getter itself, or reads it through a watch condition's view that it kept, reads its stored
+state, which the enclosing call may be about to replace. And the answer holds for the states as they stood when the
+check ran: a step that the enclosing call runs after the guard can change them, and a cascade to the checked entity runs
+its admission again.
+
+Nor can code in that scope cascade through a kept action context of an enclosing call: `cascade` and `cascadeAll` throw
+`ReentrantTransitionException`, naming the action's machine and entity, before they stage anything or poison the call.
+The code the engine runs for the check outside that scope runs under the rules of the enclosing scope, except that it
+cannot start a check: the entity's identity function and, when an enclosing scope holds an entity of that machine, its
+identity's `equals`, before the check starts, the log's backend as the check reads its levels and logs its start,
+verdict and failed lines, and the identity text and the failure reason that those lines and the check's
+`EligibilityCheckException` print.
+
+Everything else stays refused:
+
+- `execute`, a facade's operation, `choose`, `reevaluate` and `advance`, from any guard;
+- a check from the `test` call of an asynchronous guard, and from what the engine runs for a guard, such as the
+  identity function or the state getter of a peer it reads;
+- a check from an action, a state accessor, an identity function, a sub-machine's lookup, a watch's function or an
+  observer. Nothing in a cascade step but its own synchronous guards can start a check, even when a guard cascaded to
+  that step through a kept action context.
+
+A check that a synchronous guard submits through `supplyAsync` or a facade's `async`, and that runs on the guard's own
+thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, runs or is
+refused as if the guard had made it; a refused one fails the returned future with a `ReentrantTransitionException` as
+its cause. A check made on another thread, by a stage of an asynchronous guard that runs on an executor for instance,
+is no nested check: it runs, or is refused, as any check made on that thread.
 
 ## Test a check
 
 `GraphAssertions.assertThat(eligibility)`, in `graphmaquina-test`, reads an answer, as the examples above do:
 `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed(name)`,
 `isDetached()`, `isReservedExit()` and `hasReason(reason)`; of both, `from(state)` and `transition(id)`.
-[What each entry point checks](testing.md#what-each-entry-point-checks) lists it with the other views.
+`assertThat(choiceEligibility)` reads the answer of a choice check, as [test a choice](choices.md#test-a-choice) shows.
+[What each entry point checks](testing.md#what-each-entry-point-checks) lists them with the other views.
 
 ---
 
-Next: [Programmatic DSL](dsl.md). Back to the [documentation index](README.md).
+Next: [Choose the first admitted transition](choices.md). Back to the [documentation index](README.md).

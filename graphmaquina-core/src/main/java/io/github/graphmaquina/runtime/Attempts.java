@@ -18,7 +18,7 @@ import java.util.Optional;
  * An automatic attempt on an entity of a machine, which {@code advance} makes, and each step of an automatic chain as
  * {@link AutomaticChains} runs it: under the reentrancy marker, the state read and the automatic edges of that state,
  * its candidates; then, when there are any, a root call that tries them in order, each as the root step of an execute
- * of its identifier, and runs the first one admitted.
+ * of its identifier, and runs the first one admitted, as {@link #firstAdmitted} does for a choice too.
  */
 final class Attempts {
 
@@ -35,7 +35,8 @@ final class Attempts {
      * automatic chains: an attempt whose automatic level is above maxAutomaticChain still tries its candidates, and the
      * one admitted throws an AutomaticChainExceededException once its guards passed, as {@link #exceeded} says.
      * {@code continuing} is the entity of the chain this attempt is a step of, which the attempt's own commit chains no
-     * further, and empty for an advance the application made. The attempt hands back what its commit says of its
+     * further, and empty for an advance the application made, whose commit chains its own entity even on a machine
+     * that chains only on advance, as {@link RootCall#run} says. The attempt hands back what its commit says of its
      * entity, as {@link #attemptOf} reads it.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Attempt<E, S, T> attempt(DefaultStateMachine<E, S, T> machine,
@@ -53,12 +54,12 @@ final class Attempts {
             if (log.debug()) {
                 log.start(machine.key(), "advance");
             }
-            boolean[] marker = Reentrancy.enter(machine.key(), entity);
+            Reentrancy.Cell cell = Reentrancy.enter(machine.key(), entity);
             try {
                 state = Reevaluation.stateOf(machine, entity, observed, CallRequest.ADVANCE, origin);
                 candidates = candidatesOf(machine, entity, observed, origin, state);
             } finally {
-                marker[0] = false;
+                cell.active = false;
             }
         } catch (Throwable thrown) {
             Reevaluation.unresolvedEnd(machine, entity, observed, log, thrown);
@@ -75,7 +76,7 @@ final class Attempts {
                     if (limited) {
                         tx.refuseRootActionWith(() -> exceeded(tx, machine));
                     }
-                    return firstAdmitted(tx, machine, entity, state, candidates);
+                    return firstAdmitted(tx, machine, entity, identifiersOf(candidates), Optional.empty());
                 }, levels, continuing);
         return attemptOf(machine, entity, state, committed);
     }
@@ -128,22 +129,38 @@ final class Attempts {
                 machine.registry().maxAutomaticChain());
     }
 
-    /**
-     * The body of the attempt's root call: each candidate in turn, as the root step of an execute of its identifier,
-     * until one is not rejected, whose result is the call's. A rejected step wrote nothing and ran no action, though
-     * its binding check and its guards up to the rejecting one ran; it leaves the call in GUARD, so the call goes back
-     * to RESOLVE before each candidate. A call that logs at TRACE logs each rejection after the lines of its step.
-     * When every candidate was rejected, the result is an Ignored of NO_CANDIDATE_ADMITTED that lists each rejection
-     * in order, with the state that candidate's step read; {@code from} is the state the attempt read.
-     */
-    private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> firstAdmitted(
-            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, S from,
+    /** The identifiers of {@code candidates}, in their order. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<T> identifiersOf(
             List<TransitionSpec<E, S, T>> candidates) {
-        List<Eligibility.Ineligible<?, S, T>> rejections = new ArrayList<>(candidates.size());
+        List<T> identifiers = new ArrayList<>(candidates.size());
         for (TransitionSpec<E, S, T> candidate : candidates) {
+            identifiers.add(candidate.transition());
+        }
+        return identifiers;
+    }
+
+    /**
+     * The body of the root call of an attempt or of a choice, over its {@code candidates}, which are not empty: each
+     * one in turn, as the root step of an execute of it with {@code input}, empty for an attempt, until one is not
+     * rejected, whose result is the call's. A rejected step wrote nothing and ran no action, though its binding check
+     * and its guards up to the rejecting one ran; it leaves the call in GUARD, so the call goes back to RESOLVE before
+     * each candidate. A call that logs at TRACE logs each rejection after the lines of its step, and a call that logs
+     * at DEBUG logs {@code candidate <T> admitted} once the step of the candidate admitted returned; a step that throws
+     * logs neither. When every candidate was rejected, the result is an Ignored of NO_CANDIDATE_ADMITTED that lists
+     * each rejection in order, with the state that candidate's step read; its own state is the one the first
+     * candidate's step read.
+     */
+    static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> firstAdmitted(
+            Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, List<T> candidates,
+            Optional<Object> input) {
+        List<Eligibility.Ineligible<?, S, T>> rejections = new ArrayList<>(candidates.size());
+        for (T candidate : candidates) {
             tx.enter(CallPhase.RESOLVE);
-            StepResult<S, T> step = Steps.transition(tx, machine, entity, candidate.transition(), 0, Optional.empty());
+            StepResult<S, T> step = Steps.transition(tx, machine, entity, candidate, 0, input);
             if (!(step instanceof StepResult.Rejected<S, T> rejected)) {
+                if (tx.log().debug()) {
+                    tx.log().debug("candidate " + candidate.name() + " admitted");
+                }
                 return step;
             }
             if (tx.log().trace()) {
@@ -152,7 +169,7 @@ final class Attempts {
             rejections.add(new Eligibility.Ineligible<>(entity, rejected.from(), rejected.transition(),
                     rejected.reason(), rejected.kind(), rejected.guard()));
         }
-        return new StepResult.Ignored<>(from, IgnoreReason.NO_CANDIDATE_ADMITTED, rejections);
+        return new StepResult.Ignored<>(rejections.get(0).from(), IgnoreReason.NO_CANDIDATE_ADMITTED, rejections);
     }
 
     /**

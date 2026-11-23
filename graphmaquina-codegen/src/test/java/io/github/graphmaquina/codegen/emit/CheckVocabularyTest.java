@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Verifies the {@code Check} annotation nested in the vocabulary of a machine: the shape it is emitted with, that it
  * is written on methods only and takes the machine's own transition identifier, which javac itself enforces, the
  * place it takes in the inventory, and that a name whose first segment the nested {@code Check} would take over is
- * refused with SG603.
+ * refused with SG603. Also the shape of the {@code Choice} the vocabulary declares after it, and its place.
  */
 class CheckVocabularyTest {
 
@@ -105,6 +105,24 @@ class CheckVocabularyTest {
     }
 
     @Test
+    void aChoiceIsEmittedForMethodsWithItsCandidatesInOrder() {
+        String vocabulary = content(emitted(), "fx.DocsGraph");
+
+        assertEquals(List.of(
+                "@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = fx.Docs.class,"
+                        + " value = io.github.graphmaquina.annotation.internal.VocabularyKind.CHOICE)",
+                "@java.lang.annotation.Target(java.lang.annotation.ElementType.METHOD)",
+                "@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)",
+                "public @interface Choice {",
+                "/** {@return the candidate identifiers, in the order a call tries them} */",
+                "fx.DocTransition[] value();",
+                "}"), declaration(vocabulary, "Choice"));
+        assertEquals("Declares a method of {@link fx.Docs} that runs, or checks without running it, the first of"
+                + " its candidate identifiers that is admitted for the entity in the state it is in now.",
+                documentation(vocabulary, "Choice"));
+    }
+
+    @Test
     void compilesACheckOnAMethodUnderTheStrictOptions() {
         SourceFiles.Compilation compilation = compile(emitted(), USAGE);
 
@@ -138,7 +156,10 @@ class CheckVocabularyTest {
                 () -> String.valueOf(compilation.messages()));
     }
 
-    /** The inventory names the annotations in the order the vocabulary declares them, with Check after Rejects. */
+    /**
+     * The inventory names the annotations in the order the vocabulary declares them, with Check after Rejects and
+     * Choice after Check.
+     */
     @Test
     void checkFollowsTheRejectsInTheInventory() {
         GenerationModel model = inspect("sources", ORIGINALS);
@@ -152,8 +173,9 @@ class CheckVocabularyTest {
 
         assertEquals("fx.DocsGraph.AutomaticOrders", inventory.get(inventory.size() - 1));
         assertEquals("fx.DocsGraph.AutomaticOrder", inventory.get(inventory.size() - 2));
-        assertEquals("fx.DocsGraph.Check", inventory.get(inventory.size() - 3));
-        assertEquals("fx.DocsGraph.Rejects", inventory.get(inventory.size() - 4));
+        assertEquals("fx.DocsGraph.Choice", inventory.get(inventory.size() - 3));
+        assertEquals("fx.DocsGraph.Check", inventory.get(inventory.size() - 4));
+        assertEquals("fx.DocsGraph.Rejects", inventory.get(inventory.size() - 5));
         assertEquals(inventory, declared);
     }
 

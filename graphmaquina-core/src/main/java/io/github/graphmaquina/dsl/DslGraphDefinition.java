@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatePolicy;
@@ -43,12 +44,16 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines;
     @Getter
     private final boolean hasAsync;
+    @Getter
+    private final AutomaticChain automaticChain;
 
     DslGraphDefinition(MachineKey<E, S, T> key, S[] states, S initial, Set<S> terminals,
                        List<TransitionSpec<E, S, T>> ordered, Map<S, StatePolicy<S, T>> policies,
                        Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches,
-                       Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines, Map<S, List<T>> automaticOrders) {
+                       Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines, Map<S, List<T>> automaticOrders,
+                       AutomaticChain automaticChain) {
         this.key = key;
+        this.automaticChain = automaticChain;
         this.initial = initial;
         EnumSet<S> terminalCopy = EnumSet.noneOf(key.states());
         terminalCopy.addAll(terminals);

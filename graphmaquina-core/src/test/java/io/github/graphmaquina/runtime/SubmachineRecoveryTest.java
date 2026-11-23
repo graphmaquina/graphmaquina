@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatePolicy;
@@ -339,5 +340,8 @@ class SubmachineRecoveryTest {
 
         @Override
         public boolean hasAsync() { return graph.hasAsync(); }
+
+        @Override
+        public AutomaticChain automaticChain() { return graph.automaticChain(); }
     }
 }
