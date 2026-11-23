@@ -21,6 +21,7 @@ import static io.github.graphmaquina.fixtures.AccountTransition.TOUCH;
 import static io.github.graphmaquina.fixtures.Keys.ACCOUNTS;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -84,19 +85,25 @@ public final class AccountGraphs {
 
     /** The onboarding, whose Unverifiable route to FLAGGED does not continue the automatic chain. */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboarding(AddressVerifier verifier) {
-        return graph(verifier, false, Optional.empty());
+        return graph(verifier, false, Optional.empty(), AutomaticChain.AFTER_COMMIT);
+    }
+
+    /** {@link #onboarding} declared {@link AutomaticChain#ON_ADVANCE}: only an advance takes its automatic edges. */
+    public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingOnAdvance(
+            AddressVerifier verifier) {
+        return graph(verifier, false, Optional.empty(), AutomaticChain.ON_ADVANCE);
     }
 
     /** {@link #onboarding} whose SET_PASSWORD runs {@code passwordSet} as its after-commit hook, named passwordSet. */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboarding(
             AddressVerifier verifier, Consumer<Account> passwordSet) {
-        return graph(verifier, false, Optional.of(passwordSet));
+        return graph(verifier, false, Optional.of(passwordSet), AutomaticChain.AFTER_COMMIT);
     }
 
     /** {@link #onboarding} whose Unverifiable route to FLAGGED continues the automatic chain. */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingContinuing(
             AddressVerifier verifier) {
-        return graph(verifier, true, Optional.empty());
+        return graph(verifier, true, Optional.empty(), AutomaticChain.AFTER_COMMIT);
     }
 
     /** A standalone machine over {@code graph}, whose identity is the account's id. */
@@ -106,8 +113,10 @@ public final class AccountGraphs {
     }
 
     private static GraphDefinition<Account, AccountStatus, AccountTransition> graph(
-            AddressVerifier verifier, boolean continuing, Optional<Consumer<Account>> passwordSet) {
+            AddressVerifier verifier, boolean continuing, Optional<Consumer<Account>> passwordSet,
+            AutomaticChain chain) {
         TransitionBuilder<Account, AccountStatus, AccountTransition> password = StateGraph.define(ACCOUNTS)
+                .automaticChain(chain)
                 .initial(NEW).terminal(ACTIVE).terminal(PREMIUM).terminal(CLOSED).allowsCycle(PASSWORD_SET)
                 .statePolicy(NEW, "a new account sets its password")
                 .statePolicy(PASSWORD_SET, "an account completes its personal info")

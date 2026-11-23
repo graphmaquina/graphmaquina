@@ -91,19 +91,23 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     /**
      * The automatic attempts this root call's commit triggered once its watch reactions ran. Each entity with a hop or
      * a sub-machine start in the commit, a self-loop or a round trip included, runs its chain, in the order of the
-     * commit's log, unless its last hop there is a failure route that does not continue the chain: from the state the
-     * commit left it in, while that state has an automatic edge, one attempt after another, each a call of its own, an
-     * {@link AutomaticStep.Done} with its outcome or an {@link AutomaticStep.Aborted}. The chain stops after an attempt
-     * that admits no candidate, which is listed with its rejections, after one whose failure takes a route that does
-     * not continue, and after one that aborts. The list holds each chain whole, flat and in order. The deepest commit
-     * that moved an entity chains it: when a call made on this thread inside this call's post-commit, a hook's call,
-     * a watch reaction or an attempt, committed a hop or a start of the entity before its chain began here, that call
-     * decided the chain, which is not here; and a chain stops after an attempt whose own post-commit ran such a call
-     * for its entity. So the attempts that the commit of an attempt triggers for other entities are in that attempt's
-     * own outcome, and those of a chain that a watch reaction decided are in that reaction's outcome, in
+     * commit's log, unless its last hop there is a failure route that does not continue the chain, or its machine is
+     * {@link AutomaticChain#ON_ADVANCE} and this call is no advance of that very entity that the application made,
+     * such as an operation, a reevaluation, a watch reaction, an attempt of a chain, or a call whose cascade,
+     * sub-machine start or exit moved it: from the state the commit left it in, while that state has an automatic
+     * edge, one attempt after another, each a call of its own, an {@link AutomaticStep.Done} with its outcome or an
+     * {@link AutomaticStep.Aborted}. The chain stops after an attempt that admits no candidate, which is listed with
+     * its rejections, after one whose failure takes a route that does not continue, and after one that aborts. The
+     * list holds each chain whole, flat and in order. The deepest commit that moved an entity chains it: when a call
+     * made on this thread inside this call's post-commit, a hook's call, a watch reaction or an attempt, committed a
+     * hop or a start of the entity before its chain began here, that call decided the chain, which is not here; and a
+     * chain stops after an attempt whose own post-commit ran such a call for its entity. Such a call is no advance of
+     * the entity, so on an ON_ADVANCE machine the advanced entity it moved chains nowhere, until advance is called
+     * again. So the attempts that the commit of an attempt triggers for other entities are in that attempt's own
+     * outcome, and those of a chain that a watch reaction decided are in that reaction's outcome, in
      * {@link #reactions()}. A call that a hook starts on another thread is not made inside the post-commit and decides
-     * no chain. The outcome of an advance is its first attempt, so the chain of its entity here starts with
-     * the attempt that followed. Empty for a rejected or ignored outcome and for any outcome a cascade returned. An
+     * no chain. The outcome of an advance is its first attempt, so the chain of its entity here starts with the
+     * attempt that followed. Empty for a rejected or ignored outcome and for any outcome a cascade returned. An
      * applied outcome may still end in an aborted step, so inspect them whatever the status, or search them with
      * {@link #automaticFailure()}, {@link #automaticAbort()} and {@link #automaticBlock()}.
      */

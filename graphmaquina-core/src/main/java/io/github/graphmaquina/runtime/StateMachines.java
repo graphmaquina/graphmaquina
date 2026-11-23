@@ -183,7 +183,8 @@ public final class StateMachines {
 
         /**
          * Every check build(registry, bindingsAsChild) makes, without consuming the builder, so that a failed build can
-         * be retried.
+         * be retried. That includes the definition's automaticChain, which the machine reads again when it is built:
+         * one that throws fails the build with what it threw, and a null answer with a NullPointerException.
          */
         void validate() {
             requireUnused();
@@ -194,6 +195,7 @@ public final class StateMachines {
                 throw new IllegalStateException("the machine " + key()
                         + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
+            DefaultStateMachine.automaticChainOf(definition);
         }
 
         /** {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry indexed them. */

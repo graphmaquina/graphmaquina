@@ -38,6 +38,9 @@ final class RootCall {
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation or an advance;
      * {@code levels} is where the call stands in the watch and automatic chains, and {@code continuing} the entity
      * whose chain made this call an attempt of it, which its own commit chains no further, empty for any other call.
+     * A call whose {@code request} is ADVANCE with no {@code continuing}, an advance the application made, hands its
+     * post-commit its own entity as the advanced one, which its commit chains even on a machine that chains only on
+     * advance; any other call hands it none.
      * It returns the outcome with the summary of the commit and the entities that the commits nested in its
      * post-commit reported, as {@link PostCommit} says.
      * When {@code machine}, the root's, records its trail, the call's flow is created before the step runs, and every
@@ -76,7 +79,7 @@ final class RootCall {
             if (log.debug() && requested.isPresent()) {
                 log.start(machine.key(), requested.get().name());
             }
-            committed = stepAndCommit(machine, tx, entity, body, levels, continuing);
+            committed = stepAndCommit(machine, tx, entity, request, body, levels, continuing);
         } catch (Throwable thrown) {
             throw failure(observed, tx, thrown);
         }
@@ -86,11 +89,13 @@ final class RootCall {
 
     /**
      * The step and phase 2 under the reentrancy marker, released, with the contexts invalidated, whatever they throw;
-     * then, once something was committed, its line, its hooks, its watch reactions and its automatic chains; then the
-     * outcome, with the summary of the commit and what the commits nested in its post-commit reported.
+     * then, once something was committed, its line, its hooks, its watch reactions and its automatic chains, the
+     * advanced entity being the reference the root's step registered for {@code entity} when the call is an advance
+     * the application made; then the outcome, with the summary of the commit and what the commits nested in its
+     * post-commit reported.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> stepAndCommit(
-            DefaultStateMachine<E, S, T> machine, Transaction tx, E entity,
+            DefaultStateMachine<E, S, T> machine, Transaction tx, E entity, CallRequest request,
             Function<Transaction, StepResult<S, T>> body, ChainLevels levels, Optional<EntityRef> continuing) {
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
@@ -117,7 +122,9 @@ final class RootCall {
             marker[0] = false;
             tx.invalidate();
         }
-        PostCommit post = PostCommit.after(tx, records, starts, committed, summary, levels, continuing);
+        Optional<EntityRef> advanced = request == CallRequest.ADVANCE && continuing.isEmpty()
+                ? tx.uow().registered(tx.callKey(), entity) : Optional.empty();
+        PostCommit post = PostCommit.after(tx, records, starts, committed, summary, levels, continuing, advanced);
         return new Committed<>(post.outcome(tx, entity, step, records, starts), summary, post.movedBelow());
     }
 

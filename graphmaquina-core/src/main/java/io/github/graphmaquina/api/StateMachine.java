@@ -43,7 +43,8 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
      * asynchronous edge. Once the call committed and its hooks and watch reactions ran, it runs the automatic chain of
      * each entity it moved, unless the last hop it committed for that entity is a failure route that does not
-     * continue, or a call made on this thread inside its post-commit, a hook's call, a watch reaction or an earlier
+     * continue, the entity's machine is {@link AutomaticChain#ON_ADVANCE}, whose entities chain only after an advance
+     * of their own, or a call made on this thread inside its post-commit, a hook's call, a watch reaction or an earlier
      * attempt, moved the entity too, which decided its chain; {@link Outcome#automaticSteps()} lists those attempts,
      * and a failure of one of them, anything but an Error, never throws to the caller: it is listed there, and
      * {@link Outcome#automaticFailure()}, {@link Outcome#automaticAbort()} and {@link Outcome#automaticBlock()} find
@@ -84,7 +85,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * Once the attempt committed, it runs the automatic chain of each entity it moved, as execute does, its own
      * entity's included unless the attempt's failure took a route that does not continue: the attempts that follow
      * are each a call of their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an
-     * Error, never throw to the caller.
+     * Error, never throw to the caller. On an {@link AutomaticChain#ON_ADVANCE} machine, this is the only call that
+     * takes the automatic edges: its own entity's chain runs over every automatic edge it meets, while the other
+     * entities of that machine its commits moved do not chain, and a call made on this thread inside its post-commit
+     * that moves its entity stops that chain, which goes on only when advance is called again.
      */
     Outcome<E, S, T> advance(E entity);
 

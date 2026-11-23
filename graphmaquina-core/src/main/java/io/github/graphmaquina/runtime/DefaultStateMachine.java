@@ -1,6 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallRequest;
 import io.github.graphmaquina.api.Eligibility;
@@ -59,6 +60,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild;
     /** See {@link #bindsSubmachines()}. */
     private final boolean bindsSubmachines;
+    /** See {@link #chainsOnAdvanceOnly()}. */
+    private final boolean chainsOnAdvanceOnly;
     /** See {@link #hasBindings()}. */
     private final boolean hasBindings;
     /** See {@link #trail()}. */
@@ -83,6 +86,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.presentTransitions = present(definition.key().transitions());
         this.bindingsAsChild = bindingsAsChild;
         this.bindsSubmachines = bindsSubmachines(definition);
+        this.chainsOnAdvanceOnly = automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
         this.released = Transaction.released(registry, definition.key());
@@ -100,6 +104,20 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
+     * What {@code definition} answers for {@link GraphDefinition#automaticChain()}; what that throws propagates, and a
+     * null answer throws NullPointerException. Read when a machine builder validates and when the machine is built,
+     * never by a call.
+     */
+    static AutomaticChain automaticChainOf(GraphDefinition<?, ?, ?> definition) {
+        AutomaticChain chain = definition.automaticChain();
+        if (chain == null) {
+            throw new NullPointerException("automaticChain() of the definition of " + definition.key()
+                    + " returned null");
+        }
+        return chain;
+    }
+
+    /**
      * The bindings in which this machine is the child, in the order the registry indexed them: the order of its
      * builders, then of each parent's states. Immutable, and empty for a machine that no definition binds.
      */
@@ -107,6 +125,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
     boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * Whether this machine's definition is {@link AutomaticChain#ON_ADVANCE}, so only an advance that the application
+     * made chains its entity, as {@link AutomaticChains#run} says; read once, at construction, so the post-commit,
+     * which asks outside any attempt, runs no application code to know it.
+     */
+    boolean chainsOnAdvanceOnly() { return chainsOnAdvanceOnly; }
 
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     Optional<InstantSource> trail() { return trail; }

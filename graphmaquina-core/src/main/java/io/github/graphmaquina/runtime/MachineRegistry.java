@@ -548,9 +548,9 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade, and
-         * reads the automatic edges of every state of its graph, before it consumes any of them; only a build that
-         * succeeds marks this builder and its machine builders used.
+         * Checks every machine builder, its identity, accessors, asyncTimeout, automaticChain, watches, sub-machines
+         * and facade, and reads the automatic edges of every state of its graph, before it consumes any of them; only
+         * a build that succeeds marks this builder and its machine builders used.
          */
         public MachineRegistry build() {
             requireUnused();

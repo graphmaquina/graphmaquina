@@ -109,7 +109,8 @@ final class UnitOfWork {
     /**
      * The reference {@link #register} kept for {@code instance} under {@code key}, found by walking every reference
      * this unit of work knows and comparing instances by reference: no identity's equals or hashCode runs. Empty when
-     * none was registered, as when reading the identity threw. Only the failure of an eligibility check asks.
+     * none was registered, as when reading the identity threw. Only the failure of an eligibility check asks, and an
+     * advance that the application made, once its step ran, for the entity it advanced.
      */
     Optional<EntityRef> registered(MachineKey<?, ?, ?> key, Object instance) {
         for (EntityRef ref : known.values()) {

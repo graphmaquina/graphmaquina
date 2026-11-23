@@ -35,7 +35,8 @@ final class Attempts {
      * automatic chains: an attempt whose automatic level is above maxAutomaticChain still tries its candidates, and the
      * one admitted throws an AutomaticChainExceededException once its guards passed, as {@link #exceeded} says.
      * {@code continuing} is the entity of the chain this attempt is a step of, which the attempt's own commit chains no
-     * further, and empty for an advance the application made. The attempt hands back what its commit says of its
+     * further, and empty for an advance the application made, whose commit chains its own entity even on a machine
+     * that chains only on advance, as {@link RootCall#run} says. The attempt hands back what its commit says of its
      * entity, as {@link #attemptOf} reads it.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Attempt<E, S, T> attempt(DefaultStateMachine<E, S, T> machine,

@@ -28,7 +28,8 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
      * thread runs around it and logs its line; then the hooks of its hops, then, in the phase REACTIONS, the watch
      * reactions that {@code summary} triggers, one watch level above {@code levels}. In a registry with an automatic
      * edge, its own {@link PostCommitScope} is open around them, and around the automatic chains that follow, in the
-     * phase AUTOMATIC_STEPS, of the entities of the commit but {@code continuing}, as {@link AutomaticChains#run}
+     * phase AUTOMATIC_STEPS, of the entities of the commit but {@code continuing}, and, of a machine that chains only
+     * on advance, only {@code advanced}, the entity of an advance the application made, as {@link AutomaticChains#run}
      * says; the scope closes whatever they throw. A registry without one opens no scope, runs no chain and never
      * enters AUTOMATIC_STEPS, and no nested call's entity comes back. Nothing runs, and neither a reaction nor a step
      * comes back, when nothing was committed. A hook that throws ends the call before its watch dispatch and its
@@ -36,7 +37,7 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
      */
     static PostCommit after(Transaction tx, List<TransitionRecord<?, ?, ?>> records,
                             List<SubmachineStart<?, ?, ?>> starts, List<LogEntry> committed, CommitSummary summary,
-                            ChainLevels levels, Optional<EntityRef> continuing) {
+                            ChainLevels levels, Optional<EntityRef> continuing, Optional<EntityRef> advanced) {
         if (committed.isEmpty()) {
             return new PostCommit(List.of(), List.of(), List.of());
         }
@@ -56,7 +57,7 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
         try {
             reactions = hooksAndReactions(tx, records, starts, committed, summary, levels);
             tx.enter(CallPhase.AUTOMATIC_STEPS);
-            steps = AutomaticChains.run(tx, summary, levels, continuing, scope);
+            steps = AutomaticChains.run(tx, summary, levels, continuing, advanced, scope);
         } finally {
             scope.closed = true;
             scope.close();
