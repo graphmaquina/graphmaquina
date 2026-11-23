@@ -219,8 +219,8 @@ final class Submachines {
      * child: the node it enters, whose entry has just restarted the child, holds it. A lookup that returns null or
      * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} and
      * {@link #bindingReadAbort} say. Every lookup runs inside the root or the check, under its reentrancy marker,
-     * where it can start nothing; inside a check that a guard started, a parent that an enclosing call or check holds
-     * is refused, as {@link #findParent} says.
+     * where it can start nothing; in the step of a check that a guard started, a parent that an enclosing call or check
+     * holds is refused, as {@link #findParent} says.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> BindingCheck checkBindings(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
@@ -265,9 +265,10 @@ final class Submachines {
 
     /**
      * The parent that {@code binding}'s parentOf answers for {@code entity}, the child, registered in the unit of
-     * work with the identity of the parent's machine; empty when it answers none. Inside a check that a guard started,
-     * a parent that an enclosing call or check holds is refused before it is registered, so before its childOf and
-     * its state are read, with a ReentrantTransitionException that aborts the step as {@link #bindingReadAbort} says.
+     * work with the identity of the parent's machine; empty when it answers none. In the step of a check that a guard
+     * started, a parent that an enclosing call or check holds is refused before it is registered, so before its
+     * childOf and its state are read, with a ReentrantTransitionException that aborts the step as
+     * {@link #bindingReadAbort} says.
      */
     private static <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>>
             Optional<EntityRef> findParent(Transaction tx, DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
@@ -403,11 +404,11 @@ final class Submachines {
 
     /**
      * An abort of a child's step for what reading the parent or the child threw while checking {@code binding}: an
-     * identity function or a state getter that threw, a null state, an ambiguous identity, or, inside a check that a
-     * guard started, the ReentrantTransitionException that refuses a parent an enclosing call or check holds, the
-     * cause as it is. At the root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure
-     * that is no failure of the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT
-     * never collects it and stops at once. The first poison is stored before its TRACE line, as in
+     * identity function or a state getter that threw, a null state, an ambiguous identity, or, in the step of a check
+     * that a guard started, the ReentrantTransitionException that refuses a parent an enclosing call or check holds,
+     * the cause as it is. At the root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a
+     * failure that is no failure of the call, as the same failure of a cascaded entity's own identity or state does, so
+     * COLLECT never collects it and stops at once. The first poison is stored before its TRACE line, as in
      * {@link Transaction#poisonAt}.
      */
     private static TransitionAbortedException bindingReadAbort(Transaction tx, DefaultStateMachine<?, ?, ?> machine,

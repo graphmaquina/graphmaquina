@@ -14,8 +14,8 @@ import lombok.RequiredArgsConstructor;
  * The view reaches the UnitOfWork only through {@code unit}, the check of the context that made it, which runs before
  * every read, so a view captured in an action cannot outlive its transaction, and holds nothing of the call once that
  * context is invalidated. The helpers run it first too, so they refuse even over an empty collection, which reads no
- * state; noneIn reads through anyIn, and allIn and anyIn read each peer through stateOf, which refuses, inside a check
- * that a guard started, a peer that an enclosing call or check holds, whatever context made the view.
+ * state; noneIn reads through anyIn, and allIn and anyIn read each peer through stateOf, which refuses, in the scope of
+ * a check that a guard started, a peer that an enclosing call or check holds, whatever context made the view.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
@@ -43,13 +43,13 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
     public MachineKey<P, Q, U> key() { return machine.key(); }
 
     /**
-     * The peer's pending state in the unit of work, else what its getter reads. Inside a check that a guard started,
-     * a peer that a call or check enclosing the thread's innermost scope holds is refused before either is read, as
-     * {@link Reentrancy#requireNotHeldOutside} says, whichever live context on this thread made this view: the
-     * innermost scope's own, or one of an enclosing call or check, such as an enclosing guard's or action's context
-     * that was handed over or kept. The peer's identity function, the identity's equals and hashCode and its getter
-     * run with the guard count of the thread's innermost scope held at 0, restored by a store, so that none of them
-     * can start a check from a guard's read.
+     * The peer's pending state in the unit of work, else what its getter reads. A peer that a call or check enclosing
+     * the thread's innermost scope holds, which only happens in the scope of a check that a guard started, is refused
+     * before either is read, as {@link Reentrancy#requireNotHeldOutside} says, whichever live context on this thread
+     * made this view: the innermost scope's own, or one of an enclosing call or check, such as an enclosing guard's or
+     * action's context that was handed over or kept. The peer's identity function, the identity's equals and hashCode
+     * and its getter run with the guard count of the thread's innermost scope held at 0, restored by a store, so that
+     * none of them can start a check from a guard's read.
      */
     @Override
     public Q stateOf(@NonNull P peer) {

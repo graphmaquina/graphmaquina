@@ -98,11 +98,12 @@ final class UnitOfWork {
     Optional<UnitOfWork> below = Optional.empty();
     /**
      * How many synchronous guards of this unit of work's steps are running on its thread, as {@link Steps} brackets
-     * each one's test call, except while the engine runs other application code inside such a guard: a peer read and
-     * the identity read before a nested check starts each hold it at 0 meanwhile, and a nested check, for everything
-     * it runs, holds the count of the scope whose guard started it at 0. {@link Reentrancy} lets a check start only
-     * while the innermost scope's count is above 0. Every change is a plain store that a finally undoes with another
-     * one.
+     * each one's test call, except while the engine runs other application code inside such a guard, which holds it
+     * at 0 meanwhile: a peer read; the identity read before a nested check starts; a nested check, from before its log
+     * opens until its last line, so both its own scope and the code the engine runs for it in this scope, its log's
+     * backend and the text of its entity's identity or of its failure; and a cascade, for the whole of it, its steps
+     * included, whose own guards then count from 0. {@link Reentrancy} lets a check start only while the innermost
+     * scope's count is above 0. Every change is a plain store that a finally undoes with another one.
      */
     int guards;
 

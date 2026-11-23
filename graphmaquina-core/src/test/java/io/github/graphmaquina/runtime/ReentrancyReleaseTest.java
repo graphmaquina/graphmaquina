@@ -40,13 +40,21 @@ class ReentrancyReleaseTest {
     }
 
     @ParameterizedTest(name = "{0}.{1}")
-    @CsvSource({
-            "Checks, admitted, runtime/Steps.admit, Reentrancy$Cell.active Reentrancy$Cell.top",
-            "RootCall, stepAndCommit, java/util/function/Function.apply, Reentrancy$Cell.active Reentrancy$Cell.top",
-            "Steps, syncVerdict, api/TransitionGuard.test, UnitOfWork.guards",
-            "Checks, check, admitted, UnitOfWork.guards",
-            "Reentrancy, requireCheckMayStart, runtime/DefaultStateMachine.refOf, UnitOfWork.guards",
-            "DefaultPeerView, stateOf, runtime/DefaultStateMachine.refOf, UnitOfWork.guards"})
+    @CsvSource(delimiter = '|', value = {
+            "Checks | admitted( | runtime/Steps.admit | Reentrancy$Cell.active Reentrancy$Cell.top",
+            "RootCall | stepAndCommit( | java/util/function/Function.apply"
+                    + " | Reentrancy$Cell.active Reentrancy$Cell.top",
+            "Steps | syncVerdict( | api/TransitionGuard.test | UnitOfWork.guards",
+            "Checks | check( | admitted | UnitOfWork.guards",
+            "Reentrancy | requireCheckMayStart( | runtime/DefaultStateMachine.refOf | UnitOfWork.guards",
+            "DefaultPeerView | stateOf( | runtime/DefaultStateMachine.refOf | UnitOfWork.guards",
+            "DefaultTransitionContext | cascade(io.github.graphmaquina.api.MachineKey | runtime/Cascades.cascade"
+                    + " | UnitOfWork.guards",
+            "DefaultTransitionContext | cascadeAll(io.github.graphmaquina.api.MachineKey | runtime/Cascades.cascadeAll"
+                    + " | UnitOfWork.guards",
+            "DefaultTransitionContext | cascade(java.lang.Class | runtime/Transaction.cascadeKeyFor"
+                    + " | UnitOfWork.guards",
+            "DefaultTransitionContext | cascadeAll(java.lang.Class | runtime/Cascades.cascadeAll | UnitOfWork.guards"})
     void theReleaseStoresBeforeItCallsOnBothWaysOut(String type, String method, String call, String fields)
             throws Exception {
         List<String> lines = javap(Class.forName("io.github.graphmaquina.runtime." + type));
@@ -78,12 +86,16 @@ class ReentrancyReleaseTest {
         return fields.stream().filter(stored::contains).toList();
     }
 
-    /** The line that declares the only method {@code method}, as the listing indents a member. */
+    /**
+     * The line that declares the only method whose declaration holds {@code method}, its name and an opening
+     * parenthesis, followed by the start of its first parameter's type for an overload, as the listing indents a
+     * member.
+     */
     private static int declarationOf(List<String> lines, String method) {
         List<Integer> declarations = new ArrayList<>();
         for (int index = 0; index < lines.size(); index++) {
             String line = lines.get(index);
-            if (line.startsWith("  ") && !line.startsWith("   ") && line.contains(" " + method + "(")) {
+            if (line.startsWith("  ") && !line.startsWith("   ") && line.contains(" " + method)) {
                 declarations.add(index);
             }
         }

@@ -255,6 +255,7 @@ class NestedCheckTest {
         assertInstanceOf(Outcome.Applied.class, self.get().execute(root, DISCARD));
         assertEquals(1, caught.size());
         assertSame(step, caught.get(0).entity());
+        assertEquals(DOCS, caught.get(0).key());
         assertEquals(List.of(new Eligibility.Eligible<>(unrelated, DRAFT, DISCARD)), seen);
         assertEquals(REVIEW, step.status());
     }
@@ -272,6 +273,7 @@ class NestedCheckTest {
         assertInstanceOf(Outcome.Applied.class, self.get().execute(root, DISCARD));
         assertEquals(1, caught.size());
         assertSame(moved, caught.get(0).entity());
+        assertEquals(DOCS, caught.get(0).key());
         assertEquals(List.of(REVIEW, REVIEW), List.of(moved.status(), asker.status()));
     }
 
@@ -308,6 +310,7 @@ class NestedCheckTest {
         ReentrantTransitionException held =
                 assertInstanceOf(ReentrantTransitionException.class, caught.get(0).getCause());
         assertSame(folder, held.entity());
+        assertEquals(FOLDERS, held.key());
         assertEquals(Optional.of(DRAFT), caught.get(0).from());
         assertEquals(FolderStatus.CLOSED, folder.status());
     }
@@ -361,6 +364,7 @@ class NestedCheckTest {
         EligibilityCheckException nested = assertInstanceOf(EligibilityCheckException.class, error.getCause());
         ReentrantTransitionException held = assertInstanceOf(ReentrantTransitionException.class, nested.getCause());
         assertSame(root, held.entity());
+        assertEquals(DOCS, held.key());
         assertSame(other, nested.entity());
         assertEquals(Optional.of("asks"), nested.guard());
         assertEquals(DRAFT, root.status());
@@ -383,6 +387,7 @@ class NestedCheckTest {
         EligibilityCheckException nested = assertInstanceOf(EligibilityCheckException.class, error.getCause());
         ReentrantTransitionException held = assertInstanceOf(ReentrantTransitionException.class, nested.getCause());
         assertSame(root, held.entity());
+        assertEquals(DOCS, held.key());
         assertSame(other, nested.entity());
     }
 
@@ -426,8 +431,9 @@ class NestedCheckTest {
 
     /**
      * The root's action keeps its context and cascades to a step, whose guard starts a check. The guard of that check
-     * cascades through the kept context, to one doc, to a collection, and through a facade the registry does not know,
-     * and each is refused before it stages anything or poisons the call, naming the action's machine and entity. The
+     * cascades through the kept context, to one doc and to a collection, by key and through a facade the registry does
+     * not know, and each is refused before it stages anything or poisons the call, naming the action's machine and
+     * entity. The
      * step's own guard, which no nested check encloses, still cascades through it, as before.
      */
     @Test
@@ -454,12 +460,48 @@ class NestedCheckTest {
                 })));
         assertInstanceOf(Outcome.Applied.class, self.get().execute(root, DISCARD));
         assertEquals(List.of(new Eligibility.Eligible<>(other, DRAFT, DISCARD), OutcomeCode.APPLIED), seen);
-        assertEquals(3, refused.size());
-        assertEquals(List.of(DOCS, root), List.of(refused.get(0).key(), refused.get(0).entity()));
+        assertEquals(4, refused.size());
+        assertEquals(List.of(List.of(DOCS, root)), refused.stream()
+                .map((ReentrantTransitionException each) -> List.<Object>of(each.key(), each.entity())).distinct()
+                .toList());
         assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(target.status(), moved.status(), step.status()));
     }
 
-    /** What a cascade through {@code kept} to {@code target}, by key, by collection and by facade, each throws. */
+    /**
+     * The root's action keeps its context and cascades to a step, whose guard, with no check nested, cascades through
+     * the kept context to a third doc. That doc's action runs as any action does, with no guard running, so the check
+     * it tries is refused, as a check from an action is.
+     */
+    @Test
+    void anActionOfAStepThatAGuardCascadesToCannotStartACheck() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        AtomicReference<TransitionContext<Doc, DocStatus, DocTransition>> kept = new AtomicReference<>();
+        Doc root = new Doc("1", DRAFT);
+        Doc step = new Doc("2", DRAFT);
+        Doc moved = new Doc("3", DRAFT);
+        Doc other = new Doc("4", DRAFT);
+        List<ReentrantTransitionException> refused = new ArrayList<>();
+        self.set(machine((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> asking(Map.of(step,
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> kept.get().cascade(DOCS, moved, SUBMIT)))
+                .apply(submit).action("tries", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    if (ctx.entity() == moved) {
+                        refused.add(assertThrows(ReentrantTransitionException.class,
+                                () -> self.get().eligibility(other, DISCARD)));
+                    }
+                    return ActionOutcome.ok();
+                }), (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard.action("keeps",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            kept.set(ctx);
+                            ctx.cascade(DOCS, step, SUBMIT);
+                            return ActionOutcome.ok();
+                        })));
+        assertInstanceOf(Outcome.Applied.class, self.get().execute(root, DISCARD));
+        assertEquals(1, refused.size());
+        assertEquals(List.of(DOCS, other), List.of(refused.get(0).key(), refused.get(0).entity()));
+        assertEquals(List.of(REVIEW, REVIEW, DRAFT), List.of(step.status(), moved.status(), other.status()));
+    }
+
+    /** What a cascade through {@code kept} to {@code target} throws, by key and by facade, to one doc or to a list. */
     private static List<ReentrantTransitionException> cascadesThrough(
             TransitionContext<Doc, DocStatus, DocTransition> kept, Doc target) {
         return List.of(
@@ -467,7 +509,9 @@ class NestedCheckTest {
                 assertThrows(ReentrantTransitionException.class,
                         () -> kept.cascadeAll(DOCS, List.of(target), SUBMIT, CascadePolicy.FAIL_FAST)),
                 assertThrows(ReentrantTransitionException.class,
-                        () -> kept.cascade(Facades.Docs.class, target, SUBMIT)));
+                        () -> kept.cascade(Facades.Docs.class, target, SUBMIT)),
+                assertThrows(ReentrantTransitionException.class,
+                        () -> kept.cascadeAll(Facades.Docs.class, List.of(target), SUBMIT, CascadePolicy.FAIL_FAST)));
     }
 
     /** An execute, a choice, a reevaluation and an advance from a nested check's guard are each refused. */
@@ -538,6 +582,7 @@ class NestedCheckTest {
         assertInstanceOf(Outcome.Applied.class, self.get().execute(new Doc("1", DRAFT), SUBMIT));
         assertEquals(1, caught.size());
         assertSame(other, caught.get(0).entity());
+        assertEquals(DOCS, caught.get(0).key());
     }
 
     /** A cascade step's guard that throws hands its count back: the action that catches the failure is no guard. */
@@ -577,6 +622,7 @@ class NestedCheckTest {
         assertInstanceOf(Outcome.Applied.class, self.get().execute(new Doc("1", DRAFT), SUBMIT));
         assertEquals(1, caught.size());
         assertSame(other, caught.get(0).entity());
+        assertEquals(DOCS, caught.get(0).key());
     }
 
     /**

@@ -8,9 +8,9 @@ import lombok.NonNull;
 /**
  * execute, reevaluate, advance, choose or an eligibility check, of eligibility or chooseEligibility, was called on a
  * thread that is already running a root transaction or an eligibility check, evaluating a watch or notifying an
- * observer, from one of the callbacks that run there, where it may not start; or a check that a guard started read an
- * entity that an enclosing call or check holds, or cascaded through a retained action context of the call it is
- * nested in.
+ * observer, from one of the callbacks that run there, where it may not start; or code in the scope of a check that a
+ * guard started read an entity that an enclosing call or check holds, or cascaded through a retained action context
+ * of the call that check is nested in.
  * <ul>
  *   <li>The callbacks are: a guard, an action, a state accessor, an identity function or a sub-machine's childOf or
  *       parentOf inside the transaction, or any of them but the action inside the check, which runs none; a watch's
@@ -28,16 +28,22 @@ import lombok.NonNull;
  *       cascade target whose step has not run. The test call of an asynchronous guard cannot start a check, and
  *       neither can anything the engine runs for a guard, such as the state getter or the identity function of a peer
  *       it reads, or the log lines and the identity text of a check it starts.</li>
- *   <li>A nested check, and everything it runs, cannot read a held entity either: a read through a peer view's
- *       stateOf, allIn or anyIn, the view of an enclosing guard's context included, or through a sub-machine binding
+ *   <li>A nested check's scope is its own step: its state read, its binding lookups, its guards and everything they
+ *       run. Code in that scope cannot read a held entity either: a read through a peer view's stateOf, allIn or
+ *       anyIn, the view of an enclosing guard's or action's context included, or through a sub-machine binding
  *       lookup, throws this exception, whose {@code entity()} is the entity read, into the code that made it, so a
  *       nested check never answers from a state that the enclosing call is about to replace. A guard that lets it
  *       through fails the nested check with an {@code EligibilityCheckException}, and the guard that started that
  *       check fails in turn unless it catches it.</li>
- *   <li>Nor can a nested check, and everything it runs, move an entity of the call it is nested in: a cascade or a
- *       cascadeAll through a retained action context of that call throws this exception, whose {@code key()} and
- *       {@code entity()} are that action's, before it stages anything or poisons the call. With no nested check
- *       running, such a context cascades as its action could.</li>
+ *   <li>Nor can code in that scope move an entity of the call the check is nested in: a cascade or a cascadeAll
+ *       through a retained action context of that call throws this exception, whose {@code key()} and
+ *       {@code entity()} are that action's, before it stages anything or poisons the call. With no nested check's
+ *       scope around it, such a context cascades as its action could, and the steps it runs count no guard of the
+ *       code that made the cascade, so they cannot start a check but from their own synchronous guards.</li>
+ *   <li>The application code that the engine runs for a nested check outside that scope, the log's backend and the
+ *       text of the check's entity's identity or of its failure, runs in the enclosing scope, under that scope's
+ *       rules: there a read or a cascade through a context of the enclosing call is as allowed as in the guard that
+ *       started the check. It still cannot start a check.</li>
  * </ul>
  * After-commit hooks run once the transaction has released the thread, so they can start transitions and checks; a
  * watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done, and each
@@ -56,13 +62,14 @@ public final class ReentrantTransitionException extends StateMachineException {
 
     public ReentrantTransitionException(MachineKey<?, ?, ?> key, @NonNull Object entity) {
         super("execute/reevaluate/advance/choose/eligibility on " + Objects.requireNonNull(key, "key")
-                + ", or, inside a nested check, a read of it or a cascade through its action's context, from within a"
-                + " transition, an eligibility check, a watch evaluation or an observer callback already in progress on"
-                + " this thread: a guard, an action, a sub-machine's childOf or parentOf, a watch's peersOf, ownerOf or"
-                + " condition, a state accessor, an identity function or an observer cannot start another transition or"
-                + " eligibility check, except that a synchronous guard can check an entity that no enclosing call or"
-                + " check holds, and that check can neither read a held entity nor cascade through an enclosing"
-                + " action's context; an action moves its peers with ctx.cascade(...)");
+                + ", or, in a nested check's scope, a read of it or a cascade through its action's context, from within"
+                + " a transition, an eligibility check, a watch evaluation or an observer callback already in progress"
+                + " on this thread: a guard, an action, a sub-machine's childOf or parentOf, a watch's peersOf, ownerOf"
+                + " or condition, a state accessor, an identity function or an observer cannot start another transition"
+                + " or eligibility check, except that a synchronous guard can check an entity that no enclosing call or"
+                + " check holds, and that check's state read, binding lookups and guards can neither read a held entity"
+                + " nor cascade through an enclosing action's context; an action moves its peers with"
+                + " ctx.cascade(...)");
         this.key = key;
         this.entity = entity;
     }
