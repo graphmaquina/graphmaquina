@@ -134,6 +134,11 @@ final class SymbolEmitter {
         source.line("");
         source.line("private " + name + "() {");
         source.line("}");
+        if (symbol.kinds().contains(SymbolKind.GUARD)) {
+            source.line("");
+            source.javadoc("The runtime name of this guard, as outcomes, checks, logs and test assertions report it.");
+            source.line("public static final java.lang.String NAME = \"" + symbol.member() + "\";");
+        }
         source.outdent();
         source.line("}");
     }
