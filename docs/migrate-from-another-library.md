@@ -18,15 +18,14 @@ elsewhere get a built and tested pattern on [migration patterns](migration-patte
 - [Concepts that behave differently](#concepts-that-behave-differently)
   - [Where the state lives](#where-the-state-lives), [Initial and final states](#initial-and-final-states),
     [Internal transitions](#internal-transitions), [Events with data](#events-with-data), [Guards](#guards),
-    [Transition actions](#transition-actions), [Composite states](#composite-states),
-    [Extended state variables](#extended-state-variables),
+    [Choice and junction pseudo-states](#choice-and-junction-pseudo-states), [Transition actions](#transition-actions),
+    [Composite states](#composite-states), [Extended state variables](#extended-state-variables),
     [Transitions that fire on their own](#transitions-that-fire-on-their-own),
     [Listeners and interceptors](#listeners-and-interceptors),
     [Persistence and restoration](#persistence-and-restoration), [Errors in actions](#errors-in-actions),
     [Several machines that collaborate](#several-machines-that-collaborate)
 - [Concepts without an equivalent](#concepts-without-an-equivalent)
-  - [Entry and exit actions](#entry-and-exit-actions),
-    [Choice and junction pseudo-states](#choice-and-junction-pseudo-states), [History states](#history-states),
+  - [Entry and exit actions](#entry-and-exit-actions), [History states](#history-states),
     [Parallel regions](#parallel-regions), [Timers and timeouts](#timers-and-timeouts),
     [Deferred events](#deferred-events), [One machine object per entity](#one-machine-object-per-entity),
     [Starting, stopping and resetting a machine](#starting-stopping-and-resetting-a-machine),
@@ -142,17 +141,15 @@ state setter: the commit detects the change and fails with `CommitFailedExceptio
 What changes: `initial` describes the graph; it does not put new entities in that state, and nothing starts a machine:
 set the field when you create the entity. A new entity runs no hook and no automatic edge of its initial state until a
 call moves it or `advance(entity)` asks; on an `ON_ADVANCE` machine, no automatic edge runs until `advance(entity)`
-asks. A final state accepts no edge at all, not even a self-loop, and every request there is refused as `NO_TRANSITION`,
-with the state's policy reason, or `terminal state <NAME> accepts no transitions` when it declares none. There is no
-"machine completed" event: react to a final destination in an after-commit hook through `CommitContext.isTerminal()`.
-The build also requires every state to be reachable from `initial` and every state that is not final to have an outgoing
-edge.
+asks. A final state accepts no edge, not even a self-loop, and every request there is refused as `NO_TRANSITION`, with
+the state's policy reason, or `terminal state <NAME> accepts no transitions` when it declares none. There is no "machine
+completed" event: react to a final destination in an after-commit hook through `CommitContext.isTerminal()`. The build
+requires every state to be reachable from `initial` and every state that is not final to have an outgoing edge.
 
 ### Internal transitions
 
-A self-loop, with or without an action. The "internal edges" of
-[operations and internal edges](graph-model.md#operations-and-internal-edges) are another thing: edges without an
-operation.
+A self-loop, with or without an action. The "internal edges" of [operations and internal
+edges](graph-model.md#operations-and-internal-edges) are another thing: edges without an operation.
 
 What changes: GraphMaquina has no internal transition. A self-loop is a full hop: the commit calls the state setter with
 the same state, the edge's hook or the machine's default hook runs, the hop appears in `records()`, and, unless the
@@ -185,8 +182,33 @@ What changes: only one edge exists per state and event, so "the same event, seve
 guard wins" is refused at build time (`SG102`); [choice and junction](#choice-and-junction-pseudo-states) gives the
 replacement. A guard that refuses produces a `Rejected` outcome that carries the guard's name and its reason, not a
 silent no-op. A guard that throws, or returns null, aborts the call with `TransitionAbortedException` instead of
-counting as false. Guards must be free of side effects: the guards of automatic candidates that end up refused still
-ran.
+counting as false. Guards must be free of side effects: the guards of a refused candidate, of an automatic attempt or a
+choice, still ran.
+
+### Choice and junction pseudo-states
+
+A choice, when the event's data picks the branch: a facade method `Outcome<E, S, T> op(E entity, I input)` that carries
+the generated `Choice` and names one identifier per branch, in the order they are tried, each an edge of the deciding
+state whose guards read the input; a branch without guards, listed last, is the "else". With the DSL,
+`choose(entity, List.of(...), input)`. See [choose the first admitted transition](choices.md). Or one identifier per
+branch, when the caller can decide, with an [eligibility check](eligibility.md) to tell it which one is admitted.
+
+What changes: GraphMaquina has no pseudo-states, and one event cannot have several guarded targets from one state
+(`SG102`). The guards decide before any action runs, as at a junction. The outcome's `requestedTransition()` names
+the branch taken; when none is admitted, the call writes nothing and returns `Ignored` (`NO_CANDIDATE_ADMITTED`), never
+`Rejected`, with each branch's refusal in `rejections()`.
+
+When the decision reads the entity's fields, a real intermediate state also fits, whose automatic edges are the
+branches, in the order of `AutomaticOrder`, the one without guards last (`SG109`), as the onboarding's `ADDRESS_SET`
+does in [declare automatic edges](automatic-transitions.md#declare-automatic-edges). The entity is committed there, the
+setter runs and hooks and watches react. On an `AFTER_COMMIT` machine one automatic attempt, a call of its own, then
+runs the first branch admitted, and the caller's `Applied` outcome reports the move into the intermediate state: its
+`to()`, which `movedTo` asserts. Read the branch taken and the real destination from `automaticSteps()`, or the state
+from the entity. If no branch is admitted, the entity stays there and `automaticBlock()` reports the attempt and its
+`rejections()`; a failing branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. An
+`ON_ADVANCE` machine takes the branches only on `advance(entity)`. The attempt's guards get an empty input and a flow of
+their own: they decide from fields, not from the event's data or the original call's flow. An operation that takes an
+input cannot be a branch (`SG515`), and the intermediate state needs a policy and holds no sub-machine (`SG807`).
 
 ### Transition actions
 
@@ -206,14 +228,13 @@ A sub-machine: the parent declares `@GraphPeers(Child.class)` and one generated 
 bound state; with the DSL, `submachine(state, childDefinition, ...)` and `exit(terminal, id)`. Parent and child belong
 to the same `@StateGraphs` set. See [compose machines](composition.md).
 
-A sub-machine is the default translation: a state can hold a whole machine of its own, so GraphMaquina does have
-nested states, and a migration never reports that it has none. Flatten the inner states into the parent's graph only
-when they need nothing a sub-machine gives them: a state field of their own, a start at their initial state on every
-entry, exits selected by their final states, and refusals as `DETACHED` once the parent has left. A flat translation
-declares each edge that left the composite state with every inner state in its `from`, except the inner states that
-handle the same event themselves: they keep their own edge, since a second edge with the same origin and identifier is
-refused (`SG102`). When you flatten, tell the developer which composite state you flattened and why a sub-machine did
-not fit.
+A sub-machine is the default translation: a state can hold a whole machine of its own, so GraphMaquina does have nested
+states, and a migration never reports that it has none. Flatten the inner states into the parent's graph only when they
+need nothing a sub-machine gives them: a state field of their own, a start at their initial state on every entry, exits
+selected by their final states, and refusals as `DETACHED` once the parent has left. A flat translation declares each
+edge that left the composite state with every inner state in its `from`, except the inner states that handle the same
+event themselves: they keep their own edge, since a second edge with the same origin and identifier is refused
+(`SG102`). When you flatten, tell the developer which composite state you flattened and why a sub-machine did not fit.
 
 What changes: the inner states become a separate machine with its own state enum and field, on a related entity or on
 the same one. Events are not delegated: an event for the inner states is a call on the child's facade, an event for
@@ -323,26 +344,6 @@ action that reads it needs an action on every edge that enters the state, copyin
 the hook to read, and an edge without an action must be given one. As actions, the code is repeated on each edge and
 runs before the commit, so a failure there takes the edge's failure route.
 
-### Choice and junction pseudo-states
-
-Closest pattern: a real intermediate state whose outgoing edges are automatic, each guarded, tried in the order of
-`AutomaticOrder`, with an edge without guards last as the "else" branch, as the onboarding's `ADDRESS_SET` does in
-[declare automatic edges](automatic-transitions.md#declare-automatic-edges). Or one identifier per branch, when the
-caller can decide, with an [eligibility check](eligibility.md) to tell it which one is admitted.
-
-What changes: GraphMaquina has no pseudo-states, and one event cannot have several guarded targets from one state
-(`SG102`). With an intermediate state, the decision point becomes a real state: the entity is committed there, the
-setter runs and hooks and watches react, and then one automatic attempt, a call of its own, tries the branches in
-order and runs the first one admitted. The caller's `Applied` outcome reports the move into the intermediate state:
-its `to()`, which `movedTo` asserts in a test, is that state. Read the branch taken and the real destination from the
-outcome's `automaticSteps()`, or the state from the entity. If no branch is admitted, the entity stays in the
-intermediate state and the outcome reports the attempt in `automaticBlock()`, whose `rejections()` list each refused
-branch; a failing branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. Since the attempt is
-a call of its own, the branches' guards get an empty input and a flow of their own: they decide from the entity's
-fields, not from the event's data or from values the original call put in its flow. An operation that takes an input
-cannot be a branch (`SG515`), the intermediate state needs a policy and cannot hold a sub-machine (`SG807`), and the
-branch without guards comes last (`SG109`).
-
 ### History states
 
 Closest pattern: if the composite state is a sub-machine, as [composite states](#composite-states) translates it by
@@ -356,8 +357,9 @@ over the same entity, not bound as a sub-machine, so nothing resets them.
 What changes: GraphMaquina has no history states. A sub-machine restarts at its initial state each time its state is
 entered, whatever state it had reached. With either stored-step pattern, the stored step is an ordinary field of your
 entity: your hook writes it, and you persist it with the entity. With the resume pattern, the return goes through a
-real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states), and the outcome of the
-resume call reports that intermediate state; the restored state is on the entity and in `automaticSteps()`. With the
+real intermediate state, as for [choice and junction](#choice-and-junction-pseudo-states): on an `AFTER_COMMIT`
+machine, the outcome of the resume call reports that intermediate state, and the restored state is on the entity and
+in `automaticSteps()`; an `ON_ADVANCE` machine restores it on `advance(entity)`. With the
 restoring cascade, the restart and the restore happen in the same commit, the child needs an extra edge from its
 initial state to each state it may return to, those edges run their guards, actions and hooks like any edge, and a
 refused cascade aborts the parent's call. With an unbound machine, you lose the automatic start, the exits and the
@@ -466,10 +468,9 @@ Every state that is not final declares `StatePolicy(state, otherwise = reason)`,
 direct when the original returned a status or a boolean, or ignored the event: a caller that read one now reads
 `outcome.status()` or `code()`, and a caller that ignored refusals can keep ignoring them, since nothing is written.
 
-Notes: every state that is not final words a policy (`SG701`), and inside a cascade a refusal aborts the whole call.
-A refusal commits nothing and runs no hook: where the original audited or logged refused events, use a
-`MachineObserver`, whose `onCompleted` receives every outcome, refused ones included, as
-[observers](commit-and-persistence.md#observers) shows.
+Notes: every state that is not final words a policy (`SG701`), and inside a cascade a refusal aborts the call. A refusal
+commits nothing and runs no hook: where the original audited or logged refusals, use a `MachineObserver`, whose
+`onCompleted` receives every outcome, refused ones included, as [observers](commit-and-persistence.md#observers) shows.
 
 What changes, when the original threw an exception: a refused event is returned as an outcome, never thrown. Code that
 relied on the exception to stop now carries on as if the move had happened unless it checks `outcome.status()` or

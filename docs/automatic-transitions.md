@@ -240,8 +240,8 @@ public interface Profiles extends Machine<Profile, ProfileStatus, ProfileTransit
 
 On such a machine, `advance` makes its attempt and then runs the chain of that same entity after the attempt's commit,
 over every automatic edge. The commit of any other call runs no chain for an entity of the machine: an operation, an
-`execute`, a `reevaluate`, a watch reaction, a cascade, the start or the exit of a sub-machine, and an attempt or a
-chain of another entity. In
+`execute`, a [choice](choices.md#after-the-commit), a `reevaluate`, a watch reaction, a cascade, the start or the exit
+of a sub-machine, and an attempt or a chain of another entity. In
 [ProfileFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/profile/ProfileFlowTest.java),
 a profile that has its name and its address stays in `DRAFT` after `edit`, with no step in its outcome:
 

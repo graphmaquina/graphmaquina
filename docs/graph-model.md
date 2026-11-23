@@ -206,8 +206,8 @@ shop are exactly that. Omitting `action` makes the edge a `MOVE`.
 
 A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
 [checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
-admitted without running it, the choices you declared with the generated `Choice`, each of which runs, or checks, the
-first admitted of the candidate identifiers it names, in their declared order, plus what every
+admitted without running it, the [choices](choices.md) you declared with the generated `Choice`, each of which runs, or
+checks, the first admitted of the candidate identifiers it names, in their declared order, plus what every
 facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
 `advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
 declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
@@ -325,6 +325,7 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 | `AutomaticOrder` | type | `from: S`, `transitions: T[]` | None |
 | [`Check`](eligibility.md#check-through-the-facade) | method | `id: T` | None |
+| [`Choice`](choices.md#declare-a-choice) | method | `value: T[]` | None |
 
 `StatePolicy`, `Transition`, `Reject` and `AutomaticOrder` are repeatable, through the generated `StatePolicies`,
 `Transitions`, `Rejects` and `AutomaticOrders` containers. `from` of a `Transition` must contain at least one state.
@@ -408,17 +409,23 @@ the interface's own symbol, and a static method that the host or a superclass be
 name and parameter types not at all, the hiding method being exported in its place when it is marked. Generated output and JAR
 exports are checked for collisions; do not manually create classes in generated namespaces or edit symbols.
 
-A facade method that carries the generated [`Check`](eligibility.md#check-through-the-facade) has a signature of its
-own, `I` being the input type of the operation it checks:
+A facade method that carries the generated [`Check`](eligibility.md#check-through-the-facade) or
+[`Choice`](choices.md#declare-a-choice) has a signature of its own, `I` being the input type of the operation it checks
+or of the choice:
 
 | Declaration | Supported signature |
 | --- | --- |
 | `Check` on an abstract facade method | `Eligibility<E, S, T> method(E entity)` or `Eligibility<E, S, T> method(E entity, I input)` |
+| `Choice` on an abstract facade method, to run the choice | `Outcome<E, S, T> method(E entity)` or `Outcome<E, S, T> method(E entity, I input)` |
+| `Choice` on an abstract facade method, to check the choice | `ChoiceEligibility<E, S, T> method(E entity)` or `ChoiceEligibility<E, S, T> method(E entity, I input)` |
 
-Its `id` names the identifier of one of the facade's operations, and it repeats that operation's parameters: the
-same entity, and the same input type exactly when the operation takes one, without varargs or method type
-parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
-(`SG512` to `SG514`).
+The `id` of a check names the identifier of one of the facade's operations, and the check repeats that operation's
+parameters: the same entity, and the same input type exactly when the operation takes one, without varargs or method
+type parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
+(`SG512` to `SG514`). A `Choice` names its candidates, at least one and each once, each declared by an edge and none
+the exit of a sub-machine, and a choice over a candidate that an operation of the facade executes takes that
+operation's input, or none when the operation takes none. A method that carries a `Choice` carries neither a
+`Transition` nor a `Check`, and has no varargs or method type parameters (`SG516`).
 
 ---
 

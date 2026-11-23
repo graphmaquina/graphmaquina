@@ -27,7 +27,8 @@ import org.junit.jupiter.api.Test;
  * link to a file of the example introduces appears verbatim in that file: the checks the shop's and the billing's
  * facades declare, and the tests that ask them. Every Java block of the automatic transitions page follows a link to a
  * source or a test of the onboarding or of the profile and appears verbatim in that file, with or without the file's
- * Javadoc comments. A
+ * Javadoc comments, and so does every Java block of the choices page, after a link to a source or a test of the
+ * shipment, among them its facade. A
  * block may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing,
  * so it fails. The export of the shop's order machine that the inspection page shows is the order golden, verbatim.
  */
@@ -67,6 +68,12 @@ class GuideCopiesTest {
             "\\]\\(\\.\\./graphmaquina-example/src/((?:main|test)" + EXAMPLE_PACKAGE
                     + "(?:onboarding|profile)/[^)]+\\.java)\\)");
     private static final String AUTOMATIC_PAGE = "automatic-transitions.md";
+    /** A link to a source or a test of the shipment, which the choices page quotes. */
+    private static final Pattern SHIPMENT_LINK = Pattern.compile(
+            "\\]\\(\\.\\./graphmaquina-example/src/((?:main|test)" + EXAMPLE_PACKAGE + "shipment/[^)]+\\.java)\\)");
+    private static final String CHOICES_PAGE = "choices.md";
+    /** The shipment's facade, whose declaration of the choice the choices page quotes. */
+    private static final String SHIPMENTS = "main/java/io/github/graphmaquina/example/shipment/Shipments.java";
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
     /** The inspection page's export of the shop's order machine: the text block right after its introduction. */
@@ -170,6 +177,27 @@ class GuideCopiesTest {
         assertFalse(quotes.isEmpty(), "no Java block of the page follows a link to the onboarding or the profile");
         assertEquals(JAVA_BLOCK.matcher(page).results().count(), (long) quotes.size(),
                 "a Java block of the page follows no link to the onboarding or the profile");
+        assertEquals(List.of(), missing);
+    }
+
+    /**
+     * Every Java block of the choices page follows a link to a source or a test of the shipment, the facade among them,
+     * so the page quotes as many files as it has Java blocks, and each block appears verbatim in the file it follows.
+     */
+    @Test
+    void theChoicesPageQuotesTheShipmentVerbatim() throws IOException {
+        String page = read(path("graphmaquina.docs", CHOICES_PAGE));
+        List<TestQuote> quotes = new TestQuoteReader(SHIPMENT_LINK).read(page);
+        List<String> missing = new ArrayList<>();
+        for (TestQuote quote : quotes) {
+            if (quote.code().isBlank() || !quotes(read(exampleFile(quote.source())), quote.code())) {
+                missing.add("docs/" + CHOICES_PAGE + ":" + quote.start() + " " + quote.source());
+            }
+        }
+        assertTrue(quotes.stream().anyMatch((TestQuote quote) -> quote.source().equals(SHIPMENTS)),
+                "no Java block of the page quotes the shipment's facade");
+        assertEquals(JAVA_BLOCK.matcher(page).results().count(), (long) quotes.size(),
+                "a Java block of the page follows no link to the shipment");
         assertEquals(List.of(), missing);
     }
 

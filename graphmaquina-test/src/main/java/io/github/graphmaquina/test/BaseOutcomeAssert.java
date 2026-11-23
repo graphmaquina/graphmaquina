@@ -120,7 +120,8 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
 
     /**
      * The reason given for this outcome, compared by value: the graph author's, or the library's fixed text for a
-     * terminal state that declares no policy and for a detached sub-machine or a reserved exit.
+     * terminal state that declares no policy and for a detached sub-machine or a reserved exit, or, for an advance or
+     * a choice that admitted no candidate, the text that joins the rejection of each one it tried.
      */
     public SELF hasExplanation(@NonNull String expected) {
         Optional<String> wanted = Optional.of(expected);
@@ -129,7 +130,10 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         return self();
     }
 
-    /** No reason given: an applied or ignored outcome, or a failure routed from an exception. */
+    /**
+     * No reason given: an applied outcome, an ignored one but that of an advance or a choice that admitted no
+     * candidate, or a failure routed from an exception.
+     */
     public SELF hasNoExplanation() {
         Optional<String> wanted = Optional.empty();
         Outcome<E, S, T> outcome = Checks.subject(context, "explanation", wanted, actual);

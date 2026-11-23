@@ -9,7 +9,9 @@ import lombok.RequiredArgsConstructor;
 /**
  * The rejections of an advance that admitted none of its automatic edges, or of a choice that admitted none of its
  * candidates, one per candidate it tried and in the order it tried them, obtained from
- * {@link IgnoredOutcomeAssert#rejections()}. Each one is read with the view of an ineligible
+ * {@link IgnoredOutcomeAssert#rejections()}; or the refusals of a choice check, in the caller's order, obtained from
+ * {@link ChoiceEligibilityAssert#rejections()}: those of the candidates before the one it chose, or of every candidate
+ * when it admitted none. Each one is read with the view of an ineligible
  * answer, {@link EligibilityAssert}, so its kind, guard, reason, origin and identifier are asserted as the eligibility
  * check asserts them.
  *

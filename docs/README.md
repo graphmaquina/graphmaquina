@@ -38,6 +38,7 @@ time; each page links the next one in that order.
 | [Actions, guards and failure routes](actions-and-failures.md) | Action and guard contexts, operation input, domain failures, `failsOn`, recovery rules by failure kind |
 | [Handle transition outcomes](outcomes.md) | The four outcome variants, status and code, records, journals, reactions and failed calls |
 | [Check an operation before you call it](eligibility.md) | Whether an operation would be admitted now, and why not, through a facade or the DSL, without running it |
+| [Choose the first admitted transition](choices.md) | One call that runs the first of several identifiers that is admitted, with the caller's input, what it returns, its check and its rules |
 | [Programmatic DSL](dsl.md) | Building a graph and a machine without annotations |
 | [Automatic transitions](automatic-transitions.md) | Edges the machine takes on its own after a commit, their order, `advance`, continuing failure routes, the limit and what the caller sees |
 
@@ -102,6 +103,7 @@ time; each page links the next one in that order.
 | Allow two different operations between the same pair of states | [Identity, not destination](graph-model.md#identity-not-destination) |
 | Explain why a state refuses an operation | [Policies](graph-model.md#policies-every-node-answers) |
 | Show whether an operation is available, and why not | [Check an operation before you call it](eligibility.md) |
+| Run the first of several identifiers that is admitted | [Choose the first admitted transition](choices.md) |
 | Pass a value from the caller to guards and actions | [Operations and internal edges](graph-model.md#operations-and-internal-edges) |
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
 | Send different failures to different states | [Recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type) |

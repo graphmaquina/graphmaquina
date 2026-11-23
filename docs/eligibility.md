@@ -43,7 +43,8 @@ An answer promises no more than that:
   promise the check does not make.
 
 Through a generated facade, you check the operations you declare a check for; through a `StateMachine`, any
-identifier of the machine's catalogue.
+identifier of the machine's catalogue. A [choice check](choices.md#check-a-choice) runs this check for each of several
+identifiers in turn, and answers which one a choice would run.
 
 ## Check through the facade
 
@@ -73,6 +74,8 @@ check that does not repeat the parameters of its operation, or returns anything 
 check for cannot be checked through the facade. The generated companion implements each check: it refuses a null
 argument with a `NullPointerException` that names the parameter, as the operation does, then calls its
 `StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that takes an input.
+A method that returns `ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a `Check` checks a
+choice instead, as [check a choice](choices.md#check-a-choice) shows.
 
 The shop's
 [EligibilityTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/EligibilityTest.java)
@@ -350,8 +353,8 @@ observer, a check is refused before it starts with `ReentrantTransitionException
 nothing.
 
 While a check runs, the code it calls may not start a call or a check on its thread either: `execute`, `reevaluate`,
-`advance` or `eligibility` called from a guard, the state getter or a `parentOf` of the check throws
-`ReentrantTransitionException`. When that code lets the exception through, the check fails with an
+`advance`, `choose`, `eligibility` or `chooseEligibility` called from a guard, the state getter or a `parentOf` of the
+check throws `ReentrantTransitionException`. When that code lets the exception through, the check fails with an
 `EligibilityCheckException` whose cause it is.
 
 ## Test a check
@@ -359,8 +362,9 @@ While a check runs, the code it calls may not start a call or a check on its thr
 `GraphAssertions.assertThat(eligibility)`, in `graphmaquina-test`, reads an answer, as the examples above do:
 `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed(name)`,
 `isDetached()`, `isReservedExit()` and `hasReason(reason)`; of both, `from(state)` and `transition(id)`.
-[What each entry point checks](testing.md#what-each-entry-point-checks) lists it with the other views.
+`assertThat(choiceEligibility)` reads the answer of a choice check, as [test a choice](choices.md#test-a-choice) shows.
+[What each entry point checks](testing.md#what-each-entry-point-checks) lists them with the other views.
 
 ---
 
-Next: [Programmatic DSL](dsl.md). Back to the [documentation index](README.md).
+Next: [Choose the first admitted transition](choices.md). Back to the [documentation index](README.md).

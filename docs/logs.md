@@ -190,7 +190,8 @@ begins: a reevaluation that selected no edge names none, and so does one that fa
 read the state, ran its watch or exceeded the watch chain. A reevaluation whose step began names it, even when the step
 failed before its edge ran, in its binding check for instance. Likewise, an `advance` whose state has no automatic
 edge, or that failed while it read the state, names none, and one names it once the step of its first candidate
-began. A check's `end` line always names it, since a verdict
+began. A `choose` names it once the step of its first candidate began, even when it then admits none. A check's `end`
+line always names it, since a verdict
 comes from a step that computed it; its `failed` line names none, but the exception's message does. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
