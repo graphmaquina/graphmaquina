@@ -26,7 +26,9 @@ The runtime's normal root execution follows this sequence:
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
 8. Run the [automatic chain](automatic-transitions.md#when-the-chain-runs) of each entity with a hop or a sub-machine
-   start in the commit, in log order, unless its last hop there is a failure route that does not continue, or a call
+   start in the commit, in log order, unless its machine is
+   [declared `ON_ADVANCE`](automatic-transitions.md#chain-only-on-advance) and this call is no `advance` of that very
+   entity, or its last hop there is a failure route that does not continue, or a call
    made on the same thread in steps 6 to 8, by a hook, a watch reaction or an earlier attempt, already committed a hop
    or a start of it: the deepest commit that moved an entity chains it (a hook's call on another thread is not
    nested: [when the chain runs](automatic-transitions.md#when-the-chain-runs)). While its state has an automatic

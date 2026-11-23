@@ -170,6 +170,8 @@ You declare what a state can do, and its policy words the answer for everything 
   to continue (`SG305`).
 - A state that holds a sub-machine has no automatic edge (`SG807`). With annotations, the identifier of an automatic
   edge executes no operation that takes an input, because an automatic attempt carries none (`SG515`).
+- A graph that declares `automaticChain` as `ON_ADVANCE` has an automatic edge (`SG110`), and none of its manual edges
+  declares a failure route that continues the chain (`SG306`), since only an `advance` chains there.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 - A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
   an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
@@ -315,7 +317,7 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 
 | Annotation | Target | Required elements | Optional elements |
 | --- | --- | --- | --- |
-| `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
+| `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol`, `automaticChain: AutomaticChain` |
 | `StatePolicy` | type | `state: S`, `otherwise: String` | None |
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean` |
 | `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn`, `continueChain: boolean` |

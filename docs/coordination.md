@@ -357,7 +357,7 @@ is currently in the watched state and deduplicates owners within that dispatch. 
 A reaction failure does not roll back the peer commit that triggered it. A sub-machine start that moved its child from
 another state counts as a move here, although a start is no hop.
 
-The reactions run on the calling thread, after the triggering call's hooks and before its automatic chains, as
+The reactions run on the calling thread, after the triggering call's hooks and before the automatic chains it runs, if any, as
 [commit, hooks and observers](commit-and-persistence.md#commit-hooks-and-observers) orders them, and before `execute`,
 `reevaluate` or `advance` returns. Every owner lookup runs before any reaction, and the call's outcome lists them in `reactions()`: first the
 `Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and

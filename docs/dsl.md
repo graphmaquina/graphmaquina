@@ -81,7 +81,7 @@ Each call returns the stage the next call continues from:
 
 ```mermaid
 flowchart LR
-    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder"]
+    define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder,<br/>automaticChain"]
     graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, onFailureAndContinue, failsOn,<br/>recover, recoverAndContinue, timeout,<br/>automatic, afterCommit, afterCommitWith"]
     edge -- "endTransition()" --> graphStage
     graphStage -- "watch(state, peerKey, peersOf, ownerOf)" --> watch["WatchBuilder<br/>when(condition)"]
@@ -107,7 +107,9 @@ returned failure and for a throwable whose most specific declared type is one of
 identifiers resolve from the failing edge's origin. `recoverAndContinue`, with the overloads of `recover`, and
 `onFailureAndContinue(id)`, which is the edge's `onFailure`, declare routes that let the entity's automatic chain go on
 from the recovery state. `automatic()` marks the edge as one the machine takes on its own, and the graph's
-`automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, as
+`automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, and its
+`automaticChain(chain)` declares, once, whether the machine takes them after every commit, `AFTER_COMMIT`, the default,
+or only on `advance(entity)`, `ON_ADVANCE`, as
 [automatic transitions](automatic-transitions.md) explains. `afterCommit(name, hook)` takes a hook of the entity alone
 and `afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
 second throws `IllegalStateException` at once. `statePolicy` and `reject` word the answers a node gives. A state has

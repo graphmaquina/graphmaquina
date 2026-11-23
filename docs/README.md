@@ -106,6 +106,7 @@ time; each page links the next one in that order.
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
 | Send different failures to different states | [Recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type) |
 | Advance an entity on its own | [Automatic transitions](automatic-transitions.md) |
+| Take automatic edges only when you call advance | [Chain only on advance](automatic-transitions.md#chain-only-on-advance) |
 | Map an outcome to an HTTP response | [Map an outcome to a response](outcomes.md#map-an-outcome-to-a-response) |
 | Call a remote service from an action | [Asynchronous work](async.md) and [deadline rules](async-deadlines.md#deadline-rules) |
 | Move several entities in one unit of work | [Cascade a transition](coordination.md#cascade-a-transition) |

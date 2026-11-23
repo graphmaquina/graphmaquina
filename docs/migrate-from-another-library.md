@@ -141,7 +141,7 @@ state setter: the commit detects the change and fails with `CommitFailedExceptio
 
 What changes: `initial` describes the graph; it does not put new entities in that state, and nothing starts a machine:
 set the field when you create the entity. A new entity runs no hook and no automatic edge of its initial state until a
-call moves it or `advance(entity)` asks. A final state accepts no edge at all, not even a self-loop, and every request
+call moves it or `advance(entity)` asks, and on a machine declared `ON_ADVANCE`, until `advance(entity)` asks. A final state accepts no edge at all, not even a self-loop, and every request
 there is refused as `NO_TRANSITION`, with the state's policy reason, or `terminal state <NAME> accepts no transitions`
 when it declares none. There is no "machine completed" event: react to a final destination in an after-commit hook
 through `CommitContext.isTerminal()`. The build also requires every state to be reachable from `initial` and every
@@ -241,11 +241,12 @@ Edges marked `automatic = true`, or `automatic()` with the DSL, tried in the ord
 their state; `advance(entity)` makes one attempt on request. See [automatic transitions](automatic-transitions.md).
 
 What changes: an automatic edge is tried only after a call commits a move of the entity, or when you call
+`advance(entity)`; a graph that declares `automaticChain = AutomaticChain.ON_ADVANCE` tries it only on
 `advance(entity)`. A change of data without a transition triggers nothing, and a new entity in its initial state runs
 nothing until then. Each attempt is a separate call after the commit: its failure never reaches the caller of the
 original operation, which reads it in `automaticSteps()`, `automaticFailure()`, `automaticAbort()` or
-`automaticBlock()`. When every automatic edge of a state is guarded, each arrival in that state by an ordinary hop, a
-self-loop included, while no guard passes, runs an attempt that ends without a move and is reported in
+`automaticBlock()`. When every automatic edge of a state is guarded, on a machine that chains after every commit, each
+arrival in that state by an ordinary hop, a self-loop included, while no guard passes, runs an attempt that ends without a move and is reported in
 `automaticBlock()`. An arrival by a failure route that does not continue, the default, or by a call whose hook threw
 runs no attempt. A state with two or more automatic edges needs an explicit order, automatic edges may not form a
 cycle, and an attempt past `maxAutomaticChain`, 10 by default, that admits an edge aborts before its action runs.
@@ -405,7 +406,7 @@ or guard, and when they expire the call aborts and takes no failure route.
 
 Closest pattern: record the deferred request as data on the entity, in a plain field, and declare an automatic edge
 from the state where the event becomes acceptable, guarded by that field. When a call moves the entity into that
-state, its automatic chain takes the edge; if the entity is already there when the request is recorded, call
+state, its automatic chain takes the edge, unless the graph chains only on `advance`; if the entity is already there when the request is recorded, call
 `advance(entity)`. See [the pattern](migration-patterns.md#deferred-events).
 
 What changes: GraphMaquina never queues an event. A request the current state does not accept returns `Rejected` with

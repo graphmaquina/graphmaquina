@@ -245,8 +245,8 @@ read them.
 - `automaticSteps()` answers on every outcome too. A root `Applied` or `Failed` returns the automatic attempts its
   commit triggered once its reactions ran; `Rejected`, `Ignored` and a nested `cascade` result return an empty list.
   Each entity with a hop or a sub-machine start in the commit, a self-loop or a round trip included, runs its chain,
-  in log order, unless its last hop there is a failure route that does not continue: from the state the commit left
-  it in, while that state has an automatic edge, one `advance` of the entity after another, each a call of its own
+  in log order, unless its last hop there is a failure route that does not continue, or its machine is `ON_ADVANCE`
+  and the call is no `advance` of that very entity: from the state the commit left it in, while that state has an automatic edge, one `advance` of the entity after another, each a call of its own
   with its own outcome and flow. The list holds each chain whole, flat and in order. A chain stops after an attempt
   that admits no candidate, which the list still holds as `AutomaticStep.Done` with its `Ignored`, whose
   `rejections()` say why; after one whose failure takes a route that does not continue; and after one that aborts,
@@ -262,7 +262,8 @@ read them.
   began, that call decided the chain, so the commit around it does not chain the entity again; and a chain stops
   after an attempt whose own post-commit ran such a call for its entity. So the attempts that an attempt's commit
   triggers for other entities are in that attempt's outcome, and a chain that a watch reaction decided is in that
-  reaction's outcome. A hook's call on another thread is not made inside the post-commit and decides nothing, as
+  reaction's outcome. On an `ON_ADVANCE` machine, such a call chains the entity only when it is itself an `advance` of
+  it, and otherwise the entity chains nowhere until the next `advance` of it. A hook's call on another thread is not made inside the post-commit and decides nothing, as
   [when the chain runs](automatic-transitions.md#when-the-chain-runs) says. Entities compare as the commit log
   compares them, by machine and identity.
 - Outside any call, the chain decides whether an attempt follows. After an attempt that ended `Ignored`, or whose

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
@@ -118,6 +119,30 @@ class GraphAssertionsTest {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> graph.hasInitial(State.READY));
         assertFailure(error, GRAPH, "initial", State.READY, State.NEW);
+    }
+
+    // --- automatic chain ---------------------------------------------------------------------------
+
+    @Test
+    void theAutomaticChainIsComparedExactly() {
+        GraphAssert<Entity, State, Id> afterCommit = GraphAssert.assertThat(AutomaticDomain.graph());
+        assertSame(afterCommit, afterCommit.hasAutomaticChain(AutomaticChain.AFTER_COMMIT));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> afterCommit.hasAutomaticChain(AutomaticChain.ON_ADVANCE));
+        assertFailure(error, GRAPH, "automaticChain", AutomaticChain.ON_ADVANCE, AutomaticChain.AFTER_COMMIT);
+        GraphAssert<Entity, State, Id> onAdvance = GraphAssert.assertThat(AutomaticDomain.onAdvanceGraph());
+        assertSame(onAdvance, onAdvance.hasAutomaticChain(AutomaticChain.ON_ADVANCE));
+        error = assertThrows(GraphAssertionError.class,
+                () -> onAdvance.hasAutomaticChain(AutomaticChain.AFTER_COMMIT));
+        assertFailure(error, GRAPH, "automaticChain", AutomaticChain.AFTER_COMMIT, AutomaticChain.ON_ADVANCE);
+        assertEquals("expected is marked non-null but is null", assertThrows(NullPointerException.class,
+                () -> onAdvance.hasAutomaticChain(null)).getMessage());
+    }
+
+    @Test
+    void nullDefinitionFailsHasAutomaticChainWithContext() {
+        assertNullGraph("automaticChain", AutomaticChain.ON_ADVANCE,
+                graph -> graph.hasAutomaticChain(AutomaticChain.ON_ADVANCE));
     }
 
     // --- declared identifiers ----------------------------------------------------------------------

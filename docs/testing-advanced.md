@@ -330,12 +330,14 @@ Each key reads its own field, so `changes()` reports a moved state under its own
 ## Automatic transitions
 
 The graph declares an edge automatic, and an `advance`, or the chain that a commit triggers, takes it without a
-request for its identifier, as [automatic transitions](automatic-transitions.md) explains. These are the views that
+request for its identifier, as [automatic transitions](automatic-transitions.md) explains; on a machine declared
+`ON_ADVANCE`, only an `advance` and the chain after it do. These are the views that
 assert on that, none of which runs an action, a guard or a hook.
 
 On the graph, `assertThat(definition).automaticFrom(state).containsExactly(...)` compares the identifiers of the
 automatic edges that leave a state, in the order an advance tries them, which a state with two or more automatic edges
-declares; with no argument it says the state has none. On an edge, `isAutomatic()` and `isManual()` read the mark,
+declares; with no argument it says the state has none, and `hasAutomaticChain(AutomaticChain.ON_ADVANCE)`, or
+`AFTER_COMMIT`, compares when the machine takes its automatic edges. On an edge, `isAutomatic()` and `isManual()` read the mark,
 `onFailureContinues()` says that its `onFailure` route continues the chain, and `recoveryContinues(kind)` that the
 recovery rule it declares for that failure kind does.
 

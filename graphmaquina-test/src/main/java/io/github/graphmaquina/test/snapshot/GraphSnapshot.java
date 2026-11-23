@@ -1,5 +1,6 @@
 package io.github.graphmaquina.test.snapshot;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.RecoveryRule;
@@ -44,6 +45,8 @@ import lombok.Getter;
  * an advance tries them in, at {@code /automaticOrder/<state>/count} and {@code /automaticOrder/<state>/<i>}, the
  * identifier at position {@code <i>}; the order is a different graph when it changes, whatever the declaration order of
  * the edges.
+ * A graph that takes its automatic edges only on an advance also records {@code /automaticChain} as
+ * {@code ON_ADVANCE}; the path is absent for the default, {@code AFTER_COMMIT}.
  *
  * <p>The sub-machine bound to a state lives under {@code /submachines/<state>}: its child machine at
  * {@code child/entity}, {@code child/states} and {@code child/transitions}, as a watch records its peer, and at
@@ -90,6 +93,9 @@ public final class GraphSnapshot {
         fields.put("/machine/transitions", definition.key().transitions().getName());
         fields.put("/initial", definition.initial().name());
         fields.put("/hasAsync", Boolean.toString(definition.hasAsync()));
+        if (definition.automaticChain() == AutomaticChain.ON_ADVANCE) {
+            fields.put("/automaticChain", AutomaticChain.ON_ADVANCE.name());
+        }
         List<S> states = definition.graph().nodes();
         fields.put("/states/count", Integer.toString(states.size()));
         for (int index = 0; index < states.size(); index++) {
