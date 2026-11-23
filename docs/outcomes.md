@@ -177,7 +177,8 @@ Optional<TicketTransition> recovery = outcome.asFailed().map(Outcome.Failed::fai
 `Eligibility.Ineligible` per edge it tried, in the order it tried them, each with the identifier, the state, the
 `RejectionKind`, the guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
 
-A `switch` over the variants reads all of them at once:
+A `switch` over the variants reads all of them at once. A guard's name is the `NAME` of its generated symbol, so the
+switch tells the guard it knows from the rest without a string literal:
 
 ```java
 static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
@@ -185,8 +186,10 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
         case Outcome.Applied<Ticket, TicketState, TicketTransition> applied ->
                 applied.transition() + " moved to " + applied.to();
         case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
-                "Refused " + rejected.transition() + " by "
-                        + rejected.guard().orElse("the state's policy");
+                rejected.guard().filter(TicketActionsRefs.HasTitle.NAME::equals).isPresent()
+                        ? "Refused " + rejected.transition() + ": the ticket has no title"
+                        : "Refused " + rejected.transition() + " by "
+                                + rejected.guard().orElse("the state's policy");
         case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
                 failed.failureTransition() + " moved to " + failed.movedTo() + ": "
                         + failed.reason();

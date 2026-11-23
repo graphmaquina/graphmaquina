@@ -22,6 +22,7 @@ import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.item.Restock;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
+import io.github.graphmaquina.example.order.OrderActionsRefs;
 import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
@@ -119,7 +120,7 @@ class OrderFlowTest {
                 assertThat(orders.retry(order)).isApplied().movedTo(OrderStatus.NEW);
             }
         }
-        assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
+        assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME);
         assertThat(orders.cancel(order, "B-7")).isApplied()
                 .hasEntityState(Order::status, OrderStatus.CANCELLED);
         assertThat(order.items().get(0), Item::status).isIn(ItemStatus.CANCELLED);

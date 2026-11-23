@@ -314,7 +314,8 @@ assertEquals(INFO_SET, account.status());
 Outcome.Ignored<?, ?, ?> block = outcome.automaticBlock().orElseThrow();
 assertEquals("address is incomplete", block.rejections().getFirst().reason());
 assertThat(outcome).isApplied().automaticBlock().hasReason(IgnoreReason.NO_CANDIDATE_ADMITTED)
-        .rejections().single().transition(COMPLETE_ADDRESS).isRejectedByGuardNamed("addressComplete");
+        .rejections().single().transition(COMPLETE_ADDRESS)
+                .isRejectedByGuardNamed(AccountActionsRefs.AddressComplete.NAME);
 ```
 
 A guard that stops the chain is no error for the library: the application decides. The library depends on no web

@@ -116,7 +116,7 @@ A guard belongs to an edge that exists. It runs after the edge is resolved and b
 declaration order, stopping at the first rejection:
 
 ```java
-assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
+assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME);
 ```
 
 A refusal for lack of an edge is a different kind, and carries no guard:
@@ -283,6 +283,7 @@ symbol from the graph declaration.
 | `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects`, [`.Check`](eligibility.md#check-through-the-facade), `.AutomaticOrder`, `.AutomaticOrders` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
+| Marked guard `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.NAME`, the string `"hasTitle"`: the guard's runtime name, the one a rejection, an ineligible check and a test assertion carry. Renaming the guard renames the symbol, so a stale reference fails to compile |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
 | Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction, `graph(...)` and its collaborator-free twin [`structure()`](graph-inspection.md#a-definition-without-collaborators), and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)` and each check its `eligibility(...)`, and refuses a null machine with `NullPointerException` |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |

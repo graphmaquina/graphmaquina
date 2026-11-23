@@ -118,9 +118,9 @@ constant of another machine's catalogue does not compile inside it.
 | Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the searches `automaticFailure()`, `automaticAbort()` and `automaticBlock()`, also with a `MachineKey` to select one machine's attempts, with their `hasNoAutomatic…` counterparts |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
-| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
+| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, given the guard symbol's `NAME`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per edge the advance tried |
-| [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
+| [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed` with the guard symbol's `NAME`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Automatic steps | `.automaticSteps()`, or `AutomaticStepsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause; [details](testing-advanced.md#automatic-transitions) |
@@ -149,7 +149,7 @@ to confuse, so keep them apart:
 | This origin declares exactly these identifiers | `hasTransitionsExactly(from, ids...)` |
 | This identifier has no edge from this origin | `hasNoTransition(from, id)` |
 | The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
-| The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
+| The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)`, where `name` is the guard symbol's `NAME`, as in `OrderActionsRefs.RetryBudgetLeft.NAME` |
 | The request was refused because the entity is a sub-machine whose parent does not hold it | `isRejected().isDetached()` |
 | The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 

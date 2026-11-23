@@ -101,7 +101,7 @@ orders.pay(order);
 orders.retry(order);
 orders.pay(order);
 
-assertThat(orders.canRetry(order)).isRejectedByGuardNamed("retryBudgetLeft")
+assertThat(orders.canRetry(order)).isRejectedByGuardNamed(OrderActionsRefs.RetryBudgetLeft.NAME)
         .hasReason("exhausted the 3 charge attempts");
 ```
 

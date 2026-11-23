@@ -65,6 +65,7 @@ class GuideOutcomeFragmentsTest {
             import io.github.graphmaquina.api.OutcomeCode;
             import io.github.graphmaquina.api.OutcomeStatus;
             import io.github.graphmaquina.error.CallFailedException;
+            import io.github.graphmaquina.symbol.GuardSymbol;
             import java.time.Duration;
             import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
@@ -77,6 +78,14 @@ class GuideOutcomeFragmentsTest {
                 enum TicketTransition { SUBMIT, APPROVE, DECLINE, RETOUCH, REJECT, AUTO_APPROVE }
                 static final class Ticket { }
                 static final class TicketActions { }
+                // Shaped like the vocabulary the generator emits for the guard methods of TicketActions.
+                static final class TicketActionsRefs {
+                    private TicketActionsRefs() { }
+                    static final class HasTitle implements GuardSymbol {
+                        private HasTitle() { }
+                        public static final String NAME = "hasTitle";
+                    }
+                }
                 interface TicketMachines { }
                 static final class TicketMachinesRuntime {
                     static Builder builder(TicketActions actions) { return new Builder(); }
