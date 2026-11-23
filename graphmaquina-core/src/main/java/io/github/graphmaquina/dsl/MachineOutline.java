@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -33,12 +34,15 @@ import lombok.NonNull;
  *     declaration order; a state may appear more than once, which the validator reports
  * @param automaticOrders every {@code automaticOrder} declared, in declaration order; a state may appear more than
  *     once, which the validator reports
+ * @param automaticChain when the machine takes its automatic edges; the producers that declare nothing give
+ *     {@link AutomaticChain#AFTER_COMMIT}
  */
 public record MachineOutline(@NonNull String name, @NonNull List<String> states, @NonNull List<String> catalog,
                              @NonNull String initial, @NonNull Set<String> terminals, @NonNull Set<String> cycleAllowed,
                              @NonNull List<TransitionOutline> transitions, @NonNull List<PolicyOutline> policies,
                              @NonNull List<WatchOutline> watches, @NonNull List<SubmachineOutline> submachines,
-                             @NonNull List<AutomaticOrderOutline> automaticOrders) {
+                             @NonNull List<AutomaticOrderOutline> automaticOrders,
+                             @NonNull AutomaticChain automaticChain) {
 
     public MachineOutline {
         states = List.copyOf(states);
@@ -133,6 +137,15 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
                 requireTransition(name, catalog, transitionNames, transition, "automaticOrder.transition");
             }
         }
+    }
+
+    /** An outline that declares no automatic chain, so {@link AutomaticChain#AFTER_COMMIT}. */
+    public MachineOutline(String name, List<String> states, List<String> catalog, String initial, Set<String> terminals,
+                          Set<String> cycleAllowed, List<TransitionOutline> transitions, List<PolicyOutline> policies,
+                          List<WatchOutline> watches, List<SubmachineOutline> submachines,
+                          List<AutomaticOrderOutline> automaticOrders) {
+        this(name, states, catalog, initial, terminals, cycleAllowed, transitions, policies, watches, submachines,
+                automaticOrders, AutomaticChain.AFTER_COMMIT);
     }
 
     /** An outline that declares no sub-machine and no automatic order. */

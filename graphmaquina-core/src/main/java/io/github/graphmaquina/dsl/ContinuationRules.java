@@ -1,6 +1,7 @@
 package io.github.graphmaquina.dsl;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.graph.Graph;
 import io.github.graphmaquina.graph.GraphEdge;
 import io.github.graphmaquina.graph.StrongComponents;
@@ -11,8 +12,9 @@ import java.util.Set;
 
 /**
  * The structural rules about the failure routes that continue a chain, over a {@link MachineOutline}: a continuing
- * route leads to a state with an automatic edge (SG305), and the automatic edges together with the jumps of their
- * continuing routes hold no cycle (SG206). A route is the identifier a continuing recovery rule or a continuing
+ * route leads to a state with an automatic edge (SG305), the automatic edges together with the jumps of their
+ * continuing routes hold no cycle (SG206), and a manual edge of an {@code ON_ADVANCE} machine has no continuing route
+ * (SG306). A route is the identifier a continuing recovery rule or a continuing
  * {@code onFailure} names, resolved from the origin of the edge that declares it, as the runtime resolves it. A route
  * that resolves to no edge is SG301's to report and is skipped here.
  */
@@ -23,14 +25,20 @@ final class ContinuationRules {
     /** A continuing route of {@code edge} and the edge it resolves to. */
     private record Route(TransitionOutline edge, TransitionOutline recovery) { }
 
-    /** Runs both rules; the caller has already found the outline free of the other structural problems. */
+    /** Runs the rules; the caller has already found the outline free of the other structural problems. */
     static void check(MachineOutline outline, OutlineIndex index, Problems problems) {
         List<GraphEdge<String>> jumps = new ArrayList<>();
         for (TransitionOutline edge : outline.transitions()) {
             if (edge.automatic()) {
                 jumps.add(new GraphEdge<>(edge.from(), edge.to()));
             }
-            for (Route route : routes(edge, index)) {
+            List<Route> routes = routes(edge, index);
+            if (!edge.automatic() && !routes.isEmpty() && outline.automaticChain() == AutomaticChain.ON_ADVANCE) {
+                problems.add(DiagnosticCode.SG306, index.stateIndex(edge.from()),
+                        index.transitionIndex(edge.transition()), edge.describe() + ": a failure route that continues "
+                                + "the chain on a manual edge never chains, since the machine chains only on advance");
+            }
+            for (Route route : routes) {
                 continuesIntoAutomatic(route, index, problems);
                 if (edge.automatic()) {
                     jumps.add(new GraphEdge<>(edge.from(), route.recovery().to()));

@@ -34,6 +34,9 @@ public enum DiagnosticCode {
     /** In an automatic order, an edge without guards comes before another edge. */
     SG109,
 
+    /** An {@code ON_ADVANCE} machine declares no automatic edge. */
+    SG110,
+
     /** Missing or repeated DSL initial declaration. */
     SG201,
 
@@ -66,6 +69,9 @@ public enum DiagnosticCode {
 
     /** A continuing failure route leads to a state with no automatic edge. */
     SG305,
+
+    /** A manual edge of an {@code ON_ADVANCE} machine declares a failure route that continues the chain. */
+    SG306,
 
     /** A watch rule names an identifier with no edge from the watched state. */
     SG401,

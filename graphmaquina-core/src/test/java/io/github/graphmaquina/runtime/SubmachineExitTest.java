@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -175,6 +176,9 @@ class SubmachineExitTest {
 
         @Override
         public boolean hasAsync() { return graph.hasAsync(); }
+
+        @Override
+        public AutomaticChain automaticChain() { return graph.automaticChain(); }
     }
 
     private final Billing billing = new Billing();

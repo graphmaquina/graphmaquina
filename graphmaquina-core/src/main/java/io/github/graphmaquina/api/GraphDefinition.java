@@ -55,4 +55,7 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
     /** Some edge is asynchronous. */
     boolean hasAsync();
+
+    /** When the machine takes its automatic edges; {@link AutomaticChain#AFTER_COMMIT} unless the graph declared it. */
+    AutomaticChain automaticChain();
 }
