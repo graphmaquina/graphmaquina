@@ -18,7 +18,7 @@ from a `graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven p
 no coordinate repeats it.
 
 The [quickstart](quickstart.md) has complete, runnable files. Most later examples extend it or quote the
-repository's example module, whose shop, billing and onboarding domains the guide uses. The
+repository's example module, whose shop, billing, onboarding, profile and shipment domains the guide uses. The
 [documentation index](README.md) lists every page and maps tasks to the page that covers them.
 
 ## Contents

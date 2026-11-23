@@ -114,8 +114,9 @@ One check per identifier: a facade method that carries the generated `Check(id =
 action. No single call lists the permitted events with their guards evaluated: loop over `transitionsFrom(state)`, the
 identifiers declared from the entity's state, and check each. See [check an operation before you call it](eligibility.md).
 
-Notes: a facade checks only the operations it declares a `Check` for, while a `StateMachine` checks any identifier. An
-`Eligible` answer reserves nothing and says nothing about the action's result, and observers do not see a check.
+Notes: a facade checks only the operations it declares a `Check` for and the candidates of its choice checks, while a
+`StateMachine` checks any identifier. An `Eligible` answer reserves nothing and says nothing about the action's result,
+and observers do not see a check.
 
 ## Concepts that behave differently
 
@@ -187,28 +188,27 @@ choice, still ran.
 
 ### Choice and junction pseudo-states
 
-A choice, when the event's data picks the branch: a facade method `Outcome<E, S, T> op(E entity, I input)` that carries
-the generated `Choice` and names one identifier per branch, in the order they are tried, each an edge of the deciding
-state whose guards read the input; a branch without guards, listed last, is the "else". With the DSL,
-`choose(entity, List.of(...), input)`. See [choose the first admitted transition](choices.md). Or one identifier per
+A [choice](choices.md), when the event's data picks the branch: a facade method `Outcome<E, S, T> op(E entity, I input)`
+with the generated `Choice`, or `StateMachine.choose(entity, List.of(...), input)`, naming one identifier per branch in
+the order tried, each an edge of the deciding state whose guards read the input; a branch without guards, listed last,
+is the "else". When the decision reads the entity's fields, a real intermediate state also fits, whose automatic edges
+are the branches, in the order of `AutomaticOrder`, the one without guards last (`SG109`), as the onboarding's
+`ADDRESS_SET` does in [declare automatic edges](automatic-transitions.md#declare-automatic-edges). Or one identifier per
 branch, when the caller can decide, with an [eligibility check](eligibility.md) to tell it which one is admitted.
 
 What changes: GraphMaquina has no pseudo-states, and one event cannot have several guarded targets from one state
-(`SG102`). The guards decide before any action runs, as at a junction. The outcome's `requestedTransition()` names
-the branch taken; when none is admitted, the call writes nothing and returns `Ignored` (`NO_CANDIDATE_ADMITTED`), never
-`Rejected`, with each branch's refusal in `rejections()`.
-
-When the decision reads the entity's fields, a real intermediate state also fits, whose automatic edges are the
-branches, in the order of `AutomaticOrder`, the one without guards last (`SG109`), as the onboarding's `ADDRESS_SET`
-does in [declare automatic edges](automatic-transitions.md#declare-automatic-edges). The entity is committed there, the
-setter runs and hooks and watches react. On an `AFTER_COMMIT` machine one automatic attempt, a call of its own, then
-runs the first branch admitted, and the caller's `Applied` outcome reports the move into the intermediate state: its
-`to()`, which `movedTo` asserts. Read the branch taken and the real destination from `automaticSteps()`, or the state
-from the entity. If no branch is admitted, the entity stays there and `automaticBlock()` reports the attempt and its
-`rejections()`; a failing branch is reported in `automaticFailure()` or `automaticAbort()`, never thrown. An
-`ON_ADVANCE` machine takes the branches only on `advance(entity)`. The attempt's guards get an empty input and a flow of
-their own: they decide from fields, not from the event's data or the original call's flow. An operation that takes an
-input cannot be a branch (`SG515`), and the intermediate state needs a policy and holds no sub-machine (`SG807`).
+(`SG102`). The guards decide before any action runs, as at a junction. The outcome's `requestedTransition()` names the
+branch taken; when none is admitted, the call writes nothing and returns `Ignored` (`NO_CANDIDATE_ADMITTED`), never
+`Rejected`, with each branch's refusal in `rejections()`. With an intermediate state, the decision point becomes a real
+state: the entity is committed there, the setter runs and hooks and watches react. On an `AFTER_COMMIT` machine, one
+automatic attempt, a call of its own, then runs the first branch admitted, and the caller's `Applied` reports the move
+into the intermediate state: its `to()`, which `movedTo` asserts. On such a machine, read the branch taken and the real
+destination from `automaticSteps()`, or the state from the entity; if none is admitted, the entity stays there and
+`automaticBlock()` reports the attempt and its `rejections()`, and a failing branch is reported in `automaticFailure()`
+or `automaticAbort()`, never thrown. An `ON_ADVANCE` machine takes the branches only on `advance(entity)`, which returns
+the attempt's outcome and throws its failure. The attempt's guards get an empty input and a flow of their own: they
+decide from fields, not from the event's data or the original call's flow. An operation that takes an input cannot be a
+branch (`SG515`), and the intermediate state needs a policy and holds no sub-machine (`SG807`).
 
 ### Transition actions
 

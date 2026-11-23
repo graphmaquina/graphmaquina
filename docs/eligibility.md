@@ -42,9 +42,10 @@ An answer promises no more than that:
 - Neither answer names a destination. `Rejected` names none, and an `Eligible` that named one would read as a
   promise the check does not make.
 
-Through a generated facade, you check the operations you declare a check for; through a `StateMachine`, any
-identifier of the machine's catalogue. A [choice check](choices.md#check-a-choice) runs this check for each of several
-identifiers in turn, and answers which one a choice would run.
+Through a generated facade, you check the operations you declare a check for, and the candidates of the choice checks
+you declare; through a `StateMachine`, any identifier of the machine's catalogue. A
+[choice check](choices.md#check-a-choice) runs this check for each of its candidates in turn, and answers which one a
+choice would run.
 
 ## Check through the facade
 
@@ -66,16 +67,16 @@ and one of `cancel(Order order, String cancellationId)`, whose input is the canc
 Eligibility<Order, OrderStatus, OrderTransition> canCancel(Order order, String cancellationId);
 ```
 
-The processor refuses a check whose `id` no operation of the facade executes, such as an identifier that only a
-failure route declared on the facade itself uses, the exit of a sub-machine, or one without an edge (`SG512`); a
-check that does not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>`
-(`SG513`); and a second check of one operation, or a method that carries both a `Transition` and a `Check`
-(`SG514`). [Method signatures](graph-model.md#method-signatures) gives the signature. An operation you declare no
-check for cannot be checked through the facade. The generated companion implements each check: it refuses a null
-argument with a `NullPointerException` that names the parameter, as the operation does, then calls its
-`StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that takes an input.
-A method that returns `ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a `Check` checks a
-choice instead, as [check a choice](choices.md#check-a-choice) shows.
+The processor refuses a check whose `id` no operation of the facade executes, such as an identifier that only a failure
+route declared on the facade itself uses, the exit of a sub-machine, or one without an edge (`SG512`); a check that does
+not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>` (`SG513`); and a second check
+of one operation, or a method that carries both a `Transition` and a `Check` (`SG514`). [Method
+signatures](graph-model.md#method-signatures) gives the signature. Through the facade, an operation you declare no check
+for is checked only by a choice check that names it among its candidates, as below. The generated companion implements
+each check: it refuses a null argument with a `NullPointerException` that names the parameter, as the operation does,
+then calls its `StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that
+takes an input. A method that returns `ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a
+`Check` checks a choice instead, as [check a choice](choices.md#check-a-choice) shows.
 
 The shop's
 [EligibilityTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/EligibilityTest.java)
@@ -325,7 +326,8 @@ assertThat(payments.canCapture(deposit)).isDetached()
 `RESERVED_EXIT` is reached through `StateMachine.eligibility` only. On the parent's machine, from a state that binds a
 sub-machine, an identifier that one of its exits names, such as `DEPOSIT_PAID` from `DEPOSIT`, is checked as
 `RESERVED_EXIT`, with the reason `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. A facade can neither
-execute an exit, which `SG804` refuses as an operation, nor check one, which `SG512` refuses.
+execute an exit, which `SG804` refuses as an operation, nor check one, which `SG512` refuses, and `SG516` as the
+candidate of a choice.
 
 A check starts no child and runs no exit. Asked about an edge that enters a bound state, it answers without starting
 the child or calling that binding's `childOf`: when the start fails, the call aborts although the check answered
