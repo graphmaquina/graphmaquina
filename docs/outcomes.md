@@ -10,7 +10,7 @@ only needs to know what happened and why reads it without narrowing:
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, `GUARD_REJECTED`, `DETACHED` or `RESERVED_EXIT` | the policy's reason, the guard's, or the library's fixed text for the last two | No |
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
-| `Ignored` | `IGNORED` | `NO_WATCH` or `NO_RULE_MATCHED` for `reevaluate`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for `advance` and the attempts of an automatic chain | empty, except for `NO_CANDIDATE_ADMITTED`, which names each candidate's rejection | No |
+| `Ignored` | `IGNORED` | `NO_WATCH` or `NO_RULE_MATCHED` for `reevaluate`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for `advance` and the attempts of an automatic chain, `NO_CANDIDATE_ADMITTED` for `choose` | empty, except for `NO_CANDIDATE_ADMITTED`, which names each candidate's rejection | No |
 
 What each variant adds to the accessors every outcome has:
 
@@ -75,9 +75,10 @@ Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransi
 `reactions()`, `automaticSteps()`, `starts()` and `flow()`, and the three searches of its automatic steps,
 `automaticFailure()`, `automaticAbort()` and `automaticBlock()`. `recordedState()` is `to` for `Applied`, `movedTo` for
 `Failed` and `from` for the other two. `requestedTransition()` is the identifier the caller asked for, the one a reevaluation's watch
-selected, or the automatic edge an `advance` ran; it is empty only for `Ignored`, which ran no edge at all. [Records, journals
-and reactions](#records-journals-and-reactions) describes what `records()`, `reactions()`, `automaticSteps()`,
-`starts()` and `flow()` return, and [find what the automatic steps did](#find-what-the-automatic-steps-did) what the
+selected, the automatic edge an `advance` ran, or the candidate a `choose` ran; it is empty only for `Ignored`, which
+ran no edge at all. [Records, journals and reactions](#records-journals-and-reactions) describes what `records()`,
+`reactions()`, `automaticSteps()`, `starts()` and `flow()` return, and
+[find what the automatic steps did](#find-what-the-automatic-steps-did) what the
 three searches return.
 
 Read the classification with its limits in mind:
@@ -173,9 +174,10 @@ Optional<String> guard = outcome.asRejected().flatMap(Outcome.Rejected::guard);
 Optional<TicketTransition> recovery = outcome.asFailed().map(Outcome.Failed::failureTransition);
 ```
 
-`Ignored.rejections()` lists why an `advance` with the reason `NO_CANDIDATE_ADMITTED` ran no automatic edge: one
-`Eligibility.Ineligible` per edge it tried, in the order it tried them, each with the identifier, the state, the
-`RejectionKind`, the guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
+`Ignored.rejections()` lists why an `advance` or a `choose` with the reason `NO_CANDIDATE_ADMITTED` ran no edge: one
+`Eligibility.Ineligible` per candidate it tried, an automatic edge of the state for an `advance` and an identifier its
+caller listed for a `choose`, in the order it tried them, each with the identifier, the state, the `RejectionKind`, the
+guard of a `GUARD` rejection and the reason. It is empty for every other `Ignored`.
 
 A `switch` over the variants reads all of them at once. A guard's name is the `NAME` of its generated symbol, so the
 switch tells the guard it knows from the rest without a string literal:

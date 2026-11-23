@@ -143,8 +143,9 @@ class OutcomeAccessorsTest {
     }
 
     /**
-     * Only an advance that admitted no candidate lists rejections, and it lists at least one: the constructor refuses
-     * a list that does not match the reason, and the three-argument constructor lists none. The list is a copy.
+     * Only an advance or a choice that admitted no candidate lists rejections, and it lists at least one: the
+     * constructor refuses a list that does not match the reason, and the three-argument constructor lists none. The
+     * list is a copy.
      */
     @Test
     void ignoredRejectionsMatchTheReason() {

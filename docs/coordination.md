@@ -359,9 +359,10 @@ another state counts as a move here, although a start is no hop.
 
 The reactions run on the calling thread, after the triggering call's hooks and before the automatic chains it runs, if any, as
 [commit, hooks and observers](commit-and-persistence.md#commit-hooks-and-observers) orders them, and before `execute`,
-`reevaluate` or `advance` returns. Every owner lookup runs before any reaction, and the call's outcome lists them in `reactions()`: first the
-`Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and
-a `Reaction.Aborted` what ended it, as [records, journals and reactions](outcomes.md#records-journals-and-reactions)
+`reevaluate`, `advance` or `choose` returns. Every owner lookup runs before any reaction, and the call's outcome lists
+them in `reactions()`: first the `Reaction.Aborted` of each lookup that threw, then one reaction per owner, in the order
+each owner was first found. A `Reaction.Done` carries the reaction's own outcome, and a `Reaction.Aborted` what ended
+it, as [records, journals and reactions](outcomes.md#records-journals-and-reactions)
 details. An aborted reevaluation names the owner it reevaluated; an owner lookup that threw names the peer that moved.
 Observers see each reaction as a call of its own, whose `MachineCall.origin()` is `CallOrigin.WATCH_REACTION` and whose `request()` is `CallRequest.REEVALUATE`. A reaction that would exceed
 the registry's `maxWatchChain` evaluates no rule and ends as a `Reaction.Aborted` whose cause is a
@@ -391,8 +392,8 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 
 A state that declares no watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
 `IgnoreReason.NO_RULE_MATCHED`. These are the only two ways a `reevaluate` produces an `Ignored`; the other two
-reasons, `NO_AUTOMATIC_TRANSITION` and `NO_CANDIDATE_ADMITTED`, come from `advance`, as
-[handle transition outcomes](outcomes.md) lists. A matching rule can still be
+reasons, `NO_AUTOMATIC_TRANSITION` and `NO_CANDIDATE_ADMITTED`, come from `advance`, and `NO_CANDIDATE_ADMITTED` from
+`choose` too, as [handle transition outcomes](outcomes.md) lists. A matching rule can still be
 rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent does not hold it. Rules
 are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.

@@ -119,7 +119,7 @@ constant of another machine's catalogue does not compile inside it.
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, given the guard symbol's `NAME`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
-| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per edge the advance tried |
+| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)`, `NO_RULE_MATCHED`, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED`, and for the last `rejections()`, one eligibility view per candidate the `advance` or the `choose` tried |
 | [Eligibility](eligibility.md#test-a-check) | `assertThat(eligibility)` | `isEligible()` or `isIneligible()`; of a refusal, `hasNoTransition()`, `isRejectedByGuardNamed` with the guard symbol's `NAME`, `isDetached()`, `isReservedExit()` and `hasReason`; of both, `from` and `transition` |
 | Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |

@@ -185,25 +185,25 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 
 Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
 before the operation returns or throws. A request refused before it starts, such as one with a null argument,
-notifies no observer. Nor does an eligibility check, `eligibility(entity, id)` on a `StateMachine`: a check is not a
-call. An observer whose `onStarted` threw still receives its end event, and
-`elapsed` runs from just before `onStarted` until just before that event. Observers belong to a registry: a machine
-built standalone has none. `MachineCall` names the machine, the entity, the `request()` (a `CallRequest`: `EXECUTE`,
-`REEVALUATE` or `ADVANCE`), the requested identifier (`transition()`, present only for an
-`EXECUTE`) and the `origin()` (a `CallOrigin`: `APPLICATION`, `WATCH_REACTION` or `AUTOMATIC_STEP`, the last for an
-`advance` of an automatic chain). Its `toString()` never prints the entity: it reads `<key> <ID>`, `<key> reevaluate`
-or `<key> advance`, followed by ` (watch reaction)` for a reaction and ` (automatic step)` for an automatic attempt. The
-same instance reaches every event of the call, and two calls are equal only when they are the same instance. A
-reaction or an automatic attempt starts and ends inside the call whose commit triggered it, so events nest like a stack
-on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
-how far it got in writing states; an `Error` is reported too, then propagates. The phase is one of `CallPhase`'s
-`RESOLVE`, `GUARD`, `ACTION`, `COMMIT`, `HOOK`, `REACTIONS` and `AUTOMATIC_STEPS`. Only an `Error` reaches `onFailed`
-in `REACTIONS`, one thrown by a reaction, or in `AUTOMATIC_STEPS`, one thrown by an automatic attempt or by the reads
-a chain makes around its attempts, since any other throwable there becomes a `Reaction.Aborted` or an
-`AutomaticStep.Aborted`; and one thrown by the `end` line of a call that committed, in `AUTOMATIC_STEPS`, or in
-`REACTIONS` in a registry without automatic edges, which never enters `AUTOMATIC_STEPS`. So an observer reads
-the call's flow as the caller does: `outcome.flow()` in `onCompleted`, and the `flow()` of the `CallFailedException` in `onFailed`, which
-the call attached before it told the observers.
+notifies no observer. Nor does an eligibility check, `eligibility(entity, id)` or
+`chooseEligibility(entity, candidates)` on a `StateMachine`: a check is not a call. An observer whose `onStarted` threw
+still receives its end event, and `elapsed` runs from just before `onStarted` until just before that event. Observers
+belong to a registry: a machine built standalone has none. `MachineCall` names the machine, the entity, the `request()`
+(a `CallRequest`: `EXECUTE`, `REEVALUATE`, `ADVANCE` or `CHOOSE`), the requested identifier (`transition()`, present
+only for an `EXECUTE`) and the `origin()` (a `CallOrigin`: `APPLICATION`, `WATCH_REACTION` or `AUTOMATIC_STEP`, the last
+for an `advance` of an automatic chain). Its `toString()` never prints the entity: it reads `<key> <ID>`,
+`<key> reevaluate`, `<key> advance` or `<key> choose`, followed by ` (watch reaction)` for a reaction and
+` (automatic step)` for an automatic attempt. The same instance reaches every event of the call, and two calls are equal
+only when they are the same instance. A reaction or an automatic attempt starts and ends inside the call whose commit
+triggered it, so events nest like a stack on their thread. `onFailed` receives the very throwable the caller gets, with
+the phase the call was in and how far it got in writing states; an `Error` is reported too, then propagates. The phase
+is one of `CallPhase`'s `RESOLVE`, `GUARD`, `ACTION`, `COMMIT`, `HOOK`, `REACTIONS` and `AUTOMATIC_STEPS`. Only an
+`Error` reaches `onFailed` in `REACTIONS`, one thrown by a reaction, or in `AUTOMATIC_STEPS`, one thrown by an automatic
+attempt or by the reads a chain makes around its attempts, since any other throwable there becomes a `Reaction.Aborted`
+or an `AutomaticStep.Aborted`; and one thrown by the `end` line of a call that committed, in `AUTOMATIC_STEPS`, or in
+`REACTIONS` in a registry without automatic edges, which never enters `AUTOMATIC_STEPS`. So an observer reads the call's
+flow as the caller does: `outcome.flow()` in `onCompleted`, and the `flow()` of the `CallFailedException` in `onFailed`,
+which the call attached before it told the observers.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")`, naming the observer, the callback and the call, never the entity, and changes neither the call nor the other observers; an `Error`

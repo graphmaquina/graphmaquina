@@ -217,11 +217,12 @@ A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `r
 `supplyAsync(call)`, which runs any call on the machine's executor. The interfaces' default
 `execute(entity, id, input)` refuses an input: `StateMachine`'s throws `UnsupportedOperationException`, and
 `AsyncStateMachine`'s returns a future failed with it; the machines the runtime builds accept one. The two
-`eligibility` methods of `StateMachine` are defaults as well, and throw `UnsupportedOperationException`; the machines
-the runtime builds implement them and return an `Eligibility`. A check runs the admission of `execute` without
-running the edge: `Eligible`, or `Ineligible` with the reason, the `RejectionKind` and the guard that `execute` would
-reject with. It answers for any identifier of the catalogue, as `execute` does, writes no state, runs no action, hook
-or watch reaction, and notifies no observer. A generated
+`eligibility` methods of `StateMachine` are defaults as well, and so are its two `choose` and two `chooseEligibility`
+methods: each throws `UnsupportedOperationException`, and the machines the runtime builds implement them. An
+`eligibility` returns an `Eligibility`, a `choose` an `Outcome` and a `chooseEligibility` a `ChoiceEligibility`. A
+check runs the admission of `execute` without running the edge: `Eligible`, or `Ineligible` with the reason, the
+`RejectionKind` and the guard that `execute` would reject with. It answers for any identifier of the catalogue, as
+`execute` does, writes no state, runs no action, hook or watch reaction, and notifies no observer. A generated
 application facade intentionally presents the domain operations instead. Close the registry when its work is done:
 that closes the default executors it owns. A standalone machine's internal registry cannot be closed, so its default
 executor never is; give it an `asyncExecutor` you close yourself when it runs calls through `async(...)`.
