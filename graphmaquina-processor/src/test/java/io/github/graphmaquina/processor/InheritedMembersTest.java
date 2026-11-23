@@ -59,7 +59,8 @@ class InheritedMembersTest {
 
         assertEquals(List.of("[" + DiagnosticCode.SG504
                 + "] Docs inherits the abstract method canShelve from fx.Checkable, which the"
-                + " generated companion would not implement: declare every operation and check on Docs itself"),
+                + " generated companion would not implement: declare every operation, check and choice on Docs"
+                + " itself"),
                 result.errors(), result.describe());
     }
 

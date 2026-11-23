@@ -192,8 +192,8 @@ final class StructuralChecks {
             }
             diagnostics.error(DiagnosticCode.SG504, facade.getSimpleName() + " inherits the abstract method "
                     + method.getSimpleName() + " from " + from
-                    + ", which the generated companion would not implement: declare every operation and check on "
-                    + facade.getSimpleName() + " itself", facade);
+                    + ", which the generated companion would not implement: declare every operation, check and"
+                    + " choice on " + facade.getSimpleName() + " itself", facade);
         }
     }
 

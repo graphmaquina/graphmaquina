@@ -152,7 +152,10 @@ class TypedChoiceDiagnosticsTest {
                 result.errors(), result.describe());
     }
 
-    /** The operation is refused for its signature, and only that refusal is reported: its edge is still declared. */
+    /**
+     * The operation is refused for its signature, and only that refusal is reported: its Transition still names
+     * PUBLISH, though no edge declares it, so the choice adds no SG516.
+     */
     @Test
     void aChoiceOfAnOperationRefusedForItsSignatureReportsThatRefusalAlone() {
         Compilation.Result result = Compilation.compileTyped(minimal("Doc doc, String first, String second",

@@ -5,9 +5,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * Base of every generated facade: what it offers besides its operations and their checks.
+ * Base of every generated facade: what it offers besides its operations, their checks and its choices.
  * There is no generic selector here on purpose; the entry points are the operations declared on the interface, the
- * checks it declares for them and what it inherits from this interface.
+ * checks it declares for them, the choices it declares, each of which runs, or checks, the first admitted of the
+ * candidate identifiers it names, and what it inherits from this interface.
  */
 public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
 

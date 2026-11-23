@@ -61,8 +61,8 @@ import javax.lang.model.util.Elements;
  * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
  * {@code recover(K.class, id, A.class)} for a rule that lists one, and
- * {@code recover(K.class, id, List.of(A.class, B.class))} for a rule that lists more, which is the only case in which
- * the companion claims {@code java.util.List} through {@link Names}.</p>
+ * {@code recover(K.class, id, List.of(A.class, B.class))} for a rule that lists more, for which the companion claims
+ * {@code java.util.List} through {@link Names}, as it does for an automatic order and for a choice.</p>
  *
  * <p>Each sub-machine of the model becomes one {@code submachine} call, after the watches, in declaration order, with
  * one {@code exit} call per declared exit and then {@code endSubmachine()}. Its child's definition is a parameter of
