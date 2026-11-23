@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
@@ -183,11 +184,12 @@ public final class StateMachines {
         boolean hasAsyncTimeout() { return asyncTimeout.isPresent(); }
 
         /**
-         * Every check build(registry, bindingsAsChild) makes, without consuming the builder, so that a failed build can
-         * be retried. That includes the definition's automaticChain, which the machine reads again when it is built:
-         * one that throws fails the build with what it threw, and a null answer with a NullPointerException.
+         * Every check that building the machine needs, without consuming the builder, so that a failed build can be
+         * retried, and the one read of the definition's automaticChain that a build makes: it returns whether that
+         * answer is ON_ADVANCE, for build(registry, bindingsAsChild, onAdvanceOnly). One that throws fails the build
+         * with what it threw, and a null answer with a NullPointerException.
          */
-        void validate() {
+        boolean validate() {
             requireUnused();
             if (getter.isEmpty() || setter.isEmpty()) {
                 throw new IllegalStateException("the machine " + key() + " does not declare state(getter, setter)");
@@ -196,19 +198,23 @@ public final class StateMachines {
                 throw new IllegalStateException("the machine " + key()
                         + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
-            DefaultStateMachine.automaticChainOf(definition);
+            return DefaultStateMachine.automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
         }
 
-        /** {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry indexed them. */
+        /**
+         * Consumes the builder and builds its machine, once {@link #validate} passed: {@code bindingsAsChild} are the
+         * bindings in which the machine is the child, as the registry indexed them, and {@code onAdvanceOnly} what that
+         * validation returned.
+         */
         DefaultStateMachine<E, S, T> build(MachineRegistry registry,
-                                           List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
-            validate();
+                                           List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
+                                           boolean onAdvanceOnly) {
             used = true;
             boolean owns = executor.isEmpty();
             Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
                     : Executors.newVirtualThreadPerTaskExecutor();
             return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
-                    owns, registry, bindingsAsChild, trail);
+                    owns, registry, bindingsAsChild, trail, onAdvanceOnly);
         }
 
         private void requireUnused() {

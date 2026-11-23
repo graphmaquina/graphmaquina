@@ -136,7 +136,8 @@ public final class MachineRegistry implements AutoCloseable {
      * The one way machines join a registry, standalone ones included. Every check runs before the first machine
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
      * Each machine receives the bindings in which it is the child, in the order of the builders and then of the
-     * parent's states.
+     * parent's states, and whether it chains only on advance, as its builder's validation read from its definition's
+     * automaticChain, the only read of it the build makes.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
                                             int maxCascadeDepth, int maxWatchChain, int maxAutomaticChain,
@@ -148,8 +149,9 @@ public final class MachineRegistry implements AutoCloseable {
         Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings = new HashMap<>();
         Map<MachineKey<?, ?, ?>, List<ImplicitAsyncEdges.BoundExits<?, ?, ?>>> exitsByChild = new HashMap<>();
         Set<Class<?>> facadeTypes = new HashSet<>();
+        List<Boolean> onAdvanceOnly = new ArrayList<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            builder.validate();
+            onAdvanceOnly.add(builder.validate());
             checkWatches(builder.definition(), byKey.keySet());
             indexBindings(builder.definition(), byKey, bindings, exitsByChild);
             // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key, so a typed caller
@@ -177,20 +179,24 @@ public final class MachineRegistry implements AutoCloseable {
         initializeRuntime();
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, maxAutomaticChain, observers,
                 automatic);
-        for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            registry.register(builder, bindings.getOrDefault(builder.key(), List.of()));
+        for (int index = 0; index < builders.size(); index++) {
+            registry.register(builders.get(index), bindings, onAdvanceOnly.get(index));
         }
         registry.indexWatchers();
         return registry;
     }
 
     /**
-     * Builds the machine of {@code builder} into this registry, with a copy of {@code bindingsAsChild}, the bindings
-     * in which it is the child, and registers it under its key, in the order it joined, and under its facade, if any.
+     * Builds the machine of {@code builder} into this registry, with a copy of the bindings in which it is the child,
+     * as {@code bindings} indexes them by child, and {@code onAdvanceOnly}, whether the builder's validation found
+     * that its definition chains only on advance, and registers it under its key, in the order it joined, and under
+     * its facade, if any.
      */
     private void register(StateMachines.Builder<?, ?, ?> builder,
-                          List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
-        DefaultStateMachine<?, ?, ?> machine = builder.build(this, List.copyOf(bindingsAsChild));
+                          Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings,
+                          boolean onAdvanceOnly) {
+        DefaultStateMachine<?, ?, ?> machine = builder.build(this,
+                List.copyOf(bindings.getOrDefault(builder.key(), List.of())), onAdvanceOnly);
         machines.put(machine.key(), machine);
         assembled.add(machine);
         Optional<? extends Class<?>> facade = builder.facade();

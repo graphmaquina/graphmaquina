@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import lombok.AccessLevel;
@@ -235,6 +236,40 @@ class AdvanceOnlyChainTest {
         StateMachines.Builder<Account, AccountStatus, AccountTransition> answeringNull = builder(() -> null);
         assertThrows(NullPointerException.class, answeringNull::build);
         assertThrows(NullPointerException.class, answeringNull::build);
+    }
+
+    /**
+     * A build reads the definition's automaticChain once and hands that answer to the machine: a definition that
+     * throws on any read after its first builds, standalone and in a registry beside a desk, whose builder a later
+     * read that threw would consume, and its machine chains as that first answer, ON_ADVANCE, says.
+     */
+    @Test
+    void aBuildReadsTheAutomaticChainOnce() {
+        List<String> reads = new ArrayList<>();
+        Account alone = account(NEW);
+        assertEquals(List.of(), builder(answeringOnce(reads)).build().execute(alone, SET_PASSWORD).automaticSteps());
+        Account registered = account(NEW);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(desks(AutomaticChain.AFTER_COMMIT)).state(Desk::status, Desk::setStatus)
+                        .identity(Desk::id))
+                .add(builder(answeringOnce(reads)))
+                .build()) {
+            assertEquals(List.of(), registry.of(ACCOUNTS).execute(registered, SET_PASSWORD).automaticSteps());
+        }
+        assertEquals(List.of("read", "read"), reads);
+        assertEquals(List.of(PASSWORD_SET, PASSWORD_SET), List.of(alone.status(), registered.status()));
+    }
+
+    /** An automaticChain that answers ON_ADVANCE on its first read, noted in {@code reads}, and throws on any later. */
+    private static Supplier<AutomaticChain> answeringOnce(List<String> reads) {
+        AtomicBoolean answered = new AtomicBoolean();
+        return () -> {
+            if (answered.getAndSet(true)) {
+                throw new IllegalStateException("automaticChain read again");
+            }
+            reads.add("read");
+            return AutomaticChain.ON_ADVANCE;
+        };
     }
 
     /** A standalone machine's builder over the onboarding, whose automaticChain is {@code chain}'s answer. */

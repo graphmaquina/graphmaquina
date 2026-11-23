@@ -76,7 +76,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
                         Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
                         MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
-                        Optional<InstantSource> trail) {
+                        Optional<InstantSource> trail, boolean chainsOnAdvanceOnly) {
         this.definition = definition;
         this.getter = getter;
         this.setter = setter;
@@ -89,7 +89,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.presentTransitions = present(definition.key().transitions());
         this.bindingsAsChild = bindingsAsChild;
         this.bindsSubmachines = bindsSubmachines(definition);
-        this.chainsOnAdvanceOnly = automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
+        this.chainsOnAdvanceOnly = chainsOnAdvanceOnly;
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
         this.released = Transaction.released(registry, definition.key());
@@ -108,8 +108,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * What {@code definition} answers for {@link GraphDefinition#automaticChain()}; what that throws propagates, and a
-     * null answer throws NullPointerException. Read when a machine builder validates and when the machine is built,
-     * never by a call.
+     * null answer throws NullPointerException. Read once per build, as the machine builder validates, and never by a
+     * call; the machine gets whether that answer is ON_ADVANCE.
      */
     static AutomaticChain automaticChainOf(GraphDefinition<?, ?, ?> definition) {
         AutomaticChain chain = definition.automaticChain();
@@ -131,8 +131,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * Whether this machine's definition is {@link AutomaticChain#ON_ADVANCE}, so only an advance that the application
-     * made chains its entity, as {@link AutomaticChains#run} says; read once, at construction, so the post-commit,
-     * which asks outside any attempt, runs no application code to know it.
+     * made chains its entity, as {@link AutomaticChains#run} says; read once per build, as the builder validates, and
+     * handed to the constructor, so the post-commit, which asks outside any attempt, runs no application code to know
+     * it.
      */
     boolean chainsOnAdvanceOnly() { return chainsOnAdvanceOnly; }
 

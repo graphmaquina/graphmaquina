@@ -58,8 +58,8 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * When the machine takes its automatic edges; {@link AutomaticChain#AFTER_COMMIT} unless the graph declared it.
-     * Read when the machine is built, never during a call: what it throws fails the build, and so does a null answer,
-     * with a NullPointerException; either way the failed build consumes no builder.
+     * Read once when the machine is built, never during a call: what it throws fails the build, and so does a null
+     * answer, with a NullPointerException; either way the failed build consumes no builder.
      */
     AutomaticChain automaticChain();
 }
