@@ -245,7 +245,8 @@ class MigrationGuideFragmentsTest {
                 @Test
                 void aRefusedRequestRunsNothing() {
                     Document untitled = new Document("D2", "", true);
-                    assertThat(documents.submit(untitled)).isRejected().isRejectedByGuardNamed("hasTitle");
+                    assertThat(documents.submit(untitled)).isRejected()
+                            .isRejectedByGuardNamed(DocumentRulesRefs.HasTitle.NAME);
                     assertThat(documents.publish(untitled)).isRejected().hasNoTransition();
                     assertEquals(List.of(), board.calls);
                 }
