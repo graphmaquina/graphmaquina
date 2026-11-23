@@ -5,11 +5,14 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.WatchSpec;
 import java.time.Duration;
 import java.time.InstantSource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
@@ -23,6 +26,21 @@ import lombok.RequiredArgsConstructor;
 public final class StateMachines {
 
     private StateMachines() { }
+
+    /**
+     * What a builder's validation read from its definition, each answer once, before any builder of the build is
+     * consumed: the key, whether the machine chains only on advance, whether a state holds a sub-machine, and the watch
+     * of each state that declares one, in state order. Building the machine and indexing its watches read these, never
+     * the definition, so a build reads nothing of a definition once it consumed a builder.
+     */
+    record Read<E, S extends Enum<S>, T extends Enum<T>>(MachineKey<E, S, T> key, boolean onAdvanceOnly,
+                                                         boolean bindsSubmachines,
+                                                         List<WatchSpec<E, S, T, ?, ?, ?>> watches) {
+        /** Copies the watches. */
+        Read {
+            watches = List.copyOf(watches);
+        }
+    }
 
     public static <E, S extends Enum<S>, T extends Enum<T>> Builder<E, S, T> from(
             @NonNull GraphDefinition<E, S, T> definition) {
@@ -47,6 +65,8 @@ public final class StateMachines {
         @Getter(AccessLevel.PACKAGE)
         private Optional<Class<? extends Machine<E, S, T>>> facade = Optional.empty();
         private Optional<InstantSource> trail = Optional.empty();
+        /** What the last {@link #validate} read from the definition, which {@link #build} uses instead of it. */
+        private Optional<Read<E, S, T>> read = Optional.empty();
         private boolean used;
 
         /**
@@ -184,11 +204,12 @@ public final class StateMachines {
 
         /**
          * Every check that building the machine needs, without consuming the builder, so that a failed build can be
-         * retried, and the one read of the definition's automaticChain that a build makes: it returns whether that
-         * answer is ON_ADVANCE, for build(registry, bindingsAsChild, onAdvanceOnly). One that throws fails the build
-         * with what it threw, and a null answer with a NullPointerException.
+         * retried, and the reads of the definition that building the machine needs, kept as a {@link Read}: its key,
+         * its automaticChain, the sub-machine and the watch of each state, each read once. A read that throws fails the
+         * build with what it threw, and a null automaticChain with a NullPointerException; either leaves the builder
+         * as it was.
          */
-        boolean validate() {
+        void validate() {
             requireUnused();
             if (getter.isEmpty() || setter.isEmpty()) {
                 throw new IllegalStateException("the machine " + key() + " does not declare state(getter, setter)");
@@ -197,28 +218,52 @@ public final class StateMachines {
                 throw new IllegalStateException("the machine " + key()
                         + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
-            return DefaultStateMachine.automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
+            MachineKey<E, S, T> key = definition.key();
+            boolean onAdvanceOnly = DefaultStateMachine.automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
+            boolean bindsSubmachines = false;
+            List<WatchSpec<E, S, T, ?, ?, ?>> watches = new ArrayList<>();
+            for (S state : key.states().getEnumConstants()) {
+                bindsSubmachines |= definition.submachine(state).isPresent();
+                definition.watch(state).ifPresent(watches::add);
+            }
+            read = Optional.of(new Read<>(key, onAdvanceOnly, bindsSubmachines, watches));
+        }
+
+        /** The key that {@link #validate} read, which the registry uses once its build consumed a builder. */
+        MachineKey<E, S, T> validatedKey() { return read.orElseThrow().key(); }
+
+        /**
+         * Refuses a watch that {@link #validate} read whose peer is not among {@code keys}, the machines being
+         * assembled; for a standalone machine, that is itself.
+         */
+        void checkWatchPeers(Set<MachineKey<?, ?, ?>> keys) {
+            for (WatchSpec<E, S, T, ?, ?, ?> watch : read.orElseThrow().watches()) {
+                if (!keys.contains(watch.peer())) {
+                    throw new IllegalStateException("the watch of " + validatedKey() + "." + watch.state().name()
+                            + " points to " + watch.peer() + ", which is not in the registry");
+                }
+            }
         }
 
         /**
-         * Consumes the builder and builds its machine, once {@link #validate} passed: {@code bindingsAsChild} are the
-         * bindings in which the machine is the child, as the registry indexed them, and {@code onAdvanceOnly} what that
-         * validation returned.
+         * Consumes the builder and builds its machine from what {@link #validate} read, reading nothing of the
+         * definition: {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry
+         * indexed them.
          */
         DefaultStateMachine<E, S, T> build(MachineRegistry registry,
-                                           List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
-                                           boolean onAdvanceOnly) {
+                                           List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
+            Read<E, S, T> validated = read.orElseThrow();
             used = true;
             boolean owns = executor.isEmpty();
             Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
                     : Executors.newVirtualThreadPerTaskExecutor();
-            return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
-                    owns, registry, bindingsAsChild, trail, onAdvanceOnly);
+            return new DefaultStateMachine<>(definition, validated, getter.get(), setter.get(), identity, asyncTimeout,
+                    resolved, owns, registry, bindingsAsChild, trail);
         }
 
         private void requireUnused() {
             if (used) {
-                throw new IllegalStateException("the builder for " + key() + " was already used");
+                throw new IllegalStateException("the builder for " + validatedKey() + " was already used");
             }
         }
     }

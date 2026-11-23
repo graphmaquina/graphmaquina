@@ -11,6 +11,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UninitializedStateException;
 import java.time.Duration;
 import java.time.InstantSource;
@@ -71,13 +72,22 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Optional<InstantSource> trail;
     /** See {@link #releasedTransaction()}. */
     private final Transaction released;
+    /** The key the builder's validation read from the definition, which {@link #key()} answers. */
+    private final MachineKey<E, S, T> key;
+    /** See {@link #watches()}. */
+    private final List<WatchSpec<E, S, T, ?, ?, ?>> watches;
 
-    DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
-                        BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
-                        Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
-                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
-                        Optional<InstantSource> trail, boolean chainsOnAdvanceOnly) {
+    /**
+     * A machine over {@code definition} built from what its builder's validation read, {@code validated}, so that the
+     * constructor reads nothing of the definition: a build may already have consumed a builder when it runs.
+     */
+    DefaultStateMachine(GraphDefinition<E, S, T> definition, StateMachines.Read<E, S, T> validated,
+                        Function<? super E, ? extends S> getter, BiConsumer<? super E, ? super S> setter,
+                        Optional<Function<? super E, ?>> identity, Optional<Duration> asyncTimeout, Executor executor,
+                        boolean ownsExecutor, MachineRegistry registry,
+                        List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild, Optional<InstantSource> trail) {
         this.definition = definition;
+        this.key = validated.key();
         this.getter = getter;
         this.setter = setter;
         this.identity = identity;
@@ -86,24 +96,14 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.ownsExecutor = ownsExecutor;
         this.registry = registry;
         this.async = new DefaultAsyncStateMachine<>(this);
-        this.presentTransitions = present(definition.key().transitions());
+        this.presentTransitions = present(key.transitions());
         this.bindingsAsChild = bindingsAsChild;
-        this.bindsSubmachines = bindsSubmachines(definition);
-        this.chainsOnAdvanceOnly = chainsOnAdvanceOnly;
+        this.bindsSubmachines = validated.bindsSubmachines();
+        this.chainsOnAdvanceOnly = validated.onAdvanceOnly();
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
-        this.released = Transaction.released(registry, definition.key());
-    }
-
-    /** Whether some state of {@code definition} holds a sub-machine. */
-    private static <E, S extends Enum<S>, T extends Enum<T>> boolean bindsSubmachines(
-            GraphDefinition<E, S, T> definition) {
-        for (S state : definition.key().states().getEnumConstants()) {
-            if (definition.submachine(state).isPresent()) {
-                return true;
-            }
-        }
-        return false;
+        this.watches = validated.watches();
+        this.released = Transaction.released(registry, key);
     }
 
     /**
@@ -126,7 +126,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      */
     List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild() { return bindingsAsChild; }
 
-    /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
+    /** Whether some state of this machine's own definition holds a sub-machine, as the builder's validation read. */
     boolean bindsSubmachines() { return bindsSubmachines; }
 
     /**
@@ -161,8 +161,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         return List.copyOf(present);
     }
 
+    /** The key the builder's validation read from the definition, answered without reading the definition. */
     @Override
-    public MachineKey<E, S, T> key() { return definition.key(); }
+    public MachineKey<E, S, T> key() { return key; }
+
+    /** The watch of each state that declares one, in state order, as the builder's validation read them. */
+    List<WatchSpec<E, S, T, ?, ?, ?>> watches() { return watches; }
 
     @Override
     public Set<T> transitionsFrom(@NonNull S state) {

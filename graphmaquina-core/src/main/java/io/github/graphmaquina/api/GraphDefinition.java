@@ -16,7 +16,10 @@ import java.util.Set;
  * {@link #automaticFrom} of every state once as it is built, and what it throws there propagates from the build; when
  * no state of any graph in the registry has an automatic edge then, no call of the registry runs an automatic chain.
  * Later, an automaticFrom that throws aborts an advance, or an automatic attempt, in RESOLVE, and ends an automatic
- * chain that reads it before an attempt, or after one, as an {@link AutomaticStep.Aborted}.
+ * chain that reads it before an attempt, or after one, as an {@link AutomaticStep.Aborted}. A build reads the key,
+ * the automaticChain and the sub-machine and watch of every state before it consumes any machine builder, and
+ * afterwards uses only what it read: a read that throws fails the build and leaves every builder as it was, and the
+ * machine keeps the key it read.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 

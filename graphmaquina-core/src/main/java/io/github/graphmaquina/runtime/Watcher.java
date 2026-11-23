@@ -2,6 +2,8 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.WatchSpec;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /** A machine that watches a peer machine, possibly itself, from a state. Indexed by the peer's key. */
@@ -11,6 +13,16 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
     static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>
             Watcher<E, S, T, P, Q, U> of(DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
         return new Watcher<>(machine, spec);
+    }
+
+    /** A watcher for each watch of {@code machine}, in state order, as its builder's validation read them. */
+    static <E, S extends Enum<S>, T extends Enum<T>> List<Watcher<E, S, T, ?, ?, ?>> ofEach(
+            DefaultStateMachine<E, S, T> machine) {
+        List<Watcher<E, S, T, ?, ?, ?>> each = new ArrayList<>();
+        for (WatchSpec<E, S, T, ?, ?, ?> watch : machine.watches()) {
+            each.add(of(machine, watch));
+        }
+        return each;
     }
 
     /**
