@@ -2,6 +2,7 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.ReentrantTransitionException;
+import io.github.graphmaquina.error.ReentrantTransitionException.Refusal;
 import java.util.Optional;
 
 /**
@@ -15,24 +16,25 @@ import java.util.Optional;
  *       parentOf, a watch function, a state accessor, an identity function or an observer callback. After-commit
  *       hooks run once it is released, and a reaction's selected edge runs as a root of its own once the watch
  *       functions are done.</li>
- *   <li>Its scopes are the units of work of the root call and the checks running on the thread, innermost on top,
- *       each linked to the one below it. A unit of work counts the synchronous guards of its steps that run, as
+ *   <li>Its scopes are the units of work of the root call and the checks running on the thread, innermost on top, each
+ *       linked to the one below it. A unit of work counts the synchronous guards of its steps that run, as
  *       {@link Steps} brackets each one's test call. The one exception to the refusals is a check started while a
  *       synchronous guard of the innermost scope runs, whose entity no scope holds, as {@link #requireCheckMayStart}
- *       says: it runs as a scope of its own, from its claim of the cell to its release, which is its own step, from
- *       the read of its entity's identity to its last guard, with that step's TRACE lines and the texts they and its
+ *       says: it runs as a scope of its own, from its claim of the cell to its release, which is its own step, from the
+ *       read of its entity's identity to its last guard, with that step's TRACE lines and the texts they and its
  *       failures print; it starts with no guard running, so its identity function, its state getter and its binding
  *       lookups can start nothing, while its own guards follow the same rule. In that scope a read of an entity that a
  *       scope below holds, through a context's peer view or a binding lookup, is refused, as
- *       {@link #requireNotHeldOutside} says, whichever context's view makes it, and so is a cascade through a
- *       retained context of an enclosing call, as {@link #requireInnermost} says. The application code the engine
- *       runs for a nested check outside that scope runs in the enclosing scope, under that scope's rules, with that
- *       scope's guard count held at 0, so it cannot start a check: the entity's identity function and its identity's
- *       equals before the check starts, as {@link #requireCheckMayStart} says, and the log's backend, for the check's
- *       levels and its start, verdict and failed lines, with the identity text and the failure reason that those
- *       lines and the check's failure print, as {@link Checks#check} says. A cascade holds its call's guard count at 0
- *       too, as {@code DefaultTransitionContext} says, so nothing in a step that a guard cascades to through a kept
- *       context starts a check but that step's own guards.</li>
+ *       {@link #requireNotHeldOutside} says, whichever live context's view on this thread makes it, and so is a cascade
+ *       through a retained context of an enclosing call, as {@link #requireInnermost} says. The application code the
+ *       engine runs for a nested check outside that scope runs in the enclosing scope, under that scope's rules, with
+ *       that scope's guard count held at 0, so it cannot start a check: the entity's identity function and, when an
+ *       enclosing scope holds an entity of that machine, its identity's equals, before the check starts, as
+ *       {@link #requireCheckMayStart} says, and the log's backend, for the check's levels and its start, verdict and
+ *       failed lines, with the identity text and the failure reason that those lines and the check's failure print, as
+ *       {@link Checks#check} says. A cascade holds its call's guard count at 0 too, as {@code DefaultTransitionContext}
+ *       says, so nothing in a step that a guard cascades to through a kept context starts a check but that step's own
+ *       guards.</li>
  * </ul>
  * Each holder prepares everything first and claims the cell last; it restores what it found with plain stores, the
  * first statements of a finally, so no failure leaves the cell claimed, not even a StackOverflowError that unwinds
@@ -75,7 +77,7 @@ final class Reentrancy {
      */
     static void check(MachineKey<?, ?, ?> key, Object entity) {
         if (CELL.get().active) {
-            throw new ReentrantTransitionException(key, entity);
+            throw new ReentrantTransitionException(key, entity, Refusal.CALL);
         }
     }
 
@@ -89,7 +91,7 @@ final class Reentrancy {
     static Cell enter(MachineKey<?, ?, ?> key, Object entity) {
         Cell cell = CELL.get();
         if (cell.active) {
-            throw new ReentrantTransitionException(key, entity);
+            throw new ReentrantTransitionException(key, entity, Refusal.CALL);
         }
         cell.active = true;
         return cell;
@@ -102,7 +104,7 @@ final class Reentrancy {
      */
     static void enterCall(Cell cell, MachineKey<?, ?, ?> key, Object entity, UnitOfWork uow) {
         if (cell.active) {
-            throw new ReentrantTransitionException(key, entity);
+            throw new ReentrantTransitionException(key, entity, Refusal.CALL);
         }
         push(cell, uow);
     }
@@ -111,9 +113,10 @@ final class Reentrancy {
      * Rejects a check of {@code entity} that may not start on this thread, without claiming the cell. A check may
      * start where nothing runs, and, while the cell is claimed, only while a synchronous guard of the innermost scope
      * runs and only when no scope holds {@code entity}, as {@link UnitOfWork#holds} says, by the reference that
-     * {@code machine}'s identity function gives it. That function, and the identity's equals, run here with the
-     * innermost scope's guard count held at 0, restored by a store, so neither can start a check: what either throws
-     * propagates as it is. Anything else is refused with ReentrantTransitionException.
+     * {@code machine}'s identity function gives it. That function, and, when an enclosing scope holds an entity of
+     * that machine, its identity's equals, run here with the innermost scope's guard count held at 0, restored by a
+     * store, so neither can start a check: what either throws propagates as it is. Anything else is refused with
+     * ReentrantTransitionException.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> void requireCheckMayStart(
             Cell cell, DefaultStateMachine<E, S, T> machine, E entity) {
@@ -121,7 +124,7 @@ final class Reentrancy {
             return;
         }
         if (cell.top.isEmpty() || cell.top.get().guards == 0) {
-            throw new ReentrantTransitionException(machine.key(), entity);
+            throw new ReentrantTransitionException(machine.key(), entity, Refusal.CALL);
         }
         UnitOfWork innermost = cell.top.get();
         int guards = innermost.guards;
@@ -133,7 +136,7 @@ final class Reentrancy {
             innermost.guards = guards;
         }
         if (held) {
-            throw new ReentrantTransitionException(machine.key(), entity);
+            throw new ReentrantTransitionException(machine.key(), entity, Refusal.HELD_CHECK);
         }
     }
 
@@ -170,7 +173,7 @@ final class Reentrancy {
      */
     static void requireNotHeldOutside(UnitOfWork current, EntityRef ref) {
         if (heldBy(current.below, ref)) {
-            throw new ReentrantTransitionException(ref.key(), ref.instance());
+            throw new ReentrantTransitionException(ref.key(), ref.instance(), Refusal.HELD_READ);
         }
     }
 
@@ -184,7 +187,7 @@ final class Reentrancy {
      */
     static void requireInnermost(UnitOfWork uow, MachineKey<?, ?, ?> key, Object entity) {
         if (CELL.get().top.orElseThrow() != uow) {
-            throw new ReentrantTransitionException(key, entity);
+            throw new ReentrantTransitionException(key, entity, Refusal.KEPT_CASCADE);
         }
     }
 

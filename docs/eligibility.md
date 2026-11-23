@@ -399,9 +399,9 @@ The check's scope is its own step, from the read of its entity's identity to its
 its binding lookups, its guards and everything they run, and that step's `TRACE` lines and the texts they and the
 step's failures print. Code in that scope cannot read a held entity through a context's peer view or a binding
 lookup: `stateOf`, and `allIn`, `anyIn` and `noneIn` for each peer they read, throw `ReentrantTransitionException`
-into the code that made the read, whichever context made the view, an enclosing guard's or action's context handed
-over included. A binding lookup that finds a held parent fails the check with an `EligibilityCheckException`
-whose cause is that exception. So a nested check never reads, through a context's peer view or a binding lookup, an
+into the code that made the read, whichever live context on this thread made the view, an enclosing guard's or
+action's context handed over included. A binding lookup that finds a held parent fails the check with an
+`EligibilityCheckException` whose cause is that exception. So a nested check never reads, through a context's peer view or a binding lookup, an
 entity that an enclosing call or check has in flight, or whose hop or start is pending there. Any other read is not
 refused: a guard that calls a held entity's getter itself, or reads it through a watch condition's view that it kept,
 reads its stored state, which the enclosing call may be about to replace. And the answer holds for the states as they

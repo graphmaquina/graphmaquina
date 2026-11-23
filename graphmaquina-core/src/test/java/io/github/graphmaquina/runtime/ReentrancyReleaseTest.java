@@ -48,6 +48,7 @@ class ReentrancyReleaseTest {
             "Checks | check( | admitted | UnitOfWork.guards",
             "Reentrancy | requireCheckMayStart( | runtime/DefaultStateMachine.refOf | UnitOfWork.guards",
             "DefaultPeerView | stateOf( | runtime/DefaultStateMachine.refOf | UnitOfWork.guards",
+            "DefaultPeerView$Committed | stateOf( | runtime/DefaultStateMachine.refOf | UnitOfWork.guards",
             "DefaultTransitionContext | cascade(io.github.graphmaquina.api.MachineKey | runtime/Cascades.cascade"
                     + " | UnitOfWork.guards",
             "DefaultTransitionContext | cascadeAll(io.github.graphmaquina.api.MachineKey | runtime/Cascades.cascadeAll"

@@ -42,6 +42,7 @@ import io.github.graphmaquina.fixtures.Facades;
 import io.github.graphmaquina.fixtures.GuardProbe;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -693,6 +694,58 @@ class NestedCheckTest {
         assertInstanceOf(Outcome.Applied.class, self.get().execute(root, SUBMIT));
         assertEquals(List.of(new Eligibility.Eligible<>(other, DRAFT, DISCARD)), seen);
         assertEquals(List.of("ReentrantTransitionException", "ReentrantTransitionException"), refusals);
+    }
+
+    /**
+     * A folder's watch condition keeps the view it gets, and a guard of a later call reads a doc through it: the doc's
+     * getter, which the engine runs for that read, runs as no guard does, so it cannot start a check.
+     */
+    @Test
+    void aStateGetterThatAKeptWatchViewRunsForAGuardCannotStartACheck() {
+        AtomicReference<MachineRegistry> registry = new AtomicReference<>();
+        AtomicReference<PeerView<Doc, DocStatus, DocTransition>> kept = new AtomicReference<>();
+        Doc root = new Doc("1", DRAFT);
+        Doc peer = new Doc("2", DRAFT);
+        Folder folder = new Folder("f1", FolderStatus.OPEN, peer);
+        List<Object> seen = new ArrayList<>();
+        Function<Doc, DocStatus> getter = (Doc doc) -> {
+            if (doc == peer) {
+                seen.add(tried(() -> registry.get().of(DOCS).eligibility(new Doc("3", DRAFT), DISCARD)));
+            }
+            return doc.status();
+        };
+        registry.set(MachineRegistry.builder()
+                .add(StateMachines.from(docs(asking(Map.of(root, (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                seen.add(kept.get().stateOf(peer))))))
+                        .state(getter, Doc::setStatus).identity(Doc::id))
+                .add(StateMachines.from(keepingFolders(kept)).state(Folder::status, Folder::setStatus)
+                        .identity(Folder::id))
+                .build());
+        assertInstanceOf(Outcome.Ignored.class, registry.get().of(FOLDERS).reevaluate(folder));
+        assertInstanceOf(Outcome.Applied.class, registry.get().of(DOCS).execute(root, SUBMIT));
+        assertEquals(List.of("ReentrantTransitionException", DRAFT), seen);
+    }
+
+    /**
+     * The folder graph OPEN -FILE-> FILING -CLOSE-> CLOSED, whose watch of OPEN over the folder's doc stores the view
+     * its condition gets in {@code kept} and holds no rule.
+     */
+    private static GraphDefinition<Folder, FolderStatus, FolderTransition> keepingFolders(
+            AtomicReference<PeerView<Doc, DocStatus, DocTransition>> kept) {
+        return StateGraph.define(FOLDERS).initial(FolderStatus.OPEN).terminal(FolderStatus.CLOSED)
+                .statePolicy(FolderStatus.OPEN, "an open folder files its doc")
+                .statePolicy(FolderStatus.FILING, "a filing folder closes")
+                .transition(FolderTransition.FILE, FolderStatus.OPEN, FolderStatus.FILING).endTransition()
+                .transition(FolderTransition.CLOSE, FolderStatus.FILING, FolderStatus.CLOSED).endTransition()
+                .watch(FolderStatus.OPEN, DOCS, (Folder each) -> List.of(each.doc()), (Doc doc) -> Optional.empty())
+                    .when("keeps", (Folder owner, Collection<? extends Doc> peers,
+                                    PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        kept.set(view);
+                        return false;
+                    })
+                    .execute(FolderTransition.FILE)
+                    .endWatch()
+                .build();
     }
 
     /** Each candidate gets a nested check of its own; the root entity is refused before the first starts. */

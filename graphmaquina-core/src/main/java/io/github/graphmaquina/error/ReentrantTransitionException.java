@@ -10,7 +10,8 @@ import lombok.NonNull;
  * thread that is already running a root transaction or an eligibility check, evaluating a watch or notifying an
  * observer, from one of the callbacks that run there, where it may not start; or code in the scope of a check that a
  * guard started read an entity that an enclosing call or check holds, through a context's peer view or a sub-machine
- * binding lookup, or cascaded through a retained action context of the call that check is nested in.
+ * binding lookup, or cascaded through a retained action context of the call that check is nested in. Its message says
+ * which of these it was, one message for each {@link Refusal}.
  * <ul>
  *   <li>The callbacks are: a guard, an action, a state accessor, an identity function or a sub-machine's childOf or
  *       parentOf inside the transaction, or any of them but the action inside the check, which runs none; a watch's
@@ -31,25 +32,26 @@ import lombok.NonNull;
  *   <li>A nested check's scope is its own step, from the read of its entity's identity to its last guard, with its
  *       state read, its binding lookups, its guards and everything they run, and that step's TRACE lines and the
  *       texts they and the step's failures print. Code in that scope cannot read a held entity through a context's
- *       peer view or a sub-machine binding lookup either: such a read, by stateOf, allIn or anyIn of any context's
- *       view, an enclosing guard's or action's included, or by a binding lookup, throws this exception, whose
- *       {@code entity()} is the entity read, into the code that made it, so a nested check never reads, through a
- *       context's peer view or a binding lookup, an entity that an enclosing call or check has in flight, or whose hop
- *       or start is pending there. Any other read is not refused, such as a guard's own call of a getter, or a read
- *       through a watch condition's view that it kept. A guard that lets this exception through fails the nested
- *       check with an {@code EligibilityCheckException}, and the guard that started that check fails in turn unless
- *       it catches it.</li>
+ *       peer view or a sub-machine binding lookup either: such a read, by stateOf, allIn or anyIn of any live
+ *       context's view on this thread, an enclosing guard's or action's included, or by a binding lookup, throws this
+ *       exception, whose {@code entity()} is the entity read, into the code that made it, so a nested check never
+ *       reads, through a context's peer view or a binding lookup, an entity that an enclosing call or check has in
+ *       flight, or whose hop or start is pending there. Any other read is not refused, such as a guard's own call of
+ *       a getter, or a read through a watch condition's view that it kept. A guard that lets this exception through
+ *       fails the nested check with an {@code EligibilityCheckException}, and the guard that started that check fails
+ *       in turn unless it catches it.</li>
  *   <li>Nor can code in that scope move an entity of the call the check is nested in: a cascade or a cascadeAll
  *       through a retained action context of that call throws this exception, whose {@code key()} and
  *       {@code entity()} are that action's, before it stages anything or poisons the call. With no nested check's
  *       scope around it, such a context cascades as its action could, and the steps it runs count no guard of the
  *       code that made the cascade, so they cannot start a check but from their own synchronous guards.</li>
  *   <li>The application code that the engine runs for a nested check outside that scope runs in the enclosing
- *       scope, under that scope's rules: the entity's identity function and its identity's equals, before the check
- *       starts, as it tells whether the entity is held; the log's backend, as the check reads its levels and logs its
- *       start, verdict and failed lines; and the identity text and the failure reason that those lines and the
- *       check's {@code EligibilityCheckException} print. There a read or a cascade through a context of the enclosing
- *       call is as allowed as in the guard that started the check. It still cannot start a check.</li>
+ *       scope, under that scope's rules: the entity's identity function and, when an enclosing scope holds an entity
+ *       of that machine, its identity's equals, before the check starts, as it tells whether the entity is held; the
+ *       log's backend, as the check reads its levels and logs its start, verdict and failed lines; and the identity
+ *       text and the failure reason that those lines and the check's {@code EligibilityCheckException} print. There a
+ *       read or a cascade through a context of the enclosing call is as allowed as in the guard that started the
+ *       check. It still cannot start a check.</li>
  * </ul>
  * After-commit hooks run once the transaction has released the thread, so they can start transitions and checks; a
  * watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done, and each
@@ -63,19 +65,61 @@ import lombok.NonNull;
 @Getter
 public final class ReentrantTransitionException extends StateMachineException {
 
+    /** What was refused, which picks the message; {@code key()} and {@code entity()} name what each refusal says. */
+    public enum Refusal {
+
+        /**
+         * A call, or a check, made where none may start: {@code key()} and {@code entity()} are those of that call or
+         * check.
+         */
+        CALL("execute/reevaluate/advance/choose/eligibility on ", " from within a transition, an eligibility check, a"
+                + " watch evaluation or an observer callback already in progress on this thread: a guard, an action, a"
+                + " sub-machine's childOf or parentOf, a watch's peersOf, ownerOf or condition, a state accessor, an"
+                + " identity function or an observer cannot start another transition or eligibility check, except that"
+                + " a synchronous guard can check an entity that no enclosing call or check holds; an action moves its"
+                + " peers with ctx.cascade(...)"),
+
+        /**
+         * A synchronous guard's check of an entity that an enclosing call or check holds: {@code key()} and
+         * {@code entity()} are those of the check.
+         */
+        HELD_CHECK("eligibility on ", " from a synchronous guard, of an entity that an enclosing call or check holds:"
+                + " the root entity of an enclosing call or check, the entity of an enclosing cascade or exit step, or"
+                + " an entity with a pending hop or sub-machine start in an enclosing call; a guard can check only an"
+                + " entity that no enclosing call or check holds"),
+
+        /**
+         * A read, in the scope of a check that a guard started, of an entity that an enclosing call or check holds,
+         * through a context's peer view or a binding lookup: {@code key()} and {@code entity()} are those of the
+         * entity read.
+         */
+        HELD_READ("a read of an entity of ", " that an enclosing call or check holds, through a context's peer view or"
+                + " a binding lookup, in the scope of a check that a guard started: a nested check cannot read an"
+                + " entity that an enclosing call or check has in flight, or whose hop or start is pending there"),
+
+        /**
+         * A cascade, in the scope of a check that a guard started, through a retained action context of the call
+         * that check is nested in: {@code key()} and {@code entity()} are those of that context's action.
+         */
+        KEPT_CASCADE("a cascade through a retained action context of ", ", in the scope of a check that a guard"
+                + " started: a nested check cannot move an entity of the call it is nested in");
+
+        private final String lead;
+        private final String rest;
+
+        Refusal(String lead, String rest) {
+            this.lead = lead;
+            this.rest = rest;
+        }
+    }
+
     private final MachineKey<?, ?, ?> key;
     private final Object entity;
 
-    public ReentrantTransitionException(MachineKey<?, ?, ?> key, @NonNull Object entity) {
-        super("execute/reevaluate/advance/choose/eligibility on " + Objects.requireNonNull(key, "key")
-                + ", or, in a nested check's scope, a read of it through a peer view or a binding lookup or a cascade"
-                + " through its action's context, from within a transition, an eligibility check, a watch evaluation or"
-                + " an observer callback already in progress on this thread: a guard, an action, a sub-machine's"
-                + " childOf or parentOf, a watch's peersOf, ownerOf or condition, a state accessor, an identity"
-                + " function or an observer cannot start another transition or eligibility check, except that a"
-                + " synchronous guard can check an entity that no enclosing call or check holds, and in that check's"
-                + " scope a held entity cannot be read through a context's peer view or a binding lookup, nor can an"
-                + " enclosing action's context cascade; an action moves its peers with ctx.cascade(...)");
+    /** The refusal of {@code refusal}'s kind, whose message names {@code key}, of the call, check, read or cascade. */
+    public ReentrantTransitionException(MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Refusal refusal) {
+        super(Objects.requireNonNull(refusal, "refusal").lead + Objects.requireNonNull(key, "key")
+                + refusal.rest);
         this.key = key;
         this.entity = entity;
     }

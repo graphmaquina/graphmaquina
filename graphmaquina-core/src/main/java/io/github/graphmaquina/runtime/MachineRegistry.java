@@ -21,6 +21,7 @@ import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.CallFailedException;
+import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
 import io.github.graphmaquina.internal.CallFailureFlows;
@@ -218,9 +219,9 @@ public final class MachineRegistry implements AutoCloseable {
         return List.of(ActionStatus.class, AutomaticChain.class, CallOrigin.class, CallPhase.class,
                 CallRequest.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class,
                 RejectionKind.class, StatesWritten.class, TransitionKind.class, CallFailedException.class,
-                CallFailureFlows.class, FrozenFlow.class, Await.class, CallLog.class, CommitSummary.class,
-                FlowHandle.Hook.class, Observers.class, PostCommitScope.class, Reentrancy.class,
-                Submachines.Hold.class, Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
+                ReentrantTransitionException.Refusal.class, CallFailureFlows.class, FrozenFlow.class, Await.class,
+                CallLog.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class, PostCommitScope.class,
+                Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
     }
 
     /**

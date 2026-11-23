@@ -15,7 +15,8 @@ import lombok.RequiredArgsConstructor;
  * every read, so a view captured in an action cannot outlive its transaction, and holds nothing of the call once that
  * context is invalidated. The helpers run it first too, so they refuse even over an empty collection, which reads no
  * state; noneIn reads through anyIn, and allIn and anyIn read each peer through stateOf, which refuses, in the scope of
- * a check that a guard started, a peer that an enclosing call or check holds, whatever context made the view.
+ * a check that a guard started, a peer that an enclosing call or check holds, whichever live context on this thread
+ * made the view.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
@@ -26,17 +27,41 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
     /** A watch is outside a transaction, but identity validation still precedes each committed-state read. */
     static <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> committed(
             DefaultStateMachine<P, Q, U> machine) {
-        return new PeerView<>() {
-            @Override
-            public MachineKey<P, Q, U> key() { return machine.key(); }
+        return new Committed<>(machine);
+    }
 
-            @Override
-            public Q stateOf(@NonNull P peer) {
-                // Preserve custom identity callbacks and their exceptions, even with no pending state to query.
-                machine.refOf(peer);
-                return machine.readState(peer);
+    /**
+     * The view a watch condition gets, which reads the entity only. A condition may keep it, and code that a guard runs
+     * later may read through it: inside a scope, the peer's identity function and getter then run with the guard count
+     * of the thread's innermost scope held at 0, restored by a store, so that neither can start a check from a guard's
+     * read, as through a context's view. It refuses no held entity, since it reads no unit of work.
+     */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    private static final class Committed<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
+
+        private final DefaultStateMachine<P, Q, U> machine;
+
+        @Override
+        public MachineKey<P, Q, U> key() { return machine.key(); }
+
+        @Override
+        public Q stateOf(@NonNull P peer) {
+            Optional<UnitOfWork> scope = Reentrancy.cell().top;
+            if (scope.isPresent()) {
+                UnitOfWork innermost = scope.get();
+                int guards = innermost.guards;
+                innermost.guards = 0;
+                try {
+                    // Preserve custom identity callbacks and their exceptions, even with no pending state to query.
+                    machine.refOf(peer);
+                    return machine.readState(peer);
+                } finally {
+                    innermost.guards = guards;
+                }
             }
-        };
+            machine.refOf(peer);
+            return machine.readState(peer);
+        }
     }
 
     @Override
