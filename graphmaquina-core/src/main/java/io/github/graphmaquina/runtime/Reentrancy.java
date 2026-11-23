@@ -22,7 +22,9 @@ import java.util.Optional;
  *       says: it runs as a scope of its own, where it starts with no guard running, so its state getter, its identity
  *       function and its binding lookups can start nothing, while its own guards follow the same rule. Inside such a
  *       nested check, a read of an entity that a scope below holds is refused, as
- *       {@link #requireNotHeldOutside} says.</li>
+ *       {@link #requireNotHeldOutside} says, whichever context's view makes it. The application code a nested check
+ *       runs outside its own scope, its log's backend and the text of its entity's identity or of its failure, runs
+ *       with the enclosing scope's guard count held at 0, as {@link Checks#check} says.</li>
  * </ul>
  * Each holder prepares everything first and claims the cell last; it restores what it found with plain stores, the
  * first statements of a finally, so no failure leaves the cell claimed, not even a StackOverflowError that unwinds
@@ -148,10 +150,12 @@ final class Reentrancy {
     }
 
     /**
-     * Rejects a read of {@code ref} made inside the scope {@code current} when a scope below it holds {@code ref}, as
-     * {@link UnitOfWork#holds} says, with ReentrantTransitionException: such a read could see a state that the
-     * enclosing call is about to replace. A scope with none below it, as a root call or a check that no guard started,
-     * rejects nothing. Only the equals of {@code ref}'s identity runs.
+     * Rejects a read of {@code ref} made while {@code current} is the thread's innermost scope when a scope below it
+     * holds {@code ref}, as {@link UnitOfWork#holds} says, with ReentrantTransitionException: such a read could see a
+     * state that the enclosing call is about to replace. The caller passes the innermost scope, whatever unit of work
+     * it reads through, so a view of an enclosing context handed to a nested check is refused too. A scope with none
+     * below it, as a root call or a check that no guard started, rejects nothing. Only the equals of {@code ref}'s
+     * identity runs.
      */
     static void requireNotHeldOutside(UnitOfWork current, EntityRef ref) {
         if (heldBy(current.below, ref)) {
@@ -173,7 +177,8 @@ final class Reentrancy {
 
     /**
      * The unit of work of the innermost scope on this thread, whose guard count a peer read holds at 0 while it runs
-     * the peer's identity function and state getter; only for code that runs inside a scope, as a context does.
+     * the peer's identity function and state getter, and below which it refuses a held peer; only for code that runs
+     * inside a scope, as a context does.
      */
     static UnitOfWork innermost() {
         return CELL.get().top.orElseThrow();

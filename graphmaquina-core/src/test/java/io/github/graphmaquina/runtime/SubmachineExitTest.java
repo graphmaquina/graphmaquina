@@ -301,7 +301,6 @@ class SubmachineExitTest {
      */
     @Test
     void anExitsGuardChecksAnEntityTheCallDoesNotHold() {
-        Billing billing = new Billing();
         Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
         Payment unrelated = new Payment("u1", PaymentStatus.AUTHORIZING);
         Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)

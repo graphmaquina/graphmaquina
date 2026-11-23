@@ -362,11 +362,11 @@ final class Steps {
 
     /**
      * Sync guards run inline, as {@link #syncVerdict} says; async ones return a stage that is awaited under the
-     * transaction's deadline, as {@link #asyncVerdict} says. For whatever the guard throws or completes its stage with, an Error inside the stage
-     * included, the engine throws what {@link #guardFailure} says: a library exception of another call is a cause like
-     * any other. An InterruptedException that the guard throws on the calling thread interrupts the thread again; one
-     * that completes its stage leaves the thread as it is. An Error thrown as itself propagates. A verdict is logged at
-     * TRACE with the time the guard took; a guard that throws logs none.
+     * transaction's deadline, as {@link #asyncVerdict} says. For whatever the guard throws or completes its stage
+     * with, an Error inside the stage included, the engine throws what {@link #guardFailure} says: a library exception
+     * of another call is a cause like any other. An InterruptedException that the guard throws on the calling thread
+     * interrupts the thread again; one that completes its stage leaves the thread as it is. An Error thrown as itself
+     * propagates. A verdict is logged at TRACE with the time the guard took; a guard that throws logs none.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,

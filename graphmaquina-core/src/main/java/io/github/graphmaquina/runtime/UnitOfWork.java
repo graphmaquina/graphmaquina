@@ -98,8 +98,10 @@ final class UnitOfWork {
     Optional<UnitOfWork> below = Optional.empty();
     /**
      * How many synchronous guards of this unit of work's steps are running on its thread, as {@link Steps} brackets
-     * each one's test call; {@link Reentrancy} lets a check start only while the innermost scope's count is above 0.
-     * Every change is a plain store that a finally undoes with another one.
+     * each one's test call, except while the engine runs other application code inside such a guard: a peer read, the
+     * identity read before a nested check starts, and what a nested check runs outside its own scope each hold it at 0
+     * meanwhile. {@link Reentrancy} lets a check start only while the innermost scope's count is above 0. Every change
+     * is a plain store that a finally undoes with another one.
      */
     int guards;
 

@@ -26,13 +26,13 @@ import lombok.NonNull;
  *       call. An entity the enclosing call only registered is not held: a parent its binding check found, or a
  *       cascade target whose step has not run. The test call of an asynchronous guard cannot start a check, and
  *       neither can anything the engine runs for a guard, such as the state getter or the identity function of a peer
- *       it reads.</li>
+ *       it reads, or the log lines and the identity text of a check it starts.</li>
  *   <li>A nested check, and everything it runs, cannot read a held entity either: a read through a peer view's
- *       stateOf, allIn or anyIn, or through a sub-machine binding lookup, throws this exception, whose
- *       {@code entity()} is the entity read, into the code that made it, so a nested check never answers from a state
- *       that the enclosing call is about to replace. A guard that lets it through fails the nested check with an
- *       {@code EligibilityCheckException}, and the guard that started that check fails in turn unless it catches
- *       it.</li>
+ *       stateOf, allIn or anyIn, the view of an enclosing guard's context included, or through a sub-machine binding
+ *       lookup, throws this exception, whose {@code entity()} is the entity read, into the code that made it, so a
+ *       nested check never answers from a state that the enclosing call is about to replace. A guard that lets it
+ *       through fails the nested check with an {@code EligibilityCheckException}, and the guard that started that
+ *       check fails in turn unless it catches it.</li>
  * </ul>
  * After-commit hooks run once the transaction has released the thread, so they can start transitions and checks; a
  * watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done, and each

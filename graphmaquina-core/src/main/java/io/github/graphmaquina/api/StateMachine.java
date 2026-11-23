@@ -151,11 +151,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * {@code ReentrantTransitionException} says. To tell, it runs the entity's identity function before it starts:
      * what that function throws, and the {@code NullPointerException} of one that returns null, propagate as they
      * are. Such a check runs as any check, nested in the guard's call or check; a read of a held entity throws inside
-     * it, and its failure throws into the guard. While a check runs, no call may start on its thread, and no check
-     * either but from its own synchronous guards. A check that started and cannot reach an answer throws an
-     * {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error propagates as itself. A check
-     * logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with {@code check=<id>} in place of
-     * {@code call=<id>}.
+     * it, and its failure throws into the guard. While a check runs, no call may start on its thread, and a check may
+     * start only from a synchronous guard of that check or of a check nested in it. A check that started and cannot
+     * reach an answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error
+     * propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
+     * {@code check=<id>} in place of {@code call=<id>}.
      *
      * @throws NullPointerException if {@code entity} or {@code transition} is null
      * @throws IllegalArgumentException if {@code transition} belongs to another catalogue, which only raw types pass

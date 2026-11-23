@@ -403,10 +403,12 @@ final class Submachines {
 
     /**
      * An abort of a child's step for what reading the parent or the child threw while checking {@code binding}: an
-     * identity function or a state getter that threw, a null state or an ambiguous identity, the cause as it is. At the
-     * root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure that is no failure of
-     * the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT never collects it and
-     * stops at once. The first poison is stored before its TRACE line, as in {@link Transaction#poisonAt}.
+     * identity function or a state getter that threw, a null state, an ambiguous identity, or, inside a check that a
+     * guard started, the ReentrantTransitionException that refuses a parent an enclosing call or check holds, the
+     * cause as it is. At the root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure
+     * that is no failure of the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT
+     * never collects it and stops at once. The first poison is stored before its TRACE line, as in
+     * {@link Transaction#poisonAt}.
      */
     private static TransitionAbortedException bindingReadAbort(Transaction tx, DefaultStateMachine<?, ?, ?> machine,
                                                                EntityRef ref, Enum<?> from, Enum<?> id, int depth,

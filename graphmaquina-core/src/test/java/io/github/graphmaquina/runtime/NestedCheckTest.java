@@ -93,7 +93,10 @@ class NestedCheckTest {
         public String toString() { return "Folder#" + id; }
     }
 
-    /** The doc machine of a whose SUBMIT and DISCARD edges {@code submit} and {@code discard} shape. */
+    /**
+     * The doc machine of a registry of its own, whose SUBMIT and DISCARD edges {@code submit} and {@code discard}
+     * shape.
+     */
     private static StateMachine<Doc, DocStatus, DocTransition> machine(
             UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> submit,
             UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> discard) {
@@ -169,6 +172,16 @@ class NestedCheckTest {
                 .add(StateMachines.from(children).state(Doc::status, Doc::setStatus).identity(Doc::id))
                 .add(StateMachines.from(folders).state(Folder::status, Folder::setStatus).identity(Folder::id))
                 .build();
+    }
+
+    /** The simple name of the library exception {@code call} throws, or {@code ran} when it returns. */
+    private static String tried(Runnable call) {
+        try {
+            call.run();
+            return "ran";
+        } catch (StateMachineException refused) {
+            return refused.getClass().getSimpleName();
+        }
     }
 
     /** The simple name of what {@code call} throws, which must be a library exception. */
@@ -348,6 +361,64 @@ class NestedCheckTest {
         assertSame(other, nested.entity());
         assertEquals(Optional.of("asks"), nested.guard());
         assertEquals(DRAFT, root.status());
+    }
+
+    /** The root guard hands its own context to the nested check's guard, whose read of the root through it throws. */
+    @Test
+    void aNestedChecksReadOfAHeldEntityThroughAnEnclosingContextThrows() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        AtomicReference<GuardContext<Doc, DocStatus, DocTransition>> enclosing = new AtomicReference<>();
+        Doc root = new Doc("1", DRAFT);
+        Doc other = new Doc("2", DRAFT);
+        self.set(machine(asking(Map.of(root, (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+            enclosing.set(ctx);
+            self.get().eligibility(other, DISCARD);
+        })), asking(Map.of(other, (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                enclosing.get().peer(DOCS).stateOf(root)))));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> self.get().execute(root, SUBMIT));
+        EligibilityCheckException nested = assertInstanceOf(EligibilityCheckException.class, error.getCause());
+        ReentrantTransitionException held = assertInstanceOf(ReentrantTransitionException.class, nested.getCause());
+        assertSame(root, held.entity());
+        assertSame(other, nested.entity());
+    }
+
+    /**
+     * A nested check that fails prints its entity's identity once it gave the thread back to the enclosing guard:
+     * that text, application code, runs as no guard does, so a check it starts is refused, as everywhere else.
+     */
+    @Test
+    void anIdentityTextThatAFailedNestedCheckPrintsCannotStartACheck() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        Doc root = new Doc("1", DRAFT);
+        Doc other = new Doc("2", DRAFT);
+        Doc third = new Doc("3", DRAFT);
+        List<String> shown = new ArrayList<>();
+        Runnable onShow = () -> shown.add(tried(() -> self.get().eligibility(third, DISCARD)));
+        List<String> seen = new ArrayList<>();
+        self.set(MachineRegistry.builder()
+                .add(StateMachines.from(docs(asking(Map.of(root, (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                seen.add(refusal(() -> self.get().eligibility(other, DISCARD))))),
+                        asking(Map.of(other, (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new IllegalStateException("the other cannot tell");
+                        }))))
+                        .state(Doc::status, Doc::setStatus).identity((Doc doc) -> new Shown(doc.id(), onShow)))
+                .build()
+                .of(DOCS));
+        assertInstanceOf(Outcome.Applied.class, self.get().execute(root, SUBMIT));
+        assertEquals(List.of("EligibilityCheckException"), seen);
+        assertEquals(false, shown.isEmpty());
+        assertEquals(List.of("ReentrantTransitionException"), shown.stream().distinct().toList());
+    }
+
+    /** An identity that runs {@code onShow} each time it is printed. */
+    private record Shown(String id, Runnable onShow) {
+
+        @Override
+        public String toString() {
+            onShow.run();
+            return id;
+        }
     }
 
     /** An execute, a choice, a reevaluation and an advance from a nested check's guard are each refused. */

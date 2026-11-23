@@ -30,29 +30,47 @@ final class Checks {
      * it starts: an identifier of another catalogue with IllegalArgumentException, as execute is, and a check that may
      * not start on this thread with ReentrantTransitionException, as {@link Reentrancy#requireCheckMayStart} says,
      * which runs the entity's identity function only for a check that a guard starts and lets what it throws
-     * propagate as it is; a check so refused, or so failed, logs nothing.
-     * Then it opens its log, which logs its start line at DEBUG; in a unit of work of its own, whose deadline is the
-     * machine's counted from now, the root step runs as {@link Steps#admit} says, with that log, under the reentrancy
-     * marker and in a scope of its own, nested in the call or check whose guard started it, if any; the first
-     * statements of the finally restore the cell with stores before the contexts the step handed out are invalidated,
-     * whatever the step throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and
-     * the reason, the kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state
-     * it read. The verdict line is logged once the cell is restored, as an end line is; so is the failed line of the
-     * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
-     * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
-     * backend throws is contained by the log, as {@link CallLog} says: it loses the line and changes nothing in the
-     * check, except that an InterruptedException interrupts the thread again, as for a call, so that a later wait of
-     * the check, for an asynchronous guard, ends as interrupted and fails the check.
+     * propagate as it is; a check so refused, or so failed, logs nothing. Then it runs as {@link #admitted} says, in
+     * a unit of work of its own, whose deadline is the machine's counted from now. For a check that a guard started,
+     * the guard count of the enclosing scope is held at 0 meanwhile, and restored by a store as the first statement of
+     * the finally: the application code the check runs outside its own scope, the log's backend and the text of the
+     * entity's identity or of a failure, runs as no guard does, so it cannot start a check either.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
             DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
         Transaction.requireTransition(machine.key(), transition);
         Reentrancy.Cell cell = Reentrancy.cell();
         Reentrancy.requireCheckMayStart(cell, machine, entity);
-        MachineRegistry registry = machine.registry();
-        UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
+        UnitOfWork uow = new UnitOfWork(machine.registry().maxCascadeDepth(), machine.deadlineNanos());
+        UnitOfWork enclosing = cell.top.orElse(uow);
+        int guards = enclosing.guards;
+        enclosing.guards = 0;
+        try {
+            return admitted(cell, uow, machine, entity, transition, input);
+        } finally {
+            enclosing.guards = guards;
+        }
+    }
+
+    /**
+     * The check that {@link #check} let start, in {@code uow}. It opens its log, which logs its start line at DEBUG;
+     * the root step runs as {@link Steps#admit} says, with that log, under the reentrancy marker and in a scope of its
+     * own, {@code uow}, nested in the call or check whose guard started it, if any; the first statements of the finally
+     * restore {@code cell} with stores before the contexts the step handed out are invalidated, whatever the step
+     * throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and the reason, the
+     * kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state it read. The
+     * verdict line is logged once the cell is restored, as an end line is; so is the failed line of the
+     * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
+     * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
+     * backend throws is contained by the log, as {@link CallLog} says: it loses the line and changes nothing in the
+     * check, except that an InterruptedException interrupts the thread again, as for a call, so that a later wait of
+     * the check, for an asynchronous guard, ends as interrupted and fails the check.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> admitted(
+            Reentrancy.Cell cell, UnitOfWork uow, DefaultStateMachine<E, S, T> machine, E entity, T transition,
+            Optional<Object> input) {
         CallLog log = CallLog.openCheck();
-        Transaction.Admission tx = new Transaction.Admission(registry, uow, machine.key(), entity,
+        Transaction.Admission tx = new Transaction.Admission(machine.registry(), uow, machine.key(), entity,
                 Optional.of(transition), () -> new MachineCall(machine.key(), entity, CallRequest.EXECUTE,
                         Optional.of(transition), CallOrigin.APPLICATION), Optional.empty(), log);
         if (log.debug()) {
