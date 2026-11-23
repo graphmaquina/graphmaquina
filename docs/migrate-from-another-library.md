@@ -205,10 +205,10 @@ automatic attempt, a call of its own, then runs the first branch admitted, and t
 into the intermediate state: its `to()`, which `movedTo` asserts. On such a machine, read the branch taken and the real
 destination from `automaticSteps()`, or the state from the entity; if none is admitted, the entity stays there and
 `automaticBlock()` reports the attempt and its `rejections()`, and a failing branch is reported in `automaticFailure()`
-or `automaticAbort()`, never thrown. An `ON_ADVANCE` machine takes the branches only on `advance(entity)`, which returns
-the attempt's outcome and throws its failure. The attempt's guards get an empty input and a flow of their own: they
-decide from fields, not from the event's data or the original call's flow. An operation that takes an input cannot be a
-branch (`SG515`), and the intermediate state needs a policy and holds no sub-machine (`SG807`).
+or `automaticAbort()`, never thrown. An `ON_ADVANCE` machine takes the branches on its own only on `advance(entity)`,
+which returns the attempt's outcome and throws its failure. The attempt's guards get an empty input and a flow of their
+own: they decide from fields, not from the event's data or the original call's flow. An operation that takes an input
+cannot be a branch (`SG515`), and the intermediate state needs a policy and holds no sub-machine (`SG807`).
 
 ### Transition actions
 

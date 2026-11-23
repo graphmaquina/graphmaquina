@@ -32,8 +32,8 @@ System.out.println(graph.policy(TicketState.OPEN).reasonFor(TicketTransition.APP
 automatic edges that leave a state, in the order an advance tries them, and `findTransition` the
 single spec keyed by `(from, id)`, as an `Optional` that is empty when no edge is declared. `key()`, `initial()`,
 `terminals()` and `hasAsync()`, true when some edge is asynchronous, describe the machine as a whole, and
-`automaticChain()` says when it takes its automatic edges, after every commit, `AFTER_COMMIT`, or only on `advance`,
-`ON_ADVANCE`.
+`automaticChain()` says when it takes its automatic edges on its own, after every commit, `AFTER_COMMIT`, or only on
+`advance`, `ON_ADVANCE`.
 
 ```mermaid
 classDiagram

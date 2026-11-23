@@ -88,10 +88,25 @@ public final class AccountGraphs {
         return graph(verifier, false, Optional.empty(), AutomaticChain.AFTER_COMMIT);
     }
 
-    /** {@link #onboarding} declared {@link AutomaticChain#ON_ADVANCE}: only an advance takes its automatic edges. */
+    /**
+     * {@link #onboarding} declared {@link AutomaticChain#ON_ADVANCE}: the machine takes its automatic edges on its own
+     * only on an advance.
+     */
     public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingOnAdvance(
             AddressVerifier verifier) {
         return graph(verifier, false, Optional.empty(), AutomaticChain.ON_ADVANCE);
+    }
+
+    /** {@link #onboardingOnAdvance} whose SET_PASSWORD runs {@code passwordSet} as its hook, named passwordSet. */
+    public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingOnAdvance(
+            AddressVerifier verifier, Consumer<Account> passwordSet) {
+        return graph(verifier, false, Optional.of(passwordSet), AutomaticChain.ON_ADVANCE);
+    }
+
+    /** {@link #onboardingOnAdvance} whose Unverifiable route to FLAGGED continues the automatic chain. */
+    public static GraphDefinition<Account, AccountStatus, AccountTransition> onboardingContinuingOnAdvance(
+            AddressVerifier verifier) {
+        return graph(verifier, true, Optional.empty(), AutomaticChain.ON_ADVANCE);
     }
 
     /** {@link #onboarding} whose SET_PASSWORD runs {@code passwordSet} as its after-commit hook, named passwordSet. */

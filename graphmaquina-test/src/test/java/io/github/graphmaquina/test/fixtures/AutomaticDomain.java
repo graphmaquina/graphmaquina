@@ -40,7 +40,7 @@ public final class AutomaticDomain {
         return graph(prepareAutomatic, AutomaticChain.AFTER_COMMIT);
     }
 
-    /** The graph of {@link #graph()}, taking its automatic edges only on an advance of the entity. */
+    /** The graph of {@link #graph()}, whose machine takes its automatic edges on its own only on an advance. */
     public static GraphDefinition<Entity, State, Id> onAdvanceGraph() {
         return graph(true, AutomaticChain.ON_ADVANCE);
     }

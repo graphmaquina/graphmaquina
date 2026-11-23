@@ -12,9 +12,10 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 
 /**
- * The profile machine: a draft takes its name and then its address, and the two automatic edges that do it are taken
- * only when the application calls {@code advance}. Editing a profile commits a self-loop and chains nothing, so a
- * profile is never completed behind the back of the call that saved it. The processor generates ProfilesRuntime.
+ * The profile machine: a draft takes its name and then its address, and the machine takes the two automatic edges that
+ * do it on its own only when the application calls {@code advance}. Editing a profile commits a self-loop and chains
+ * nothing, so a profile is never completed behind the back of the call that saved it. The processor generates
+ * ProfilesRuntime.
  */
 @GenerateGraphApi
 @ProfilesGraph.Definition(initial = DRAFT, terminals = COMPLETE, allowsCycle = {DRAFT, NAMED},

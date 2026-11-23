@@ -108,8 +108,8 @@ identifiers resolve from the failing edge's origin. `recoverAndContinue`, with t
 `onFailureAndContinue(id)`, which is the edge's `onFailure`, declare routes that let the entity's automatic chain go on
 from the recovery state. `automatic()` marks the edge as one the machine takes on its own, and the graph's
 `automaticOrder(state, ids)` orders the automatic edges of a state that has two or more, and its
-`automaticChain(chain)` declares, once, whether the machine takes them after every commit, `AFTER_COMMIT`, the default,
-or only on `advance(entity)`, `ON_ADVANCE`, as
+`automaticChain(chain)` declares, once, whether the machine takes them on its own after every commit, `AFTER_COMMIT`,
+the default, or only on `advance(entity)`, `ON_ADVANCE`, as
 [automatic transitions](automatic-transitions.md) explains. `afterCommit(name, hook)` takes a hook of the entity alone
 and `afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
 second throws `IllegalStateException` at once. `statePolicy` and `reject` word the answers a node gives. A state has

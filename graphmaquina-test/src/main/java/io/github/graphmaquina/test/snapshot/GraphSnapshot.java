@@ -45,8 +45,8 @@ import lombok.Getter;
  * an advance tries them in, at {@code /automaticOrder/<state>/count} and {@code /automaticOrder/<state>/<i>}, the
  * identifier at position {@code <i>}; the order is a different graph when it changes, whatever the declaration order of
  * the edges.
- * A graph that takes its automatic edges only on an advance also records {@code /automaticChain} as
- * {@code ON_ADVANCE}; the path is absent for the default, {@code AFTER_COMMIT}.
+ * A graph whose machine takes its automatic edges on its own only on an advance also records
+ * {@code /automaticChain} as {@code ON_ADVANCE}; the path is absent for the default, {@code AFTER_COMMIT}.
  *
  * <p>The sub-machine bound to a state lives under {@code /submachines/<state>}: its child machine at
  * {@code child/entity}, {@code child/states} and {@code child/transitions}, as a watch records its peer, and at

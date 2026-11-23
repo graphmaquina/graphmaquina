@@ -3,12 +3,15 @@ package io.github.graphmaquina.runtime;
 import static io.github.graphmaquina.api.WatchCondition.allIn;
 import static io.github.graphmaquina.fixtures.AccountGraphs.machine;
 import static io.github.graphmaquina.fixtures.AccountGraphs.onboarding;
+import static io.github.graphmaquina.fixtures.AccountGraphs.onboardingContinuingOnAdvance;
 import static io.github.graphmaquina.fixtures.AccountGraphs.onboardingOnAdvance;
 import static io.github.graphmaquina.fixtures.AccountStatus.ACTIVE;
 import static io.github.graphmaquina.fixtures.AccountStatus.FLAGGED;
 import static io.github.graphmaquina.fixtures.AccountStatus.INFO_SET;
 import static io.github.graphmaquina.fixtures.AccountStatus.NEW;
 import static io.github.graphmaquina.fixtures.AccountStatus.PASSWORD_SET;
+import static io.github.graphmaquina.fixtures.AccountStatus.REVIEW;
+import static io.github.graphmaquina.fixtures.AccountTransition.COMPLETE_ADDRESS;
 import static io.github.graphmaquina.fixtures.AccountTransition.COMPLETE_INFO;
 import static io.github.graphmaquina.fixtures.AccountTransition.FLAG;
 import static io.github.graphmaquina.fixtures.AccountTransition.SET_PASSWORD;
@@ -29,12 +32,15 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.fixtures.Account;
+import io.github.graphmaquina.fixtures.AccountGraphs.AddressFailures;
 import io.github.graphmaquina.fixtures.AccountGraphs.AddressVerifier;
 import io.github.graphmaquina.fixtures.AccountStatus;
 import io.github.graphmaquina.fixtures.AccountTransition;
@@ -44,6 +50,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import lombok.AccessLevel;
@@ -51,11 +58,12 @@ import lombok.Getter;
 import org.junit.jupiter.api.Test;
 
 /**
- * An {@link AutomaticChain#ON_ADVANCE} machine takes its automatic edges only when the application advances one of its
- * entities: the attempt, then that entity's chain. The commit of any other call chains no entity of that machine, while
- * the entities of an {@link AutomaticChain#AFTER_COMMIT} machine that the same commit moved chain as before. Accounts,
- * the onboarding fixture, and desks, whose INVITE cascades an account and whose watch reacts to their accounts, show
- * each case.
+ * An {@link AutomaticChain#ON_ADVANCE} machine takes its automatic edges on its own only when the application advances
+ * one of its entities: the attempt, then that entity's chain. A request that names an automatic edge still runs it and
+ * chains nothing. The commit of any other call chains no entity of that machine, not even another entity that the
+ * advance moved, while the entities of an {@link AutomaticChain#AFTER_COMMIT} machine that the same commit moved chain
+ * as before. Accounts, the onboarding fixture, and desks, whose INVITE and SETTLE cascade where a test says and whose
+ * watch reacts to their accounts, show each case.
  */
 class AdvanceOnlyChainTest {
 
@@ -65,15 +73,25 @@ class AdvanceOnlyChainTest {
     /** Identifiers of the desk machine. */
     enum DeskMove { INVITE, SETTLE }
 
+    /** States of a desk's review, which a second machine over desks writes. */
+    enum ReviewStatus { PENDING, STARTED, DONE }
+
+    /** Identifiers of the review machine. */
+    enum ReviewMove { START, FINISH }
+
     static final MachineKey<Desk, DeskStatus, DeskMove> DESKS =
             MachineKey.of(Desk.class, DeskStatus.class, DeskMove.class);
 
-    /** A desk: an id, a status and the accounts its watch looks at. */
+    static final MachineKey<Desk, ReviewStatus, ReviewMove> REVIEWS =
+            MachineKey.of(Desk.class, ReviewStatus.class, ReviewMove.class);
+
+    /** A desk: an id, a status, the state of its review and the accounts its watch looks at. */
     @Getter(AccessLevel.PACKAGE)
     static final class Desk {
 
         private final String id;
         private DeskStatus status = DeskStatus.OPEN;
+        private ReviewStatus review = ReviewStatus.PENDING;
         private final List<Account> accounts = new ArrayList<>();
 
         Desk(String id, Account... accounts) {
@@ -82,39 +100,70 @@ class AdvanceOnlyChainTest {
         }
 
         void setStatus(DeskStatus status) { this.status = status; }
+
+        void setReview(ReviewStatus review) { this.review = review; }
     }
 
     /** The action of INVITE. */
     private Consumer<TransitionContext<Desk, DeskStatus, DeskMove>> onInvite =
             (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> { };
+    /** The action of SETTLE. */
+    private Consumer<TransitionContext<Desk, DeskStatus, DeskMove>> onSettle =
+            (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> { };
     /** The desk whose watch owns every account; none by default. */
     private Optional<Desk> watcher = Optional.empty();
 
-    /**
-     * The desk graph under {@code chain}: OPEN -INVITE-> INVITED, running {@link #onInvite}; INVITED -SETTLE->
-     * SETTLED, automatic. The watch of OPEN executes INVITE once every account of the desk is in INFO_SET.
-     */
+    /** {@link #desks(AutomaticChain, boolean)} whose INVITE is manual. */
     private GraphDefinition<Desk, DeskStatus, DeskMove> desks(AutomaticChain chain) {
-        return StateGraph.define(DESKS).automaticChain(chain).initial(DeskStatus.OPEN).terminal(DeskStatus.SETTLED)
+        return desks(chain, false);
+    }
+
+    /**
+     * The desk graph under {@code chain}: OPEN -INVITE-> INVITED, running {@link #onInvite}, automatic when
+     * {@code automaticInvite} says; INVITED -SETTLE-> SETTLED, automatic, running {@link #onSettle}. The watch of OPEN
+     * executes INVITE once every account of the desk is in INFO_SET.
+     */
+    private GraphDefinition<Desk, DeskStatus, DeskMove> desks(AutomaticChain chain, boolean automaticInvite) {
+        TransitionBuilder<Desk, DeskStatus, DeskMove> invite = StateGraph.define(DESKS).automaticChain(chain)
+                .initial(DeskStatus.OPEN).terminal(DeskStatus.SETTLED)
                 .statePolicy(DeskStatus.OPEN, "a desk invites")
                 .statePolicy(DeskStatus.INVITED, "an invited desk settles")
                 .transition(DeskMove.INVITE, DeskStatus.OPEN, DeskStatus.INVITED)
                     .action("invite", (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> {
                         onInvite.accept(ctx);
                         return ActionOutcome.ok();
+                    });
+        return (automaticInvite ? invite.automatic() : invite).endTransition()
+                .transition(DeskMove.SETTLE, DeskStatus.INVITED, DeskStatus.SETTLED).automatic()
+                    .action("settle", (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> {
+                        onSettle.accept(ctx);
+                        return ActionOutcome.ok();
                     }).endTransition()
-                .transition(DeskMove.SETTLE, DeskStatus.INVITED, DeskStatus.SETTLED).automatic().endTransition()
                 .watch(DeskStatus.OPEN, ACCOUNTS, Desk::accounts, (Account account) -> watcher)
                     .when(allIn(INFO_SET)).execute(DeskMove.INVITE)
                     .endWatch()
                 .build();
     }
 
-    /** Desks under {@code chain} and accounts over {@code accounts}. */
-    private MachineRegistry registry(AutomaticChain chain,
-                                     GraphDefinition<Account, AccountStatus, AccountTransition> accounts) {
+    /**
+     * The review graph, ON_ADVANCE, over a desk's review: PENDING -START-> STARTED, then STARTED -FINISH-> DONE,
+     * automatic.
+     */
+    private static GraphDefinition<Desk, ReviewStatus, ReviewMove> reviews() {
+        return StateGraph.define(REVIEWS).automaticChain(AutomaticChain.ON_ADVANCE)
+                .initial(ReviewStatus.PENDING).terminal(ReviewStatus.DONE)
+                .statePolicy(ReviewStatus.PENDING, "a review starts")
+                .statePolicy(ReviewStatus.STARTED, "a started review finishes")
+                .transition(ReviewMove.START, ReviewStatus.PENDING, ReviewStatus.STARTED).endTransition()
+                .transition(ReviewMove.FINISH, ReviewStatus.STARTED, ReviewStatus.DONE).automatic().endTransition()
+                .build();
+    }
+
+    /** Desks over {@code desks} and accounts over {@code accounts}. */
+    private static MachineRegistry registry(GraphDefinition<Desk, DeskStatus, DeskMove> desks,
+                                            GraphDefinition<Account, AccountStatus, AccountTransition> accounts) {
         return MachineRegistry.builder()
-                .add(StateMachines.from(desks(chain)).state(Desk::status, Desk::setStatus).identity(Desk::id))
+                .add(StateMachines.from(desks).state(Desk::status, Desk::setStatus).identity(Desk::id))
                 .add(StateMachines.from(accounts).state(Account::status, Account::setStatus).identity(Account::id))
                 .build();
     }
@@ -171,7 +220,7 @@ class AdvanceOnlyChainTest {
         Account account = account(NEW);
         Desk desk = new Desk("d1");
         onInvite = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(ACCOUNTS, account, SET_PASSWORD);
-        try (MachineRegistry registry = registry(AutomaticChain.AFTER_COMMIT,
+        try (MachineRegistry registry = registry(desks(AutomaticChain.AFTER_COMMIT),
                 onboardingOnAdvance(new AddressVerifier()))) {
             Outcome<Desk, DeskStatus, DeskMove> outcome = registry.of(DESKS).execute(desk, DeskMove.INVITE);
             assertEquals(List.of("Done APPLIED SETTLE SETTLED"), described(outcome.automaticSteps()));
@@ -190,7 +239,7 @@ class AdvanceOnlyChainTest {
         Account account = account(NEW);
         Desk desk = new Desk("d1");
         onInvite = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(ACCOUNTS, account, SET_PASSWORD);
-        try (MachineRegistry registry = registry(AutomaticChain.ON_ADVANCE, onboarding(new AddressVerifier()))) {
+        try (MachineRegistry registry = registry(desks(AutomaticChain.ON_ADVANCE), onboarding(new AddressVerifier()))) {
             Outcome<Desk, DeskStatus, DeskMove> outcome = registry.of(DESKS).execute(desk, DeskMove.INVITE);
             assertEquals(List.of("Done APPLIED COMPLETE_INFO INFO_SET", "Done APPLIED COMPLETE_ADDRESS ADDRESS_SET",
                     "Done APPLIED ACTIVATE ACTIVE"), described(outcome.automaticSteps()));
@@ -210,7 +259,7 @@ class AdvanceOnlyChainTest {
         Desk desk = new Desk("d1", account);
         watcher = Optional.of(desk);
         onInvite = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(ACCOUNTS, account, FLAG);
-        try (MachineRegistry registry = registry(AutomaticChain.AFTER_COMMIT,
+        try (MachineRegistry registry = registry(desks(AutomaticChain.AFTER_COMMIT),
                 onboardingOnAdvance(new AddressVerifier()))) {
             Outcome<Account, AccountStatus, AccountTransition> outcome = registry.of(ACCOUNTS).advance(account);
             assertEquals(Optional.of(COMPLETE_INFO), outcome.requestedTransition());
@@ -219,6 +268,134 @@ class AdvanceOnlyChainTest {
             assertEquals(List.of("Done APPLIED SETTLE SETTLED"), described(reaction.automaticSteps()));
         }
         assertEquals(List.of(FLAGGED, DeskStatus.SETTLED), List.of(account.status(), desk.status()));
+    }
+
+    /** An execute that names an automatic edge runs it, from PASSWORD_SET, and its commit chains nothing. */
+    @Test
+    void anExecuteOfAnAutomaticIdentifierOnAnOnAdvanceMachineChainsNothing() {
+        Account account = account(PASSWORD_SET);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                machine(onboardingOnAdvance(new AddressVerifier())).execute(account, COMPLETE_INFO);
+        assertEquals(List.of(OutcomeCode.APPLIED, List.of()), List.of(outcome.code(), outcome.automaticSteps()));
+        assertEquals(INFO_SET, account.status());
+    }
+
+    /** The advance's own attempt fails by the continuing route to FLAGGED, and its chain goes on from there. */
+    @Test
+    void aContinuingRouteOnTheAdvancesOwnAttemptGoesOn() {
+        Account account = account(INFO_SET);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                machine(onboardingContinuingOnAdvance(unverifiable())).advance(account);
+        assertEquals(List.of(OutcomeCode.FAILURE_ROUTED, FLAGGED), List.of(outcome.code(), outcome.recordedState()));
+        assertEquals(List.of("Done APPLIED REQUEST_REVIEW REVIEW"), described(outcome.automaticSteps()));
+        assertEquals(REVIEW, account.status());
+    }
+
+    /** An execute of the same automatic edge fails by the same continuing route, and its commit chains nothing. */
+    @Test
+    void aContinuingRouteOnAnExecutedAutomaticEdgeChainsNothing() {
+        Account account = account(INFO_SET);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                machine(onboardingContinuingOnAdvance(unverifiable())).execute(account, COMPLETE_ADDRESS);
+        assertEquals(List.of(OutcomeCode.FAILURE_ROUTED, FLAGGED), List.of(outcome.code(), outcome.recordedState()));
+        assertEquals(List.of(), outcome.automaticSteps());
+        assertEquals(FLAGGED, account.status());
+    }
+
+    /**
+     * The advance's attempt, SETTLE, cascades INVITE to a second desk, which lands in INVITED, whose SETTLE is
+     * automatic: that desk is not the advanced one, so it does not chain.
+     */
+    @Test
+    void anAdvancesAttemptThatCascadesToAnotherEntityOfItsMachineDoesNotChainIt() {
+        Desk desk = new Desk("d1");
+        desk.setStatus(DeskStatus.INVITED);
+        Desk peer = new Desk("d2");
+        onSettle = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(DESKS, peer, DeskMove.INVITE);
+        try (MachineRegistry registry = registry(desks(AutomaticChain.ON_ADVANCE), onboarding(new AddressVerifier()))) {
+            Outcome<Desk, DeskStatus, DeskMove> outcome = registry.of(DESKS).advance(desk);
+            assertEquals(Optional.of(DeskMove.SETTLE), outcome.requestedTransition());
+            assertEquals(List.of(), outcome.automaticSteps());
+        }
+        assertEquals(List.of(DeskStatus.SETTLED, DeskStatus.INVITED), List.of(desk.status(), peer.status()));
+    }
+
+    /**
+     * The advance's attempt cascades START to the same desk in the review machine, also ON_ADVANCE, whose STARTED has
+     * an automatic edge: the same instance under another key is not the advanced entity, so its review does not chain.
+     */
+    @Test
+    void anAdvancesAttemptThatMovesItsEntityInAnotherOnAdvanceMachineDoesNotChainIt() {
+        Desk desk = new Desk("d1");
+        desk.setStatus(DeskStatus.INVITED);
+        onSettle = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(REVIEWS, desk, ReviewMove.START);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(desks(AutomaticChain.ON_ADVANCE)).state(Desk::status, Desk::setStatus)
+                        .identity(Desk::id))
+                .add(StateMachines.from(reviews()).state(Desk::review, Desk::setReview).identity(Desk::id))
+                .add(StateMachines.from(onboarding(new AddressVerifier())).state(Account::status, Account::setStatus)
+                        .identity(Account::id))
+                .build()) {
+            assertEquals(List.of(), registry.of(DESKS).advance(desk).automaticSteps());
+        }
+        assertEquals(List.of(DeskStatus.SETTLED, ReviewStatus.STARTED), List.of(desk.status(), desk.review()));
+    }
+
+    /**
+     * The advance's attempt INVITE moves the desk to INVITED, and the step of its chain, SETTLE, cascades INVITE to a
+     * second desk: that step is no advance the application made, so the second desk does not chain.
+     */
+    @Test
+    void aChainStepThatMovesAnOnAdvancePeerDoesNotChainIt() {
+        Desk desk = new Desk("d1");
+        Desk peer = new Desk("d2");
+        onSettle = (TransitionContext<Desk, DeskStatus, DeskMove> ctx) -> ctx.cascade(DESKS, peer, DeskMove.INVITE);
+        try (MachineRegistry registry = registry(desks(AutomaticChain.ON_ADVANCE, true),
+                onboarding(new AddressVerifier()))) {
+            Outcome<Desk, DeskStatus, DeskMove> outcome = registry.of(DESKS).advance(desk);
+            assertEquals(Optional.of(DeskMove.INVITE), outcome.requestedTransition());
+            assertEquals(List.of("Done APPLIED SETTLE SETTLED"), described(outcome.automaticSteps()));
+        }
+        assertEquals(List.of(DeskStatus.SETTLED, DeskStatus.INVITED), List.of(desk.status(), peer.status()));
+    }
+
+    /** The advance that the async facade submits takes every automatic edge, as the synchronous one does. */
+    @Test
+    void anAsyncAdvanceOnAnOnAdvanceMachineChainsAsTheSyncOneDoes() {
+        Account account = account(PASSWORD_SET);
+        Outcome<Account, AccountStatus, AccountTransition> outcome =
+                machine(onboardingOnAdvance(new AddressVerifier())).async().advance(account).join();
+        assertEquals(List.of(OutcomeCode.APPLIED, Optional.of(COMPLETE_INFO)),
+                List.of(outcome.code(), outcome.requestedTransition()));
+        assertEquals(List.of("Done APPLIED COMPLETE_ADDRESS ADDRESS_SET", "Done APPLIED ACTIVATE ACTIVE"),
+                described(outcome.automaticSteps()));
+        assertEquals(ACTIVE, account.status());
+    }
+
+    /**
+     * SET_PASSWORD's hook advances its own account: the operation's commit chains nothing, and the hook's advance
+     * takes every automatic edge, which its own outcome lists.
+     */
+    @Test
+    void aHookThatAdvancesItsOwnEntityChainsItInTheHooksOutcome() {
+        AtomicReference<StateMachine<Account, AccountStatus, AccountTransition>> self = new AtomicReference<>();
+        List<Outcome<Account, AccountStatus, AccountTransition>> hooked = new ArrayList<>();
+        self.set(machine(onboardingOnAdvance(new AddressVerifier(),
+                (Account each) -> hooked.add(self.get().advance(each)))));
+        Account account = account(NEW);
+        assertEquals(List.of(), self.get().execute(account, SET_PASSWORD).automaticSteps());
+        assertEquals(Optional.of(COMPLETE_INFO), hooked.get(0).requestedTransition());
+        assertEquals(List.of("Done APPLIED COMPLETE_ADDRESS ADDRESS_SET", "Done APPLIED ACTIVATE ACTIVE"),
+                described(hooked.get(0).automaticSteps()));
+        assertEquals(ACTIVE, account.status());
+    }
+
+    /** An address verifier that cannot verify any address. */
+    private static AddressVerifier unverifiable() {
+        AddressVerifier verifier = new AddressVerifier();
+        verifier.behaviour = (Account target) ->
+                ActionOutcome.failed(AddressFailures.Unverifiable.class, "address cannot be verified");
+        return verifier;
     }
 
     /**

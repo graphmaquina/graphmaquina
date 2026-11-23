@@ -250,7 +250,7 @@ under `/machine/â€¦`, `/states/<i>`, `/catalog/<i>`, `/transitions/<from>/<id>/â
 `/transitions/<from>/<id>/automatic`, a continuing `onFailure` route `onFailureContinues` and a continuing rule
 `recoveries/<i>/continues`, each `true` and written only when set, and a state with two or more automatic edges the
 order they are tried in, at `/automaticOrder/<state>/count` and `/automaticOrder/<state>/<i>`. A machine that takes its
-automatic edges only on an `advance` adds `/automaticChain` as `ON_ADVANCE`, written only then.
+automatic edges on its own only on an `advance` adds `/automaticChain` as `ON_ADVANCE`, written only then.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 

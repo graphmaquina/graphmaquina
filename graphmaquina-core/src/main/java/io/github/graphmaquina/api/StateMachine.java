@@ -86,11 +86,12 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * Once the attempt committed, it runs the automatic chain of each entity it moved, as execute does, its own
      * entity's included unless the attempt's failure took a route that does not continue: the attempts that follow
      * are each a call of their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an
-     * Error, never throw to the caller. On an {@link AutomaticChain#ON_ADVANCE} machine, this is the only call that
-     * takes the automatic edges: its own entity's chain runs over every automatic edge it meets, while the other
-     * entities of that machine its commits moved do not chain, and a call made on this thread inside its post-commit
-     * that moves its entity stops that chain; only an advance of the entity chains it again, the caller's next one or
-     * a nested one, such as a hook's call to advance.
+     * Error, never throw to the caller. On an {@link AutomaticChain#ON_ADVANCE} machine, this is the only call after
+     * which the machine takes the automatic edges on its own, though a call that names an automatic edge's identifier
+     * still runs that edge and chains nothing: its own entity's chain runs over every automatic edge it meets, while
+     * the other entities of that machine its commits moved do not chain, and a call made on this thread inside its
+     * post-commit that moves its entity stops that chain; only an advance of the entity chains it again, the caller's
+     * next one or a nested one, such as a hook's call to advance.
      */
     Outcome<E, S, T> advance(E entity);
 

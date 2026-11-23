@@ -231,7 +231,8 @@ final class MachineVocabularyEmitter {
         element(source, Timeout.class.getName() + "[] timeout() default {};",
             "the timeout of the asynchronous action, at most one; none by default");
         element(source, "boolean automatic() default false;",
-            "whether the edge is automatic, tried after a commit from its origin; false by default");
+            "whether the edge is automatic, tried from its origin after a commit, or only on advance when the"
+                + " Definition's automaticChain is ON_ADVANCE; false by default");
         element(source, "boolean onFailureContinues() default false;",
             "whether the {@code onFailure} route continues the chain of automatic attempts; false by default");
         element(source, symbolClass(HookSymbol.class) + "[] afterCommit() default {};",

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 /**
  * What the processor reads of the {@code automaticChain} element of the {@code Definition} and what it generates for
  * it: the setting on the graph of an {@code ON_ADVANCE} machine, nothing for the default, the outline rules that
- * judge it on the {@code Definition}, and the generated set that takes its automatic edges only on {@code advance}.
+ * judge it on the {@code Definition}, and the generated set that chains only on {@code advance}.
  */
 class TypedAutomaticChainTest {
 

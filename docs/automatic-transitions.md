@@ -3,10 +3,10 @@
 An automatic edge is one the machine takes on its own. By default, after a commit moves an entity, the entity runs its
 automatic chain, unless a failure route that does not continue moved it: while its state has an automatic edge, it
 makes an attempt, which runs the first of those edges that its guards admit. `advance(entity)` makes one attempt on
-request, for an entity whose data changed without a transition, and a graph can declare that only `advance` takes its
-automatic edges, as [chain only on advance](#chain-only-on-advance) says. The guards already say when an entity may go
-on, so the application writes no loop of its own: no list of operations to try, no rejections to ignore and no bound
-against a loop that never ends.
+request, for an entity whose data changed without a transition, and a graph can declare that the machine takes its
+automatic edges on its own only on `advance`, as [chain only on advance](#chain-only-on-advance) says. The guards
+already say when an entity may go on, so the application writes no loop of its own: no list of operations to try, no
+rejections to ignore and no bound against a loop that never ends.
 
 The library reports and the caller decides. What goes wrong in a chain never throws, an `Error` aside, to the caller
 whose call committed: its outcome carries the failure, the abort or the guard that stopped the chain, and the
@@ -214,8 +214,10 @@ An operation that commits a self-loop does the same with a hop of its own: `touc
 
 A machine takes its automatic edges after every commit unless its graph says otherwise. `automaticChain =
 AutomaticChain.ON_ADVANCE` on the `Definition`, or `automaticChain(AutomaticChain.ON_ADVANCE)` on the DSL builder,
-makes `advance(entity)` the only call that takes them; `definition().automaticChain()` reads the setting, which is
-`AFTER_COMMIT` when the graph declares nothing. A profile fits: saving what the user typed must not complete it behind
+makes `advance(entity)` the only call after which the machine takes them on its own; `definition().automaticChain()`
+reads the setting, which is `AFTER_COMMIT` when the graph declares nothing. A request that names an automatic edge, an
+`execute` of its identifier, a choice's candidate, a watch rule or a cascade, still runs that edge, and its commit
+chains nothing. A profile fits: saving what the user typed must not complete it behind
 the user's back. The guards `hasName` and `hasAddress` are static methods of
 [ProfileGuards](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/ProfileGuards.java). In
 [Profiles](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/profile/Profiles.java), `NAME` and
@@ -318,7 +320,8 @@ recovery state until an operation or an `advance` moves it. A route declared to 
 recovery state instead. It may be declared on any edge, automatic or not: when the call of the application fails by
 such a route, its entity runs its chain from the recovery state too. On a machine declared `ON_ADVANCE`, the route is
 declared on an automatic edge only, since a manual edge never chains there (`SG306`): an `advance`, or an attempt of
-its chain, that fails by it goes on from the recovery state. With annotations, a `Recovery` takes
+its chain, that fails by it goes on from the recovery state, while an `execute` of that automatic edge, or any other
+request that names it, fails by it to the recovery state and runs no chain. With annotations, a `Recovery` takes
 `continueChain = true`, as `COMPLETE_ADDRESS` declares above, and a `Transition` takes `onFailureContinues = true`,
 which needs an `onFailure`. A continuing route leads to a state with an automatic edge, or the build fails.
 
