@@ -14,8 +14,9 @@ import java.util.Optional;
  * once its watch reactions ran: one chain per entity of the commit, each a loop of automatic attempts, each attempt a
  * root call of its own, as {@link Attempts} makes it. An entity of a machine that chains only on advance chains only
  * after the commit of an advance of that very entity that the application made. The deepest commit that moved an
- * entity chains it: an entity that a call nested in the post-commit moved is that call's to chain, as its
- * {@link PostCommitScope} tells, so an advanced entity that a nested call moved chains no further.
+ * entity decides its chain: an entity that a call nested in the post-commit moved is that call's to chain or not, as
+ * its {@link PostCommitScope} tells, and this commit does not chain it. On a machine that chains only on advance,
+ * that call chains it only when it is itself a call to advance for that entity, such as one a hook makes.
  */
 final class AutomaticChains {
 

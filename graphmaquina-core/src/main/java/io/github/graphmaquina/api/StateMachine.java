@@ -88,7 +88,8 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * Error, never throw to the caller. On an {@link AutomaticChain#ON_ADVANCE} machine, this is the only call that
      * takes the automatic edges: its own entity's chain runs over every automatic edge it meets, while the other
      * entities of that machine its commits moved do not chain, and a call made on this thread inside its post-commit
-     * that moves its entity stops that chain, which goes on only when advance is called again.
+     * that moves its entity stops that chain; only an advance of the entity chains it again, the caller's next one or
+     * a nested one, such as a hook's call to advance.
      */
     Outcome<E, S, T> advance(E entity);
 
