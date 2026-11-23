@@ -107,8 +107,8 @@ Four situations are distinct, and each has its own observable result.
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
 the only exit of a non-terminal state, and it is forbidden on a terminal.
 
-`Ignored` is reserved for `reevaluate` and `advance`, which request no identifier. A reevaluation whose selected edge
-is refused returns `Rejected`; an `advance` never does.
+`Ignored` is reserved for `reevaluate`, `advance` and `choose`, which request no identifier. A reevaluation whose
+selected edge is refused returns `Rejected`; an `advance` never does, and neither does a `choose`.
 
 ### Guards and the reason a request is refused
 

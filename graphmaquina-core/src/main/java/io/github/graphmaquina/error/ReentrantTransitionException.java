@@ -6,8 +6,9 @@ import lombok.Getter;
 import lombok.NonNull;
 
 /**
- * execute, reevaluate, advance or an eligibility check was called on a thread that is already running a root
- * transaction or an eligibility check, evaluating a watch or notifying an observer, from one of the callbacks that run
+ * execute, reevaluate, advance, choose or an eligibility check, of eligibility or chooseEligibility, was called on a
+ * thread that is already running a root transaction or an eligibility check, evaluating a watch or notifying an
+ * observer, from one of the callbacks that run
  * there: a guard, an action, a state accessor, an identity function or a sub-machine's childOf or parentOf inside the
  * transaction, or any of them but the action inside the check, which runs none; a watch's peersOf, ownerOf or
  * condition, or a state accessor or identity function the engine calls while it evaluates the watch; or a registry

@@ -208,7 +208,9 @@ key; a second `as(...)` and an
 peers and refuses a watch on another machine.
 
 A `StateMachine` exposes `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)`,
-`advance(entity)`, `eligibility(entity, id)` and `eligibility(entity, id, input)`, `transitionsFrom(state)`,
+`advance(entity)`, `eligibility(entity, id)` and `eligibility(entity, id, input)`, `choose(entity, candidates)` and
+`choose(entity, candidates, input)`, `chooseEligibility(entity, candidates)` and
+`chooseEligibility(entity, candidates, input)`, `transitionsFrom(state)`,
 `definition()` and `key()`, plus `async()`, an `AsyncStateMachine` whose
 `execute(entity, id)`, `execute(entity, id, input)`, `reevaluate(entity)` and `advance(entity)` return a
 `CompletableFuture`, and

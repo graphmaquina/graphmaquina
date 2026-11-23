@@ -52,8 +52,8 @@ public interface FlowView {
     Set<FlowKey<?>> keys();
 
     /**
-     * The entity of the root call: the instance its caller passed to the operation, to {@code reevaluate} or to
-     * {@code advance}, live and never a copy. A cascaded step or the exit of a sub-machine reaches the root call's
+     * The entity of the root call: the instance its caller passed to the operation, to {@code reevaluate}, to
+     * {@code advance} or to {@code choose}, live and never a copy. A cascaded step or the exit of a sub-machine reaches the root call's
      * entity here, not its own, which its context's {@code entity()} gives, and so does the hook of any hop of the
      * call, whose own entity is its first argument. A change made to it is immediate and never undone, not even when
      * the call fails. Present in the flow every step and every hook of a call receives, and in the flow a call hands

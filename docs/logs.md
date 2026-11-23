@@ -1,8 +1,8 @@
 # Debug a call with logs
 
 The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
-machine sets alike, at two levels. `DEBUG` logs how each call started, the hops and starts it committed and how it
-ended; `TRACE` adds each step the call took on the way. Nothing is logged on this logger at `INFO` or above: the
+machine sets alike, at two levels. `DEBUG` logs how each call started, the automatic edge an `advance` admitted, the
+hops and starts it committed and how it ended; `TRACE` adds each step the call took on the way. Nothing is logged on this logger at `INFO` or above: the
 caller already receives the outcome or the exception. An eligibility check is no call, but it logs lines of its own on
 the same logger, as [What a check logs](#what-a-check-logs) shows. The library's only other record is a `WARNING` on
 the logger `io.github.graphmaquina` for an observer that threw. The logger is off by default. `java.util.logging`, the JDK's default backend for
@@ -129,6 +129,7 @@ lines are a call's.
 | Level | Line | Logged when |
 | --- | --- | --- |
 | `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, `reevaluate` or `advance`. A `reevaluate` or an `advance` logs it before it reads the state. A watch reaction, and an `advance` of an automatic chain, adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `DEBUG` | `call=<id> candidate <T> admitted` | An `advance` admitted the automatic edge `<T>` and ran it; the edges it tried before were refused. The line comes after the lines that edge's step logged, those of its action included, and before those of the commit. An `advance` that admits no edge logs none, and neither does one whose admitted step throws. |
 | `DEBUG` | `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
 | `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
 | `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n> automatic=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](commit-and-persistence.md#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, the size of its `automaticSteps()`, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |

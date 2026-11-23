@@ -90,10 +90,10 @@ Read the classification with its limits in mind:
   terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, the fixed reasons
   of the two refusals of a sub-machine: `DETACHED`, such as `no parent holds it in DEPOSIT`, and `RESERVED_EXIT`, such
   as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`, and the text of an `advance` that admitted no
-  automatic edge, which joins the rejection of each one it tried, such as
-  `no automatic transition was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete`. When `failsOn` or a
-  recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
-  details; it stays in `Failed.reason()` and `Failed.cause()`.
+  automatic edge, or of a `choose` that admitted none of its candidates, which joins the rejection of each one it
+  tried, such as `no candidate was admitted: COMPLETE_ADDRESS (GUARD addressComplete): address is incomplete`. When
+  `failsOn` or a recovery rule routes an exception, the failure's reason is composed from that exception and may carry
+  internal details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
   commits later and can still fail.
 - The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send. Each

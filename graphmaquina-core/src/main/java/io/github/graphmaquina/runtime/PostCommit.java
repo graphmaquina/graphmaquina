@@ -79,8 +79,8 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
 
     /**
      * The outcome of the call for its own step, {@code step}: the committed {@code records} and {@code starts}, these
-     * reactions and automatic steps, and the call's flow frozen as the outcome hands it out; for an advance that
-     * admitted no candidate, the rejections its body listed.
+     * reactions and automatic steps, and the call's flow frozen as the outcome hands it out; for an advance or a
+     * choice that admitted no candidate, the rejections its body listed.
      */
     <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> outcome(
             Transaction tx, E entity, StepResult<S, T> step, List<TransitionRecord<?, ?, ?>> records,
@@ -104,7 +104,7 @@ record PostCommit(List<Reaction> reactions, List<AutomaticStep> steps, List<Enti
 
     /**
      * The rejections of {@code ignored} for the call's entity. The only cast to the machine's entity type of them:
-     * the body of an advance lists rejections of the call's own entity only, which is an {@code E}.
+     * the body of an advance or a choice lists rejections of the call's own entity only, which is an {@code E}.
      */
     @SuppressWarnings("unchecked")
     private static <E, S extends Enum<S>, T extends Enum<T>> List<Eligibility.Ineligible<E, S, T>> rejectionsOf(

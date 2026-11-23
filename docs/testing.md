@@ -156,9 +156,9 @@ to confuse, so keep them apart:
 `hasTransitionsExactly` takes identifiers, so two edges that reach the same state are two entries.
 
 An `Ignored` outcome says which case it is, through `isIgnored().hasReason(...)`: `NO_WATCH` or `NO_RULE_MATCHED`
-for a reevaluation, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for an advance. It is the only outcome with no
-requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
-every other variant.
+for a reevaluation, `NO_AUTOMATIC_TRANSITION` or `NO_CANDIDATE_ADMITTED` for an advance, and `NO_CANDIDATE_ADMITTED`
+for a `choose`. It is the only outcome with no requested identifier, so `hasNoRequestedTransition()` holds on it and
+`requestedTransition(id)` holds on every other variant.
 
 Useful behavior to cover in your own domain:
 
@@ -430,7 +430,8 @@ A test that needs no properties at all can pass options explicitly —
 - **`hasAsyncAction()` is about the action alone.** An edge whose guard is async but whose action is not still
   satisfies `hasSyncAction()`.
 - **A self-loop is asserted like any other edge.** `transition(REVIEW, RETOUCH).hasTarget(REVIEW)` describes
-  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate` or `advance`.
+  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate`, `advance`
+  or `choose`.
 - **Two edges to one state need two expectations.** `transition(from, APPROVE)` and
   `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.

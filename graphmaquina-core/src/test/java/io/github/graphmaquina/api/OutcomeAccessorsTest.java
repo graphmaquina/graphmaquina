@@ -129,7 +129,7 @@ class OutcomeAccessorsTest {
 
     /**
      * Nothing is fabricated: an applied outcome carries no text of its own, nor does an ignored one, but for the
-     * advance that admitted no candidate, whose explanation names each rejection, in order.
+     * advance or the choice that admitted no candidate, whose explanation names each rejection, in order.
      */
     @Test
     void appliedAndIgnoredOutcomesExplainNothingButTheRejectionsOfTheCandidates() {
@@ -137,7 +137,7 @@ class OutcomeAccessorsTest {
         assertEquals(Optional.empty(), ignored(IgnoreReason.NO_WATCH).explanation());
         assertEquals(Optional.empty(), ignored(IgnoreReason.NO_RULE_MATCHED).explanation());
         assertEquals(Optional.empty(), ignored(IgnoreReason.NO_AUTOMATIC_TRANSITION).explanation());
-        assertEquals(Optional.of("no automatic transition was admitted: JANUARY (GUARD gate): gate closed;"
+        assertEquals(Optional.of("no candidate was admitted: JANUARY (GUARD gate): gate closed;"
                 + " MARCH (DETACHED): no parent holds it in MONDAY"),
                 ignored(IgnoreReason.NO_CANDIDATE_ADMITTED).explanation());
     }

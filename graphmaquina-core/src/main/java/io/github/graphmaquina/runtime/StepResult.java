@@ -27,7 +27,7 @@ sealed interface StepResult<S extends Enum<S>, T extends Enum<T>>
             case StepResult.Applied<Q, U> applied ->
                     new Outcome.Applied<>(peer, applied.from(), applied.transition(), applied.to(), List.of(),
                             List.of());
-            // Unreachable: only the body of an advance builds one, never a step. Kept only for switch exhaustiveness.
+            // Unreachable: only the body of an advance or a choice builds one, never a step. Kept for exhaustiveness.
             case StepResult.Ignored<Q, U> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.reason());
             // Unreachable: at depth > 0, Steps.rejected(...) always aborts. Kept only for switch exhaustiveness.
             case StepResult.Rejected<Q, U> rejected -> new Outcome.Rejected<>(peer, rejected.from(),
@@ -45,10 +45,10 @@ sealed interface StepResult<S extends Enum<S>, T extends Enum<T>>
     record Applied<S extends Enum<S>, T extends Enum<T>>(S from, T transition, S to) implements StepResult<S, T> { }
 
     /**
-     * An advance whose candidates, the automatic edges of {@code from}, were all refused, with {@code rejections}, the
-     * refusal of each in the order tried, whose entity is the call's. The advance's own body builds it, never a step. A
-     * reevaluation that selects no edge, and an advance whose state has no automatic edge, return their
-     * Outcome.Ignored without one.
+     * An advance whose candidates, the automatic edges of {@code from}, or a choice whose candidates, the caller's
+     * identifiers, were all refused, with {@code rejections}, the refusal of each in the order tried, whose entity is
+     * the call's. The call's own body builds it, never a step. A reevaluation that selects no edge, and an advance
+     * whose state has no automatic edge, return their Outcome.Ignored without one.
      */
     record Ignored<S extends Enum<S>, T extends Enum<T>>(S from, IgnoreReason reason,
                                                          List<Eligibility.Ineligible<?, S, T>> rejections)

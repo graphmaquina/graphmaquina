@@ -161,8 +161,8 @@ more than once in a cascade.
 
 ### Observers
 
-An observer sees every call of the set: each operation, each `reevaluate` and each `advance`, watch reactions and
-automatic attempts included. A cascade
+An observer sees every call of the set: each operation, each `reevaluate`, each `advance` and each `choose`, watch
+reactions and automatic attempts included. A cascade
 is part of the call that runs it. With the ticket set:
 
 ```java

@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.AsyncStateMachine;
 import io.github.graphmaquina.api.AutomaticChain;
 import io.github.graphmaquina.api.CallOrigin;
 import io.github.graphmaquina.api.CallRequest;
+import io.github.graphmaquina.api.ChoiceEligibility;
 import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
@@ -33,7 +34,9 @@ import lombok.NonNull;
  * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
  * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none, and neither does
  * an advance whose state has no automatic edge. An advance tries the automatic edges of the state as {@link Attempts}
- * says. An eligibility check runs the admission of that root step alone, as {@link Checks} says, and is no call.
+ * says, and a choice tries the caller's candidates as {@link Choices} says. An eligibility check runs the admission of
+ * that root step alone, as {@link Checks} says, and is no call; so is the check of a choice, which runs one per
+ * candidate.
  */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
@@ -203,6 +206,27 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         return Checks.check(this, entity, transition, Optional.of(input));
+    }
+
+    @Override
+    public Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates) {
+        return Choices.choose(this, entity, candidates, Optional.empty());
+    }
+
+    @Override
+    public Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates, @NonNull Object input) {
+        return Choices.choose(this, entity, candidates, Optional.of(input));
+    }
+
+    @Override
+    public ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates) {
+        return Choices.check(this, entity, candidates, Optional.empty());
+    }
+
+    @Override
+    public ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates,
+                                                        @NonNull Object input) {
+        return Choices.check(this, entity, candidates, Optional.of(input));
     }
 
     @Override

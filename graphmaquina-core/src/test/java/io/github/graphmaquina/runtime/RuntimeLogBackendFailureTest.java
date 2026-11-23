@@ -107,8 +107,8 @@ class RuntimeLogBackendFailureTest {
 
     /**
      * The start line is written inside the try that tells the observers of an Error: a backend that throws an Error
-     * on that line ends the call, of execute as of reevaluate, and the observers, told the call started, are told it
-     * failed with that very Error.
+     * on that line ends the call, of execute as of reevaluate or choose, and the observers, told the call started, are
+     * told it failed with that very Error.
      */
     @Test
     void anErrorOfTheBackendOnTheStartLineReachesTheObservers() {
@@ -147,14 +147,17 @@ class RuntimeLogBackendFailureTest {
                 assertSame(broken, assertThrows(Fatal.class,
                         () -> registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT)));
                 assertSame(broken, assertThrows(Fatal.class, () -> registry.of(DOCS).reevaluate(new Doc("2", DRAFT))));
+                assertSame(broken, assertThrows(Fatal.class,
+                        () -> registry.of(DOCS).choose(new Doc("3", DRAFT), List.of(SUBMIT))));
             } finally {
                 runtime.removeHandler(failing);
             }
             assertEquals(List.of("FINE call=A start Doc/DocStatus SUBMIT",
-                    "FINE call=B start Doc/DocStatus reevaluate"), lines(log));
+                    "FINE call=B start Doc/DocStatus reevaluate", "FINE call=C start Doc/DocStatus choose SUBMIT"),
+                    lines(log));
         }
         assertEquals(List.of("started", "failed with the backend's Error", "started",
-                "failed with the backend's Error"), heard);
+                "failed with the backend's Error", "started", "failed with the backend's Error"), heard);
     }
 
     /**

@@ -86,8 +86,9 @@ class OperationInputDefaultsTest {
         public CompletableFuture<Outcome<Object, S, T>> advance(Object e) { return execute(e, T.GO); }
     }
     /**
-     * A machine that implements only its abstract methods, so the input overload of {@code execute} and both
-     * {@code eligibility} methods are the defaults.
+     * A machine that implements only its abstract methods, so the input overload of {@code execute}, both
+     * {@code eligibility} methods, both {@code choose} methods and both {@code chooseEligibility} methods are the
+     * defaults.
      */
     static class PlainMachine implements StateMachine<Object, S, T> {
         public MachineKey<Object, S, T> key() { return MachineKey.of(Object.class, S.class, T.class); }
@@ -158,5 +159,26 @@ class OperationInputDefaultsTest {
                 assertThrows(NullPointerException.class, () -> machine.eligibility(e, null, "value")).getMessage());
         assertEquals("input is marked non-null but is null",
                 assertThrows(NullPointerException.class, () -> machine.eligibility(e, T.GO, null)).getMessage());
+    }
+    @Test void choiceIsUnsupportedByDefaultAndRefusesANullArgumentFirst() {
+        Object e = new Object();
+        PlainMachine machine = new PlainMachine();
+        List<T> candidates = List.of(T.GO);
+        assertEquals("this StateMachine does not support choices",
+                assertThrows(UnsupportedOperationException.class, () -> machine.choose(e, candidates)).getMessage());
+        assertEquals("this StateMachine does not support choices",
+                assertThrows(UnsupportedOperationException.class,
+                        () -> machine.choose(e, candidates, "value")).getMessage());
+        assertEquals("this StateMachine does not support choice checks",
+                assertThrows(UnsupportedOperationException.class,
+                        () -> machine.chooseEligibility(e, candidates)).getMessage());
+        assertEquals("this StateMachine does not support choice checks",
+                assertThrows(UnsupportedOperationException.class,
+                        () -> machine.chooseEligibility(e, candidates, "value")).getMessage());
+        assertEquals("candidates is marked non-null but is null",
+                assertThrows(NullPointerException.class, () -> machine.choose(e, null)).getMessage());
+        assertEquals("input is marked non-null but is null",
+                assertThrows(NullPointerException.class,
+                        () -> machine.chooseEligibility(e, candidates, null)).getMessage());
     }
 }

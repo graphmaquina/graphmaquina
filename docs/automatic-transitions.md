@@ -106,7 +106,7 @@ marked automatic, it is a candidate of every attempt from its origin.
 
 On a machine that chains after every commit, the default, each entity with a hop or a sub-machine start in the commit of
 any root call runs its chain, in the order of the commit's log. Every call counts: an operation, an `execute`, a
-`reevaluate`, an `advance`, a watch reaction and an attempt, and so does every entity they move, a peer that a cascade
+`choose`, a `reevaluate`, an `advance`, a watch reaction and an attempt, and so does every entity they move, a peer that a cascade
 moved, a child that its parent started and a parent that a child's exit moved. A watch reacts only to a peer whose
 final state differs from its original one, but a chain also runs after a self-loop, such as the account's `TOUCH`, and
 after hops that bring the entity back where it started: a self-loop often means that data changed. A machine declared

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -175,5 +176,102 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      */
     default Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
         throw new UnsupportedOperationException("this StateMachine does not support eligibility checks");
+    }
+
+    /**
+     * Runs, as one call, the first of {@code candidates} that is admitted for {@code entity} in the state it is in now,
+     * trying them in the order given. Each candidate gets the admission of an execute of its identifier: the binding
+     * check of a sub-machine, the edge lookup, which refuses a candidate that no edge keys from the state as
+     * {@link RejectionKind#NO_TRANSITION} with the reason of the state's policy, the refusal of a reserved exit, then
+     * its guards in declaration order, with the context they get in that execute. A refused candidate passes to the
+     * next one, and the first one admitted runs within the same call as execute runs an edge, without running its
+     * guards again.
+     * <ul>
+     *   <li>It returns {@link Outcome.Applied} or {@link Outcome.Failed}, whose {@code requestedTransition()} is the
+     *       candidate that ran.</li>
+     *   <li>It returns {@link Outcome.Ignored} with {@link IgnoreReason#NO_CANDIDATE_ADMITTED} when every candidate was
+     *       refused; its {@code rejections()} lists each refusal in the order tried, which its {@code explanation()}
+     *       names. It writes nothing, and the guards of those candidates ran.</li>
+     *   <li>It never returns {@link Outcome.Rejected}.</li>
+     * </ul>
+     * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
+     * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error; a guard that throws fails
+     * the call, and the candidates after it are not tried. Blocks on an asynchronous edge. Once the call committed, it
+     * runs the automatic chain of each entity it moved as execute does: a choice is no advance, so an entity of an
+     * {@link AutomaticChain#ON_ADVANCE} machine does not chain. The call's {@link MachineCall#request()} is
+     * {@link CallRequest#CHOOSE}, which requests no identifier. A null argument or candidate, an empty list, a
+     * candidate listed twice, a candidate of another catalogue and a call made where no call may start are refused
+     * before the call starts and throw as themselves; such a call logs nothing. This default supports no choice: it
+     * throws instead of running; the machines the runtime builds implement it.
+     *
+     * @throws NullPointerException if {@code entity}, {@code candidates} or one of its elements is null
+     * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
+     *     another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the call is made where no call may start
+     * @throws UnsupportedOperationException if this machine does not support choices
+     */
+    default Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates) {
+        throw new UnsupportedOperationException("this StateMachine does not support choices");
+    }
+
+    /**
+     * Same as the two-argument {@code choose}, carrying a second, operation-specific value that the guards of each
+     * candidate tried, and the actions of the one that runs, read back through their context's {@code input}
+     * accessors, as they do in {@code execute(entity, candidate, input)}. A {@code null} input is refused before the
+     * call starts, as a {@code null} entity is; a choice that carries no input is the two-argument {@code choose}. This
+     * default supports no choice: it throws instead of running; the machines the runtime builds implement it.
+     *
+     * @throws NullPointerException if {@code entity}, {@code candidates}, one of its elements or {@code input} is null
+     * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
+     *     another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the call is made where no call may start
+     * @throws UnsupportedOperationException if this machine does not support choices
+     */
+    default Outcome<E, S, T> choose(@NonNull E entity, @NonNull List<T> candidates, @NonNull Object input) {
+        throw new UnsupportedOperationException("this StateMachine does not support choices");
+    }
+
+    /**
+     * Answers which of {@code candidates} {@code choose(entity, candidates)} would run for {@code entity} in the state
+     * it is in now, as a {@link ChoiceEligibility}. It checks each candidate in the order given, as
+     * {@code eligibility(entity, candidate)} checks it, and answers {@link ChoiceEligibility.Chosen} at the first one
+     * that is {@link Eligibility.Eligible}, with the {@link Eligibility.Ineligible} answers of the candidates before
+     * it, or {@link ChoiceEligibility.NoneAdmitted} with the answer of every candidate. Each candidate's check is a
+     * check of its own, as eligibility says: it reads the state again, under a deadline of its own, logs its own lines
+     * and, whatever it answers or throws, writes no state and runs no action, hook, watch reaction or automatic
+     * attempt. A check that throws ends the answer, and the candidates after it are not checked. Like a check, it is
+     * no call and tells no observer. A null argument or candidate, an empty list, a candidate listed twice, a candidate
+     * of another catalogue and a check made where no call may start are refused before the first check starts and
+     * throw as themselves; such an answer logs nothing. This default supports no choice check: it throws instead of
+     * answering; the machines the runtime builds implement it.
+     *
+     * @throws NullPointerException if {@code entity}, {@code candidates} or one of its elements is null
+     * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
+     *     another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.EligibilityCheckException if the check of a candidate cannot reach an answer
+     * @throws UnsupportedOperationException if this machine does not support choice checks
+     */
+    default ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates) {
+        throw new UnsupportedOperationException("this StateMachine does not support choice checks");
+    }
+
+    /**
+     * Same as the two-argument {@code chooseEligibility}, asking about the choice that carries {@code input}: which
+     * candidate {@code choose(entity, candidates, input)} would run. The guards read {@code input} back through their
+     * context's {@code input} accessors, as they do in that choice. A {@code null} input is refused, as a {@code null}
+     * entity is; a check that carries no input is the two-argument {@code chooseEligibility}. This default supports no
+     * choice check: it throws instead of answering; the machines the runtime builds implement it.
+     *
+     * @throws NullPointerException if {@code entity}, {@code candidates}, one of its elements or {@code input} is null
+     * @throws IllegalArgumentException if {@code candidates} is empty, lists an identifier twice or holds one of
+     *     another catalogue, which only raw types pass
+     * @throws io.github.graphmaquina.error.ReentrantTransitionException if the check is made where no call may start
+     * @throws io.github.graphmaquina.error.EligibilityCheckException if the check of a candidate cannot reach an answer
+     * @throws UnsupportedOperationException if this machine does not support choice checks
+     */
+    default ChoiceEligibility<E, S, T> chooseEligibility(@NonNull E entity, @NonNull List<T> candidates,
+                                                         @NonNull Object input) {
+        throw new UnsupportedOperationException("this StateMachine does not support choice checks");
     }
 }
