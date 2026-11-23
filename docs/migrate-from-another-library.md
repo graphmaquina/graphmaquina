@@ -141,11 +141,12 @@ state setter: the commit detects the change and fails with `CommitFailedExceptio
 
 What changes: `initial` describes the graph; it does not put new entities in that state, and nothing starts a machine:
 set the field when you create the entity. A new entity runs no hook and no automatic edge of its initial state until a
-call moves it or `advance(entity)` asks, and on a machine declared `ON_ADVANCE`, until `advance(entity)` asks. A final state accepts no edge at all, not even a self-loop, and every request
-there is refused as `NO_TRANSITION`, with the state's policy reason, or `terminal state <NAME> accepts no transitions`
-when it declares none. There is no "machine completed" event: react to a final destination in an after-commit hook
-through `CommitContext.isTerminal()`. The build also requires every state to be reachable from `initial` and every
-state that is not final to have an outgoing edge.
+call moves it or `advance(entity)` asks; on an `ON_ADVANCE` machine, no automatic edge runs until `advance(entity)`
+asks. A final state accepts no edge at all, not even a self-loop, and every request there is refused as `NO_TRANSITION`,
+with the state's policy reason, or `terminal state <NAME> accepts no transitions` when it declares none. There is no
+"machine completed" event: react to a final destination in an after-commit hook through `CommitContext.isTerminal()`.
+The build also requires every state to be reachable from `initial` and every state that is not final to have an outgoing
+edge.
 
 ### Internal transitions
 
@@ -153,11 +154,11 @@ A self-loop, with or without an action. The "internal edges" of
 [operations and internal edges](graph-model.md#operations-and-internal-edges) are another thing: edges without an
 operation.
 
-What changes: GraphMaquina has no internal transition. A self-loop is a full hop: the commit calls the state setter
-with the same state, the edge's hook or the machine's default hook runs, the hop appears in `records()`, and the
-entity's automatic chain runs again. If the state holds a sub-machine, the self-loop restarts the child at its initial
-state. Watches do not react to it, because the entity's final state equals its original state. The state must be
-listed in `allowsCycle`.
+What changes: GraphMaquina has no internal transition. A self-loop is a full hop: the commit calls the state setter with
+the same state, the edge's hook or the machine's default hook runs, the hop appears in `records()`, and, unless the
+machine is `ON_ADVANCE`, the entity's automatic chain runs again. If the state holds a sub-machine, the self-loop
+restarts the child at its initial state. Watches do not react to it, because the entity's final state equals its
+original state. The state must be listed in `allowsCycle`.
 
 ### Events with data
 
@@ -241,15 +242,15 @@ Edges marked `automatic = true`, or `automatic()` with the DSL, tried in the ord
 their state; `advance(entity)` makes one attempt on request. See [automatic transitions](automatic-transitions.md).
 
 What changes: an automatic edge is tried only after a call commits a move of the entity, or when you call
-`advance(entity)`; a graph that declares `automaticChain = AutomaticChain.ON_ADVANCE` tries it only on
-`advance(entity)`. A change of data without a transition triggers nothing, and a new entity in its initial state runs
-nothing until then. Each attempt is a separate call after the commit: its failure never reaches the caller of the
-original operation, which reads it in `automaticSteps()`, `automaticFailure()`, `automaticAbort()` or
-`automaticBlock()`. When every automatic edge of a state is guarded, on a machine that chains after every commit, each
-arrival in that state by an ordinary hop, a self-loop included, while no guard passes, runs an attempt that ends without a move and is reported in
-`automaticBlock()`. An arrival by a failure route that does not continue, the default, or by a call whose hook threw
-runs no attempt. A state with two or more automatic edges needs an explicit order, automatic edges may not form a
-cycle, and an attempt past `maxAutomaticChain`, 10 by default, that admits an edge aborts before its action runs.
+`advance(entity)`; an `ON_ADVANCE` graph tries it only on `advance(entity)`. A change of data without a transition
+triggers nothing, and a new entity in its initial state runs nothing until then. Each attempt is a separate call after
+the commit: its failure never reaches the caller of the original operation, which reads it in `automaticSteps()`,
+`automaticFailure()`, `automaticAbort()` or `automaticBlock()`. When every automatic edge of a state is guarded, on an
+`AFTER_COMMIT` machine, each arrival in that state by an ordinary hop, a self-loop included, while no guard passes, runs
+an attempt that ends without a move and is reported in `automaticBlock()`. An arrival by a failure route that does not
+continue, the default, or by a call whose hook threw runs no attempt. A state with two or more automatic edges needs an
+explicit order, automatic edges may not form a cycle, and an attempt past `maxAutomaticChain`, 10 by default, that
+admits an edge aborts before its action runs.
 
 ### Listeners and interceptors
 
@@ -371,17 +372,17 @@ an action moves another region in the same commit with `ctx.cascade(Other.class,
 [the pattern](migration-patterns.md#parallel-regions).
 
 What changes: GraphMaquina has no regions and no fork or join. Each region is a machine of its own, so an event goes to
-one region's facade, never to all regions at once, and the combined state is the set of fields. A fork becomes an
-action that cascades into the other regions, in the same commit. A join becomes a guard on the joining region's edge
-that reads the other regions' states, and something must request that edge when the last region arrives: the action
-of the region that arrives last cascades into the joining region, or your code calls the operation, or `advance` for
-an automatic edge, on the joining region. An automatic edge of the joining region is not tried when only another
-region moved, because a commit runs the automatic chains of the machines it moved, not of the others. When the join is
-an automatic edge, each arrival of the joining region in the state the join leaves, by an ordinary hop, a self-loop
-included, before the other regions are done, reports the refused attempt in `automaticBlock()`; an arrival by a
-failure route that does not continue, the default, or by a call whose hook threw runs no attempt. A refusal inside a
-cascade aborts the whole call. A state can hold one sub-machine only, so regions cannot all be sub-machines of one
-state. Two machines may share an entity only with different state enums.
+one region's facade, never to all regions at once, and the combined state is the set of fields. A fork becomes an action
+that cascades into the other regions, in the same commit. A join becomes a guard on the joining region's edge that reads
+the other regions' states, and something must request that edge when the last region arrives: the action of the region
+that arrives last cascades into the joining region, or your code calls the operation, or `advance` for an automatic
+edge, on the joining region. An automatic edge of the joining region is not tried when only another region moved,
+because a commit runs the automatic chains of the machines it moved, not of the others, and an `ON_ADVANCE` machine runs
+none. When the join is an automatic edge on an `AFTER_COMMIT` machine, each arrival of the joining region in the state
+the join leaves, by an ordinary hop, a self-loop included, before the other regions are done, reports the refused
+attempt in `automaticBlock()`; an arrival by a failure route that does not continue, the default, or by a call whose
+hook threw runs no attempt. A refusal inside a cascade aborts the whole call. A state can hold one sub-machine only, so
+regions cannot all be sub-machines of one state. Two machines may share an entity only with different state enums.
 
 ### Timers and timeouts
 
@@ -391,37 +392,36 @@ edge's guard compares a deadline stored on the entity with a clock its host rece
 [the pattern](migration-patterns.md#timers).
 
 What changes: GraphMaquina has no timers and nothing fires on its own: watches are not polled, and automatic edges run
-only after a commit or on `advance`. Your scheduler makes the call, so a timer that must survive a restart needs
-durable scheduling of your own. If the entity has moved meanwhile, the call is refused (`NO_TRANSITION`) or the guard
-refuses it, but only while the identifier and the guard tell the cases apart: when the same identifier is declared
-from another state the entity is now in, a stale timer applies that edge if its guard passes there. With the
-automatic-edge variant, every arrival in the timed state by an ordinary hop before the deadline, a self-loop included,
-runs an attempt that the guard refuses: the outcome reports it in `automaticBlock()`, `automaticSteps()` lists it, and
-observers see an extra call. An arrival by a failure route that does not continue, the default, or by a call whose
-hook threw runs no attempt. Calls from the scheduler are not serialized with other calls on the same entity. The
+only after a commit or on `advance`. Your scheduler makes the call, so a timer that must survive a restart needs durable
+scheduling of your own. If the entity has moved meanwhile, the call is refused (`NO_TRANSITION`) or the guard refuses
+it, but only while the identifier and the guard tell the cases apart: when the same identifier is declared from another
+state the entity is now in, a stale timer applies that edge if its guard passes there. With the automatic-edge variant
+on an `AFTER_COMMIT` machine, every arrival in the timed state by an ordinary hop before the deadline, a self-loop
+included, runs an attempt that the guard refuses: the outcome reports it in `automaticBlock()`, `automaticSteps()` lists
+it, and observers see an extra call. An arrival by a failure route that does not continue, the default, or by a call
+whose hook threw runs no attempt. Calls from the scheduler are not serialized with other calls on the same entity. The
 `asyncTimeout` and `@Timeout` settings are not state timers: they bound how long a call waits for an asynchronous action
 or guard, and when they expire the call aborts and takes no failure route.
 
 ### Deferred events
 
-Closest pattern: record the deferred request as data on the entity, in a plain field, and declare an automatic edge
-from the state where the event becomes acceptable, guarded by that field. When a call moves the entity into that
-state, its automatic chain takes the edge, unless the graph chains only on `advance`; if the entity is already there when the request is recorded, call
-`advance(entity)`. See [the pattern](migration-patterns.md#deferred-events).
+Closest pattern: record the deferred request as data on the entity, in a plain field, and declare an automatic edge from
+the state where the event becomes acceptable, guarded by that field. When a call moves the entity into that state, its
+automatic chain takes the edge, unless the machine is `ON_ADVANCE`; if the entity is already there when the request is
+recorded, call `advance(entity)`. See [the pattern](migration-patterns.md#deferred-events).
 
 What changes: GraphMaquina never queues an event. A request the current state does not accept returns `Rejected` with
 `NO_TRANSITION` at once, and it is your code that records it for later. The recorded request is a field you persist; it
-carries no payload unless you store one on the entity, because an automatic edge receives no input. After a commit
-that moves the entity into the state by an ordinary hop, the deferred edge runs as a separate call whose result is in
-`automaticSteps()`; when you call `advance`, the attempt is that call, and its result is that call's own outcome. An
-arrival by a failure route that does not continue, the default, or by a call whose hook threw runs no attempt, so the
-request waits until you call `advance`. Every other arrival in that state by an ordinary hop, a self-loop included,
-with no request recorded, also runs an attempt that the guard refuses: the outcome reports it in `automaticBlock()`,
-`automaticSteps()` lists it, observers see an extra call, and code that treats `automaticBlock()` as an error, as the
-controller of [what the caller sees](automatic-transitions.md#what-the-caller-sees) does, must not do so for this edge.
-If that state has other automatic edges, declare their order with `AutomaticOrder` (`SG108`). When the deferred edge
-leads to a state that is not final, clear the field in its action or hook, or the edge is taken again the next time
-the entity arrives.
+carries no payload unless you store one on the entity, because an automatic edge receives no input. On an `AFTER_COMMIT`
+machine, after a commit that moves the entity into the state by an ordinary hop, the deferred edge runs as a separate
+call whose result is in `automaticSteps()`; when you call `advance`, the attempt is that call, and its result is that
+call's own outcome. An arrival by a failure route that does not continue, the default, or by a call whose hook threw
+runs no attempt, so the request waits until you call `advance`. On that machine every other arrival in that state by an
+ordinary hop, a self-loop included, with no request recorded, also runs an attempt that the guard refuses: the outcome
+reports it in `automaticBlock()`, `automaticSteps()` lists it, observers see an extra call, and code that treats
+`automaticBlock()` as an error, as the controller of [what the caller sees](automatic-transitions.md#what-the-caller-sees) does, must not do so for this edge. If that state has other
+automatic edges, declare their order with `AutomaticOrder` (`SG108`). When the deferred edge leads to a state that is
+not final, clear the field in its action or hook, or the edge is taken again the next time the entity arrives.
 
 ### One machine object per entity
 

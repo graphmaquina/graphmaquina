@@ -17,7 +17,8 @@ public enum AutomaticChain {
      * that same entity that follows the attempt's commit, over every automatic edge. The commit of any other call
      * runs no chain for an entity of that machine: an operation, an execute, a choice, a reevaluate, a watch
      * reaction, a cascade, the start or the exit of a sub-machine, and an attempt or a chain of another entity. A
-     * nested call that moves the advanced entity stops its chain.
+     * nested call that moves the advanced entity stops its chain, unless that nested call is itself an advance of the
+     * entity, such as a hook's call to advance, which chains it in its own outcome.
      */
     ON_ADVANCE
 }
