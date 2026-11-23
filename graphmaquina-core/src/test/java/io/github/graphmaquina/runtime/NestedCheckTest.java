@@ -65,10 +65,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  * or check holds: of another set, of the same machine, a parent its child's binding check only registered, or, from
  * the guard of a nested check, a third entity. The check of a held entity is refused before it starts: the root entity
  * of an enclosing call, the entity of a cascade step in flight, or one a cascade moved before. Inside a nested check, a
- * read of a held entity, through a peer view or a binding lookup, throws into the code that made it, and the nested
- * check fails into the guard. Everything else stays refused: a write from a nested check's guard, a check from a state
- * getter, an identity function, an action or an asynchronous guard's test call. A nested check whose identity throws
- * fails the guard and leaves the thread able to run the next call.
+ * read of a held entity, through a context's peer view or a binding lookup, throws into the code that made it, and the
+ * nested check fails into the guard. Everything else stays refused: a write from a nested check's guard, a check from a
+ * state getter, an identity function, an action or an asynchronous guard's test call. A nested check whose identity
+ * throws fails the guard and leaves the thread able to run the next call.
  */
 class NestedCheckTest {
 

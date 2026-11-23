@@ -71,8 +71,8 @@ class DiagnosticsTest {
                 + " peersOf, ownerOf or condition, a state accessor, an identity function or an observer cannot start"
                 + " another transition or eligibility check, except that a synchronous guard can check an entity that"
                 + " no enclosing call or check holds, and in that check's scope a held entity cannot be read through a"
-                + " peer view or a binding lookup, nor can an enclosing action's context cascade; an action moves its"
-                + " peers with ctx.cascade(...)",
+                + " context's peer view or a binding lookup, nor can an enclosing action's context cascade; an action"
+                + " moves its peers with ctx.cascade(...)",
                 reentrant.getMessage());
         assertEquals(DRAFT, other.status());
     }

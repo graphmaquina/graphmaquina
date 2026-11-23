@@ -28,17 +28,17 @@ import lombok.NonNull;
  *       cascade target whose step has not run. The test call of an asynchronous guard cannot start a check, and
  *       neither can anything the engine runs for a guard, such as the state getter or the identity function of a peer
  *       it reads, or the log lines and the identity text of a check it starts.</li>
- *   <li>A nested check's scope is all it runs from its start to its answer: its own step, from the read of its
- *       entity's identity to its last guard, with its state read, its binding lookups, its guards and everything they
- *       run, and that step's TRACE lines and the texts they and the step's failures print. Code in that scope cannot
- *       read a held entity through the engine either: a read through a context's peer view, by stateOf, allIn or
- *       anyIn, the view of an enclosing guard's or action's context included, or through a sub-machine binding
- *       lookup, throws this exception, whose {@code entity()} is the entity read, into the code that made it, so a
- *       nested check never reads, through a peer view or a binding lookup, an entity that an enclosing call or check
- *       has in flight, or whose hop or start is pending there. A read the engine does not make, such as a guard's own
- *       call of a getter, is not refused. A guard that lets this exception through fails the nested check with an
- *       {@code EligibilityCheckException}, and the guard that started that check fails in turn unless it catches
- *       it.</li>
+ *   <li>A nested check's scope is its own step, from the read of its entity's identity to its last guard, with its
+ *       state read, its binding lookups, its guards and everything they run, and that step's TRACE lines and the
+ *       texts they and the step's failures print. Code in that scope cannot read a held entity through a context's
+ *       peer view or a sub-machine binding lookup either: such a read, by stateOf, allIn or anyIn of any context's
+ *       view, an enclosing guard's or action's included, or by a binding lookup, throws this exception, whose
+ *       {@code entity()} is the entity read, into the code that made it, so a nested check never reads, through a
+ *       context's peer view or a binding lookup, an entity that an enclosing call or check has in flight, or whose hop
+ *       or start is pending there. Any other read is not refused, such as a guard's own call of a getter, or a read
+ *       through a watch condition's view that it kept. A guard that lets this exception through fails the nested
+ *       check with an {@code EligibilityCheckException}, and the guard that started that check fails in turn unless
+ *       it catches it.</li>
  *   <li>Nor can code in that scope move an entity of the call the check is nested in: a cascade or a cascadeAll
  *       through a retained action context of that call throws this exception, whose {@code key()} and
  *       {@code entity()} are that action's, before it stages anything or poisons the call. With no nested check's
@@ -74,8 +74,8 @@ public final class ReentrantTransitionException extends StateMachineException {
                 + " childOf or parentOf, a watch's peersOf, ownerOf or condition, a state accessor, an identity"
                 + " function or an observer cannot start another transition or eligibility check, except that a"
                 + " synchronous guard can check an entity that no enclosing call or check holds, and in that check's"
-                + " scope a held entity cannot be read through a peer view or a binding lookup, nor can an enclosing"
-                + " action's context cascade; an action moves its peers with ctx.cascade(...)");
+                + " scope a held entity cannot be read through a context's peer view or a binding lookup, nor can an"
+                + " enclosing action's context cascade; an action moves its peers with ctx.cascade(...)");
         this.key = key;
         this.entity = entity;
     }

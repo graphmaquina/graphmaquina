@@ -119,8 +119,8 @@ peer machine's identity function and, when the call holds no pending state for t
 thread; what either throws reaches the guard or action as it is. A peer view answers with a state; to ask whether
 another machine would admit an operation now, its guards included, a synchronous guard can call that machine's check,
 as [check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) shows. That check reads
-stored states only, so in its scope a peer read of an entity that an enclosing call or check holds, whose state
-the enclosing call may be about to replace, throws `ReentrantTransitionException`.
+stored states only, so in its scope a read through a context's peer view of an entity that an enclosing call or
+check holds, whose state the enclosing call may be about to replace, throws `ReentrantTransitionException`.
 
 | Peer helper | Empty collection | Nonempty collection |
 | --- | --- | --- |

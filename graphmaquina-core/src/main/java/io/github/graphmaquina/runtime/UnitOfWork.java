@@ -99,12 +99,12 @@ final class UnitOfWork {
     /**
      * How many synchronous guards of this unit of work's steps are running on its thread, as {@link Steps} brackets
      * each one's test call, except while the engine runs other application code inside such a guard, which holds it
-     * at 0 meanwhile: a peer read; the identity read before a nested check starts; a nested check, from before its log
-     * opens until its last line, so both its own scope and the code the engine runs for it in this scope, the log's
-     * backend for its levels and its start, verdict and failed lines, with the identity text and the failure reason
-     * that those lines and its failure print; and a cascade, for the whole of it, its steps included, whose own guards
-     * then count from 0. {@link Reentrancy} lets a check start only while the innermost scope's count is above 0.
-     * Every change is a plain store that a finally undoes with another one.
+     * at 0 meanwhile: a peer read; the identity function and the identity's equals before a nested check starts; a
+     * nested check, from before its log opens until its last line, so both its own scope and the code the engine runs
+     * for it in this scope, the log's backend for its levels and its start, verdict and failed lines, with the identity
+     * text and the failure reason that those lines and its failure print; and a cascade, for the whole of it, its steps
+     * included, whose own guards then count from 0. {@link Reentrancy} lets a check start only while the innermost
+     * scope's count is above 0. Every change is a plain store that a finally undoes with another one.
      */
     int guards;
 
