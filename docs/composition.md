@@ -132,7 +132,7 @@ an identifier of the wrong machine is a javac error:
 | `child` | A property of the parent that returns `Optional` of the child's entity: `Booking.deposit()` and `Booking.balance()` return `Optional<Payment>`. |
 | `parentLookup` | A `@GraphLookup` method that finds the parent of a child entity, described below. |
 | `parent` | Instead of `parentLookup`, a property of the child that returns `Optional` of the parent's entity. A child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup` (`SG806`). |
-| `exits` | One `Exit(on, transition)` per terminal state of the child: the identifier of the parent that the terminal state selects, which needs an edge from the bound state (`SG801`, `SG802`). Two terminal states may select the same identifier, as `DECLINED` and `VOIDED` do in `Subscriptions` below. |
+| `exits` | One `Exit(on, transition)` per terminal state of the child: the identifier of the parent that the terminal state selects, which needs an edge from the bound state (`SG801`, `SG802`). Two terminal states may select the same identifier, as `DECLINED` and `VOIDED` do in `Subscriptions` below. That edge is neither a gate nor external (`SG114`). |
 
 An identifier that an exit names runs from the bound state only when the child ends. No `onFailure`, recovery rule or
 rule of that state's watch may name it from there, and no operation of the facade may execute it at all, since an

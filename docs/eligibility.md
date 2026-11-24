@@ -43,10 +43,11 @@ An answer promises no more than that:
 - Neither answer names a destination. `Rejected` names none, and an `Eligible` that named one would read as a
   promise the check does not make.
 
-Through a generated facade, you check the operations you declare a check for, and the candidates of the choice checks
-you declare; through a `StateMachine`, any identifier of the machine's catalogue. A
+Through a generated facade, you check the operations and the [gates](edge-kinds.md) you declare a check for, and the
+candidates of the choice checks you declare; through a `StateMachine`, any identifier of the machine's catalogue. A
 [choice check](choices.md#check-a-choice) runs this check for each of its candidates in turn, and answers which one a
-choice would run.
+choice would run. A gate is a self-loop that only a check asks, which is how a permission that moves nothing is asked;
+an external edge, which another system takes, is answered `NO_TRANSITION` by every check.
 
 ## Check through the facade
 
@@ -68,16 +69,20 @@ and one of `cancel(Order order, String cancellationId)`, whose input is the canc
 Eligibility<Order, OrderStatus, OrderTransition> canCancel(Order order, String cancellationId);
 ```
 
-The processor refuses a check whose `id` no operation of the facade executes, such as an identifier that only a failure
-route declared on the facade itself uses, the exit of a sub-machine, or one without an edge (`SG512`); a check that does
-not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>` (`SG513`); and a second check
-of one operation, or a method that carries both a `Transition` and a `Check` (`SG514`). [Method
+The `id` may also name a gate the facade declares on itself, which no operation executes: its check takes the entity
+and at most one input, of any type its guards read. The processor refuses a check whose `id` no operation of the facade
+executes and that names no gate, such as an identifier that only a failure route declared on the facade itself uses,
+the exit of a sub-machine, or one without an edge (`SG512`); a check of an external identifier (`SG517`); a check that
+does not repeat the parameters of its operation, or returns anything but `Eligibility<E, S, T>` (`SG513`); and a second
+check of one operation or gate, or a method that carries both a `Transition` and a `Check` (`SG514`). [Method
 signatures](graph-model.md#method-signatures) gives the signature. Through the facade, an operation you declare no check
 for is checked only by a choice check that names it among its candidates, as below. The generated companion implements
 each check: it refuses a null argument with a `NullPointerException` that names the parameter, as the operation does,
 then calls its `StateMachine`'s `eligibility(entity, id)`, or `eligibility(entity, id, input)` for an operation that
-takes an input. A method that returns `ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a
-`Check` checks a choice instead, as [check a choice](choices.md#check-a-choice) shows.
+takes an input. The facade also inherits `eligibility(entity, id)`, which runs the check without input that it declares
+for `id` and refuses any other identifier with `IllegalArgumentException`. A method that returns
+`ChoiceEligibility<E, S, T>` and carries the generated `Choice` in place of a `Check` checks a choice instead, as
+[check a choice](choices.md#check-a-choice) shows.
 
 The shop's
 [EligibilityTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/EligibilityTest.java)
@@ -156,7 +161,7 @@ What a check answers, its refusals in the order it meets them, and where each re
 | Answer | `kind()` | `reason()` | `guard()` | When |
 | --- | --- | --- | --- | --- |
 | `Ineligible` | `DETACHED` | The library's text `no parent holds it in <NODE>`, with ` or <NODE>` for each other bound state whose binding found a parent | Empty | A sub-machine binding of the entity's machine finds its parent, and no parent holds it. Checked before the edge is looked up |
-| `Ineligible` | `NO_TRANSITION` | The reason the state's policy gives the identifier: the one it declares for that identifier, or else its default; for a terminal state that declares no policy, the library's text `terminal state <NAME> accepts no transitions` | Empty | No edge leaves the state with the identifier |
+| `Ineligible` | `NO_TRANSITION` | The reason the state's policy gives the identifier: the one it declares for that identifier, or else its default; for a terminal state that declares no policy, the library's text `terminal state <NAME> accepts no transitions` | Empty | No edge leaves the state with the identifier, or only an external edge, which another system takes |
 | `Ineligible` | `RESERVED_EXIT` | The library's text `<ID> leaves <STATE> only when its sub-machine ends` | Empty | The identifier is an exit of the sub-machine bound to the state. Checked once the edge is found, before its guards |
 | `Ineligible` | `GUARD` | The reason the guard rejected with | The guard's name | A guard of the edge rejected. The guards after it did not run |
 | `Eligible` | None | None: `explanation()` is empty | None | The edge exists and every guard of it passed |
@@ -234,7 +239,11 @@ static ButtonState buttonFor(
 }
 ```
 
-[Runtime exceptions](runtime-exceptions.md) lists `EligibilityCheckException` with the others.
+`guardFailure()` answers what the guard threw, and is empty for the engine's own reasons, such as a null verdict or a
+timed-out wait. A guard that declares the type it threw in `propagates` makes the check throw that throwable itself
+instead, as [guard evidence](guard-evidence.md#when-reading-the-evidence-fails) explains, and `uninitializedState()`
+answers the `UninitializedStateException` of a null state when that is its cause. [Runtime exceptions](runtime-exceptions.md) lists `EligibilityCheckException` with
+the others.
 
 ## What a check runs and never does
 

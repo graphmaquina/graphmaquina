@@ -23,6 +23,7 @@ their text in the page.
 | [Async late completion](async-late-completion.svg) | After a wait times out, the call aborts without committing, while the stage and the service it called can still finish and have external effects |
 | [Async context boundary](async-context-boundary.svg) | Peers, cascades and the call's flow belong to the operation thread while its transaction is alive; a completion callback receives immutable data and translates the result |
 | [Cascade versus watch](cascade-vs-watch.svg) | A cascade stages its changes in the root's unit of work, under the root's deadline; a watch reacts after the peer committed, in a new transaction that cannot undo that commit |
+| [Edge kinds](edge-kinds.svg) | The loan machine: ordinary edges that requests take, the gate REQUEST_EXTENSION, a dotted self-loop that only a check asks, and the external edge REPORT_LOST, dashed, which another system takes |
 | [Call flow](call-flow.svg) | One call's flow, through the shop's cancellation: the steps' writes after their hops, the commit, the hooks, the frozen flow and trail the caller receives, a failure route's rollback and a COLLECT abort |
 
 The images use native SVG geometry and text, without embedded bitmaps, scripts, external fonts or linked

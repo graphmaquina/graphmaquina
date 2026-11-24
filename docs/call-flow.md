@@ -244,7 +244,7 @@ with the reaction's outcome, never in the trail of the call that triggered it. S
 whose trail `AutomaticStep.Done` hands out with the attempt's outcome.
 
 The generated builder of a [machine set](coordination.md#build-and-manage-machine-sets) offers `recordTrail()` and
-`recordTrail(InstantSource clock)` as well, and hands them to the `StateMachines.Builder` of every machine of the set.
+`clock(InstantSource clock)` as well, and hands them to the `StateMachines.Builder` of every machine of the set.
 Since the root machine decides and every machine of the set records, every call made through the set records its
 trail, the peers it cascades to and the exits of sub-machines its steps run included, and so do each watch reaction
 and each automatic attempt, whose machine is one of the set. The set has no variant for one of its machines: a registry
@@ -313,16 +313,18 @@ A call that records its trail creates its flow when its step starts, so it hands
 the trail even when no step or hook wrote to it, a rejected call included. Two such outcomes are equal only when their
 trails are, `at()` included.
 
-`recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the thread
-running the call, once per entry the call appends, an entry that a rollback later drops included: a test can pass
-`InstantSource.fixed(...)`, a `Clock`, or a clock of its own that advances on each read, which then leaves a gap for
-each dropped entry, such as the failed hop of a failure route. A clock that throws anything but an `Error`, a checked
+The trail is read on the machine's clock, `InstantSource.system()` unless the builder's `clock(InstantSource clock)`
+named another one, the clock `ctx.now()` reads too, as [guard evidence](guard-evidence.md#read-the-time-of-the-call)
+says. The trail reads it on the thread running the call, once per entry the call appends, an entry that a rollback
+later drops included, apart from the one instant `now()` answers: a test can pass `InstantSource.fixed(...)`, a
+`Clock`, or a clock of its own that advances on each read, which then leaves a gap for each dropped entry, such as the
+failed hop of a failure route. A clock that throws anything but an `Error`, a checked
 exception included, fails the call, as an identity function that throws does: the entry it could not mark stays out of
 the trail. When it throws while the call reads the instant of the `Failed` entry that ends a failed call, whatever
 failed the call, the call's `CallFailedException` carries what it threw as suppressed, unless it threw that very
 exception, and its trail ends without that entry; an `InterruptedException` suppressed there interrupts the thread
 again. A clock that answers `null` counts as one that throws a `NullPointerException`. A call whose root machine was
-built without `recordTrail` reads no clock and stores no time.
+built without `recordTrail` stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](logs.md) show each step on the way, its
 guards and its action included. To assert the flow and its trail in a test, see

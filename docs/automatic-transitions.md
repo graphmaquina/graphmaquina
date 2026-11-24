@@ -110,7 +110,8 @@ any root call runs its chain, in the order of the commit's log. Every call count
 `choose`, a `reevaluate`, an `advance`, a watch reaction and an attempt, and so does every entity they move, a peer that
 a cascade moved, a child that its parent started and a parent that a child's exit moved. A watch reacts only to a peer
 whose final state differs from its original one, but a chain also runs after a self-loop, such as the account's `TOUCH`,
-and after hops that bring the entity back where it started: a self-loop often means that data changed. A machine
+and after hops that bring the entity back where it started: a self-loop often means that data changed. A
+[gate](edge-kinds.md) never commits, so it never starts a chain. A machine
 declared `ON_ADVANCE` chains only after an `advance`, as [chain only on advance](#chain-only-on-advance) says.
 
 The chain starts from the state the commit left the entity in, read from the commit's log, not from the entity. While

@@ -110,7 +110,7 @@ constant of another machine's catalogue does not compile inside it.
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
 | Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine, `automaticFrom(state)`: the automatic identifiers of a state in the order they are tried, and `hasAutomaticChain(chain)`: when the machine takes its automatic edges |
-| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook, `isAutomatic()` or `isManual()`, and whether the `onFailure` route or a recovery rule continues the chain |
+| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook, `isAutomatic()` or `isManual()`, `isGate()`, `isExternal()`, and whether the `onFailure` route or a recovery rule continues the chain |
 | One node's policy | `assertThat(definition).policy(state)` | `hasDefaultReason`, and `rejects(id, reason)`: the reason that identifier gets, its own or the default, which also requires that no edge is keyed by it |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
@@ -250,7 +250,9 @@ under `/machine/â€¦`, `/states/<i>`, `/catalog/<i>`, `/transitions/<from>/<id>/â
 `/transitions/<from>/<id>/automatic`, a continuing `onFailure` route `onFailureContinues` and a continuing rule
 `recoveries/<i>/continues`, each `true` and written only when set, and a state with two or more automatic edges the
 order they are tried in, at `/automaticOrder/<state>/count` and `/automaticOrder/<state>/<i>`. A machine that takes its
-automatic edges on its own only on an `advance` adds `/automaticChain` as `ON_ADVANCE`, written only then.
+automatic edges on its own only on an `advance` adds `/automaticChain` as `ON_ADVANCE`, written only then. A gate adds
+`/transitions/<from>/<id>/gate` and an external edge `/transitions/<from>/<id>/external`, each `true` and written only
+on an edge of that kind.
 `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after removing every graphic-export class
 from the core JAR; assertions, state observation and structural snapshots must still work.
 

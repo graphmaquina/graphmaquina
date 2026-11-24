@@ -300,6 +300,10 @@ public final class ReservationGuards {
 }
 ```
 
+A guard can read `ctx.now()` instead of a clock of its host's: the instant of the call on the machine's clock, which
+the machine's or the set's builder sets with `clock(InstantSource)` and a test fixes, as
+[guard evidence](guard-evidence.md#read-the-time-of-the-call) shows.
+
 On the facade, the operation the scheduler calls:
 
 ```java

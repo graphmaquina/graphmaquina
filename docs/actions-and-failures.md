@@ -15,11 +15,13 @@ The [quickstart](quickstart.md) shows synchronous actions and a guard. Actions r
 | `peer(...)` | Read another registered machine through a `PeerView` |
 | `cascade(...)` | Request a peer transition, by identifier, within this unit of work |
 | `cascadeAll(...)` | Apply a cascade to a collection using the selected policy |
-| `input()` / `input(Class)` | The operation's second argument, if the caller passed one |
+| `input()` / `input(Class)` / `inputIfInstance(Class)` | The operation's second argument, if the caller passed one; `inputIfInstance` is empty for one of another type |
+| `now()` | The instant of the request on the machine's clock, the same for every step of the call; see [guard evidence](guard-evidence.md#read-the-time-of-the-call) |
 | `flow()` | The call's flow: typed values every step of the call shares, and the entity the call was made for; see [the call's flow](call-flow.md) |
 
-Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
-peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
+Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only peer access,
+the same `input` accessors and `now()`, `memo(key, supplier)` for evidence several guards share, and a read-only
+`flow()`, as [guard evidence](guard-evidence.md) shows. It has no cascade API. Return `GuardResult.pass()` or
 `GuardResult.reject("reason")`, whose reason may not be blank (`IllegalArgumentException`). A guard that returns null,
 or an asynchronous one whose stage is null or completes with null, aborts the call with a `TransitionAbortedException`. A rejecting guard stops the edge before its action runs
 and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. In a graph the DSL built, the guards of one
@@ -494,4 +496,4 @@ external systems. To assert kinds and rules in a test, see
 
 ---
 
-Next: [Handle transition outcomes](outcomes.md). Back to the [documentation index](README.md).
+Next: [Guard evidence: time, shared reads, typed input and failures](guard-evidence.md). Back to the [documentation index](README.md).

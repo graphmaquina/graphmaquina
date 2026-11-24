@@ -33,8 +33,8 @@ does not instantiate service classes or discover dependency-injection beans.
 | --- | --- |
 | `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine; generated only for a set that has one, as is the timeout argument of `builder(...)` |
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls, where `ForkJoinPool.commonPool()` with a parallelism below two runs each call on a new thread instead; otherwise each machine owns a virtual-thread executor |
-| `recordTrail()` | Record the [trail](call-flow.md#record-the-calls-trail) of every call of the set on `InstantSource.system()`; off by default |
-| `recordTrail(InstantSource)` | Record that trail on the given clock instead |
+| `recordTrail()` | Record the [trail](call-flow.md#record-the-calls-trail) of every call of the set on the set's clock; off by default |
+| `clock(InstantSource)` | The clock of every machine of the set, which `ctx.now()` and the trail read; `InstantSource.system()` by default |
 | `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
 | `maxAutomaticChain(int)` | Bound successive automatic attempts of a chain; default `10`, minimum `1` |
@@ -68,7 +68,8 @@ supply remains your responsibility. Avoid sharing a short-lived set across reque
 
 For dependency injection, register the generated set as an application-managed component using your existing
 `OrderActions` and `ItemActions` instances, then inject its facades into services. Arrange for `close()` at
-shutdown. There is no required Spring dependency or GraphMaquina-specific container integration.
+shutdown. There is no required Spring dependency or GraphMaquina-specific container integration;
+[dependency injection](dependency-injection.md) shows the set by hand, with Spring and with CDI.
 
 ## Read peers and cascade transitions
 
@@ -418,4 +419,4 @@ nor a machine of a dependency that its export index describes is rejected with `
 
 ---
 
-Next: [Compose machines](composition.md). Back to the [documentation index](README.md).
+Next: [Dependency injection](dependency-injection.md). Back to the [documentation index](README.md).

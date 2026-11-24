@@ -99,6 +99,8 @@ Read the classification with its limits in mind:
   commits later and can still fail.
 - The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send. Each
   code knows the status it refines: `OutcomeCode.GUARD_REJECTED.status()` is `REJECTED`.
+- `isApplied()` answers whether the outcome is `Applied`, as `status() == OutcomeStatus.APPLIED` does, and is as
+  provisional inside a cascade as `status()` is.
 
 This method can be added to the quickstart's `App`:
 

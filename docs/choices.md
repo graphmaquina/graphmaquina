@@ -13,6 +13,8 @@ their order, and runs the first one admitted, with the caller's input.
 - [What a choice returns](#what-a-choice-returns)
 - [Check a choice](#check-a-choice)
 - [The rules the build checks](#the-rules-the-build-checks)
+- [Guards that several candidates share](#guards-that-several-candidates-share)
+- [A destination another system reports](#a-destination-another-system-reports)
 - [After the commit](#after-the-commit)
 - [Test a choice](#test-a-choice)
 
@@ -170,12 +172,14 @@ Both report `entity()` and `from()`, the state the check read: the chosen candid
 candidate's for `NoneAdmitted`. Neither names a destination. `chosen()` returns the candidate, or empty, and
 `asChosen()` and `asNoneAdmitted()` return the answer as that variant, or empty. Each refusal is the
 `Eligibility.Ineligible` that [an eligibility check](eligibility.md#read-the-answer) of that candidate answers, with
-its kind, its reason and, for a guard, the guard's name.
-
-The check runs the [eligibility check](eligibility.md) of each candidate in turn, with the same input, and stops at
-the first that is `Eligible`. Each is a check of its own: it reads the state again, under a deadline of its own, and
-logs its own `check=<id>` lines. Whatever it answers or throws, it writes no state and runs no action, hook, watch
-reaction or automatic attempt, and it is no call, so no observer hears of it. A check that cannot answer throws its
+its kind, its reason and, for a guard, the guard's name. `refusedByGuard()` of a `NoneAdmitted` says whether a guard
+refused at least one candidate, rather than every candidate being refused before its guards ran, by its state's
+policy for one. A candidate may be a [gate](edge-kinds.md), whose guards answer the check as any edge's do.
+The check runs the [eligibility check](eligibility.md) of each candidate in turn, with the same input, and stops at the
+first that is `Eligible`. Each is a check of its own: it reads the state again, under a deadline of its own, and logs
+its own `check=<id>` lines, while the checks of one choice check share one request: their guards see one `ctx.now()` and
+share what `ctx.memo` keeps. Whatever it answers or throws, it writes no state and runs no action, hook, watch reaction
+or automatic attempt, and it is no call, so no observer hears of it. A check that cannot answer throws its
 `EligibilityCheckException`, and the candidates after it are not checked. An answer reserves nothing: the choice runs
 every admission again. A choice check may run where a check may, as
 [where a check may run](eligibility.md#where-a-check-may-run) says: unlike `observe`, it may be asked by a synchronous
@@ -207,10 +211,30 @@ The processor refuses, as `SG516`:
 - a candidate that an operation of the facade executes, when the input of the choice differs from that operation's:
   of another type, or present or absent where the operation's is not.
 
+It refuses, as `SG517`, an [external](edge-kinds.md) candidate, which another system takes, in any choice, and a
+[gate](edge-kinds.md) among the candidates of a choice that runs, since only a check asks a gate; a choice check may
+name a gate.
+
 A `Choice` on a default, static or private method of the facade is `SG504`, as a `Transition` or a `Check` there is. A
 candidate that failure routes use is accepted, and so is one with an operation of its own: a choice claims no
 identifier, so it declares no edge and leaves `SG102` and `SG703` as they are. [Diagnostics](diagnostics.md) lists
 these codes.
+
+## Guards that several candidates share
+
+Each candidate runs its own guards, so a guard that several candidates declare runs once for each candidate the choice
+tries, and a guard that reads a service would call it each time. Keep what it reads with `ctx.memo`: a choice that runs
+is one call, and a choice check is one request for all its candidates, so the first guard that asks computes the
+evidence and every later one gets it back, as [guard evidence](guard-evidence.md#read-evidence-once-per-request) shows.
+
+## A destination another system reports
+
+When another system reports where an entity went, such as a carrier that reports a status, declare one edge for each
+destination it may report, give each the same guard, which compares `ctx.to()`, the destination of the edge it guards,
+with the reported value it reads from the input, and name those edges in a choice. The choice runs the one edge whose
+destination the report names, and refuses every edge with the reason of that guard when the report names none of them.
+When the other system writes the entity's state itself instead of reporting it to your application, declare an
+[external edge](edge-kinds.md#an-external-edge-a-move-another-system-makes) instead.
 
 ## After the commit
 
@@ -248,4 +272,4 @@ assertThat(shipments.canObserve(shipment, new CarrierReport("returned"))).admitt
 
 ---
 
-Next: [Programmatic DSL](dsl.md). Back to the [documentation index](README.md).
+Next: [Gates and external edges](edge-kinds.md). Back to the [documentation index](README.md).

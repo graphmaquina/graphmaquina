@@ -101,11 +101,13 @@ Four situations are distinct, and each has its own observable result.
 | --- | --- | --- |
 | No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine whose parent does not hold it is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
+| The edge keyed by `(current, requested)` is a gate or an external edge | Nothing runs, as when no edge is keyed: a request never takes either kind. | `Rejected` with `RejectionKind.NO_TRANSITION` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 | `advance(entity)` finds no automatic edge from the current state, or admits none of them | Nothing runs when there is none. Otherwise each automatic edge, in its declared order, gets the binding check and the guards of an execute of its identifier, and no action runs. No state write. | `Ignored`, with `IgnoreReason.NO_AUTOMATIC_TRANSITION`, or `NO_CANDIDATE_ADMITTED` and the `rejections()` of the edges it tried |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
-the only exit of a non-terminal state, and it is forbidden on a terminal.
+the only exit of a non-terminal state, and it is forbidden on a terminal. A [gate](edge-kinds.md), a self-loop that only
+a check asks, is the exception: it needs no `allowsCycle` and is no exit of its state.
 
 `Ignored` is reserved for `reevaluate`, `advance` and `choose`, which request no identifier. A reevaluation whose
 selected edge is refused returns `Rejected`; an `advance` never does, and neither does a `choose`.
@@ -154,10 +156,13 @@ You declare what a state can do, and its policy words the answer for everything 
 ### Structural rules
 
 - Every state must be reachable from `initial` through declared edges.
-- A terminal has no outgoing edge at all, including a self-loop. A non-terminal must have at least one,
-  which may be a self-loop.
+- A terminal has no outgoing edge at all, including a self-loop or a gate. A non-terminal must have at least one,
+  which may be a self-loop or an external edge but not a gate.
 - Every cycle must pass through at least one state listed in `allowsCycle`, and an allowance for a state that
-  belongs to no cycle is rejected too. A self-loop is a cycle.
+  belongs to no cycle is rejected too. A self-loop is a cycle; a gate is not, and an external edge counts as any edge.
+- A gate is a self-loop that declares guards at most, an external edge leads to another state and declares nothing
+  else, the edges of one identifier are of one kind, and no failure route, exit or watch rule names a gate or an
+  external edge (`SG111` to `SG114`), as [gates and external edges](edge-kinds.md#the-rules-the-build-checks) explains.
 - An `onFailure` identifier, and the recovery identifier of every recovery rule, must name a different edge that
   exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
   it recovers, because identity, not destination, tells them apart.
@@ -205,14 +210,17 @@ cascade-only and watch-only edges are declared, and the candidates that only a c
 and `PAYMENT_DECLINED` in the shop are exactly that, and so are `DELIVER` and `RETURN` in the example's `Shipments`.
 Omitting `action` makes the edge a `MOVE`.
 
-A typed facade exposes no generic selector: the application's entry points are the operations you declared, the
-[checks](eligibility.md#check-through-the-facade) you declared for them, which ask whether an operation would be
-admitted without running it, the [choices](choices.md) you declared with the generated `Choice`, each of which runs, or
-checks, the first admitted of the candidate identifiers it names, in their declared order, plus what every
-facade inherits from `Machine`: `reevaluate(entity)` for [watches](coordination.md#watch-other-machines),
-`advance(entity)`, which runs the first automatic edge of the entity's state that is admitted, trying them in their
-declared order, `async(call)` to run a call on the machine's executor, as [asynchronous work](async.md) shows, and the
-structural `definition()` and `transitionsFrom(state)`.
+A typed facade's entry points are the operations you declared, the [checks](eligibility.md#check-through-the-facade) you
+declared for them and for its [gates](edge-kinds.md), which ask whether an edge would be admitted without running it,
+the [choices](choices.md) you declared with the generated `Choice`, each of which runs, or checks, the first admitted of
+the candidate identifiers it names, in their declared order, plus what every facade inherits from `Machine`: the
+selector `execute(entity, id)`, which runs the operation without input that the facade declares for `id`, and
+`eligibility(entity, id)`, which runs the check without input that it declares for `id`, both refusing any other
+identifier with `IllegalArgumentException` before anything runs, so they open no edge the facade does not;
+`reevaluate(entity)` for [watches](coordination.md#watch-other-machines), `advance(entity)`, which runs the first
+automatic edge of the entity's state that is admitted, trying them in their declared order, `async(call)` to run a call
+on the machine's executor, as [asynchronous work](async.md) shows, and the structural `definition()` and
+`transitionsFrom(state)`.
 
 An operation may accept a second argument: `Outcome<Entity, Status, Change> screen(Entity entity, Verdict verdict)`.
 Guards and actions read it through `ctx.input(Verdict.class)`, which returns `Optional<Verdict>`. This lets
@@ -269,7 +277,7 @@ Import these from `io.github.graphmaquina.annotation`:
 | `@StateGraphs` | Top-level interface extending `Machines` | Generate a set and builder for its machine accessors |
 | `@GraphProperty` | Entity field or getter | Export a property symbol |
 | `@GraphAction` | Action method | Export an action binding |
-| `@GraphGuard` | Guard method | Export a guard binding |
+| `@GraphGuard` | Guard method | Export a guard binding; its `propagates` lists the failures the caller receives as themselves, as [guard evidence](guard-evidence.md#when-reading-the-evidence-fails) says |
 | `@GraphHook` | Hook method | Export an after-commit binding |
 | `@GraphCondition` | Watch-condition method | Export a custom watch predicate |
 | `@GraphLookup` | Lookup method | Export the lookup that finds the parent of a sub-machine's entity or the owner of a watched peer |
@@ -289,7 +297,7 @@ symbol from the graph declaration.
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | Marked guard `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.NAME`, the string `"hasTitle"`: the guard's runtime name, the one a rejection, an ineligible check and a test assertion carry. Renaming the guard renames the symbol, so a stale reference fails to compile |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
-| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction, `graph(...)` and its collaborator-free twin [`structure()`](graph-inspection.md#a-definition-without-collaborators), and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)`, each check its `eligibility(...)`, each choice its `choose(...)` and each choice check its `chooseEligibility(...)`, and refuses a null machine with `NullPointerException` |
+| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction, `graph(...)` and its collaborator-free twin [`structure()`](graph-inspection.md#a-definition-without-collaborators), and facade implementation; its public constructor takes a `StateMachine<Ticket, TicketState, TicketTransition>` and implements `Tickets` over it, each operation calling its `execute(...)`, each check its `eligibility(...)`, each choice its `choose(...)` and each choice check its `chooseEligibility(...)`, the selector's `execute(entity, id)` and `eligibility(entity, id)` calling the operation or the check without input declared for `id`, and refuses a null machine with `NullPointerException` |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
 `KEY` is a `MachineKey<E, S, T>`: entity class, state enum and transition enum. `MachineKey.of(entity, states,
@@ -320,8 +328,8 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | Annotation | Target | Required elements | Optional elements |
 | --- | --- | --- | --- |
 | `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol`, `automaticChain: AutomaticChain` |
-| `StatePolicy` | type | `state: S`, `otherwise: String` | None |
-| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean` |
+| `StatePolicy` | type | `state: S[]`, `otherwise: String` | None |
+| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit`, `automatic: boolean`, `onFailureContinues: boolean`, `gate: boolean`, `external: boolean` |
 | `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn`, `continueChain: boolean` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 | `AutomaticOrder` | type | `from: S`, `transitions: T[]` | None |
@@ -330,6 +338,8 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 
 `StatePolicy`, `Transition`, `Reject` and `AutomaticOrder` are repeatable, through the generated `StatePolicies`,
 `Transitions`, `Rejects` and `AutomaticOrders` containers. `from` of a `Transition` must contain at least one state.
+One `StatePolicy` may give several states its reason, `state = {RETURNED, LOST}`; a state named twice, in one policy or
+in two, is `SG102`. A `gate` or `external` edge is declared on the interface, never on an operation (`SG517`).
 Guard arrays execute in declaration order. `failsOn` takes throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
 `timeout` require an action, and `timeout` requires an asynchronous one.
 
@@ -423,11 +433,13 @@ or of the choice:
 
 The `id` of a check names the identifier of one of the facade's operations, and the check repeats that operation's
 parameters: the same entity, and the same input type exactly when the operation takes one, without varargs or method
-type parameters. An operation has one check at most, and a method carries a `Transition` or a `Check`, never both
-(`SG512` to `SG514`). A `Choice` names its candidates, at least one and each once, each declared by an edge and none
-the exit of a sub-machine, and a choice over a candidate that an operation of the facade executes takes that
-operation's input, or none when the operation takes none. A method that carries a `Choice` carries neither a
-`Transition` nor a `Check`, and has no varargs or method type parameters (`SG516`).
+type parameters. The check of a gate has no operation to repeat: it takes the entity and at most one input, of any
+type its guards read. An operation or a gate has one check at most, and a method carries a `Transition` or a `Check`,
+never both (`SG512` to `SG514`); an external identifier has no check (`SG517`). A `Choice` names its candidates, at
+least one and each once, each declared by an edge and none the exit of a sub-machine, and a choice over a candidate
+that an operation of the facade executes takes that operation's input, or none when the operation takes none. A
+method that carries a `Choice` carries neither a `Transition` nor a `Check`, and has no varargs or method type
+parameters (`SG516`). No choice names an external identifier, and only a choice that checks names a gate (`SG517`).
 
 ---
 

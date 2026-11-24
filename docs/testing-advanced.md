@@ -405,7 +405,8 @@ StateMachine<Publication, PublicationState, PublicationChange> traced = StateMac
         .state(
             (Publication publication) -> publication.state,
             (Publication publication, PublicationState state) -> publication.state = state)
-        .recordTrail(InstantSource.fixed(Instant.parse("2026-10-10T09:00:00Z")))
+        .clock(InstantSource.fixed(Instant.parse("2026-10-10T09:00:00Z")))
+        .recordTrail()
         .build();
 Publication article = new Publication("p6");
 
@@ -492,4 +493,4 @@ clock, so it asserts the entries of a trail and their order, never their instant
 
 ---
 
-Next: [Migrate a machine from another library](migrate-from-another-library.md). Back to the [documentation index](README.md).
+Next: [Upgrading](upgrading.md). Back to the [documentation index](README.md).

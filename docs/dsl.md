@@ -82,7 +82,7 @@ Each call returns the stage the next call continues from:
 ```mermaid
 flowchart LR
     define["StateGraph.define(key)"] --> graphStage["GraphBuilder<br/>initial, terminal, allowsCycle,<br/>statePolicy, reject, automaticOrder,<br/>automaticChain"]
-    graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, onFailureAndContinue, failsOn,<br/>recover, recoverAndContinue, timeout,<br/>automatic, afterCommit, afterCommitWith"]
+    graphStage -- "transition(id, from, to)" --> edge["TransitionBuilder<br/>action, asyncAction, guard, asyncGuard,<br/>onFailure, onFailureAndContinue, failsOn,<br/>recover, recoverAndContinue, timeout,<br/>automatic, gate, external, afterCommit, afterCommitWith"]
     edge -- "endTransition()" --> graphStage
     graphStage -- "watch(state, peerKey, peersOf, ownerOf)" --> watch["WatchBuilder<br/>when(condition)"]
     watch -- "when(...)" --> rule["WatchRuleBuilder"]
@@ -112,14 +112,17 @@ from the recovery state. `automatic()` marks the edge as one the machine takes o
 the default, or only on `advance(entity)`, `ON_ADVANCE`, as
 [automatic transitions](automatic-transitions.md) explains. `afterCommit(name, hook)` takes a hook of the entity alone
 and `afterCommitWith(name, hook)` one that also takes the `CommitContext`; an edge declares at most one hook, and a
-second throws `IllegalStateException` at once. `statePolicy` and `reject` word the answers a node gives. A state has
-exactly the edges you declare.
+second throws `IllegalStateException` at once. `gate()` marks a self-loop that only a check asks and `external()` an
+edge another system takes, as [gates and external edges](edge-kinds.md) explains. `guard(name, guard, types)` and
+`asyncGuard(name, guard, types)` also list the failures the guard propagates to the caller, as
+[guard evidence](guard-evidence.md#when-reading-the-evidence-fails) explains; a forbidden type is `SG302`. `statePolicy`
+and `reject` word the answers a node gives. A state has exactly the edges you declare.
 
 A guard or an action is named by the name given or, without one, by the simple name of its class. A lambda, a
 method reference or an anonymous class has no such name, so it needs the overload that takes one: `build()` reports
 `SG106` without it, and `SG107` for a blank name. `build()` refuses a second guard of one name on an edge with
 `SG105`, as it refuses the same guard declared twice. An edge left open, or one that declares more than one action,
-`onFailure` or `timeout`, or a second `automatic()`, fails `build()` with `SG507`; a missing or repeated `initial`
+`onFailure` or `timeout`, or a second `automatic()`, `gate()` or `external()`, fails `build()` with `SG507`; a missing or repeated `initial`
 is `SG201`. A null argument is refused at once with a `NullPointerException`. An edge's stage refuses every further
 call with `IllegalStateException` once `endTransition()` closed it, and once `build()` has run, even a `build()` that
 failed, every stage refuses further declarations, and a second `build()`, the same way.
@@ -184,7 +187,8 @@ child's machine too, built from that very definition: otherwise `MachineRegistry
 | `identity(function)` | The entity's identity within a unit of work; mandatory within a registry |
 | `asyncTimeout(duration)` | The wait budget of every root call the machine starts, mandatory for a machine with asynchronous edges |
 | `asyncExecutor(executor)` | The executor that runs the calls submitted through `async(...)`; a new virtual thread per call by default |
-| `recordTrail()`, `recordTrail(clock)` | Records [the call's trail](call-flow.md#record-the-calls-trail) of every root call the machine starts |
+| `recordTrail()` | Records [the call's trail](call-flow.md#record-the-calls-trail) of every root call the machine starts, on its clock |
+| `clock(InstantSource)` | The machine's clock, which `ctx.now()` and the trail read, as [guard evidence](guard-evidence.md#read-the-time-of-the-call) says; `InstantSource.system()` by default |
 | `as(facade)` | The facade type that identifies the machine in `peer(Class)` and `cascade(Class, ...)` |
 | `build()` | A standalone `StateMachine`, in an internal registry of its own |
 

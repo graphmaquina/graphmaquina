@@ -186,10 +186,11 @@ initial state has an incoming arrow from a solid dot, and a terminal state is a 
 Watches appear as notes connected by dashed lines.
 
 Each edge label puts the identifier in bold on its first line. Below it, one per line in the theme's `muted` color, come
-`[auto]` when the edge is automatic, or `[auto n]` when its state declares an order among two or more automatic
+`[gate]` when the edge is a [gate](edge-kinds.md), `[external]` when it is external, `[auto]` when the edge is automatic, or `[auto n]` when its state declares an order among two or more automatic
 edges, with `n` counted from 1 in that order, then the action name, `[async]` when the action or any guard is
 asynchronous, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in declaration order, `[onFailure ID]`
-and any watch label. An automatic edge's arrow and identifier are drawn in the theme's `automatic` color. A route
+and any watch label. An automatic edge's arrow and identifier are drawn in the theme's `automatic` color, a gate's
+arrow is dotted and an external edge's dashed, in the colors of any other edge. A route
 that continues the chain ends its line with `continues`, as in `[recover Kind -> ID continues]` and
 `[onFailure ID continues]`. `Kind` is the failure kind's binary name without its package, such as
 `PublicationFailures$Unavailable`. The throwable types of `failsOn` and of the rules are not drawn, and a rule adds no
@@ -345,7 +346,7 @@ mvn graphmaquina:export-dot-test
 those of the test compilation into `target/graphmaquina/test/dot`. Neither goal is bound to a phase: each forks the
 default lifecycle up to `compile`, or `test-compile`, so the goal alone generates, compiles and completes that
 compilation first, and there is no need to run `compile` before it. Each does nothing where the
-[other goals](build-maven.md#the-eight-goals) do nothing, and for a compilation that publishes no StateGraph index.
+[other goals](build-maven.md#the-nine-goals) do nothing, and for a compilation that publishes no StateGraph index.
 Maven resolves the `graphmaquina:` prefix only in a project that declares the plugin. In a multi-module build where
 some modules do not declare it, run the goal from the parent by the plugin's coordinates,
 `mvn io.github.graphmaquina:graphmaquina-maven-plugin:<version>:export-dot`: every module resolves them, and each

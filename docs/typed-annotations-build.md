@@ -23,7 +23,9 @@ request file the adapter writes. It exits with `0` on success, with `1` when the
 its error stream that carries the `SG` code and the source location when the failure has them, and with `2` for
 arguments it does not accept. A build that ignored either failure status would compile against the vocabulary of a
 previous run. The same process runs a fourth operation, `export-dot`: it reads a request of its own and writes the Graphviz DOT of
-every machine a completed compilation published, under the same exit statuses.
+every machine a completed compilation published, under the same exit statuses, and a fifth, `list-exports`, which
+prints the export indexes a compile classpath carries, as
+[see what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) shows.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |
@@ -183,8 +185,9 @@ processor without a manifest, and a compilation that declares graphs is refused 
 | `generateTestStateGraphApi` | `test` |
 | `generate<SourceSet>StateGraphApi` | any other source set |
 | `exportStateGraphDot`, `exportTestStateGraphDot`, `export<SourceSet>StateGraphDot` | the same, writing the Graphviz DOT of the source set's machines once it compiled: see [Export from the command line](graph-inspection.md#export-from-the-command-line) |
+| `listStateGraphExports`, `listTestStateGraphExports`, `list<SourceSet>StateGraphExports` | the same, printing the export indexes the source set's compile classpath carries: see [see what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) |
 
-All of them are in the `graphmaquina` task group, and a source set that takes no part skips both of its tasks.
+All of them are in the `graphmaquina` task group, and a source set that takes no part skips its tasks.
 
 | Path | Content |
 | --- | --- |

@@ -3,6 +3,7 @@
 ## Contents
 
 - [Troubleshooting](#troubleshooting)
+- [SG602 causes](#sg602-causes)
 - [Limits](#limits)
 
 ## Troubleshooting
@@ -104,6 +105,60 @@ what javac actually accepted, so:
 - a javac failure leaves the pending inventory behind, seals nothing and publishes no index, so a broken
   compilation can never ship the index of the previous one.
 
+## SG602 causes
+
+`SG602` covers the files the build hands from one step to the next and every export index it reads. Each case, with
+its remedy:
+
+- **A file of the build is missing, incompatible, stale or malformed.** A manifest, an inventory or an export index,
+  or one written in a schema this version does not read. Any of these files, or the request, is malformed when it holds
+  a number whose exponent is out of range, such as `1e99999999999`, or escapes in a string or a name a surrogate that
+  is not half of a pair, such as `\ud800`, which no UTF-8 file can hold. A manifest is also malformed when its
+  processor inventory is no path, such as one holding a NUL character, or when an owned source it lists is not a
+  relative path to a Java source: one that no path can spell, such as one holding a NUL character, one that is
+  absolute or has a root, one with a `..` segment, one that names the directory itself, such as `.`, or one that is no
+  `.java` file, such as `x`. Run the full generation/compilation lifecycle with aligned versions; a work directory whose
+  manifest or ownership inventory is malformed, or written in a schema this version does not read, needs one `clean`.
+- **A dependency without its index, or with a stale one.** A dependency, a jar or a directory of classes, that carries
+  no export index, as an assembly step that drops `META-INF/graphmaquina` leaves it, or whose index does not list a
+  machine or a generated symbol its classes carry, because it is stale or another build's, as an assembly step that
+  overwrites `META-INF/graphmaquina` leaves it, is reported naming that jar or directory: by the generator at a machine
+  that declares such a machine a peer with `@GraphPeers`, before it publishes anything, and otherwise where a set holds
+  such a machine or a declaration binds such a symbol; a peer for which the generator can name no such jar or directory
+  is reported as a machine no export index it reads lists. An index that describes a peer otherwise than the classes
+  beside it is stale too, and the generator reports it at the machine that declares the peer, naming that jar or
+  directory: an enum it names declares other constants, or the same in another order, or the peer does not extend
+  `Machine` over those two enums: it extends it over other enums, over a type that is no enum or a type variable, raw,
+  through a raw supertype, or not at all. Either way, package the index its StateGraph build publishes with its classes,
+  or rebuild the dependency through the complete lifecycle.
+- **A type the classpath does not declare.** A peer that passes `Machine` a state or transition enum the classpath does
+  not declare, or has a supertype the classpath does not declare and reaches `Machine` through none it declares,
+  because that type's artifact does not reach it or the producer's artifact lost the type, is reported by the generator
+  at the machine that declares the peer, naming that jar or directory and the type, and a dependency's machine that
+  passes `Machine` an enum the classpath does not declare is reported by the processor, naming the annotation manifest
+  and the enum, even when nothing uses it: add the dependency that declares the type to the classpath, or rebuild the
+  producer.
+- **One machine described twice.** A machine that the export indexes of two different jars or directories on the
+  classpath both describe, as two versions or two copies of one producer, is refused by the generator before it
+  publishes anything, naming both entries in classpath order: keep one artifact of its producer on the classpath; an
+  entry the classpath lists twice is read once and is no such duplicate. So is a machine of the compilation that the
+  export index of a jar or directory on the classpath describes too, anchored at the machine and naming that entry:
+  keep one declaration of the machine.
+- **A compilation the processor did not see whole.** A machine javac compiled implicitly, from the source path, which
+  the processor never saw, is reported where the index or a set names it: pass every source of the compilation to
+  javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean.
+- **A class output or an encoding the generator cannot use.** Completion reports a class output without the
+  `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes
+  `source`. The generator also refuses a source encoding that names no charset of the JVM it runs under: name one that
+  JVM supports, such as `UTF-8`.
+- **An export from the command line.** The [command-line export](graph-inspection.md#export-from-the-command-line)
+  refuses the same way a class output that holds no published index, or one another tool version wrote: run the
+  StateGraph build of that compilation, generation to completion, with aligned versions.
+
+The `listStateGraphExports` task and the `list-exports` goal print every export index a compilation's classpath carries
+and mark each one this tool would refuse, as
+[see what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) shows.
+
 ## Limits
 
 - **A pair across modules is typed from the producer's export index.** A watch or a sub-machine over a machine of a
@@ -136,4 +191,4 @@ what javac actually accepted, so:
 
 ---
 
-Next: [Documentation illustrations](images/README.md). Back to the [documentation index](README.md).
+Next: [Native images](native-image.md). Back to the [documentation index](README.md).

@@ -21,6 +21,7 @@ every Java block below is a verbatim copy of them.
 - [Watch the machines of a jar](#watch-the-machines-of-a-jar)
 - [Build the set](#build-the-set)
 - [What is checked, and when](#what-is-checked-and-when)
+- [See what a dependency exports](#see-what-a-dependency-exports)
 - [Diagnostics](#diagnostics)
 
 ## What the producer publishes
@@ -69,8 +70,9 @@ classpath:
   those enums with `implementation` keeps that module off it, and the consumer is refused with `SG602`, naming the
   enum, even when it uses no machine of that producer. Give the consumer that module as a dependency of its own.
 
-[Multiple modules and published JARs](installation.md#multiple-modules-and-published-jars) lists the steps of a
-build of several modules.
+A guard of the producer that a consumer binds keeps the failures it [propagates](guard-evidence.md#when-reading-the-evidence-fails):
+the consumer's processor reads them from the producer's classes. [Multiple modules and published
+JARs](installation.md#multiple-modules-and-published-jars) lists the steps of a build of several modules.
 
 ## Bind a machine of a jar as a sub-machine
 
@@ -284,6 +286,25 @@ one problem:
 Run with the producer's artifact the consumer was compiled against, or rebuild the consumer against the new one and
 give its binding an exit for the new terminal state: until it declares one, that build refuses the binding with
 `SG801`, which names the terminal state that has no exit.
+
+## See what a dependency exports
+
+The Gradle task `listStateGraphExports`, or `list<SourceSet>StateGraphExports` for another source set, and the Maven
+goal `list-exports` print the export index of every entry of the compile classpath that publishes one, in classpath
+order: where it is, the tool version that wrote it, the machines it describes and its generated symbols, then a line
+for each reason `SG602` would refuse it when the consumer compiles. The Maven goal compiles the modules of the reactor
+first, as the export goals do. Each index prints these lines, in this order:
+
+- `graphmaquina export index: <classpath entry>`;
+- `  tool version: <the version that wrote the index>`;
+- `  machines: <facade>, <facade>`, or `none`;
+- `  symbols: <generated symbol>, <generated symbol>`, or `none`;
+- for an index another tool version wrote, `  refused by SG602: written by tool version <version>; this tool is
+  <version>`.
+
+An index that cannot be read prints its entry and its refusal, and a machine that an earlier entry describes too prints
+`refused by SG602: the machine <facade> is also described by the export index of <entry>`. A classpath without any index
+prints one line that says so. The listing fails nothing: it reports what the compilation would refuse.
 
 ## Diagnostics
 

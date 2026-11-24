@@ -36,9 +36,11 @@ time; each page links the next one in that order.
 | --- | --- |
 | [Graphs, annotations and bindings](graph-model.md) | Edges, identity, self-loops, guards, policies, structural rules, operations, markers, generated names, signatures |
 | [Actions, guards and failure routes](actions-and-failures.md) | Action and guard contexts, operation input, domain failures, `failsOn`, recovery rules by failure kind |
+| [Guard evidence: time, shared reads, typed input and failures](guard-evidence.md) | `ctx.now()` and the clock, `ctx.memo`, `inputIfInstance`, a guard's failures, `guardFailure()` and `propagates` |
 | [Handle transition outcomes](outcomes.md) | The four outcome variants, status and code, records, journals, reactions and failed calls |
 | [Check an operation before you call it](eligibility.md) | Whether an operation would be admitted now, and why not, through a facade or the DSL, without running it |
 | [Choose the first admitted transition](choices.md) | One call that runs the first of several identifiers that is admitted, with the caller's input, what it returns, its check and its rules |
+| [Gates and external edges](edge-kinds.md) | Self-loops only a check asks, edges another system takes, their rules, the DSL, diagrams and tests |
 | [Programmatic DSL](dsl.md) | Building a graph and a machine without annotations |
 | [Automatic transitions](automatic-transitions.md) | Edges the machine takes on its own after a commit, their order, `advance`, continuing failure routes, the limit and what the caller sees |
 
@@ -54,6 +56,7 @@ time; each page links the next one in that order.
 | Page | What it covers |
 | --- | --- |
 | [Machine sets, cascades and watches](coordination.md) | Generated machine sets, peer views, cascades in one unit of work, watches after a peer commits |
+| [Dependency injection](dependency-injection.md) | One set per application, by hand, with Spring or with CDI, closed at shutdown, and one clock for the set |
 | [Compose machines](composition.md) | Sub-machines: binding a machine to a state, parent lookups, starts, exits, interruptions, reuse |
 | [Compose machines across modules and JARs](cross-module-composition.md) | Watches and sub-machines over a machine of another module or jar: what the producer publishes, lookups, sets, checks |
 
@@ -85,6 +88,7 @@ time; each page links the next one in that order.
 
 | Page | What it covers |
 | --- | --- |
+| [Upgrading](upgrading.md) | Per release since 2.0.5: the workaround each feature replaces, and what no longer compiles |
 | [Migrate a machine from another library](migrate-from-another-library.md) | The model, the procedure and every general state-machine concept: what GraphMaquina offers for it, where it is documented and what changes |
 | [Migration patterns for concepts without an equivalent](migration-patterns.md) | Built and tested patterns for entry and exit actions, history states, parallel regions, timers and deferred events |
 
@@ -93,8 +97,9 @@ time; each page links the next one in that order.
 | Page | What it covers |
 | --- | --- |
 | [Building with the typed graph API](typed-annotations-build.md) | The four build steps, where artifacts come from, the Gradle adapter |
-| [The Maven adapter](build-maven.md) | The eight goals, the compiler execution they read, outputs, what the adapter requires and refuses |
-| [Build troubleshooting and limits](build-troubleshooting.md) | Build failures, repeated builds and renames, generator limits |
+| [The Maven adapter](build-maven.md) | The nine goals, the compiler execution they read, outputs, what the adapter requires and refuses |
+| [Build troubleshooting and limits](build-troubleshooting.md) | Build failures, repeated builds and renames, generator limits, the causes of `SG602` |
+| [Native images](native-image.md) | What GraalVM `native-image` built and ran without configuration, and with which versions |
 
 ## Find a feature
 
@@ -105,6 +110,12 @@ time; each page links the next one in that order.
 | Show whether an operation is available, and why not | [Check an operation before you call it](eligibility.md) |
 | Admit an edge only while another machine would admit an operation | [Check another machine from a guard](eligibility.md#check-another-machine-from-a-guard) |
 | Run the first of several identifiers that is admitted | [Choose the first admitted transition](choices.md) |
+| Ask whether something is allowed without moving the entity | [A gate](edge-kinds.md#a-gate-ask-a-permission-without-moving) |
+| Reach a state that another system writes | [An external edge](edge-kinds.md#an-external-edge-a-move-another-system-makes) |
+| Run or check an operation chosen by its identifier | [The facade's selector](graph-model.md#operations-and-internal-edges) |
+| Read the time in a guard or an action, and fix it in a test | [Read the time of the call](guard-evidence.md#read-the-time-of-the-call) |
+| Read a service once for several guards | [Read evidence once per request](guard-evidence.md#read-evidence-once-per-request) |
+| Let the caller catch what a guard's service threw | [When reading the evidence fails](guard-evidence.md#when-reading-the-evidence-fails) |
 | Pass a value from the caller to guards and actions | [Operations and internal edges](graph-model.md#operations-and-internal-edges) |
 | Turn an expected failure into a state | [Domain failures](actions-and-failures.md#domain-failures) |
 | Send different failures to different states | [Recovery rules](actions-and-failures.md#recover-by-failure-kind-and-exception-type) |
@@ -116,6 +127,10 @@ time; each page links the next one in that order.
 | React when other machines change | [Watch other machines](coordination.md#watch-other-machines) |
 | Run a whole machine inside one state | [Compose machines](composition.md) |
 | Watch or bind a machine from another module | [Compose machines across modules and JARs](cross-module-composition.md) |
+| See which machines a dependency exports | [See what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) |
+| Build the machines once in Spring, CDI or by hand | [Dependency injection](dependency-injection.md) |
+| Inspect a graph without its collaborators | [Inspect graphs and export diagrams](graph-inspection.md) |
+| Keep a state the entity derives from other fields | [Derived state](commit-and-persistence.md#derived-state) |
 | Run code only after a transition committed | [After-commit hooks](commit-and-persistence.md#after-commit-hooks) |
 | Count or audit every call; an eligibility check is no call | [Observers](commit-and-persistence.md#observers) |
 | Share values between the steps of one call | [The call's flow](call-flow.md) |
@@ -125,6 +140,8 @@ time; each page links the next one in that order.
 | Draw a diagram in your own colors | [Change the colors](graph-inspection.md#change-the-colors) |
 | Build a graph at runtime, without annotations | [Programmatic DSL](dsl.md) |
 | Move a machine from another library to GraphMaquina | [Migrate a machine from another library](migrate-from-another-library.md) |
+| Replace a workaround after an upgrade | [Upgrading](upgrading.md) |
+| Compile a native executable | [Native images](native-image.md) |
 | Pin a graph's structure in a test | [Goldens and structural snapshots](testing.md#goldens-and-structural-snapshots) |
 | Decide in a test when an async callback answers | [Controlled asynchronous invocations](testing-samples.md#controlled-asynchronous-invocations) |
 | Understand an `SG` error code | [Diagnostics](diagnostics.md) |

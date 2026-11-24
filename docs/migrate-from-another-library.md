@@ -103,9 +103,9 @@ Notes: a request never falls back to another edge that reaches the same state, s
 
 ### Self-transitions
 
-A self-loop: an ordinary edge that ends where it starts. Its state is listed in `allowsCycle`, and a final state has
-none. A request for it returns `Applied`, never `Ignored`. See
-[absence, self-loops and reevaluation](graph-model.md#absence-self-loops-and-reevaluation).
+A self-loop: an ordinary edge that ends where it starts, its state in `allowsCycle`, never on a final state; a request
+returns `Applied`, never `Ignored` ([absence, self-loops](graph-model.md#absence-self-loops-and-reevaluation)). One that
+only asks whether something is allowed is a [gate](edge-kinds.md): no `allowsCycle`, and only a check asks it.
 
 ### Asking which events are permitted now
 
@@ -180,11 +180,11 @@ several run in order, and all must pass. With the DSL, `guard(name, guard)`. See
 [guards and the reason a request is refused](graph-model.md#guards-and-the-reason-a-request-is-refused).
 
 What changes: only one edge exists per state and event, so "the same event, several guarded targets, the first passing
-guard wins" is refused at build time (`SG102`); [choice and junction](#choice-and-junction-pseudo-states) gives the
-replacement. A guard that refuses produces a `Rejected` outcome that carries the guard's name and its reason, not a
-silent no-op. A guard that throws, or returns null, aborts the call with `TransitionAbortedException` instead of
-counting as false. Guards must be free of side effects: the guards of a refused candidate, of an automatic attempt or a
-choice, still ran.
+guard wins" is refused at build time (`SG102`); [choice and junction](#choice-and-junction-pseudo-states) replaces it.
+A refusing guard gives a `Rejected` outcome with its name and reason, not a silent no-op. A guard that throws or returns
+null aborts the call (`TransitionAbortedException`, whose `guardFailure()` holds what it threw), not false; one that
+declares the type in [`propagates`](guard-evidence.md) makes the call throw it. Guards are free of side effects: those
+of a refused candidate, of an automatic attempt or of a choice still ran.
 
 ### Choice and junction pseudo-states
 
