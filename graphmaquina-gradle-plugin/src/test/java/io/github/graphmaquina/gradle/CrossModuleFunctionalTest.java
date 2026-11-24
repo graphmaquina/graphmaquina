@@ -144,6 +144,23 @@ class CrossModuleFunctionalTest {
     }
 
     /**
+     * {@code listStateGraphExports} prints the export index of each entry of the consumer's compile classpath that
+     * publishes one: the producer's, with the tool version that wrote it and its machines, and no refusal.
+     */
+    @Test
+    void theConsumerListsTheExportIndexOfItsProducer() throws IOException {
+        PluginFixture build = PluginFixture.multiProject(tempDirectory, FIXTURE_REPOSITORY);
+
+        BuildResult result = build.run(":consumer:listStateGraphExports", "--refresh-dependencies", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":consumer:listStateGraphExports").getOutcome());
+        assertTrue(result.getOutput().contains("graphmaquina export index: "), result::getOutput);
+        assertTrue(result.getOutput().contains("  machines: ") && result.getOutput().contains("pay.Payments"),
+                result::getOutput);
+        assertTrue(!result.getOutput().contains("  refused by " + DiagnosticCode.SG602.name()), result::getOutput);
+    }
+
+    /**
      * The same build with a producer that applies {@code java-library}, as a library module does: the consumer then
      * compiles against the producer's directory of classes, where the producer's compilation published its export
      * index, instead of against its jar. The consumer's generation request lists that directory and nothing else of

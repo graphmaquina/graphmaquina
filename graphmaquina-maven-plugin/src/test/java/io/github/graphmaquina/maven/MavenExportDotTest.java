@@ -1,5 +1,6 @@
 package io.github.graphmaquina.maven;
 
+import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,7 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The two export goals, run by a real {@code mvn} under the goal prefix a user types: each forks the lifecycle up to
  * its compilation, so it generates, compiles and completes that compilation first, then writes the diagram of every
  * machine it published as the exporter renders its companion's {@code structure()}. A project that compiles nothing
- * and a module that publishes no index are skipped.
+ * and a module that publishes no index are skipped. {@code list-exports} prints the export indexes a module's compile
+ * classpath carries.
  */
 class MavenExportDotTest {
 
@@ -109,6 +111,24 @@ class MavenExportDotTest {
         assertTrue(bookings.contains("subgraph cluster"), bookings);
         assertTrue(bookings.contains(": Payment/PaymentStatus</font>>;"), bookings);
         assertTrue(parent.exists("producer/target/graphmaquina/main/dot/pay.Payments.dot"), result.output());
+    }
+
+    /**
+     * Run from the parent of a reactor, {@code list-exports} compiles every module first and prints, in the consumer,
+     * the export index of the producer its compile classpath carries, with its machines and no refusal.
+     */
+    @Test
+    void listExportsPrintsTheIndexOfTheProducerInTheConsumer() throws IOException {
+        MavenFixture parent = MavenFixture.project(tempDirectory, fixtureRepository, Map.of());
+        parent.reactor();
+
+        MavenResult result = parent.run("graphmaquina:list-exports");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("graphmaquina export index: "), result.output());
+        assertTrue(result.output().contains("  machines: ") && result.output().contains("pay.Payments"),
+                result.output());
+        assertFalse(result.output().contains("  refused by " + DiagnosticCode.SG602.name()), result.output());
     }
 
     /**

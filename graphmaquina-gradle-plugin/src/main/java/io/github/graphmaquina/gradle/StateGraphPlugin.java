@@ -177,6 +177,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
         wireLifecycle(project, declarations, participates, compile, generate);
         excludeCarrier(project, sourceSet);
         ExportStateGraphDot.register(project, sourceSet, compile, generate);
+        ListStateGraphExports.register(project, sourceSet, generate);
     }
 
     /**

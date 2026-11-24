@@ -76,6 +76,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** The directory, inside the compilation's directory under {@link #WORK}, the export writes the diagrams into. */
     private static final String DIAGRAMS = "dot";
 
+    /** The request of the listing of export indexes, inside the main compilation's directory under {@link #WORK}. */
+    private static final String LIST_REQUEST = "list-exports-request.json";
+
     /**
      * The index a completed compilation publishes beside its classes: a copy of the generator's own constant, which
      * this plugin never loads, as every name it shares with the generator is.
@@ -375,6 +378,21 @@ public abstract class StateGraphMojo extends AbstractMojo {
         Path requestFile = work.resolve(EXPORT_REQUEST);
         write(requestFile, encodeExport(classes.toString(), classpath, work.resolve(DIAGRAMS).toString()));
         launch("export-dot", requestFile);
+    }
+
+    /**
+     * Prints the export index of every entry of the main compilation's compile classpath, without its own class
+     * output, that publishes one, through the generator's {@code list-exports} operation: its location, the tool
+     * version that wrote it, its machines and its symbols, and each reason {@code SG602} would refuse it.
+     *
+     * @throws MojoExecutionException if the compile classpath is not resolved, the request cannot be written, or the
+     *     generator cannot be started or leaves a nonzero status
+     */
+    protected final void listExports() throws MojoExecutionException {
+        Path classes = absolute(project.getBuild().getOutputDirectory());
+        Path requestFile = buildDirectory().resolve(WORK).resolve("main").resolve(LIST_REQUEST);
+        write(requestFile, encodeList(applicationClasspath(compileClasspathElements(), classes)));
+        launch("list-exports", requestFile);
     }
 
     /** Writes {@code json} into {@code requestFile}, creating its directory. */
@@ -829,6 +847,21 @@ public abstract class StateGraphMojo extends AbstractMojo {
         member(json, "classesOutput", classesOutput).append(",\n");
         array(json, "classpath", classpath).append(",\n");
         member(json, "outputDirectory", outputDirectory);
+        json.append("\n}\n");
+        return json.toString();
+    }
+
+    /**
+     * Encodes the request of the generator's {@code list-exports} operation as the flat JSON object its manifest codec
+     * documents: the one member {@code classpath}.
+     *
+     * @param classpath the classpath entries whose export indexes the operation reports
+     * @return the JSON document, ending with a newline
+     */
+    static String encodeList(@NonNull List<String> classpath) {
+        StringBuilder json = new StringBuilder(256);
+        json.append("{\n");
+        array(json, "classpath", classpath);
         json.append("\n}\n");
         return json.toString();
     }

@@ -102,8 +102,8 @@ public final class CodegenProcess {
      * Runs {@code operation} over {@code requestFile}. What a completed operation wrote on its error stream is
      * logged as a warning.
      *
-     * @param operation one of {@code generate}, {@code prepare-compile}, {@code complete-compile} and
-     *        {@code export-dot}
+     * @param operation one of {@code generate}, {@code prepare-compile}, {@code complete-compile},
+     *        {@code export-dot} and {@code list-exports}
      * @param requestFile the request the generator reads
      * @throws GradleException if the generator left a nonzero status, carrying what it reported
      */
@@ -210,6 +210,28 @@ public final class CodegenProcess {
         member(json, "outputDirectory", request.outputDirectory());
         json.append("\n}\n");
         return json.toString();
+    }
+
+    /**
+     * Writes the request of the generator's {@code list-exports} operation to {@code file}, creating the directory it
+     * belongs to: the flat JSON object whose one member, {@code classpath}, lists the entries whose export indexes the
+     * operation reports.
+     *
+     * @param file the request file to write
+     * @param classpath the absolute paths of the classpath entries
+     * @throws UncheckedIOException if the file cannot be written
+     */
+    public static void writeListExports(@NonNull Path file, List<String> classpath) {
+        StringBuilder json = new StringBuilder(256);
+        json.append("{\n");
+        array(json, "classpath", List.copyOf(Objects.requireNonNull(classpath, "classpath")));
+        json.append("\n}\n");
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
+        } catch (IOException failure) {
+            throw new UncheckedIOException("cannot write the StateGraph list-exports request " + file, failure);
+        }
     }
 
     private static StringBuilder member(StringBuilder json, String name, String value) {

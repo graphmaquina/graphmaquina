@@ -71,7 +71,8 @@ publishing {
                 packaging = "maven-plugin"
                 name.set("graphmaquina-maven-plugin")
                 description.set("Maven plugin that generates the StateGraph typed API, runs the verified"
-                        + " compilation lifecycle around javac and exports the Graphviz DOT of its machines")
+                        + " compilation lifecycle around javac, exports the Graphviz DOT of its machines and lists the"
+                        + " export indexes of its dependencies")
             }
         }
     }
