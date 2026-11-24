@@ -298,7 +298,7 @@ final class Steps {
             }
             for (GuardRef<E, S, T> guard : transition.guards()) {
                 DefaultGuardContext<E, S, T> guardContext =
-                        new DefaultGuardContext<>(tx, machine, entity, transition, depth, input);
+                        new DefaultGuardContext<>(tx, machine, entity, transition, depth, input, Optional.of(ref));
                 tx.track(guardContext);
                 if (admitOnly) {
                     tx.guarding(guard.name());

@@ -65,15 +65,18 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
     Instant now();
 
     /**
-     * The value {@code key} keeps in this request: computed by {@code supplier} the first time a guard of the request
-     * asks for {@code key}, then the same value for every later guard of the request that asks, so evidence that
-     * several guards or several candidates need is fetched once. A request is one call, an operation, an execute, a
-     * choice or an attempt, with the steps it cascades to and the checks its guards start, or one check; a choice
-     * check is one request for all its candidates. Keys are compared by reference, as {@link MemoKey} says. A supplier
-     * that answers null aborts the call, or fails the check, as a guard that returns null does, and keeps nothing; one
-     * that throws is the guard throwing, and keeps nothing either. Like peer views, it works only on the thread that
-     * called {@code test()} and only until the root transaction ends: elsewhere it throws {@code WrongThreadException},
-     * afterwards {@code StaleContextException}.
+     * The value {@code key} keeps for this guard's entity in this request: computed by {@code supplier} the first time
+     * a guard of the request asks for {@code key} about that entity, then the same value for every later guard of the
+     * request that asks about it, so evidence that several guards or several candidates need is fetched once. A request
+     * is one call, an operation, an execute, a choice or an attempt, with the steps it cascades to and the checks its
+     * guards start, or one check; a choice check is one request for all its candidates. Each entity the request decides
+     * about keeps values of its own, told apart by machine and identity as the engine tells entities apart: the steps
+     * of a cascade over a collection and a check a guard starts for another entity each compute their own, so a
+     * constant key may keep evidence about the entity. Keys are compared by reference, as {@link MemoKey} says. A
+     * supplier that answers null aborts the call, or fails the check, as a guard that returns null does, and keeps
+     * nothing; one that throws is the guard throwing, and keeps nothing either. Like peer views, it works only on the
+     * thread that called {@code test()} and only until the root transaction ends: elsewhere it throws
+     * {@code WrongThreadException}, afterwards {@code StaleContextException}.
      *
      * @throws NullPointerException if {@code key} or {@code supplier} is null
      */

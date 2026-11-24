@@ -46,7 +46,7 @@ public enum DiagnosticCode {
     /** One identifier declares edges of different kinds: ordinary, gate or external. */
     SG113,
 
-    /** A sub-machine's exit or a watch rule names a gate or an external identifier. */
+    /** A failure route, a sub-machine's exit or a watch rule names a gate or an external identifier. */
     SG114,
 
     /** Missing or repeated DSL initial declaration. */
@@ -127,7 +127,7 @@ public enum DiagnosticCode {
     /** Invalid timeout duration. */
     SG511,
 
-    /** A {@code Check} names an identifier no operation of its facade executes. */
+    /** A {@code Check} names an identifier that no operation of its facade executes and no gate of it declares. */
     SG512,
 
     /** A check does not repeat the parameters of the operation it checks. */

@@ -356,7 +356,6 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         return valid;
     }
 
-    /** The declared recovery rules, in declaration order, built once every check of the edge has passed. */
     /** SG302 for each type of {@code propagates}, the guard {@code guard}'s, that failsOn may not list either. */
     private static boolean checkPropagates(String where, int fromIndex, int idIndex, Problems problems, String guard,
                                            List<Class<? extends Throwable>> propagates) {
@@ -371,6 +370,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         return valid;
     }
 
+    /** The declared recovery rules, in declaration order, built once every check of the edge has passed. */
     private List<RecoveryRule<T>> recoveryRules() {
         List<RecoveryRule<T>> rules = new ArrayList<>();
         for (DeclaredRecovery<T> recovery : recoveries) {

@@ -59,9 +59,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     Outcome<E, S, T> execute(E entity, T transition);
 
     /**
-     * Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. A failure throws,
-     * always a {@code CallFailedException} of this call or an Error; a null argument and a call made where no call
-     * may start are refused before the call starts and throw as themselves.
+     * Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. A failure throws a
+     * {@code CallFailedException} of this call or an Error, except what a guard of the call's own step threw when that
+     * guard declares its type among the failures it propagates, {@link GuardRef#propagates()}, which the call throws as
+     * itself, as execute does; a null argument and a call made where no call may start are refused before the call
+     * starts and throw as themselves.
      */
     Outcome<E, S, T> reevaluate(E entity);
 
@@ -81,10 +83,12 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      *       the order tried, which its {@code explanation()} names. The guards of those candidates ran.</li>
      *   <li>Neither ignored outcome writes anything.</li>
      * </ul>
-     * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
+     * A failure throws as it would in execute: a {@code CallFailedException} of this call, such as the
      * {@code UnhandledFailureException} of a domain failure that no route takes or, for a {@link GraphDefinition}
-     * written by hand whose automaticFrom throws, a {@code TransitionAbortedException} in RESOLVE; or an Error. A null
-     * argument and a call made where no call may start are refused before the call starts and throw as themselves.
+     * written by hand whose automaticFrom throws, a {@code TransitionAbortedException} in RESOLVE; or an Error; except
+     * what a guard of a candidate threw when that guard declares its type among the failures it propagates, which the
+     * call throws as itself. A null argument and a call made where no call may start are refused before the call starts
+     * and throw as themselves.
      * Once the attempt committed, it runs the automatic chain of each entity it moved, as execute does, its own
      * entity's included unless the attempt's failure took a route that does not continue: the attempts that follow
      * are each a call of their own, which {@link Outcome#automaticSteps()} lists, and their failures, anything but an
@@ -209,9 +213,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      *       names. It writes nothing, and the guards of those candidates ran.</li>
      *   <li>It never returns {@link Outcome.Rejected}.</li>
      * </ul>
-     * A failure throws as it would in execute: always a {@code CallFailedException} of this call, such as the
-     * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error; a guard that throws fails
-     * the call, and the candidates after it are not tried. Blocks on an asynchronous edge. Once the call committed, it
+     * A failure throws as it would in execute: a {@code CallFailedException} of this call, such as the
+     * {@code UnhandledFailureException} of a domain failure that no route takes, or an Error, except what a guard of a
+     * candidate threw when that guard declares its type among the failures it propagates, which the call throws as
+     * itself; a guard that throws fails the call, and the candidates after it are not tried. Blocks on an asynchronous edge. Once the call committed, it
      * runs the automatic chain of each entity it moved as execute does: a choice is no advance, so an entity of an
      * {@link AutomaticChain#ON_ADVANCE} machine does not chain. The call's {@link MachineCall#request()} is
      * {@link CallRequest#CHOOSE}, which requests no identifier. A null argument or candidate, an empty list, a

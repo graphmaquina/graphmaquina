@@ -36,6 +36,13 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
     private final TransitionSpec<E, S, T> spec;
     private final int depth;
     private final Optional<Object> operationInput;
+    /**
+     * This step's entity as the engine identifies it, whose values {@link #memo} keeps; emptied once the context is
+     * invalidated, so a retained context keeps nothing of the call but the entity and the input. Not final, so
+     * {@code @NonNull} puts it in the constructor.
+     */
+    @NonNull
+    private Optional<EntityRef> ref;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
 
@@ -84,11 +91,14 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
         return tx.uow().request().now();
     }
 
-    /** Checks this context and its arguments, then answers what the request keeps, as {@link RequestScope} says. */
+    /**
+     * Checks this context and its arguments, then answers what the request keeps for this step's entity, as
+     * {@link RequestScope} says.
+     */
     @Override
     public <V> V memo(@NonNull MemoKey<V> key, @NonNull Supplier<? extends V> supplier) {
         check();
-        return tx.uow().request().memo(key, supplier);
+        return tx.uow().request().memo(ref.orElseThrow(), key, supplier);
     }
 
     /** Only from the thread running test(), and only while the transaction is alive. */
@@ -125,5 +135,6 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
     public void invalidate() {
         stale = true;
         tx = machine.releasedTransaction();
+        ref = Optional.empty();
     }
 }

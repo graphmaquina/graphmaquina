@@ -3,7 +3,8 @@ package io.github.graphmaquina.api;
 import java.util.Objects;
 
 /**
- * The key of a value that a guard keeps for the rest of its request with {@link GuardContext#memo}. Two keys are the
+ * The key of a value that a guard keeps for its entity for the rest of the request with {@link GuardContext#memo}, one
+ * value for each entity the request decides about. Two keys are the
  * same only when they are the same instance, so a key is declared once, as a constant, and shared by the guards that
  * read its value; two keys with one name are two keys. The name is for messages only.
  *

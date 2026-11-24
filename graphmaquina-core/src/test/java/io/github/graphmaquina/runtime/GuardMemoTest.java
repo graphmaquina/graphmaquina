@@ -15,12 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MemoKey;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -36,14 +39,16 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code memo(key, supplier)} computes a value once per request and hands the same one to every later guard of that
- * request: the guards of one edge, the candidates of a choice, the candidate checks of a choice check, and the checks
- * its guards start; two calls compute it twice. A null value aborts as a null verdict does, a supplier that throws is
+ * {@code memo(key, supplier)} computes a value once per request and entity and hands the same one to every later guard
+ * of that request that asks about that entity: the guards of one edge, the candidates of a choice and the candidate
+ * checks of a choice check. Another entity of the request, a step of a cascade or the entity of a check a guard starts,
+ * computes its own, and two calls compute twice. A null value aborts as a null verdict does, a supplier that throws is
  * the guard throwing, and the memo works only on the calling thread.
  */
 class GuardMemoTest {
 
     private static final MemoKey<Integer> KYC = MemoKey.named("kyc");
+    private static final MemoKey<String> OWNER = MemoKey.named("owner");
 
     /** A failure of the KYC service that a guard declares it propagates. */
     static final class KycUnavailable extends RuntimeException {
@@ -61,6 +66,15 @@ class GuardMemoTest {
     private GuardResult kycRejects(GuardContext<Doc, DocStatus, DocTransition> ctx) {
         ctx.memo(KYC, computed::incrementAndGet);
         return GuardResult.reject("the doc is held");
+    }
+
+    /** Passes when what {@link #OWNER} keeps for this guard's doc is that doc's id; each computation is counted. */
+    private GuardResult readsItsOwnValue(GuardContext<Doc, DocStatus, DocTransition> ctx) {
+        String kept = ctx.memo(OWNER, () -> {
+            computed.incrementAndGet();
+            return ctx.entity().id();
+        });
+        return kept.equals(ctx.entity().id()) ? GuardResult.pass() : GuardResult.reject("read the value of " + kept);
     }
 
     /** DRAFT submits and discards, REVIEW publishes, PUBLISHED archives; {@code edges} adds the edges under test. */
@@ -117,20 +131,36 @@ class GuardMemoTest {
     }
 
     @Test
-    void aNestedCheckSharesTheMemo() {
+    void aNestedCheckOfAnotherEntityKeepsItsOwnValue() {
         AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
         Doc other = new Doc("9", DRAFT);
         StateMachine<Doc, DocStatus, DocTransition> machine = machine(
-                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                    ctx.memo(KYC, computed::incrementAndGet);
-                    return self.get().eligibility(other, DISCARD).isEligible()
-                            ? GuardResult.pass() : GuardResult.reject("the other doc is held");
-                },
-                this::kycPasses);
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> readsItsOwnValue(ctx) instanceof GuardResult.Pass
+                        && self.get().eligibility(other, DISCARD).isEligible()
+                        ? GuardResult.pass() : GuardResult.reject("the other doc is held"),
+                this::readsItsOwnValue);
         self.set(machine);
 
         assertEquals(OutcomeStatus.APPLIED, machine.execute(new Doc("1", DRAFT), SUBMIT).status());
-        assertEquals(1, computed.get());
+        assertEquals(2, computed.get());
+    }
+
+    @Test
+    void aCascadeOverACollectionKeepsAValuePerEntity() {
+        Doc two = new Doc("2", DRAFT);
+        Doc three = new Doc("3", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = machine(
+                (GraphBuilder<Doc, DocStatus, DocTransition> graph) -> graph
+                        .transition(SUBMIT, DRAFT, REVIEW).guard("own", this::readsItsOwnValue)
+                        .action("discardOthers", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.cascadeAll(DOCS, List.of(two, three), DISCARD, CascadePolicy.FAIL_FAST);
+                            return ActionOutcome.ok();
+                        }).endTransition()
+                        .transition(DISCARD, DRAFT, ARCHIVED).guard("own", this::readsItsOwnValue).endTransition());
+
+        assertEquals(OutcomeStatus.APPLIED, machine.execute(new Doc("1", DRAFT), SUBMIT).status());
+        assertEquals(List.of(ARCHIVED, ARCHIVED), List.of(two.status(), three.status()));
+        assertEquals(3, computed.get());
     }
 
     @Test
