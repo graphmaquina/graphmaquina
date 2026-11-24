@@ -24,13 +24,16 @@ import lombok.NonNull;
  *     state has only when it holds two or more automatic edges; empty for a manual edge and for the only automatic
  *     edge of a state
  * @param failureContinues the edge's {@code onFailure} route is a continuing one
+ * @param gate the edge is a gate, a self-loop that only a check asks
+ * @param external the edge is external, one that another system takes
  */
 public record TransitionView(@NonNull String from, @NonNull String transition, @NonNull String to,
                              @NonNull TransitionKind kind, @NonNull Optional<String> action,
                              @NonNull List<String> guards, boolean async,
                              @NonNull Optional<String> failureTransition, @NonNull Optional<String> watch,
                              @NonNull List<RecoveryView> recoveries, boolean automatic,
-                             @NonNull Optional<Integer> automaticPosition, boolean failureContinues) {
+                             @NonNull Optional<Integer> automaticPosition, boolean failureContinues, boolean gate,
+                             boolean external) {
 
     /** Copies guard names and recovery rules while keeping their declaration order. */
     public TransitionView {
@@ -38,11 +41,20 @@ public record TransitionView(@NonNull String from, @NonNull String transition, @
         recoveries = List.copyOf(recoveries);
     }
 
+    /** The view of an edge that is neither a gate nor external. */
+    public TransitionView(String from, String transition, String to, TransitionKind kind, Optional<String> action,
+                          List<String> guards, boolean async, Optional<String> failureTransition,
+                          Optional<String> watch, List<RecoveryView> recoveries, boolean automatic,
+                          Optional<Integer> automaticPosition, boolean failureContinues) {
+        this(from, transition, to, kind, action, guards, async, failureTransition, watch, recoveries, automatic,
+                automaticPosition, failureContinues, false, false);
+    }
+
     /** The view of a manual edge that declares no recovery rule. */
     public TransitionView(String from, String transition, String to, TransitionKind kind, Optional<String> action,
                           List<String> guards, boolean async, Optional<String> failureTransition,
                           Optional<String> watch) {
         this(from, transition, to, kind, action, guards, async, failureTransition, watch, List.of(), false,
-                Optional.empty(), false);
+                Optional.empty(), false, false, false);
     }
 }

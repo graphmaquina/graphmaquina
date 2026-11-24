@@ -4,10 +4,13 @@ import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MemoKey;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.StaleContextException;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.function.Supplier;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
@@ -72,6 +75,20 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>>
     public FlowView flow() {
         check();
         return tx.flow(this::checkedUnit, depth).readOnly();
+    }
+
+    /** Checks this context, then answers the instant of the request, as {@link RequestScope} reads it. */
+    @Override
+    public Instant now() {
+        check();
+        return tx.uow().request().now();
+    }
+
+    /** Checks this context and its arguments, then answers what the request keeps, as {@link RequestScope} says. */
+    @Override
+    public <V> V memo(@NonNull MemoKey<V> key, @NonNull Supplier<? extends V> supplier) {
+        check();
+        return tx.uow().request().memo(key, supplier);
     }
 
     /** Only from the thread running test(), and only while the transaction is alive. */

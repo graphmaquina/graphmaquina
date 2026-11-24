@@ -368,7 +368,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
             edges.add(new TransitionOutline(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
                     spec.onFailure().map(Enum::name), recoveries, !spec.guards().isEmpty(), spec.automatic(),
-                    spec.onFailureContinues(), List.copyOf(continuing)));
+                    spec.onFailureContinues(), List.copyOf(continuing), spec.gate(), spec.external(),
+                    spec.afterCommit().isPresent()));
         }
         return edges;
     }

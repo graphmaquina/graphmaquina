@@ -100,8 +100,8 @@ class BuilderReuseTest {
         calls.put("asyncExecutor", () -> builder.asyncExecutor(Runnable::run));
         calls.put("as", () -> builder.as(Facades.Docs.class));
         calls.put("recordTrail()", builder::recordTrail);
-        calls.put("recordTrail(clock)", () -> builder.recordTrail(InstantSource.system()));
-        calls.put("recordTrail(null)", () -> builder.recordTrail(null));
+        calls.put("clock(clock)", () -> builder.clock(InstantSource.system()));
+        calls.put("clock(null)", () -> builder.clock(null));
         calls.put("build", builder::build);
         assertEquals(List.of(), accepted(calls, "the builder for Doc/DocStatus was already used"));
     }

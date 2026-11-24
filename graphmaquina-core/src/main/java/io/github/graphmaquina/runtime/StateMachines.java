@@ -64,7 +64,8 @@ public final class StateMachines {
         private Optional<Executor> executor = Optional.empty();
         @Getter(AccessLevel.PACKAGE)
         private Optional<Class<? extends Machine<E, S, T>>> facade = Optional.empty();
-        private Optional<InstantSource> trail = Optional.empty();
+        private InstantSource clock = InstantSource.system();
+        private boolean trail;
         /** What the last {@link #validate} read from the definition, which {@link #build} uses instead of it. */
         private Optional<Read<E, S, T>> read = Optional.empty();
         private boolean used;
@@ -132,42 +133,51 @@ public final class StateMachines {
         }
 
         /**
-         * Records the trail of every root call this machine starts on the system clock,
-         * {@link InstantSource#system()}, as {@link #recordTrail(InstantSource)} says.
+         * The clock of this machine, {@link InstantSource#system()} by default. The {@code now()} of a guard's or an
+         * action's context reads it once per request: the first time a context of a root call this machine starts, or
+         * of a check of it, asks, and every later {@code now()} of the same call answers that same instant, in the
+         * steps it cascades to and the exits its steps run, whatever clock their own machines were built with, and in
+         * the checks its guards start. A check of its own, a choice check for all its candidates, a watch reaction and
+         * each automatic attempt read it again. A call that never asks reads no clock. Anything but an Error that the
+         * clock throws, and a null instant, refused with a NullPointerException, is thrown by {@code now()} to the
+         * guard or the action that asked, which then fails as it does when it throws that itself. A machine that
+         * records its trail, as {@link #recordTrail()} says, reads its trail on this clock too. A test can pass a
+         * clock it controls, such as a {@link java.time.Clock}.
          */
-        public Builder<E, S, T> recordTrail() {
+        public Builder<E, S, T> clock(InstantSource clock) {
             requireUnused();
-            this.trail = Optional.of(InstantSource.system());
+            Objects.requireNonNull(clock, "clock");
+            this.clock = clock;
             return this;
         }
 
         /**
-         * Records the trail of every root call this machine starts, on {@code clock}: the flow the call hands out, in
-         * its outcome or in its failure, lists in {@code trail()} each hop and each sub-machine start the call took,
-         * each at the instant {@code clock} read right after the call took it, then the rejection or the failure that
-         * ended the call, at the instant it ended. The root machine decides for the whole call, as it does with
-         * asyncTimeout: the hops of the peers it cascades to and of the exits its steps run are recorded whatever those
-         * machines declare, and a call that a machine without a trail starts records nothing, even when it cascades
-         * into one with a trail. A watch reaction is a root call of its own, decided by its own machine, and so is an
-         * automatic attempt. A call that records its trail creates its flow when its step starts, so it hands out its
-         * flow, with the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored
-         * outcome hands out the empty flow: a reevaluation that selects no edge and an advance whose state has no
-         * automatic edge run no step, and an advance whose automatic edges were all refused, or a choice whose
-         * candidates were all refused, wrote nothing. The clock is read on the thread running the call, once per entry
-         * the call appends, an entry a rollback later drops included, so a clock that advances on each read leaves a
-         * gap for each dropped entry; a test can pass a clock it controls, such as a {@link java.time.Clock}. Anything
-         * but an Error that the clock throws, a checked exception included, fails the call as what an identity function
-         * throws does, an InterruptedException interrupting the thread again: the entry it could not mark is left out
-         * of the trail. When it throws while the call reads the instant of the Failed entry that ends a failed call,
-         * whatever failed the call, the call's {@code CallFailedException} carries what it threw as suppressed, unless
-         * it threw that very exception, and its trail ends without that entry; an InterruptedException suppressed there
-         * interrupts the thread again, and an Error propagates. A clock that answers null counts as one that throws a
-         * NullPointerException. A machine that does not call this reads no clock and keeps no mark.
+         * Records the trail of every root call this machine starts, on the clock {@link #clock(InstantSource)} gives:
+         * the flow the call hands out, in its outcome or in its failure, lists in {@code trail()} each hop and each
+         * sub-machine start the call took, each at the instant that clock read right after the call took it, then the
+         * rejection or the failure that ended the call, at the instant it ended. The root machine decides for the
+         * whole call, as it does with asyncTimeout: the hops of the peers it cascades to and of the exits its steps
+         * run are recorded on its clock whatever those machines declare, and a call that a machine without a trail
+         * starts records nothing, even when it cascades into one with a trail. A watch reaction is a root call of its
+         * own, decided by its own machine, and so is an automatic attempt. A call that records its trail creates its
+         * flow when its step starts, so it hands out its flow, with the root entity and the trail, even when none of
+         * its steps or hooks wrote to it; an ignored outcome hands out the empty flow: a reevaluation that selects no
+         * edge and an advance whose state has no automatic edge run no step, and an advance whose automatic edges were
+         * all refused, or a choice whose candidates were all refused, wrote nothing. The clock is read on the thread
+         * running the call, once per entry the call appends, an entry a rollback later drops included, so a clock
+         * that advances on each read leaves a gap for each dropped entry; these reads are the trail's own, apart from
+         * the one instant {@code now()} answers. Anything but an Error that the clock throws, a checked exception
+         * included, fails the call as what an identity function throws does, an InterruptedException interrupting the
+         * thread again: the entry it could not mark is left out of the trail. When it throws while the call reads the
+         * instant of the Failed entry that ends a failed call, whatever failed the call, the call's
+         * {@code CallFailedException} carries what it threw as suppressed, unless it threw that very exception, and
+         * its trail ends without that entry; an InterruptedException suppressed there interrupts the thread again, and
+         * an Error propagates. A clock that answers null counts as one that throws a NullPointerException. A machine
+         * that does not call this keeps no mark.
          */
-        public Builder<E, S, T> recordTrail(InstantSource clock) {
+        public Builder<E, S, T> recordTrail() {
             requireUnused();
-            Objects.requireNonNull(clock, "clock");
-            this.trail = Optional.of(clock);
+            this.trail = true;
             return this;
         }
 
@@ -219,7 +229,7 @@ public final class StateMachines {
                         + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
             MachineKey<E, S, T> key = definition.key();
-            boolean onAdvanceOnly = DefaultStateMachine.automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
+            boolean onAdvanceOnly = automaticChainOf(definition) == AutomaticChain.ON_ADVANCE;
             boolean bindsSubmachines = false;
             List<WatchSpec<E, S, T, ?, ?, ?>> watches = new ArrayList<>();
             for (S state : key.states().getEnumConstants()) {
@@ -246,6 +256,20 @@ public final class StateMachines {
         }
 
         /**
+         * What {@code definition} answers for {@link GraphDefinition#automaticChain()}; what that throws propagates,
+         * and a null answer throws NullPointerException. Read once per build, as the builder validates, and never by a
+         * call; the machine gets whether that answer is ON_ADVANCE.
+         */
+        private static AutomaticChain automaticChainOf(GraphDefinition<?, ?, ?> definition) {
+            AutomaticChain chain = definition.automaticChain();
+            if (chain == null) {
+                throw new NullPointerException("automaticChain() of the definition of " + definition.key()
+                        + " returned null");
+            }
+            return chain;
+        }
+
+        /**
          * Consumes the builder and builds its machine from what {@link #validate} read, reading nothing of the
          * definition: {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry
          * indexed them.
@@ -258,7 +282,7 @@ public final class StateMachines {
             Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
                     : Executors.newVirtualThreadPerTaskExecutor();
             return new DefaultStateMachine<>(definition, validated, getter.get(), setter.get(), identity, asyncTimeout,
-                    resolved, owns, registry, bindingsAsChild, trail);
+                    resolved, owns, registry, bindingsAsChild, trail ? Optional.of(clock) : Optional.empty(), clock);
         }
 
         private void requireUnused() {

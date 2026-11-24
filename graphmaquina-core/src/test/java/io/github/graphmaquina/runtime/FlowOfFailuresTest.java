@@ -85,7 +85,7 @@ class FlowOfFailuresTest {
                         }).onFailure(DISCARD),
                 UnaryOperator.identity());
         CascadeException thrown = assertThrows(CascadeException.class,
-                () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).recordTrail(EPOCH).build()
+                () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).clock(EPOCH).recordTrail().build()
                         .execute(root, SUBMIT));
         assertEquals(Optional.of("written by the failing step"), thrown.flow().get(NOTE));
         List<FlowEntry> trail = thrown.flow().trail();
@@ -112,7 +112,7 @@ class FlowOfFailuresTest {
                         }).failsOn(IllegalArgumentException.class).onFailure(DISCARD),
                 UnaryOperator.identity());
         CascadeException thrown = assertThrows(CascadeException.class,
-                () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).recordTrail(EPOCH).build()
+                () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).clock(EPOCH).recordTrail().build()
                         .execute(root, SUBMIT));
         assertEquals(Optional.of("written by the failing step"), thrown.flow().get(NOTE));
         List<FlowEntry> trail = thrown.flow().trail();
@@ -162,7 +162,7 @@ class FlowOfFailuresTest {
                 (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, grandchild, PUBLISH));
         CascadeException thrown = assertThrows(CascadeException.class,
                 () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                        .recordTrail(EPOCH).build().execute(root, SUBMIT));
+                        .clock(EPOCH).recordTrail().build().execute(root, SUBMIT));
         assertEquals(Optional.of("root"), thrown.flow().get(NOTE));
         assertEquals(Optional.empty(), thrown.flow().get(CHILD_NOTE));
         assertEquals(List.of("Hop root", "Failed"), described(thrown.flow().trail()));
@@ -183,7 +183,7 @@ class FlowOfFailuresTest {
                         throw unread;
                     }
                     return doc.status();
-                }, Doc::setStatus).identity(Doc::id).recordTrail(EPOCH).build().execute(root, SUBMIT));
+                }, Doc::setStatus).identity(Doc::id).clock(EPOCH).recordTrail().build().execute(root, SUBMIT));
         assertSame(unread, thrown.getCause());
         assertEquals(Optional.of("child"), thrown.flow().get(CHILD_NOTE));
         assertEquals(List.of("Hop root", "Hop child", "Failed"), described(thrown.flow().trail()));
@@ -204,7 +204,7 @@ class FlowOfFailuresTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.action("Publish",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.failed("no route")));
         try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
-                .state(Doc::status, Doc::setStatus).identity(Doc::id).recordTrail(EPOCH)).build()) {
+                .state(Doc::status, Doc::setStatus).identity(Doc::id).clock(EPOCH).recordTrail()).build()) {
             CascadeException thrown = assertThrows(CascadeException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
             assertSame(root, thrown.flow().entity().orElseThrow());

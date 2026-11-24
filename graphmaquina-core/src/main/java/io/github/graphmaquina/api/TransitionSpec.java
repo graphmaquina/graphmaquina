@@ -53,6 +53,14 @@ import lombok.NonNull;
  *     {@link GraphDefinition#automaticFrom(Enum)} lists the automatic edges leaving a state
  * @param onFailureContinues whether the graph declares the {@code onFailure} route as a continuing one, as
  *     {@code onFailureAndContinue} does in the DSL; it needs an {@code onFailure}
+ * @param gate whether the edge is a gate, as {@code gate()} declares it in the DSL: a self-loop that only a check asks,
+ *     whose guards and state policy answer an eligibility check or a choice check as for any edge, while a request of
+ *     its identifier is answered as if the state had no edge for it
+ * @param external whether the edge is external, as {@code external()} declares it in the DSL: another system takes it,
+ *     so it counts for the structure, reachability and cycles included, while this machine never takes it, and a
+ *     request or a check of its identifier is answered as if the state had no edge for it. The DSL and the processor
+ *     refuse the combinations the two kinds forbid (SG111, SG112, SG113, SG114); a definition assembled without the DSL
+ *     is not checked
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull S from, @NonNull T transition, @NonNull S to,
@@ -63,7 +71,7 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull Optional<Duration> timeout,
         @NonNull Optional<HookRef<E, S, T>> afterCommit,
         @NonNull List<RecoveryRule<T>> recoveryRules,
-        boolean automatic, boolean onFailureContinues) {
+        boolean automatic, boolean onFailureContinues, boolean gate, boolean external) {
 
     public TransitionSpec {
         guards = List.copyOf(guards);
@@ -112,6 +120,32 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
     }
 
     /**
+     * Constructs an ordinary edge, neither a gate nor external, with the other components as the canonical constructor
+     * takes them.
+     *
+     * @param from origin state
+     * @param transition identifier that selects this edge from {@code from}
+     * @param to destination state
+     * @param action the action to run, absent for a plain move
+     * @param guards guards evaluated in declaration order
+     * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}
+     * @param failsOn throwable types that turn an action's throwable into a domain failure
+     * @param timeout longest wait for the asynchronous action's stage
+     * @param afterCommit hook run once this edge is committed
+     * @param recoveryRules recovery rules declared on this edge, in declaration order
+     * @param automatic whether the graph declares this edge as automatic
+     * @param onFailureContinues whether the {@code onFailure} route is a continuing one
+     */
+    public TransitionSpec(S from, T transition, S to, Optional<ActionRef<E, S, T>> action,
+                          List<GuardRef<E, S, T>> guards, Optional<T> onFailure,
+                          List<Class<? extends Throwable>> failsOn, Optional<Duration> timeout,
+                          Optional<HookRef<E, S, T>> afterCommit, List<RecoveryRule<T>> recoveryRules,
+                          boolean automatic, boolean onFailureContinues) {
+        this(from, transition, to, action, guards, onFailure, failsOn, timeout, afterCommit, recoveryRules, automatic,
+                onFailureContinues, false, false);
+    }
+
+    /**
      * Constructs an edge with no recovery rules that is not automatic and whose onFailure does not continue.
      *
      * @param from origin state
@@ -130,7 +164,7 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
                           List<Class<? extends Throwable>> failsOn, Optional<Duration> timeout,
                           Optional<HookRef<E, S, T>> afterCommit) {
         this(from, transition, to, action, guards, onFailure, failsOn, timeout, afterCommit, List.of(), false,
-                false);
+                false, false, false);
     }
 
     public TransitionKind kind() {

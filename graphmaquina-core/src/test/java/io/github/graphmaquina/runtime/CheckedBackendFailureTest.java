@@ -241,7 +241,7 @@ class CheckedBackendFailureTest {
         };
         try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
                 .add(StateMachines.from(docs(UnaryOperator.identity())).state(Doc::status, Doc::setStatus)
-                        .identity(Doc::id).recordTrail(clock)).build()) {
+                        .identity(Doc::id).clock(clock).recordTrail()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(doc, SUBMIT));
             assertSame(offline, thrown.getCause());
@@ -269,7 +269,7 @@ class CheckedBackendFailureTest {
                         }));
         try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
                 .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                        .recordTrail(clock)).build()) {
+                        .clock(clock).recordTrail()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(doc, SUBMIT));
             assertEquals(List.of(offline), List.of(thrown.getSuppressed()));

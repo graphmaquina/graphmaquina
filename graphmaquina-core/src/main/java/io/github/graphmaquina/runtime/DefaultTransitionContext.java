@@ -9,6 +9,7 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.StaleContextException;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -142,6 +143,13 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     public FlowContext flow() {
         check();
         return tx.flow(this::checkedUnit, depth);
+    }
+
+    /** Checks this context, then answers the instant of the request, as {@link RequestScope} reads it. */
+    @Override
+    public Instant now() {
+        check();
+        return tx.uow().request().now();
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */

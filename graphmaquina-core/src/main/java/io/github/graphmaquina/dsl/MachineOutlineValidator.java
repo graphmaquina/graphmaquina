@@ -16,12 +16,13 @@ import java.util.Set;
 import lombok.NonNull;
 
 /**
- * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
- * reachability, cycles, failure routes, watches and sub-machines, and, when none of those found a problem, the
- * automatic orders, the cycles of the automatic edges and the continuing routes ({@link AutomaticRules} and
+ * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, the kinds of the edges,
+ * terminals, reachability, cycles, failure routes, watches and sub-machines, and, when none of those found a problem,
+ * the automatic orders, the cycles of the automatic edges and the continuing routes ({@link AutomaticRules} and
  * {@link ContinuationRules}). The failure routes of an edge are the identifiers
- * its recovery rules name and the one its {@code onFailure} names. Shared by the DSL and the annotation processor, so
- * both report the same codes for these checks.
+ * its recovery rules name and the one its {@code onFailure} names. A gate is neither an exit of a state that is not
+ * terminal nor a cycle; an external edge counts for both, and for reachability, as an ordinary edge does. Shared by the
+ * DSL and the annotation processor, so both report the same codes for these checks.
  */
 public final class MachineOutlineValidator {
 
@@ -44,6 +45,7 @@ public final class MachineOutlineValidator {
         OutlineIndex index = new OutlineIndex(outline);
         Map<EdgeKey, TransitionOutline> byKey = uniqueKeys(outline, index, problems);
         policies(outline, index, byKey, problems);
+        kinds(outline, index, problems);
         exits(outline, index, problems);
         reachability(outline, index, problems);
         cycles(outline, index, problems);
@@ -104,16 +106,117 @@ public final class MachineOutlineValidator {
         }
     }
 
+    /**
+     * SG111 for each gate that is no self-loop or declares more than guards, SG112 for each external edge, not also a
+     * gate, that is a self-loop or declares anything, and SG113 once for each identifier whose edges are of more than
+     * one kind: ordinary, gate or external, an edge marked as both counting as a gate.
+     */
+    private static void kinds(MachineOutline outline, OutlineIndex index, Problems problems) {
+        Map<String, Map<String, List<String>>> kinds = new LinkedHashMap<>();
+        for (TransitionOutline edge : outline.transitions()) {
+            faults(edge, index, problems);
+            kinds.computeIfAbsent(edge.transition(), (String id) -> new LinkedHashMap<>())
+                    .computeIfAbsent(kindOf(edge), (String kind) -> new ArrayList<>()).add(edge.from());
+        }
+        for (Map.Entry<String, Map<String, List<String>>> identifier : kinds.entrySet()) {
+            if (identifier.getValue().size() > 1) {
+                List<String> parts = new ArrayList<>();
+                for (Map.Entry<String, List<String>> kind : identifier.getValue().entrySet()) {
+                    parts.add(kind.getKey() + " from " + String.join(", ", kind.getValue()));
+                }
+                problems.add(DiagnosticCode.SG113, -1, index.transitionIndex(identifier.getKey()),
+                        identifier.getKey() + " is " + String.join(" and ", parts)
+                                + "; all edges of one identifier are of one kind");
+            }
+        }
+    }
+
+    /** The kind of {@code edge} as SG113 names it: a gate, which an edge also marked external still is, or not. */
+    private static String kindOf(TransitionOutline edge) {
+        if (edge.gate()) {
+            return "a gate";
+        }
+        return edge.external() ? "external" : "ordinary";
+    }
+
+    /** SG111 when {@code edge} is a gate with faults, SG112 when it is an external edge, not a gate, with faults. */
+    private static void faults(TransitionOutline edge, OutlineIndex index, Problems problems) {
+        if (edge.gate()) {
+            List<String> faults = new ArrayList<>();
+            if (!edge.from().equals(edge.to())) {
+                faults.add("is no self-loop");
+            }
+            faults.addAll(declarations(edge));
+            if (edge.external()) {
+                faults.add("is external");
+            }
+            if (!faults.isEmpty()) {
+                problems.add(DiagnosticCode.SG111, index.stateIndex(edge.from()),
+                        index.transitionIndex(edge.transition()), edge.describe() + " is a gate but "
+                                + String.join(", ", faults) + "; a gate is a self-loop that declares guards at most");
+            }
+        } else if (edge.external()) {
+            List<String> faults = new ArrayList<>();
+            if (edge.from().equals(edge.to())) {
+                faults.add("is a self-loop");
+            }
+            if (edge.guarded()) {
+                faults.add("declares a guard");
+            }
+            faults.addAll(declarations(edge));
+            if (!faults.isEmpty()) {
+                problems.add(DiagnosticCode.SG112, index.stateIndex(edge.from()),
+                        index.transitionIndex(edge.transition()), edge.describe() + " is external but "
+                                + String.join(", ", faults) + "; an external edge leads to another state and declares"
+                                + " nothing else");
+            }
+        }
+    }
+
+    /**
+     * What {@code edge} declares beyond its states and its guards, in this order: an action, onFailure, a recovery
+     * rule, a hook of its own and the automatic mark; none of them fits a gate or an external edge.
+     */
+    private static List<String> declarations(TransitionOutline edge) {
+        List<String> declared = new ArrayList<>();
+        if (edge.kind() == TransitionKind.ACTION) {
+            declared.add("declares an action");
+        }
+        if (edge.onFailure().isPresent()) {
+            declared.add("declares onFailure");
+        }
+        if (!edge.recoveryTransitions().isEmpty()) {
+            declared.add("declares a recovery rule");
+        }
+        if (edge.hooked()) {
+            declared.add("declares a hook");
+        }
+        if (edge.automatic()) {
+            declared.add("is automatic");
+        }
+        return declared;
+    }
+
+    /**
+     * SG202 for a state that is not terminal and declares no edge but gates, and for a terminal state that declares
+     * any edge, a gate included.
+     */
     private static void exits(MachineOutline outline, OutlineIndex index, Problems problems) {
         for (String state : outline.states()) {
             List<String> exits = new ArrayList<>();
+            boolean leaves = false;
             for (TransitionOutline edge : index.outgoing(state)) {
                 exits.add(edge.transition());
+                leaves |= !edge.gate();
             }
             boolean terminal = outline.terminals().contains(state);
             if (exits.isEmpty() && !terminal) {
                 problems.add(DiagnosticCode.SG202, index.stateIndex(state), -1,
                         state + " declares no outgoing transition: declare it as a terminal state");
+            } else if (!leaves && !terminal) {
+                problems.add(DiagnosticCode.SG202, index.stateIndex(state), -1,
+                        state + " declares only the gates " + exits + ", which leave nothing: declare an edge that"
+                                + " leaves it");
             }
             if (!exits.isEmpty() && terminal) {
                 problems.add(DiagnosticCode.SG202,
@@ -167,12 +270,16 @@ public final class MachineOutlineValidator {
     /**
      * Every edge's failure routes: first each distinct identifier its recovery rules name, in declaration order, then
      * the one its onFailure names. An edge without an action may declare neither (SG507); otherwise each identifier
-     * must name another edge that leaves the same origin (SG301). Recovery rules are checked once per distinct
-     * identifier; onFailure is checked separately even when it names the same identifier.
+     * must name another edge that leaves the same origin (SG301), neither a gate nor external (SG114). Recovery rules
+     * are checked once per distinct identifier; onFailure is checked separately even when it names the same
+     * identifier. The routes a gate or an external edge declares are SG111 or SG112 instead, so they are skipped here.
      */
     private static void failureRoutes(MachineOutline outline, OutlineIndex index,
             Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         for (TransitionOutline edge : outline.transitions()) {
+            if (edge.gate() || edge.external()) {
+                continue;
+            }
             boolean action = edge.kind() == TransitionKind.ACTION;
             if (!edge.recoveryTransitions().isEmpty()) {
                 if (!action) {
@@ -200,7 +307,8 @@ public final class MachineOutlineValidator {
 
     /**
      * SG301 unless {@code recovery} names an edge, other than {@code edge} itself, that leaves the origin of
-     * {@code edge}. {@code declared} is how the message quotes the declaration that names it.
+     * {@code edge}; SG114 when that edge is a gate or external. {@code declared} is how the message quotes the
+     * declaration that names it.
      */
     private static void requireRoute(TransitionOutline edge, String recovery, String declared, OutlineIndex index,
             Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
@@ -211,6 +319,22 @@ public final class MachineOutlineValidator {
             problems.add(DiagnosticCode.SG301, index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                     edge.describe() + " declares " + declared + ", but no transition " + recovery + " leaves "
                             + edge.from());
+        } else {
+            untakeable(byKey.get(new EdgeKey(edge.from(), recovery)), index, problems,
+                    edge.describe() + " declares " + declared);
+        }
+    }
+
+    /**
+     * SG114 when {@code named}, the edge a failure route, an exit or a watch rule names, is a gate or external, which
+     * this machine never takes; {@code who} is how the message begins.
+     */
+    private static void untakeable(TransitionOutline named, OutlineIndex index, Problems problems, String who) {
+        if (named.gate() || named.external()) {
+            problems.add(DiagnosticCode.SG114,
+                    index.stateIndex(named.from()), index.transitionIndex(named.transition()),
+                    who + ", but " + named.describe() + " is " + (named.gate() ? "a gate" : "external")
+                            + ", which this machine never takes");
         }
     }
 
@@ -223,6 +347,9 @@ public final class MachineOutlineValidator {
                             index.stateIndex(watch.state()), index.transitionIndex(transition),
                             "the watch of " + watch.state() + " executes " + transition
                                     + ", but no such transition leaves " + watch.state());
+                } else {
+                    untakeable(byKey.get(new EdgeKey(watch.state(), transition)), index, problems,
+                            "the watch of " + watch.state() + " executes " + transition);
                 }
             }
             if (outline.terminals().contains(watch.state())) {
@@ -265,7 +392,8 @@ public final class MachineOutlineValidator {
 
     /**
      * SG801 for each terminal state of the child without exactly one exit and for each exit on a state that is not
-     * one; SG802 for each exit whose identifier has no edge from the bound state.
+     * one; SG802 for each exit whose identifier has no edge from the bound state, and SG114 for each whose edge is a
+     * gate or external.
      */
     private static void exits(MachineOutline outline, SubmachineOutline submachine, OutlineIndex index,
             Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
@@ -296,6 +424,9 @@ public final class MachineOutlineValidator {
                 problems.add(DiagnosticCode.SG802,
                         node, identifier, where + "the exit on " + exit.terminal() + " names "
                         + exit.transition() + ", which has no edge from " + submachine.state());
+            } else {
+                untakeable(byKey.get(new EdgeKey(submachine.state(), exit.transition())), index, problems,
+                        where + "the exit on " + exit.terminal() + " names " + exit.transition());
             }
         }
     }

@@ -108,7 +108,7 @@ class TrailTest {
         TickingClock clock = new TickingClock();
         Outcome<Payment, PaymentStatus, PaymentTransition> outcome;
         try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine())
-                .add(billing.paymentMachine().recordTrail(clock)).build()) {
+                .add(billing.paymentMachine().clock(clock).recordTrail()).build()) {
             outcome = registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
         }
         assertEquals(BookingStatus.BALANCE, booking.status());
@@ -155,7 +155,8 @@ class TrailTest {
         TickingClock clock = new TickingClock();
         Outcome<Payment, PaymentStatus, PaymentTransition> quiet;
         Outcome<Payment, PaymentStatus, PaymentTransition> writing;
-        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine().recordTrail(clock))
+        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine()
+                .clock(clock).recordTrail())
                 .add(billing.paymentMachine()).build()) {
             quiet = registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
             writing = registry.of(PAYMENTS).execute(written, PaymentTransition.CAPTURE);
@@ -301,7 +302,8 @@ class TrailTest {
                 .attachBalance(new Payment("p1", PaymentStatus.AUTHORIZING));
         TransitionAbortedException aborted;
         try (MachineRegistry registry = MachineRegistry.builder()
-                .add(billing.bookingMachine().recordTrail(new TickingClock())).add(billing.paymentMachine()).build()) {
+                .add(billing.bookingMachine().clock(new TickingClock()).recordTrail())
+                .add(billing.paymentMachine()).build()) {
             aborted = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(BOOKINGS).execute(booking, BookingTransition.PAY_IN_FULL));
         }
@@ -383,9 +385,9 @@ class TrailTest {
                             (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> ActionOutcome.ok()))
                     .state(Item::status, Item::setStatus).identity(Item::id);
             if (orderRecords) {
-                orderMachine.recordTrail(orders);
+                orderMachine.clock(orders).recordTrail();
             } else {
-                itemMachine.recordTrail(items);
+                itemMachine.clock(items).recordTrail();
             }
             try (MachineRegistry registry = MachineRegistry.builder().add(orderMachine).add(itemMachine).build()) {
                 outcomes.add(registry.of(ITEMS).execute(item, ItemTransition.PACK));
@@ -462,7 +464,7 @@ class TrailTest {
         billing.onCommit = (CommitContext<?, ?> context) -> read.add(context.flow().trail());
         Outcome<Payment, PaymentStatus, PaymentTransition> outcome;
         try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine())
-                .add(billing.paymentMachine().recordTrail(new TickingClock())).build()) {
+                .add(billing.paymentMachine().clock(new TickingClock()).recordTrail()).build()) {
             outcome = registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
         }
         List<FlowEntry> trail = outcome.flow().trail();
@@ -512,10 +514,10 @@ class TrailTest {
 
     /** A null clock is refused by name, before anything is configured. */
     @Test
-    void recordTrailRefusesANullClock() {
+    void clockRefusesANullClock() {
         StateMachines.Builder<Doc, DocStatus, DocTransition> builder =
                 StateMachines.from(docs(UnaryOperator.identity())).state(Doc::status, Doc::setStatus);
-        assertEquals("clock", assertThrows(NullPointerException.class, () -> builder.recordTrail(null)).getMessage());
+        assertEquals("clock", assertThrows(NullPointerException.class, () -> builder.clock(null)).getMessage());
         Outcome<Doc, DocStatus, DocTransition> outcome = builder.build().execute(new Doc("1", DRAFT), SUBMIT);
         assertSame(FlowView.empty(), outcome.flow());
     }

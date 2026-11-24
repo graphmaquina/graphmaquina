@@ -63,14 +63,16 @@ final class Choices {
      * guard, each is a check nested in that guard's call or check. The first eligible one answers
      * {@link ChoiceEligibility.Chosen}, with the refusals before it; otherwise the answer is
      * {@link ChoiceEligibility.NoneAdmitted}, with every refusal, from the state the first check read. What a check
-     * throws propagates, and no later candidate is checked.
+     * throws propagates, and no later candidate is checked. The checks are one request, as {@link RequestScope} says:
+     * every candidate's guards see one instant.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> ChoiceEligibility<E, S, T> check(
             DefaultStateMachine<E, S, T> machine, E entity, List<T> candidates, Optional<Object> input) {
         List<T> checked = accepted(machine.key(), candidates);
         List<Eligibility.Ineligible<E, S, T>> rejected = new ArrayList<>(checked.size());
+        Optional<RequestScope> request = Optional.of(new RequestScope(machine.clock()));
         for (T candidate : checked) {
-            Eligibility<E, S, T> verdict = Checks.check(machine, entity, candidate, input);
+            Eligibility<E, S, T> verdict = Checks.check(machine, entity, candidate, input, request);
             if (verdict instanceof Eligibility.Ineligible<E, S, T> refusal) {
                 rejected.add(refusal);
             } else {

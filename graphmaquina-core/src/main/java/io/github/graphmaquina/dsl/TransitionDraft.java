@@ -62,6 +62,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     private Optional<Duration> timeout = Optional.empty();
     private int timeouts;
     private int automatics;
+    private int gates;
+    private int externals;
     private Optional<HookRef<E, S, T>> afterCommit = Optional.empty();
     private boolean closed;
 
@@ -134,9 +136,50 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     @Override
+    public TransitionDraft<E, S, T> guard(@NonNull String name, @NonNull TransitionGuard<E, S, T> guard,
+                                          @NonNull List<Class<? extends Throwable>> propagates) {
+        List<Class<? extends Throwable>> types = copied(propagates);
+        requireOpen();
+        guards.add(new GuardDraft<>(Optional.of(name), Optional.of(guard), Optional.empty(), types));
+        return this;
+    }
+
+    @Override
+    public TransitionDraft<E, S, T> asyncGuard(@NonNull String name, @NonNull AsyncTransitionGuard<E, S, T> guard,
+                                               @NonNull List<Class<? extends Throwable>> propagates) {
+        List<Class<? extends Throwable>> types = copied(propagates);
+        requireOpen();
+        guards.add(new GuardDraft<>(Optional.of(name), Optional.empty(), Optional.of(guard), types));
+        return this;
+    }
+
+    /** A copy of {@code propagates}, which refuses a null element. */
+    private static List<Class<? extends Throwable>> copied(List<Class<? extends Throwable>> propagates) {
+        List<Class<? extends Throwable>> types = new ArrayList<>(propagates);
+        for (Class<? extends Throwable> type : types) {
+            Objects.requireNonNull(type, "propagates contains a null element");
+        }
+        return List.copyOf(types);
+    }
+
+    @Override
     public TransitionDraft<E, S, T> automatic() {
         requireOpen();
         automatics++;
+        return this;
+    }
+
+    @Override
+    public TransitionDraft<E, S, T> gate() {
+        requireOpen();
+        gates++;
+        return this;
+    }
+
+    @Override
+    public TransitionDraft<E, S, T> external() {
+        requireOpen();
+        externals++;
         return this;
     }
 
@@ -296,7 +339,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         }
         List<RecoveryRule<T>> rules = recoveryRules();
         return Optional.of(new TransitionSpec<>(from, transition, to, actionRef, guardRefs, onFailure, failsOn, timeout,
-                afterCommit, rules, automatics > 0, onFailureContinues));
+                afterCommit, rules, automatics > 0, onFailureContinues, gates > 0, externals > 0));
     }
 
     /** Records SG302 for each forbidden throwable type in failsOn, and answers whether it recorded none. */
@@ -314,6 +357,20 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     /** The declared recovery rules, in declaration order, built once every check of the edge has passed. */
+    /** SG302 for each type of {@code propagates}, the guard {@code guard}'s, that failsOn may not list either. */
+    private static boolean checkPropagates(String where, int fromIndex, int idIndex, Problems problems, String guard,
+                                           List<Class<? extends Throwable>> propagates) {
+        boolean valid = true;
+        for (Class<? extends Throwable> type : propagates) {
+            if (FailureTypes.isForbiddenThrowable(type)) {
+                problems.add(DiagnosticCode.SG302, fromIndex, idIndex, where + ": the guard " + guard + " propagates "
+                        + type.getSimpleName() + ", which it may not; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
+                valid = false;
+            }
+        }
+        return valid;
+    }
+
     private List<RecoveryRule<T>> recoveryRules() {
         List<RecoveryRule<T>> rules = new ArrayList<>();
         for (DeclaredRecovery<T> recovery : recoveries) {
@@ -389,6 +446,16 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
                     where + " declares " + automatics + " automatic marks, but an edge has at most one");
             valid = false;
         }
+        if (gates > 1) {
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
+                    where + " declares " + gates + " gate marks, but an edge has at most one");
+            valid = false;
+        }
+        if (externals > 1) {
+            problems.add(DiagnosticCode.SG507, fromIndex, idIndex,
+                    where + " declares " + externals + " external marks, but an edge has at most one");
+            valid = false;
+        }
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {
             problems.add(DiagnosticCode.SG511, fromIndex, idIndex, where + " declares a timeout that is not positive");
             valid = false;
@@ -422,6 +489,10 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             if (!named.add(name.get())) {
                 problems.add(DiagnosticCode.SG105,
                         fromIndex, idIndex, where + " declares two guards named " + name.get());
+                valid = false;
+                continue;
+            }
+            if (!checkPropagates(where, fromIndex, idIndex, problems, name.get(), guard.propagates())) {
                 valid = false;
                 continue;
             }

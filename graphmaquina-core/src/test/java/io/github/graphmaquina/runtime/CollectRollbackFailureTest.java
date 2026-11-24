@@ -85,7 +85,7 @@ class CollectRollbackFailureTest {
         try (LibraryLog log = LibraryLog.runtime(Level.FINER);
              MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
                 .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())
-                .recordTrail(InstantSource.fixed(Instant.EPOCH))).build()) {
+                .clock(InstantSource.fixed(Instant.EPOCH)).recordTrail()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
             List<String> lines = log.records().stream().map(LogRecord::getMessage).toList();

@@ -77,7 +77,7 @@ final class Steps {
         S from = stateOf(tx, machine, ref, entity, id, depth, Optional.empty());
         try {
             Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
-            if (selected.isEmpty()) {
+            if (selected.isEmpty() || !takes(selected.get(), admitOnly)) {
                 return noTransition(tx, machine, ref, from, id, depth, Optional.empty());
             }
             TransitionSpec<E, S, T> transition = selected.orElseThrow();
@@ -97,17 +97,17 @@ final class Steps {
 
     /**
      * One step of a machine that takes part in a binding: read the state, check the bindings of a sub-machine,
-     * resolve (current state, identifier) exactly once, refuse a reserved exit, then guards, annotate, execute and
-     * failure route as {@link #runEdge} says; then, once the step's frame is popped, the exits it calls for, as
-     * {@link Submachines#exits} says. {@code exitOf} is the captured bound node whose exit this step runs, with the
-     * child whose terminal state selected it: the node supplies the source instead of rereading the parent's getter,
-     * and grants reserved-exit privilege only at that source; the child is what the step's resolved line names. It is
-     * empty for any other step. For a machine that no graph binds as a sub-machine, the binding check is one test of an
-     * empty list, and for one whose own graph binds none, the reserved-exit check is one field read. When the root's
-     * own step throws once it has read its state, it records that state and its edge for {@link Transaction#classify}.
-     * The root's own step hands the reference it registered to the call's log, which prints it. A call that logs at
-     * TRACE logs what the binding check found, the binding that holds the child or the reason it is detached, then the
-     * edge the step resolved, or that it found none, at the step's depth.
+     * resolve (current state, identifier) exactly once, answer an edge it does not take as no edge, refuse a reserved
+     * exit, then guards, annotate, execute and failure route as {@link #runEdge} says; then, once the step's frame is
+     * popped, the exits it calls for, as {@link Submachines#exits} says. {@code exitOf} is the captured bound node
+     * whose exit this step runs, with the child whose terminal state selected it: the node supplies the source instead
+     * of rereading the parent's getter, and grants reserved-exit privilege only at that source; the child is what the
+     * step's resolved line names. It is empty for any other step. For a machine that no graph binds as a sub-machine,
+     * the binding check is one test of an empty list, and for one whose own graph binds none, the reserved-exit check
+     * is one field read. When the root's own step throws once it has read its state, it records that state and its
+     * edge for {@link Transaction#classify}. The root's own step hands the reference it registered to the call's log,
+     * which prints it. A call that logs at TRACE logs what the binding check found, the binding that holds the child
+     * or the reason it is detached, then the edge the step resolved, or that it found none, at the step's depth.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(
             Transaction tx, DefaultStateMachine<E, S, T> machine, E entity, T id, int depth, Optional<Object> input,
@@ -137,7 +137,7 @@ final class Steps {
                 holder = check.holder();
             }
             Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
-            if (selected.isEmpty()) {
+            if (selected.isEmpty() || !takes(selected.get(), admitOnly)) {
                 return noTransition(tx, machine, ref, from, id, depth, exitOf);
             }
             TransitionSpec<E, S, T> transition = selected.orElseThrow();
@@ -160,6 +160,15 @@ final class Steps {
             }
             throw e;
         }
+    }
+
+    /**
+     * Whether a step takes {@code edge} once it selected it: never an external edge, which another system takes, and a
+     * gate only when {@code admitOnly}, since only a check asks a gate. A step that does not take its edge answers as
+     * if the state had none, as {@link #noTransition} says.
+     */
+    private static boolean takes(TransitionSpec<?, ?, ?> edge, boolean admitOnly) {
+        return !edge.external() && (admitOnly || !edge.gate());
     }
 
     /**
@@ -239,8 +248,9 @@ final class Steps {
     }
 
     /**
-     * A step whose state and identifier select no edge: rejected, with the reason the state's policy gives, as
-     * {@link #rejected} says, once a call that logs at TRACE logged that the step found no edge.
+     * A step whose state and identifier select no edge it takes, as {@link #takes} says: rejected, with the reason the
+     * state's policy gives, as {@link #rejected} says, once a call that logs at TRACE logged that the step found no
+     * edge.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> noTransition(
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, S from, T id, int depth,
@@ -412,9 +422,26 @@ final class Steps {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            Interrupts.keep(e);
-            throw guardFailure(tx, machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
+            throw testFailure(tx, machine, ref, transition, depth, guard, e);
         }
+    }
+
+    /**
+     * What the engine throws for {@code e}, which the test call of {@code guard} threw on this thread and which is no
+     * Error: for a null value its memo kept, the abort a guard that returns null gets, which carries no guard failure;
+     * for anything else, the thread interrupted again when it is an InterruptedException, what {@link #guardFailure}
+     * says.
+     */
+    private static StateMachineException testFailure(Transaction tx, DefaultStateMachine<?, ?, ?> machine,
+                                                     EntityRef ref, TransitionSpec<?, ?, ?> transition, int depth,
+                                                     GuardRef<?, ?, ?> guard, Throwable e) {
+        if (e instanceof NullMemoValue nullMemo) {
+            return tx.abort(machine, ref, transition.from(), Optional.of(transition.transition()),
+                    Optional.of(transition.to()), Optional.empty(), depth, "the guard " + guard.name()
+                            + " kept null for the memo key " + nullMemo.key().name(), Optional.empty());
+        }
+        Interrupts.keep(e);
+        return guardFailure(tx, machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
     }
 
     /**
@@ -433,8 +460,7 @@ final class Steps {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            Interrupts.keep(e);
-            throw guardFailure(tx, machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
+            throw testFailure(tx, machine, ref, transition, depth, guard, e);
         }
         if (stage == null) {
             throw tx.abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
@@ -458,7 +484,7 @@ final class Steps {
     /**
      * What the engine throws for a guard's exception: a failure of this call as {@link Transaction#poisonOr} says;
      * anything else, a library exception of another call included, an abort of the call in its current phase with it
-     * as cause.
+     * as cause, which names the guard and what it threw, as {@link Transaction#guardAbort} says.
      */
     private static StateMachineException guardFailure(Transaction tx, DefaultStateMachine<?, ?, ?> machine,
                                                       EntityRef ref, TransitionSpec<?, ?, ?> transition, int depth,
@@ -466,9 +492,9 @@ final class Steps {
         if (cause instanceof CallFailedException own && tx.owns(own)) {
             return tx.poisonOr(own);
         }
-        return tx.abort(machine, ref, transition.from(), Optional.of(transition.transition()),
-                Optional.of(transition.to()), Optional.empty(), depth,
-                "the guard " + guard.name() + " " + what + " " + Texts.shown(cause), Optional.of(cause));
+        return tx.guardAbort(machine, ref, transition.from(), Optional.of(transition.transition()),
+                Optional.of(transition.to()), depth,
+                "the guard " + guard.name() + " " + what + " " + Texts.shown(cause), guard.name(), cause);
     }
 
     /**

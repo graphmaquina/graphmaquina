@@ -238,7 +238,8 @@ class TrailFailureTest {
                 .attachDeposit(new Payment("d1", PaymentStatus.AUTHORIZING));
         AfterCommitException failure;
         try (MachineRegistry registry = MachineRegistry.builder()
-                .add(billing.bookingMachine().recordTrail(new TickingClock())).add(billing.paymentMachine()).build()) {
+                .add(billing.bookingMachine().clock(new TickingClock()).recordTrail())
+                .add(billing.paymentMachine()).build()) {
             failure = assertThrows(AfterCommitException.class,
                     () -> registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK));
         }
@@ -287,7 +288,7 @@ class TrailFailureTest {
                         .state((Doc doc) -> {
                             throw new IllegalStateException("unreadable");
                         }, Doc::setStatus)
-                        .identity(Doc::id).recordTrail(clock))
+                        .identity(Doc::id).clock(clock).recordTrail())
                 .observer(failures(failures)).build()) {
             read = assertThrows(TransitionAbortedException.class, () -> registry.of(DOCS).reevaluate(unreadable));
         }
@@ -443,7 +444,7 @@ class TrailFailureTest {
                         .state((Doc doc) -> {
                             throw new IllegalStateException("unreadable");
                         }, Doc::setStatus)
-                        .recordTrail(stopped).build().reevaluate(unreadable));
+                        .clock(stopped).recordTrail().build().reevaluate(unreadable));
         assertEquals(new FrozenFlow(Optional.of(unreadable), Map.of(), List.of()), read.flow());
         assertEquals("clock stopped", read.getSuppressed()[0].getMessage());
     }
@@ -460,7 +461,8 @@ class TrailFailureTest {
             }
         };
         TransitionAbortedException entering;
-        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine().recordTrail(atTheStart))
+        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine()
+                .clock(atTheStart).recordTrail())
                 .add(billing.paymentMachine()).build()) {
             entering = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK));
@@ -520,7 +522,7 @@ class TrailFailureTest {
                         .state((Doc doc) -> {
                             throw new IllegalStateException("unreadable");
                         }, Doc::setStatus)
-                        .identity(Doc::id).recordTrail(firstRead))
+                        .identity(Doc::id).clock(firstRead).recordTrail())
                 .observer(failures(failures)).build()) {
             assertSame(fatal, assertThrows(Fatal.class, () -> registry.of(DOCS).reevaluate(new Doc("2", DRAFT))));
         }

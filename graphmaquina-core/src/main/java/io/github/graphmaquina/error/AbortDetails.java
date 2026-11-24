@@ -34,16 +34,32 @@ import lombok.NonNull;
  *     {@code <toString threw <class name>>} in place of an id whose {@code toString()} throws anything but an Error,
  *     and as its machine key alone in the abort that poisons a cascade when printing threw an Error
  * @param journal the actions that ran, in order, with their status
+ * @param guard the guard whose own throwable caused the abort, present only together with {@code guardFailure}
+ * @param guardFailure what that guard threw, or completed its stage with, once unwrapped from CompletionException and
+ *     ExecutionException; absent for every other abort, among them a guard that answered null or a null stage and a
+ *     wait for a guard's stage that timed out, was interrupted or was refused, which the engine raises itself
  */
 public record AbortDetails(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Optional<Enum<?>> from,
                            @NonNull Optional<Enum<?>> transition, @NonNull Optional<Enum<?>> to,
                            @NonNull Optional<String> action, @NonNull List<String> cascadePath,
-                           @NonNull List<ActionRecord> journal) {
+                           @NonNull List<ActionRecord> journal, @NonNull Optional<String> guard,
+                           @NonNull Optional<Throwable> guardFailure) {
 
+    /** Copies the path and the journal, and refuses a guard without its failure or a failure without its guard. */
     public AbortDetails {
         cascadePath = List.copyOf(cascadePath);
         // The runtime's snapshot of a journal never changes: the aborts of a call share it instead of copying it.
         journal = journal instanceof JournalSnapshot ? journal : List.copyOf(journal);
+        if (guard.isPresent() != guardFailure.isPresent()) {
+            throw new IllegalArgumentException("a guard and its failure are present together or not at all");
+        }
+    }
+
+    /** The details of an abort that no guard's own throwable caused. */
+    public AbortDetails(MachineKey<?, ?, ?> key, Object entity, Optional<Enum<?>> from, Optional<Enum<?>> transition,
+                        Optional<Enum<?>> to, Optional<String> action, List<String> cascadePath,
+                        List<ActionRecord> journal) {
+        this(key, entity, from, transition, to, action, cascadePath, journal, Optional.empty(), Optional.empty());
     }
 
     /**

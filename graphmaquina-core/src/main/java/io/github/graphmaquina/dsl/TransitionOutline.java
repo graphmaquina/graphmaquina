@@ -23,16 +23,28 @@ import lombok.NonNull;
  *     when {@code onFailure} is present
  * @param continuingRecoveries the identifiers that at least one continuing recovery rule of the edge names, in
  *     declaration order and without repeats; each one is also in {@code recoveryTransitions}
+ * @param gate whether the edge is declared as a gate
+ * @param external whether the edge is declared as external
+ * @param hooked whether the edge declares a hook of its own; a default hook it would inherit does not count
  */
 public record TransitionOutline(@NonNull String from, @NonNull String transition, @NonNull String to,
                                 @NonNull TransitionKind kind, @NonNull Optional<String> onFailure,
                                 @NonNull List<String> recoveryTransitions, boolean guarded, boolean automatic,
-                                boolean onFailureContinues, @NonNull List<String> continuingRecoveries) {
+                                boolean onFailureContinues, @NonNull List<String> continuingRecoveries,
+                                boolean gate, boolean external, boolean hooked) {
 
     /** Copies {@code recoveryTransitions}, keeping its order and its repeats, and {@code continuingRecoveries}. */
     public TransitionOutline {
         recoveryTransitions = List.copyOf(recoveryTransitions);
         continuingRecoveries = List.copyOf(continuingRecoveries);
+    }
+
+    /** An ordinary edge, neither a gate nor external, that declares no hook of its own. */
+    public TransitionOutline(String from, String transition, String to, TransitionKind kind,
+                             Optional<String> onFailure, List<String> recoveryTransitions, boolean guarded,
+                             boolean automatic, boolean onFailureContinues, List<String> continuingRecoveries) {
+        this(from, transition, to, kind, onFailure, recoveryTransitions, guarded, automatic, onFailureContinues,
+                continuingRecoveries, false, false, false);
     }
 
     /** An edge that declares no recovery rule, no guard, and is not automatic. */

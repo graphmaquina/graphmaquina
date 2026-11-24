@@ -344,7 +344,7 @@ class UnprintableFailureMessageTest {
         };
         try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
                 .add(StateMachines.from(plainDocs()).state(Doc::status, Doc::setStatus).identity(Doc::id)
-                        .recordTrail(clock)).build()) {
+                        .clock(clock).recordTrail()).build()) {
             assertSame(fatal, assertThrows(AssertionError.class, () -> registry.of(DOCS).execute(doc, SUBMIT)));
         }
         assertEquals(List.of("started", "failed ACTION AssertionError"), events);

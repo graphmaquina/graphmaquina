@@ -63,6 +63,9 @@ final class RootCall {
      * committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no failed line.
      * At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its writes to
      * the call's flow as it makes it, and the watch dispatch logs each owner lookup.
+     * A call the application made, once its observers heard of its failure and its log printed it, throws in place of
+     * that failure the guard's own throwable that {@link Propagation#ofCall} finds, when it finds one: a call of a
+     * watch reaction or of an automatic step never does.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Committed<E, S, T> run(
             DefaultStateMachine<E, S, T> machine, E entity, CallRequest request, Optional<Enum<?>> requested,
@@ -70,6 +73,7 @@ final class RootCall {
             ChainLevels levels, Optional<EntityRef> continuing) {
         MachineRegistry registry = machine.registry();
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), machine.deadlineNanos());
+        uow.request(new RequestScope(machine.clock()));
         if (machine.trail().isPresent()) {
             uow.recordTrail(entity, machine.trail().get());
         }
@@ -83,7 +87,14 @@ final class RootCall {
             }
             committed = stepAndCommit(machine, tx, entity, request, body, levels, continuing);
         } catch (Throwable thrown) {
-            throw failure(observed, tx, thrown);
+            CallFailedException own = failure(observed, tx, thrown);
+            if (origin == CallOrigin.APPLICATION) {
+                Optional<Throwable> propagated = Propagation.ofCall(machine, own);
+                if (propagated.isPresent()) {
+                    throw Propagation.<RuntimeException>rethrow(propagated.get());
+                }
+            }
+            throw own;
         }
         ended(observed, tx, committed.outcome());
         return committed;

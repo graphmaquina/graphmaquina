@@ -5,14 +5,37 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * Base of every generated facade: what it offers besides its operations, their checks and its choices.
- * There is no generic selector here on purpose; the entry points are the operations declared on the interface, the
- * checks it declares for them, the choices it declares, each of which runs, or checks, the first admitted of the
- * candidate identifiers it names, and what it inherits from this interface.
+ * Base of every generated facade: what it offers besides its operations, their checks and its choices. The entry points
+ * are the operations declared on the interface, the checks it declares for them and for its gates, the choices it
+ * declares, each of which runs, or checks, the first admitted of the candidate identifiers it names, and what it
+ * inherits from this interface. {@link #execute(Object, Enum)} and {@link #eligibility(Object, Enum)} find a declared
+ * operation, or a declared check, by its identifier: they open no other entry point, so an identifier the facade
+ * declares no operation without input for, or no check without input for, is refused, never run.
  */
 public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
 
     GraphDefinition<E, S, T> definition();
+
+    /**
+     * Runs the operation without input that this facade declares for {@code transition}, as calling that operation
+     * does, and returns its outcome.
+     *
+     * @throws NullPointerException if an argument is null, naming the parameter, before anything runs
+     * @throws IllegalArgumentException if the facade declares no operation without input for {@code transition}, as
+     *     for an identifier whose operation takes an input, one with no operation, a gate or an external edge, before
+     *     anything runs
+     */
+    Outcome<E, S, T> execute(E entity, T transition);
+
+    /**
+     * Runs the check without input that this facade declares for {@code transition}, as calling that check does, and
+     * returns its answer.
+     *
+     * @throws NullPointerException if an argument is null, naming the parameter, before anything runs
+     * @throws IllegalArgumentException if the facade declares no check without input for {@code transition}, before
+     *     anything runs
+     */
+    Eligibility<E, S, T> eligibility(E entity, T transition);
 
     /** Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. */
     Outcome<E, S, T> reevaluate(E entity);

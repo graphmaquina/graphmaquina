@@ -21,4 +21,15 @@ final class InputSupport {
         }
         return input.get().map(type::cast);
     }
+
+    /**
+     * Validates {@code type} as {@link #cast} does, then answers the input when it is an instance of {@code type},
+     * the same reference, and empty otherwise.
+     */
+    static <I> Optional<I> castIfInstance(@NonNull Class<I> type, Supplier<Optional<?>> input) {
+        if (type.isPrimitive()) {
+            throw new IllegalArgumentException("input type must be a reference type; use its wrapper class");
+        }
+        return input.get().filter(type::isInstance).map(type::cast);
+    }
 }

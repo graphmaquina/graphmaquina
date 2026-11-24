@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -132,6 +133,17 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
     FlowContext flow();
 
     /**
+     * The instant of this request, on the clock the root machine was built with, {@code clock(InstantSource)} or
+     * {@link java.time.InstantSource#system()}: read the first time a context of the request asks, and the same for
+     * every later {@code now()} of the request, so every guard and action of one call and of the steps it cascades to
+     * sees one instant. A request that never asks reads no clock. Anything but an Error that the clock throws, and a
+     * null instant, refused with a NullPointerException, is thrown here, and the action fails as one that throws it.
+     * Like peer views, it works only on the thread that called {@code process()} and only until the root transaction
+     * ends: elsewhere it throws {@code WrongThreadException}, afterwards {@code StaleContextException}.
+     */
+    Instant now();
+
+    /**
      * The value passed as this operation's second argument, if any; empty when called without one, and always empty in
      * a cascaded step, the exit of a sub-machine, a reevaluation or an advance, which carry none. A {@code null} second
      * argument is refused before the call starts, so it never reads as empty. Scoped to this invocation only, never a
@@ -150,5 +162,17 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
      */
     default <I> Optional<I> input(Class<I> type) {
         return InputSupport.cast(type, this::input);
+    }
+
+    /**
+     * {@link #input()} when it is an instance of {@code type}, the same reference without copying or converting it;
+     * empty when there is no input or it is of another type, so an action shared by operations with inputs of different
+     * types can read the one it knows.
+     *
+     * @throws NullPointerException if {@code type} is null
+     * @throws IllegalArgumentException if {@code type} is a primitive class token; use its wrapper class instead
+     */
+    default <I> Optional<I> inputIfInstance(Class<I> type) {
+        return InputSupport.castIfInstance(type, this::input);
     }
 }

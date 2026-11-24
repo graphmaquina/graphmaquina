@@ -94,7 +94,8 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(),
                     spec.kind(), spec.action().map(ActionRef::name), guards, spec.isAsync(),
                     spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules()),
-                    spec.automatic(), automaticPosition(definition, spec), spec.onFailureContinues()));
+                    spec.automatic(), automaticPosition(definition, spec), spec.onFailureContinues(), spec.gate(),
+                    spec.external()));
         }
         return transitions;
     }

@@ -44,6 +44,19 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> asyncGuard(String name, AsyncTransitionGuard<E, S, T> guard);
 
     /**
+     * A guard named {@code name} whose throwables of the types {@code propagates} lists reach the caller as themselves,
+     * as {@link io.github.graphmaquina.api.GuardRef} says: on the root step of a call the application makes, and in a
+     * check. The list is copied when the guard is declared; a null element is refused at once, and {@code build()}
+     * reports a type {@code failsOn} may not list either as SG302.
+     */
+    TransitionBuilder<E, S, T> guard(String name, TransitionGuard<E, S, T> guard,
+                                     List<Class<? extends Throwable>> propagates);
+
+    /** The asynchronous form of {@link #guard(String, TransitionGuard, List)}. */
+    TransitionBuilder<E, S, T> asyncGuard(String name, AsyncTransitionGuard<E, S, T> guard,
+                                          List<Class<? extends Throwable>> propagates);
+
+    /**
      * The identifier of the edge that recovers from a domain failure no recovery rule takes: the action returns a
      * failure whose failure kind no {@code recover} of this edge declares, or a failure without a kind, or throws a
      * throwable whose most specific declared type is one of {@code failsOn}. A returned failure keeps its failure kind
@@ -64,6 +77,23 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * edge's {@code TransitionSpec} and listed by {@code GraphDefinition.automaticFrom(state)}.
      */
     TransitionBuilder<E, S, T> automatic();
+
+    /**
+     * Marks this edge as a gate: a self-loop that only a check asks, which needs no {@code allowsCycle} and is no exit
+     * of a state that is not terminal. A request of its identifier is answered as if the state had no edge for it. A
+     * gate has guards at most: an action, a failure route, a recovery rule, a hook, {@code automatic} or
+     * {@code external} on it, or an origin other than its destination, is SG111, and a second mark SG507.
+     */
+    TransitionBuilder<E, S, T> gate();
+
+    /**
+     * Marks this edge as external: another system takes it, so it counts for the structure, while this machine never
+     * takes it, and a request or a check of its identifier is answered as if the state had no edge for it. An external
+     * edge leads to another state and declares nothing else: a guard, an action, a failure route, a recovery rule, a
+     * hook, {@code automatic} or {@code gate} on it, or its own origin as its destination, is SG112, and a second mark
+     * SG507.
+     */
+    TransitionBuilder<E, S, T> external();
 
     /**
      * One per call, chainable: a throwable type whose instances take {@code onFailure}, without a failure kind, unless

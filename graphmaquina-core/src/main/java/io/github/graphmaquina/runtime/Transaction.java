@@ -285,6 +285,21 @@ sealed class Transaction permits Transaction.Admission {
         return abort;
     }
 
+    /**
+     * {@link #abort} for the guard named {@code guard}, which threw, or completed its stage with, {@code thrown}: the
+     * abort's details carry the guard and {@code thrown}, which {@link TransitionAbortedException#guardFailure()}
+     * reports at any depth, and {@code thrown} is its cause.
+     */
+    TransitionAbortedException guardAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
+                                          Optional<Enum<?>> id, Optional<Enum<?>> to, int depth, String message,
+                                          String guard, Throwable thrown) {
+        AbortDetails base = details(machine, ref, from, id, to, Optional.empty());
+        AbortDetails details = new AbortDetails(base.key(), base.entity(), base.from(), base.transition(), base.to(),
+                base.action(), base.cascadePath(), base.journal(), Optional.of(guard), Optional.of(thrown));
+        aborted(message);
+        return poisonIfNested(depth, new TransitionAbortedException(call(), phase, details, message, thrown));
+    }
+
     /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to where the call is poisoned with it. */
     TransitionAbortedException unpoisonedAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                                Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,

@@ -70,6 +70,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final boolean hasBindings;
     /** See {@link #trail()}. */
     private final Optional<InstantSource> trail;
+    /** See {@link #clock()}. */
+    private final InstantSource clock;
     /** See {@link #releasedTransaction()}. */
     private final Transaction released;
     /** The key the builder's validation read from the definition, which {@link #key()} answers. */
@@ -85,7 +87,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                         Function<? super E, ? extends S> getter, BiConsumer<? super E, ? super S> setter,
                         Optional<Function<? super E, ?>> identity, Optional<Duration> asyncTimeout, Executor executor,
                         boolean ownsExecutor, MachineRegistry registry,
-                        List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild, Optional<InstantSource> trail) {
+                        List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild, Optional<InstantSource> trail,
+                        InstantSource clock) {
         this.definition = definition;
         this.key = validated.key();
         this.getter = getter;
@@ -102,22 +105,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.chainsOnAdvanceOnly = validated.onAdvanceOnly();
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
+        this.clock = clock;
         this.watches = validated.watches();
         this.released = Transaction.released(registry, key);
-    }
-
-    /**
-     * What {@code definition} answers for {@link GraphDefinition#automaticChain()}; what that throws propagates, and a
-     * null answer throws NullPointerException. Read once per build, as the machine builder validates, and never by a
-     * call; the machine gets whether that answer is ON_ADVANCE.
-     */
-    static AutomaticChain automaticChainOf(GraphDefinition<?, ?, ?> definition) {
-        AutomaticChain chain = definition.automaticChain();
-        if (chain == null) {
-            throw new NullPointerException("automaticChain() of the definition of " + definition.key()
-                    + " returned null");
-        }
-        return chain;
     }
 
     /**
@@ -139,6 +129,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     Optional<InstantSource> trail() { return trail; }
+
+    /** The clock of every request this machine starts, as {@link RequestScope} says, the trail's when it has one. */
+    InstantSource clock() { return clock; }
 
     /**
      * The transaction of no call that a context of this machine holds once invalidated, in place of its call's, as
@@ -205,12 +198,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition) {
-        return Checks.check(this, entity, transition, Optional.empty());
+        return Checks.check(this, entity, transition, Optional.empty(), Optional.empty());
     }
 
     @Override
     public Eligibility<E, S, T> eligibility(@NonNull E entity, @NonNull T transition, @NonNull Object input) {
-        return Checks.check(this, entity, transition, Optional.of(input));
+        return Checks.check(this, entity, transition, Optional.of(input), Optional.empty());
     }
 
     @Override

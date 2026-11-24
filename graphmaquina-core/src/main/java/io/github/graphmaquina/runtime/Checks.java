@@ -38,14 +38,19 @@ final class Checks {
      * {@link Reentrancy} says, is, besides that identity function and equals, the log's backend, as the log reads its
      * levels and logs the start, verdict and failed lines, with the identity text and the failure reason that those
      * lines and {@link #failed} print: it runs in the enclosing scope, under that scope's rules, but as no guard does,
-     * so it cannot start a check.
+     * so it cannot start a check. The check belongs to the request of the call or check whose guard started it, when
+     * one did; otherwise to {@code request}, as a choice check runs each of its candidates in one, or, when it is
+     * empty, to a request of its own on the clock of {@code machine}, as {@link RequestScope} says.
      */
     static <E, S extends Enum<S>, T extends Enum<T>> Eligibility<E, S, T> check(
-            DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input) {
+            DefaultStateMachine<E, S, T> machine, E entity, T transition, Optional<Object> input,
+            Optional<RequestScope> request) {
         Transaction.requireTransition(machine.key(), transition);
         Reentrancy.Cell cell = Reentrancy.cell();
         Reentrancy.requireCheckMayStart(cell, machine, entity);
         UnitOfWork uow = new UnitOfWork(machine.registry().maxCascadeDepth(), machine.deadlineNanos());
+        uow.request(cell.top.map(UnitOfWork::request)
+                .orElseGet(() -> request.orElseGet(() -> new RequestScope(machine.clock()))));
         UnitOfWork enclosing = cell.top.orElse(uow);
         int guards = enclosing.guards;
         enclosing.guards = 0;
@@ -64,7 +69,8 @@ final class Checks {
      * throws. A step refused on the way is {@link Eligibility.Ineligible}, with the state it read and the reason, the
      * kind and the guard of the refusal; a step admitted is {@link Eligibility.Eligible}, with the state it read. The
      * verdict line is logged once the cell is restored, as an end line is; so is the failed line of the
-     * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error. An
+     * {@link EligibilityCheckException} that {@link #failed} builds when the step throws anything but an Error, which
+     * the check then throws, or the guard's own throwable that {@link Propagation#ofCheck} finds in its place. An
      * Error propagates as itself, with no failed line, whichever line of the log throws it. Anything else that the
      * backend throws is contained by the log, as {@link CallLog} says: it loses the line and changes nothing in the
      * check, except that an InterruptedException interrupts the thread again, as for a call, so that a later wait of
@@ -95,17 +101,32 @@ final class Checks {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable failure) {
-            EligibilityCheckException unanswered = failed(tx, machine, entity, transition, failure);
-            if (log.debug()) {
-                log.checkFailed(unanswered);
-            }
-            throw unanswered;
+            throw unanswered(log, tx, machine, entity, transition, failure);
         }
         Eligibility<E, S, T> verdict = verdict(entity, transition, step);
         if (log.debug()) {
             log.checked(verdict);
         }
         return verdict;
+    }
+
+    /**
+     * What the check throws when its step threw {@code failure}, which is no Error: the
+     * {@link EligibilityCheckException} that {@link #failed} builds, once its failed line is logged at DEBUG, unless
+     * {@link Propagation#ofCheck} finds the guard's own throwable in its place, which is thrown from here.
+     */
+    private static RuntimeException unanswered(CallLog log, Transaction.Admission tx,
+                                               DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> transition,
+                                               Throwable failure) {
+        EligibilityCheckException unanswered = failed(tx, machine, entity, transition, failure);
+        if (log.debug()) {
+            log.checkFailed(unanswered);
+        }
+        Optional<Throwable> propagated = Propagation.ofCheck(machine, unanswered);
+        if (propagated.isPresent()) {
+            throw Propagation.<RuntimeException>rethrow(propagated.get());
+        }
+        return unanswered;
     }
 
     /** The answer for a step that was refused on the way, or admitted. */
@@ -136,10 +157,12 @@ final class Checks {
                                                     Object entity, Enum<?> transition, Throwable failure) {
         Optional<Enum<?>> from;
         Optional<Throwable> cause;
+        Optional<Throwable> guardFailure = Optional.empty();
         String reason;
         if (failure instanceof TransitionAbortedException abort && tx.owns(abort)) {
             from = abort.from().or(tx::readState);
             cause = Optional.ofNullable(abort.getCause());
+            guardFailure = abort.guardFailure();
             reason = tx.abortReason().orElseGet(() -> stopped(abort));
         } else {
             Interrupts.keep(failure);
@@ -151,7 +174,7 @@ final class Checks {
         String message = "eligibility of " + transition.name() + " for " + named + " "
                 + from.map((Enum<?> state) -> state.name()).orElse("?") + " could not be decided: " + reason;
         return new EligibilityCheckException(machine.key(), entity, transition, from, tx.guardInFlight(), message,
-                cause);
+                cause, guardFailure);
     }
 
     /** The reason of a failure that is no abort of the check: {@code the engine could not go on: <error>}. */

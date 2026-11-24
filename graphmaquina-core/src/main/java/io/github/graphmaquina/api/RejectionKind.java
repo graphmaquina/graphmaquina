@@ -1,14 +1,17 @@
 package io.github.graphmaquina.api;
 
 /**
- * Why a request was rejected: no edge leaves the current state with that identifier, a guard said no, the machine is
- * bound as a sub-machine and its parent does not hold it, or the identifier is an exit of the sub-machine bound to the
- * current state, which no request may ask for from that state. An eligibility check that finds a request would be
- * rejected answers with the same kind, in an {@link Eligibility.Ineligible}.
+ * Why a request was rejected: no edge it may take leaves the current state with that identifier, a guard said no, the
+ * machine is bound as a sub-machine and its parent does not hold it, or the identifier is an exit of the sub-machine
+ * bound to the current state, which no request may ask for from that state. An eligibility check that finds a request
+ * would be rejected answers with the same kind, in an {@link Eligibility.Ineligible}.
  */
 public enum RejectionKind {
 
-    /** No edge leaves the current state with the requested identifier. */
+    /**
+     * No edge leaves the current state with the requested identifier, or only one the request may not take: an
+     * external edge, which another system takes, or a gate, which only a check asks.
+     */
     NO_TRANSITION,
 
     /** A guard of the selected edge said no; the rejection names that guard. */

@@ -353,7 +353,7 @@ class UnprintableFailurePoisonTest {
                             return ActionOutcome.ok();
                         }));
         try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
-                .state(Doc::status, Doc::setStatus).identity(Doc::id).recordTrail(clock)).build()) {
+                .state(Doc::status, Doc::setStatus).identity(Doc::id).clock(clock).recordTrail()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
             assertSame(failure, thrown.getCause());

@@ -37,6 +37,18 @@ public enum DiagnosticCode {
     /** An {@code ON_ADVANCE} machine declares no automatic edge. */
     SG110,
 
+    /** A gate that is no self-loop, or that declares an action, a failure route, a recovery rule, a hook or a mark. */
+    SG111,
+
+    /** An external edge that is a self-loop, or that declares a guard, an action, a route, a hook or a mark. */
+    SG112,
+
+    /** One identifier declares edges of different kinds: ordinary, gate or external. */
+    SG113,
+
+    /** A sub-machine's exit or a watch rule names a gate or an external identifier. */
+    SG114,
+
     /** Missing or repeated DSL initial declaration. */
     SG201,
 
@@ -129,6 +141,12 @@ public enum DiagnosticCode {
 
     /** Invalid choice declaration: its signature, its vocabulary or one of its candidate identifiers. */
     SG516,
+
+    /**
+     * An operation of a gate or an external identifier, a check of an external one, a gate candidate of a choice that
+     * runs, or an external candidate of any choice.
+     */
+    SG517,
 
     /** The processor could not write a generated source, provisional export index or processor inventory. */
     SG599,

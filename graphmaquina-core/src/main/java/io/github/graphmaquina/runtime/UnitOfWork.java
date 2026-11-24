@@ -91,6 +91,11 @@ final class UnitOfWork {
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
     /**
+     * The request this unit of work belongs to, which its root call or check sets before its step runs; empty only
+     * for the unit of work of no call, which no live context reaches.
+     */
+    private Optional<RequestScope> request = Optional.empty();
+    /**
      * The scope below this one on its thread, as {@link Reentrancy} links them: the unit of work of the call or check
      * whose synchronous guard started the check this unit of work belongs to; empty for a root call and for a check
      * that no guard started. Stored once, as the scope is entered, and read directly, never through a call.
@@ -187,6 +192,12 @@ final class UnitOfWork {
 
     /** Whether the call records its trail. */
     boolean recordsTrail() { return clock.isPresent(); }
+
+    /** Sets the request this unit of work belongs to, as {@link RequestScope} says; once, before its step runs. */
+    void request(RequestScope scope) { this.request = Optional.of(scope); }
+
+    /** The request this unit of work belongs to; only for the unit of work of a root call or a check. */
+    RequestScope request() { return request.orElseThrow(); }
 
     /** The clock of the call's trail; only for a call that records its trail. */
     InstantSource clock() { return clock.orElseThrow(); }

@@ -303,7 +303,7 @@ class InterruptedContainmentTest {
                             throw new IllegalArgumentException("the action failed");
                         }));
         StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(graph)
-                .state(Doc::status, Doc::setStatus).recordTrail(clock).build();
+                .state(Doc::status, Doc::setStatus).clock(clock).recordTrail().build();
         Thread.currentThread().interrupt();
         TransitionAbortedException thrown;
         boolean interrupted;
@@ -605,7 +605,8 @@ class InterruptedContainmentTest {
             }
             return Instant.EPOCH;
         };
-        return ended(() -> docMachine(docs(UnaryOperator.identity()), Doc::status, Doc::setStatus).recordTrail(clock)
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), Doc::status, Doc::setStatus)
+                .clock(clock).recordTrail()
                 .build().execute(new Doc("1", DRAFT), SUBMIT));
     }
 

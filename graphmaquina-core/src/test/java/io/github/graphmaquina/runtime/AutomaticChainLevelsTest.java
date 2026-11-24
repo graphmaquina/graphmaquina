@@ -273,7 +273,7 @@ class AutomaticChainLevelsTest {
         account.setAddressComplete(true);
         StateMachine<Account, AccountStatus, AccountTransition> accounts = StateMachines
                 .from(onboarding(new AddressVerifier())).state(Account::status, Account::setStatus)
-                .identity(Account::id).recordTrail(clock).build();
+                .identity(Account::id).clock(clock).recordTrail().build();
         Outcome<Account, AccountStatus, AccountTransition> root =
                 accounts.execute(account, AccountTransition.SET_PASSWORD);
         assertEquals(List.of(new FlowEntry.Hop(root.records().get(0), Optional.empty(), TickingClock.at(1))),

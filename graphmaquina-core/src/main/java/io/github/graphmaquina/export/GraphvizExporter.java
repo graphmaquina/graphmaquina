@@ -22,7 +22,8 @@ import lombok.NonNull;
  * tooltip on its node, never an arrow.
  *
  * <p>An edge's label is an HTML-like label: its identifier in bold on the first line, then one line per part, in
- * the theme's {@code muted} color: {@code [auto]} when the edge is automatic, or {@code [auto n]} when its state
+ * the theme's {@code muted} color: {@code [gate]} when the edge is a gate, {@code [external]} when it is external,
+ * {@code [auto]} when the edge is automatic, or {@code [auto n]} when its state
  * declares an order among two or more automatic edges, with {@code n} counted from 1 in that order, then its
  * action, {@code [async]}, {@code [if <guards>]}, one {@code [recover <kind> -> <transition>]} per recovery rule in
  * declaration order, {@code [onFailure <transition>]} and {@code [watches <rules>]}. The parts the edge does not
@@ -30,7 +31,8 @@ import lombok.NonNull;
  * as in {@code [recover <kind> -> <transition> continues]} and {@code [onFailure <transition> continues]}. A rule's
  * kind is its binary name without the package, such as {@code PublicationFailures$Unavailable}. The throwable types
  * of failsOn and of the rules are not drawn, and a rule adds no arrow and no node. An automatic edge's arrow and
- * identifier take the theme's {@code automatic} color. In an HTML-like label, {@code &}, {@code <}, {@code >} and
+ * identifier take the theme's {@code automatic} color. A gate's arrow is dotted and an external edge's dashed, in the
+ * colors of any other edge. In an HTML-like label, {@code &}, {@code <}, {@code >} and
  * {@code "} are written as entities, a line break starts a new left-aligned line, a tab becomes a space, and a
  * character that XML forbids, such as a control character, is drawn as U+FFFD; an empty title, state or identifier
  * is left out rather than drawn in bold, which Graphviz refuses. Every other text is a quoted string with
@@ -223,10 +225,18 @@ public final class GraphvizExporter {
             }
         }
 
-        /** An edge's label, then the color of its arrow and identifier when it is automatic. */
+        /**
+         * An edge's label, then the style of its arrow when it is a gate or external, and the color of its arrow and
+         * identifier when it is automatic.
+         */
         private List<String> attributes(TransitionView transition) {
             List<String> attributes = new ArrayList<>();
             attributes.add("label=" + label(transition, theme.muted()));
+            if (transition.gate()) {
+                attributes.add("style=dotted");
+            } else if (transition.external()) {
+                attributes.add("style=dashed");
+            }
             if (transition.automatic()) {
                 attributes.add("color=" + quote(theme.automatic()));
                 attributes.add("fontcolor=" + quote(theme.automatic()));
@@ -317,11 +327,17 @@ public final class GraphvizExporter {
     }
 
     /**
-     * An HTML-like label: the identifier in bold on the first line, then the automatic mark, the action, guards and
-     * routing, every rule before the fallback, one per line in the {@code muted} color.
+     * An HTML-like label: the identifier in bold on the first line, then the kind mark, the automatic mark, the
+     * action, guards and routing, every rule before the fallback, one per line in the {@code muted} color.
      */
     private static String label(TransitionView transition, String muted) {
         List<String> parts = new ArrayList<>();
+        if (transition.gate()) {
+            parts.add("[gate]");
+        }
+        if (transition.external()) {
+            parts.add("[external]");
+        }
         if (transition.automatic()) {
             parts.add(transition.automaticPosition().map((Integer n) -> "[auto " + n + "]").orElse("[auto]"));
         }

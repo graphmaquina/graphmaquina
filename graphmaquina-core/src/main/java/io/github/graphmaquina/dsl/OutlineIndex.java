@@ -33,7 +33,10 @@ final class OutlineIndex {
     private final Map<String, Integer> transitions;
     private final Map<String, List<TransitionOutline>> leaving;
 
-    /** Node topology of the outline: parallel edges collapse, which is exactly what reachability needs. */
+    /**
+     * Node topology of the outline: parallel edges collapse, which is exactly what reachability needs. A gate is left
+     * out: a self-loop reaches nothing new, and a gate is no cycle. An external edge stays in.
+     */
     @Getter(AccessLevel.PACKAGE)
     private final Graph<String> topology;
 
@@ -53,7 +56,9 @@ final class OutlineIndex {
         List<GraphEdge<String>> edges = new ArrayList<>();
         for (TransitionOutline edge : outline.transitions()) {
             outgoing.get(edge.from()).add(edge);
-            edges.add(new GraphEdge<>(edge.from(), edge.to()));
+            if (!edge.gate()) {
+                edges.add(new GraphEdge<>(edge.from(), edge.to()));
+            }
         }
         Map<String, List<TransitionOutline>> frozen = new LinkedHashMap<>();
         for (Map.Entry<String, List<TransitionOutline>> entry : outgoing.entrySet()) {

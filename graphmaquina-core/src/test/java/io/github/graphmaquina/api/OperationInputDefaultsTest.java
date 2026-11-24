@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +40,8 @@ class OperationInputDefaultsTest {
                 Class<M> type) {
             throw new UnsupportedOperationException();
         }
+        public Instant now() { return Instant.EPOCH; }
+        public <V> V memo(MemoKey<V> key, Supplier<? extends V> supplier) { return supplier.get(); }
         public FlowView flow() {
             throw new UnsupportedOperationException();
         }
@@ -73,6 +76,7 @@ class OperationInputDefaultsTest {
                 Class<M> type, Collection<? extends P> entities, U transition, CascadePolicy policy) {
             throw new UnsupportedOperationException();
         }
+        public Instant now() { return Instant.EPOCH; }
         public FlowContext flow() {
             throw new UnsupportedOperationException();
         }

@@ -20,6 +20,8 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +35,8 @@ class TypedContractsTest {
     @Test
     void stateAndMemberReferencesHaveNoStringEscapeHatch() throws NoSuchMethodException {
         assertEquals(RetentionPolicy.CLASS, GraphGuard.class.getAnnotation(Retention.class).value());
-        assertEquals(0, GraphGuard.class.getDeclaredMethods().length);
+        assertEquals(1, GraphGuard.class.getDeclaredMethods().length);
+        assertEquals(Class[].class, GraphGuard.class.getDeclaredMethod("propagates").getReturnType());
         assertEquals(long.class, Timeout.class.getDeclaredMethod("seconds").getReturnType());
         assertEquals(int.class, Timeout.class.getDeclaredMethod("nanos").getReturnType());
         assertEquals(0L, Timeout.class.getDeclaredMethod("seconds").getDefaultValue());
@@ -45,7 +48,6 @@ class TypedContractsTest {
         List<Class<? extends Annotation>> emptyMarkers = List.of(
                 GenerateGraphApi.class,
                 GraphAction.class,
-                GraphGuard.class,
                 GraphHook.class,
                 GraphCondition.class,
                 GraphLookup.class,
@@ -65,6 +67,10 @@ class TypedContractsTest {
                 GraphAction.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[] {ElementType.METHOD},
                 GraphGuard.class.getAnnotation(Target.class).value());
+        assertEquals(RetentionPolicy.CLASS, GraphGuard.class.getAnnotation(Retention.class).value());
+        assertEquals(List.of("propagates"), Arrays.stream(GraphGuard.class.getDeclaredMethods()).map(Method::getName)
+                .toList());
+        assertArrayEquals(new Class<?>[0], (Class<?>[]) GraphGuard.class.getDeclaredMethods()[0].getDefaultValue());
         assertArrayEquals(new ElementType[] {ElementType.METHOD},
                 GraphHook.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[] {ElementType.METHOD},

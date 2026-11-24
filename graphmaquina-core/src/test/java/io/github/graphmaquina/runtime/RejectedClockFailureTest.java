@@ -77,7 +77,8 @@ class RejectedClockFailureTest {
     @Test
     void aGuardRejectionNamesTheStateItReadAndTheDestinationOfItsEdge() {
         TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
-                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus).recordTrail(STOPPED).build()
+                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus)
+                        .clock(STOPPED).recordTrail().build()
                         .execute(new Doc("1", DRAFT), SUBMIT));
         assertEquals(CallPhase.GUARD, thrown.phase());
         assertDescribes(thrown, DRAFT, SUBMIT, Optional.of(REVIEW));
@@ -86,7 +87,8 @@ class RejectedClockFailureTest {
     @Test
     void aRequestWithNoEdgeNamesTheStateItReadAndNoDestination() {
         TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
-                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus).recordTrail(STOPPED).build()
+                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus)
+                        .clock(STOPPED).recordTrail().build()
                         .execute(new Doc("1", DRAFT), PUBLISH));
         assertDescribes(thrown, DRAFT, PUBLISH, Optional.empty());
     }
@@ -94,7 +96,8 @@ class RejectedClockFailureTest {
     @Test
     void aRejectedReevaluationNamesTheIdentifierItsWatchSelected() {
         TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
-                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus).recordTrail(STOPPED).build()
+                () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus)
+                        .clock(STOPPED).recordTrail().build()
                         .reevaluate(new Doc("1", DRAFT)));
         assertDescribes(thrown, DRAFT, SUBMIT, Optional.of(REVIEW));
     }
@@ -104,7 +107,8 @@ class RejectedClockFailureTest {
         Billing billing = new Billing();
         Booking booking = new Booking("b1", BookingStatus.DEPOSIT)
                 .attachDeposit(new Payment("d1", PaymentStatus.AUTHORIZING));
-        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine().recordTrail(STOPPED))
+        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine()
+                .clock(STOPPED).recordTrail())
                 .add(billing.paymentMachine()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(Billing.BOOKINGS).execute(booking, BookingTransition.DEPOSIT_PAID));
@@ -119,7 +123,7 @@ class RejectedClockFailureTest {
         Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
         new Booking("b1", BookingStatus.CONFIRMED).attachDeposit(deposit);
         try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine())
-                .add(billing.paymentMachine().recordTrail(STOPPED)).build()) {
+                .add(billing.paymentMachine().clock(STOPPED).recordTrail()).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(Billing.PAYMENTS).execute(deposit, PaymentTransition.HOLD));
             assertDescribes(thrown, PaymentStatus.AUTHORIZING, PaymentTransition.HOLD, Optional.empty());

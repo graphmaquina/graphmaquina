@@ -98,6 +98,16 @@ public class TransitionAbortedException extends CallFailedException {
 
     public Optional<String> action() { return details.action(); }
 
+    /** The guard whose own throwable caused this abort, present exactly when {@link #guardFailure()} is. */
+    public Optional<String> guard() { return details.guard(); }
+
+    /**
+     * What a guard of the step this abort describes threw, or completed its stage with, once unwrapped; present at any
+     * depth, so the abort of a cascaded or exit step whose guard threw carries it too, as {@link AbortDetails} says.
+     */
+    @Override
+    public Optional<Throwable> guardFailure() { return details.guardFailure(); }
+
     public List<String> cascadePath() { return details.cascadePath(); }
 
     private static CallPhase beforeTheCommit(@NonNull CallPhase phase) {

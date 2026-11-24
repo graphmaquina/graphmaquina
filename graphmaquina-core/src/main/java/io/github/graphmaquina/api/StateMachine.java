@@ -32,7 +32,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * Returns the domain-level result as a value; a technical failure throws, always a {@code CallFailedException} of
-     * this call or an Error. Two domain-level results throw as well: a domain failure that no recovery rule of its edge
+     * this call or an Error, except what a guard of the call's own step threw when that guard declares its type among
+     * the failures it propagates, {@link GuardRef#propagates()}, which the call throws as itself once its observers
+     * heard of the failure. Two domain-level results throw as well: a domain failure that no recovery rule of its edge
      * takes, on an edge without onFailure, throws {@code UnhandledFailureException}, and a rejection inside a cascade
      * aborts the whole call. A call is rejected as {@link RejectionKind#DETACHED} when this machine is bound as a
      * sub-machine, a binding finds the entity's parent, and no parent holds the entity: none is in the bound state, or
@@ -96,8 +98,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     Outcome<E, S, T> advance(E entity);
 
     /**
-     * Structural inspection: the identifiers declared from {@code state}. Evaluates no guard; {@link #eligibility}
-     * asks whether one entity would be admitted now, its guards included.
+     * Structural inspection: the identifiers declared from {@code state}, those of its gates and external edges
+     * included, although a request of one of them is answered as if the state had no edge for it. Evaluates no guard;
+     * {@link #eligibility} asks whether one entity would be admitted now, its guards included.
      */
     Set<T> transitionsFrom(S state);
 
@@ -157,8 +160,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * peer view or a binding lookup and a cascade through a kept action context of the enclosing call throw, and its
      * failure throws into the guard. While a check runs, no call may start on its thread, and a check may start only
      * from a synchronous guard of that check or of a check nested in it. A check that started and cannot reach an
-     * answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}; an Error propagates as
-     * itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
+     * answer throws an {@code EligibilityCheckException}, never a {@code CallFailedException}, except what a guard of
+     * its step threw when that guard declares its type among the failures it propagates, which the check throws as
+     * itself; an Error propagates as itself. A check logs lines of its own on the runtime logger, at DEBUG and TRACE, which start with
      * {@code check=<id>} in place of {@code call=<id>}.
      *
      * @throws NullPointerException if {@code entity} or {@code transition} is null
@@ -191,8 +195,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     /**
      * Runs, as one call, the first of {@code candidates} that is admitted for {@code entity} in the state it is in now,
      * trying them in the order given. Each candidate gets the admission of an execute of its identifier: the binding
-     * check of a sub-machine, the edge lookup, which refuses a candidate that no edge keys from the state as
-     * {@link RejectionKind#NO_TRANSITION} with the reason of the state's policy, the refusal of a reserved exit, then
+     * check of a sub-machine, the edge lookup, which refuses a candidate that no edge keys from the state, or only a
+     * gate or an external edge, as {@link RejectionKind#NO_TRANSITION} with the reason of the state's policy, the
+     * refusal of a reserved exit, then
      * its guards in declaration order, with the context they get in that execute. A refused candidate passes to the
      * next one, and the first one admitted runs within the same call as execute runs an edge, without running its
      * guards again.

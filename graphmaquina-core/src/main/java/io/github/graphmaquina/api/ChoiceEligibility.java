@@ -82,5 +82,15 @@ public sealed interface ChoiceEligibility<E, S extends Enum<S>, T extends Enum<T
         public Optional<NoneAdmitted<E, S, T>> asNoneAdmitted() {
             return Optional.of(this);
         }
+
+        /**
+         * Whether a guard refused at least one candidate, a refusal of {@link RejectionKind#GUARD}, rather than every
+         * candidate being refused before any of its guards ran: by the state's policy, by a sub-machine binding or as
+         * a reserved exit.
+         */
+        public boolean refusedByGuard() {
+            return rejections.stream().anyMatch(
+                    (Eligibility.Ineligible<E, S, T> refusal) -> refusal.kind() == RejectionKind.GUARD);
+        }
     }
 }

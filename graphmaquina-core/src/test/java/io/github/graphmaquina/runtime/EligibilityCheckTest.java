@@ -263,7 +263,7 @@ class EligibilityCheckTest {
         return MachineRegistry.builder()
                 .add(StateMachines.from(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
                                 submit.guard("verdict", guard)))
-                        .state(Doc::status, Doc::setStatus).identity(Doc::id).recordTrail(clock))
+                        .state(Doc::status, Doc::setStatus).identity(Doc::id).clock(clock).recordTrail())
                 .build()
                 .of(DOCS);
     }

@@ -32,7 +32,11 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
     /** All the states as nodes, all the declared edges as labeled edges, parallels included. */
     DirectedGraph<S, T> graph();
 
-    /** Every declared edge, ordered by origin, then identifier, then destination. */
+    /**
+     * Every declared edge, ordered by origin, then identifier, then destination. Gates and external edges are declared
+     * edges too, so they are listed here, in {@link #graph()}, {@link #outgoingFrom} and {@link #findTransition}, each
+     * marked by {@link TransitionSpec#gate()} or {@link TransitionSpec#external()}.
+     */
     List<TransitionSpec<E, S, T>> transitions();
 
     /** The edges leaving {@code state}, in the same order. */

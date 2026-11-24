@@ -16,7 +16,8 @@ public final class TrailFixtures {
     /** The documents machine, recording its trail on {@code clock}. */
     public static StateMachines.Builder<Doc, DocStatus, DocTransition> recording(
             GraphDefinition<Doc, DocStatus, DocTransition> graph, InstantSource clock) {
-        return StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id).recordTrail(clock);
+        return StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)
+                .clock(clock).recordTrail();
     }
 
     /** The record of the hop that {@code entry} holds. */

@@ -1,6 +1,8 @@
 package io.github.graphmaquina.api;
 
+import java.time.Instant;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * A guard decides, it does not mutate: no cascade, no depth, and a flow it can only read. Its peer views and its
@@ -51,6 +53,33 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
     FlowView flow();
 
     /**
+     * The instant of this request, on the clock the root machine was built with, {@code clock(InstantSource)} or
+     * {@link java.time.InstantSource#system()}: read the first time a context of the request asks, and the same for
+     * every later {@code now()} of the request, so every guard and action of one call, of the steps it cascades to and
+     * of the checks its guards start, sees one instant, and an eligibility check, or a choice check for all its
+     * candidates, sees one of its own. A request that never asks reads no clock. Anything but an Error that the clock
+     * throws, and a null instant, refused with a NullPointerException, is thrown here, and the guard fails as one that
+     * throws it. Like peer views, it works only on the thread that called {@code test()} and only until the root
+     * transaction ends: elsewhere it throws {@code WrongThreadException}, afterwards {@code StaleContextException}.
+     */
+    Instant now();
+
+    /**
+     * The value {@code key} keeps in this request: computed by {@code supplier} the first time a guard of the request
+     * asks for {@code key}, then the same value for every later guard of the request that asks, so evidence that
+     * several guards or several candidates need is fetched once. A request is one call, an operation, an execute, a
+     * choice or an attempt, with the steps it cascades to and the checks its guards start, or one check; a choice
+     * check is one request for all its candidates. Keys are compared by reference, as {@link MemoKey} says. A supplier
+     * that answers null aborts the call, or fails the check, as a guard that returns null does, and keeps nothing; one
+     * that throws is the guard throwing, and keeps nothing either. Like peer views, it works only on the thread that
+     * called {@code test()} and only until the root transaction ends: elsewhere it throws {@code WrongThreadException},
+     * afterwards {@code StaleContextException}.
+     *
+     * @throws NullPointerException if {@code key} or {@code supplier} is null
+     */
+    <V> V memo(MemoKey<V> key, Supplier<? extends V> supplier);
+
+    /**
      * The value passed as this operation's second argument, if any; empty when called without one, and always empty in
      * a cascaded step, the exit of a sub-machine, a reevaluation or an advance, which carry none. A {@code null} second
      * argument is refused before the call starts, so it never reads as empty. Scoped to this invocation only, never a
@@ -70,5 +99,17 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
      */
     default <I> Optional<I> input(Class<I> type) {
         return InputSupport.cast(type, this::input);
+    }
+
+    /**
+     * {@link #input()} when it is an instance of {@code type}, the same reference without copying or converting it;
+     * empty when there is no input or it is of another type, so a guard shared by operations with inputs of different
+     * types can read the one it knows.
+     *
+     * @throws NullPointerException if {@code type} is null
+     * @throws IllegalArgumentException if {@code type} is a primitive class token; use its wrapper class instead
+     */
+    default <I> Optional<I> inputIfInstance(Class<I> type) {
+        return InputSupport.castIfInstance(type, this::input);
     }
 }

@@ -49,6 +49,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
+     * Whether this is an {@link Applied} outcome, as {@code status() == OutcomeStatus.APPLIED} says. Inside a cascade,
+     * as provisional as {@link #status()} is.
+     */
+    default boolean isApplied() {
+        return status() == OutcomeStatus.APPLIED;
+    }
+
+    /**
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
      * the action returned for a failure. The graph's author writes them all, except the fixed texts the library
      * generates: for a terminal state that declares no policy, and for a {@link RejectionKind#DETACHED} or
@@ -336,13 +344,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * The request was refused for the reason {@code kind} names: no edge leaves {@code from} with that identifier, a
-     * guard rejected, the entity is a sub-machine whose parent does not hold it, or the identifier is an exit of the
-     * sub-machine bound to {@code from}, which no request may ask for from there. No action ran and nothing was
-     * written, though on a guard rejection the guards up to the rejecting one ran. {@code guard} names that guard, and
-     * is empty for every other kind. It reports no destination. Only a root call returns it: inside a cascade, a
-     * rejection aborts the root instead. The reason is never blank. {@code flow} is the call's flow, as
-     * {@link Outcome#flow()} says, and the constructor without it gives {@link FlowView#empty()}.
+     * The request was refused for the reason {@code kind} names: no edge it may take leaves {@code from} with that
+     * identifier, as {@link RejectionKind#NO_TRANSITION} says, a guard rejected, the entity is a sub-machine whose
+     * parent does not hold it, or the identifier is an exit of the sub-machine bound to {@code from}, which no request
+     * may ask for from there. No action ran and nothing was written, though on a guard rejection the guards up to the
+     * rejecting one ran. {@code guard} names that guard, and is empty for every other kind. It reports no destination.
+     * Only a root call returns it: inside a cascade, a rejection aborts the root instead. The reason is never blank.
+     * {@code flow} is the call's flow, as {@link Outcome#flow()} says, and the constructor without it gives
+     * {@link FlowView#empty()}.
      */
     record Rejected<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull String reason,
