@@ -116,7 +116,7 @@ public final class Checkout {
     public MachineRegistry registry(InstantSource clock) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(orders).state(Order::state, Order::setState).identity(Order::id)
-                        .recordTrail(clock))
+                        .clock(clock).recordTrail())
                 .add(StateMachines.from(payments).state(Payment::state, Payment::setState).identity(Payment::id))
                 .build();
     }

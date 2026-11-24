@@ -190,6 +190,23 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
+     * The graph declares the edge as a gate: a self-loop that only a check asks, which a request of its identifier
+     * never takes.
+     */
+    public TransitionAssert<E, S, T> isGate() {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "gate", Boolean.TRUE, actual);
+        Checks.equal(context, "gate", Boolean.TRUE, spec.gate());
+        return this;
+    }
+
+    /** The graph declares the edge as external: one that another system takes, and this machine never does. */
+    public TransitionAssert<E, S, T> isExternal() {
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "external", Boolean.TRUE, actual);
+        Checks.equal(context, "external", Boolean.TRUE, spec.external());
+        return this;
+    }
+
+    /**
      * The edge's fallback {@code onFailure} route is a continuing one, so a chain of automatic attempts goes on after
      * its recovery edge. An edge without a fallback route does not satisfy it.
      */

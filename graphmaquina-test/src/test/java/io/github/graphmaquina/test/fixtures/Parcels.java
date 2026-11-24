@@ -98,7 +98,7 @@ public final class Parcels {
 
     /** A machine that records the trail of every call it starts, on {@code clock}. */
     public static StateMachine<Parcel, Spot, Move> machine(InstantSource clock) {
-        return StateMachines.from(GRAPH).state(Parcel::spot, Parcel::setSpot).recordTrail(clock).build();
+        return StateMachines.from(GRAPH).state(Parcel::spot, Parcel::setSpot).clock(clock).recordTrail().build();
     }
 
     /** A clock whose n-th read answers n seconds after the epoch. */

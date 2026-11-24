@@ -38,8 +38,9 @@ import lombok.Getter;
  * specific declared type. Two definitions that only reorder the rules of an edge therefore route every failure
  * alike and still differ here, at the index paths.
  *
- * <p>Whether an edge is automatic, and whether a route continues the chain of automatic attempts, is recorded only
- * when it is: {@code /transitions/<from>/<id>/automatic}, {@code /transitions/<from>/<id>/onFailureContinues} and
+ * <p>Whether an edge is automatic, a gate or external, and whether a route continues the chain of automatic attempts,
+ * is recorded only when it is: {@code /transitions/<from>/<id>/automatic}, {@code /transitions/<from>/<id>/gate},
+ * {@code /transitions/<from>/<id>/external}, {@code /transitions/<from>/<id>/onFailureContinues} and
  * {@code /transitions/<from>/<id>/recoveries/<i>/continues} hold {@code true} and are absent otherwise, so a graph that
  * declares none of them captures what it always did. A state with two or more automatic edges also records the order
  * an advance tries them in, at {@code /automaticOrder/<state>/count} and {@code /automaticOrder/<state>/<i>}, the
@@ -159,8 +160,8 @@ public final class GraphSnapshot {
     }
 
     /**
-     * The marks an edge declares: {@code automatic} and {@code onFailureContinues}, each written as {@code true} only
-     * when it is set, so a graph that declares none has the paths it always had.
+     * The marks an edge declares: {@code automatic}, {@code onFailureContinues}, {@code gate} and {@code external},
+     * each written as {@code true} only when it is set, so a graph that declares none has the paths it always had.
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> void captureMarks(
             Map<String, String> fields, TransitionSpec<E, S, T> transition, String path) {
@@ -169,6 +170,12 @@ public final class GraphSnapshot {
         }
         if (transition.onFailureContinues()) {
             fields.put(path + "/onFailureContinues", "true");
+        }
+        if (transition.gate()) {
+            fields.put(path + "/gate", "true");
+        }
+        if (transition.external()) {
+            fields.put(path + "/external", "true");
         }
     }
 
