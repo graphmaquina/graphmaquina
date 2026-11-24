@@ -127,6 +127,7 @@ class TypedRecoveryRuntimeTest {
             import java.util.concurrent.CompletableFuture;
             import java.util.function.Supplier;
             import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+            import io.github.graphmaquina.api.Eligibility;
             import java.time.Duration;
             import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
 
@@ -224,6 +225,46 @@ class TypedRecoveryRuntimeTest {
                 public Outcome<Doc, DocStatus, DocTransition> archive(Doc doc) {
                     Objects.requireNonNull(doc, "doc");
                     return stateMachine.execute(doc, DocTransition.ARCHIVE);
+                }
+
+                /**
+                 * Runs the operation without input that {@link Docs} declares for {@code transition}, as calling it
+                 * does. It refuses a null argument with a {@code NullPointerException} that names the parameter, and
+                 * any other identifier with an {@code IllegalArgumentException}, before anything runs.
+                 *
+                 * @param entity the entity
+                 * @param transition the identifier
+                 * @return the outcome of the operation
+                 */
+                @Override
+                public Outcome<Doc, DocStatus, DocTransition> execute(Doc entity, DocTransition transition) {
+                    Objects.requireNonNull(entity, "entity");
+                    Objects.requireNonNull(transition, "transition");
+                    return switch (transition) {
+                        case SUBMIT -> submit(entity);
+                        case PUBLISH -> publish(entity);
+                        case ARCHIVE -> archive(entity);
+                        default -> throw new IllegalArgumentException(
+                                transition.name() + " has no operation without input on Docs");
+                    };
+                }
+
+                /**
+                 * Runs the check without input that {@link Docs} declares for {@code transition}, as calling it does:
+                 * it writes no state, runs no action and tells no observer. It refuses a null argument with a {@code
+                 * NullPointerException} that names the parameter, and any other identifier with an {@code
+                 * IllegalArgumentException}, before anything runs.
+                 *
+                 * @param entity the entity
+                 * @param transition the identifier
+                 * @return the answer of the check
+                 */
+                @Override
+                public Eligibility<Doc, DocStatus, DocTransition> eligibility(Doc entity, DocTransition transition) {
+                    Objects.requireNonNull(entity, "entity");
+                    Objects.requireNonNull(transition, "transition");
+                    throw new IllegalArgumentException(
+                            transition.name() + " has no check without input on Docs");
                 }
 
                 @Override

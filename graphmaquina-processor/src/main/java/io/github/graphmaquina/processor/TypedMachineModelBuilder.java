@@ -67,7 +67,8 @@ import javax.lang.model.type.TypeMirror;
  * they are all known, and one that carries a {@code Choice} and no {@code Transition} is a choice, which
  * {@link TypedChoices} reads once the operations and the sub-machines are known; one that carries a {@code Choice} and
  * a {@code Check} is neither. An entity of a parameterized type, which generated code can only name by its class, is
- * refused as {@code SG601}.</p>
+ * refused as {@code SG601}. A gate or an external edge is declared on the facade itself: an operation that declares
+ * one is refused as {@code SG517}.</p>
  */
 final class TypedMachineModelBuilder {
 
@@ -208,7 +209,7 @@ final class TypedMachineModelBuilder {
         List<ExecutableElement> checkMethods = new ArrayList<>();
         List<ExecutableElement> choiceMethods = new ArrayList<>();
         List<OperationModel> operations = operations(type, types, defaultAfterCommit, checkMethods, choiceMethods);
-        List<CheckModel> declaredChecks = checks.read(type, types, checkMethods, operations);
+        List<CheckModel> declaredChecks = checks.read(type, types, checkMethods, operations, declared);
         automaticChecks.checkTypeLevelInput(type, declared, operations);
         List<AutomaticOrderModel> orders = automaticOrders(type, types);
         structure.checkInheritedOperations(type);
@@ -250,31 +251,40 @@ final class TypedMachineModelBuilder {
                 .orElse(AutomaticChain.AFTER_COMMIT.name());
     }
 
-    /** The policy of each state: the reason every identifier it declares no edge for is refused with. */
+    /**
+     * The policy of each state: the reason every identifier it declares no edge for is refused with. One
+     * {@code StatePolicy} may name several states, each of which gets its reason; a state named a second time, in the
+     * same policy or another one, is {@code SG102} at that name, and a blank reason {@code SG103} once per policy. A
+     * policy that names no state words no state's refusals, and a state left without one is {@code SG701}.
+     */
     private List<StatePolicyModel> policies(TypeElement type, MachineTypes types) {
         List<StatePolicyModel> policies = new ArrayList<>();
         Set<String> declared = new LinkedHashSet<>();
         for (AnnotationMirror policy : own(type, VocabularyKind.STATE_POLICY, type)) {
-            Optional<AnnotationValue> declaredState = annotations.find(policy, "state");
             Optional<AnnotationValue> declaredReason = annotations.find(policy, "otherwise");
-            if (declaredState.isEmpty() || declaredReason.isEmpty()) {
+            if (annotations.find(policy, "state").isEmpty() || declaredReason.isEmpty()) {
+                // javac refuses a StatePolicy that omits an element it requires, and leaves that element out.
                 continue;
             }
-            Optional<String> state = TypedValues.constantName(declaredState.get(), types.statesElement());
-            if (state.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
+            List<AnnotationValue> values = annotations.array(policy, "state");
+            Optional<List<String>> states = TypedValues.constantNames(values, types.statesElement());
+            if (states.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
                 continue;
             }
-            if (!declared.add(state.get())) {
-                DiagnosticAnchor.of(type, policy, declaredState.get()).report(diagnostics, DiagnosticCode.SG102,
-                        "the state " + state.get() + " declares two policies");
-                continue;
-            }
-            if (reason.isBlank()) {
+            if (reason.isBlank() && !states.get().isEmpty()) {
                 DiagnosticAnchor.of(type, policy, declaredReason.get()).report(diagnostics, DiagnosticCode.SG103,
-                        "the policy of " + state.get() + " has a blank reason");
+                        "the policy of " + String.join(", ", states.get()) + " has a blank reason");
                 continue;
             }
-            policies.add(new StatePolicyModel(state.get(), reason));
+            for (int index = 0; index < states.get().size(); index++) {
+                String state = states.get().get(index);
+                if (declared.add(state)) {
+                    policies.add(new StatePolicyModel(state, reason));
+                } else {
+                    DiagnosticAnchor.of(type, policy, values.get(index)).report(diagnostics, DiagnosticCode.SG102,
+                            "the state " + state + " declares two policies");
+                }
+            }
         }
         return policies;
     }
@@ -441,12 +451,30 @@ final class TypedMachineModelBuilder {
         for (AnnotationMirror mirror : mirrors) {
             transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
         }
-        if (edges.size() != mirrors.size()) {
+        if (edges.size() != mirrors.size() || !runsItsEdges(method, identifier.get(), edges)) {
             return Optional.empty();
         }
         automaticChecks.checkOperationInput(method, input, mirrors, edges);
         return Optional.of(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
                 inputParameter));
+    }
+
+    /**
+     * Whether no edge {@code method} declares for {@code identifier} is a gate or external, which no operation runs:
+     * {@code SG517} at the method otherwise.
+     */
+    private boolean runsItsEdges(ExecutableElement method, String identifier, List<TransitionModel> edges) {
+        if (TypedChecks.marked(edges, identifier, TransitionModel::gate)) {
+            diagnostics.error(DiagnosticCode.SG517, method.getSimpleName() + " executes " + identifier + ", which is a"
+                    + " gate: no operation runs a gate; declare it on the facade and ask it with a Check", method);
+            return false;
+        }
+        if (TypedChecks.marked(edges, identifier, TransitionModel::external)) {
+            diagnostics.error(DiagnosticCode.SG517, method.getSimpleName() + " executes " + identifier + ", which is"
+                    + " external: another system takes it, so no operation runs it; declare it on the facade", method);
+            return false;
+        }
+        return true;
     }
 
     /**

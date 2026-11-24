@@ -18,12 +18,15 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>{@code automatic} marks an edge the engine attempts by itself, and {@code onFailureContinues} an
  * {@code onFailure} route that continues the chain of automatic attempts; it is only read together with an
- * {@code onFailure}.</p>
+ * {@code onFailure}. {@code gate} marks a self-loop that only a check asks, and {@code external} an edge another
+ * system takes. The {@code afterCommit} of a gate or an external edge is only the hook it declares itself, never the
+ * machine's default one.</p>
  */
 public record TransitionModel(String transitionId, List<String> from, String to, TransitionKind kind, String name,
                               Optional<Binding> action, List<Binding> guards, Optional<String> onFailure,
                               List<TypeMirror> failsOn, Optional<Duration> timeout, Optional<Binding> afterCommit,
-                              List<RecoveryModel> recoveries, boolean automatic, boolean onFailureContinues) {
+                              List<RecoveryModel> recoveries, boolean automatic, boolean onFailureContinues,
+                              boolean gate, boolean external) {
 
     public TransitionModel {
         from = List.copyOf(from);

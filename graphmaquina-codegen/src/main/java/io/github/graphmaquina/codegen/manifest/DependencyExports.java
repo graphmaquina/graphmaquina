@@ -59,12 +59,7 @@ public final class DependencyExports {
             if (!visited.add(entry)) {
                 continue;
             }
-            Optional<ExportIndex> index;
-            try {
-                index = read(entry);
-            } catch (IOException failure) {
-                throw new IOException("cannot read the classpath entry " + entry, failure);
-            }
+            Optional<ExportIndex> index = published(entry);
             if (index.isPresent()) {
                 ExportIndex current = compatible(index.get(), entry, toolVersion);
                 refuseSecondDescription(current, entry, describedBy);
@@ -73,6 +68,21 @@ public final class DependencyExports {
         }
         indexes.sort(Comparator.comparing((PublishedIndex published) -> published.index().compilationId()));
         return List.copyOf(indexes);
+    }
+
+    /**
+     * The index {@code entry}, an absolute and normalized classpath entry, publishes, as it is: not checked against
+     * this tool's version or the other entries. Empty for an entry that {@link #read(List)} skips.
+     *
+     * @throws CodegenException {@code SG602} if the entry carries an index this tool cannot read, naming the entry
+     * @throws IOException if the entry exists but cannot be read, naming the entry
+     */
+    public static Optional<ExportIndex> published(@NonNull Path entry) throws IOException {
+        try {
+            return read(entry);
+        } catch (IOException failure) {
+            throw new IOException("cannot read the classpath entry " + entry, failure);
+        }
     }
 
     private static Optional<ExportIndex> read(Path entry) throws IOException {

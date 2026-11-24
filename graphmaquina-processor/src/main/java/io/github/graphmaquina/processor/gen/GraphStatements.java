@@ -291,6 +291,12 @@ final class GraphStatements {
         if (transition.automatic()) {
             line.append(".automatic()");
         }
+        if (transition.gate()) {
+            line.append(".gate()");
+        }
+        if (transition.external()) {
+            line.append(".external()");
+        }
         if (transition.kind() == TransitionKind.ACTION) {
             Binding action = transition.action().orElseThrow();
             line.append(action.async() ? ".asyncAction(" : ".action(").append(MachineGenerator.quote(transition.name()))
@@ -301,7 +307,8 @@ final class GraphStatements {
         }
         for (Binding guard : transition.guards()) {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(MachineGenerator.quote(guard.methodName()))
-                    .append(", ").append(lambda(guard, context, true, variables, names, invocations)).append(')');
+                    .append(", ").append(lambda(guard, context, true, variables, names, invocations))
+                    .append(propagatedTypes(names, guard.propagates())).append(')');
         }
         failureRoutes(line, names, transitions, transition);
         transition.afterCommit().ifPresent((Binding hook) -> {
@@ -346,6 +353,21 @@ final class GraphStatements {
             constants.add(MachineGenerator.constant(names, transitions, id));
         }
         return names.qualifier(MachineGenerator.LIST) + ".of(" + String.join(", ", constants) + ")";
+    }
+
+    /**
+     * What follows the lambda in the {@code guard} or {@code asyncGuard} call of a guard that propagates {@code types}:
+     * nothing for none, {@code , List.of(A.class, B.class)} otherwise, in the order the guard declares them.
+     */
+    private static String propagatedTypes(Names names, List<TypeMirror> types) {
+        if (types.isEmpty()) {
+            return "";
+        }
+        List<String> classes = new ArrayList<>();
+        for (TypeMirror type : types) {
+            classes.add(TypeSource.render(type) + ".class");
+        }
+        return ", " + names.qualifier(MachineGenerator.LIST) + ".of(" + String.join(", ", classes) + ")";
     }
 
     /**

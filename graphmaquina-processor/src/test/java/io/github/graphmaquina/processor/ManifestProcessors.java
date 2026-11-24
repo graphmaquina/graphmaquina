@@ -100,7 +100,9 @@ public final class ManifestProcessors {
                 return;
             }
             for (AnnotationMirror policy : vocabulary.findAll(type, VocabularyKind.STATE_POLICY)) {
-                POLICIES.add(TypedValues.enumConstant(values.value(policy, "state")).getSimpleName().toString());
+                for (javax.lang.model.element.AnnotationValue state : values.array(policy, "state")) {
+                    POLICIES.add(TypedValues.enumConstant(state).getSimpleName().toString());
+                }
             }
             recordActionsOfMembers(values, vocabulary, type);
         }

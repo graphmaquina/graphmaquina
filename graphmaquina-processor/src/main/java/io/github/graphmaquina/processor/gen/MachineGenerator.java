@@ -147,7 +147,7 @@ public final class MachineGenerator {
 
     static final String GRAPH_DEFINITION = GraphDefinition.class.getName();
     static final String MACHINE_KEY = MachineKey.class.getName();
-    private static final String ELIGIBILITY = Eligibility.class.getName();
+    static final String ELIGIBILITY = Eligibility.class.getName();
     private static final String STATE_MACHINE = StateMachine.class.getName();
     static final String WATCH_CONDITION = WatchCondition.class.getName();
     static final String STATE_GRAPH = StateGraph.class.getName();
@@ -155,6 +155,7 @@ public final class MachineGenerator {
     static final String DURATION = "java.time.Duration";
     static final String LIST = "java.util.List";
     static final String OBJECTS = "java.util.Objects";
+    static final String ILLEGAL_ARGUMENT = "java.lang.IllegalArgumentException";
     static final String OPTIONAL = "java.util.Optional";
     private static final String SET = "java.util.Set";
     private static final String COMPLETABLE_FUTURE = "java.util.concurrent.CompletableFuture";
@@ -230,8 +231,8 @@ public final class MachineGenerator {
 
     /**
      * What {@link TypeSource} writes in the companion of {@code model}: the inputs of the operations, of the checks and
-     * of the choices, the types that pin an overload, the {@code failsOn} classes, and the kind and the throwable
-     * classes of every recovery rule.
+     * of the choices, the types that pin an overload, the {@code failsOn} classes, the kind and the throwable
+     * classes of every recovery rule, and the classes each guard propagates.
      */
     private static Written rendered(MachineModel model, BoundInvocation invocations) {
         List<TypeMirror> sources = new ArrayList<>();
@@ -249,6 +250,9 @@ public final class MachineGenerator {
             for (RecoveryModel recovery : transition.recoveries()) {
                 sources.add(recovery.kind());
                 sources.addAll(recovery.failsOn());
+            }
+            for (Binding guard : transition.guards()) {
+                sources.addAll(guard.propagates());
             }
         }
         for (Binding binding : bindings(model)) {
@@ -288,6 +292,7 @@ public final class MachineGenerator {
         for (ChoiceModel choice : model.choices()) {
             choice(model, names, variables, objects, choice, out);
         }
+        SelectorGenerator.write(model, names, objects, out);
         delegations(model, names, variables, out);
         if (!variables.rethrow().isEmpty()) {
             rethrower(out, names, variables.rethrow());
@@ -367,7 +372,7 @@ public final class MachineGenerator {
      * The method that implements {@code check}: it refuses a null entity, and a null input of a reference type,
      * through {@code objects}, then asks the state machine whether the check's transition would be admitted, with the
      * input when the check has one. Its parameters take the names an operation's do, and its documentation comment
-     * says what it asks and that it runs nothing.
+     * says what it asks and that it runs nothing; that of a gate's check says that only a check asks the gate.
      */
     private static void check(MachineModel model, Names names, Variables variables, String objects, CheckModel check,
                               SourceWriter out) {
@@ -378,13 +383,16 @@ public final class MachineGenerator {
         String transition = constant(names, model.types().transitionsElement(), check.transitionId());
         List<String> tags = new ArrayList<>();
         tags.add("@param " + target + " the entity to check");
-        parameters.input().ifPresent((String name) -> tags.add("@param " + name + " the input of the operation"));
+        parameters.input().ifPresent((String name) -> tags.add("@param " + name
+                + (check.gate() ? " the input the gate's guards read" : " the input of the operation")));
         tags.add("@return the answer: eligible, or ineligible with the reason");
         out.blank();
         out.javadoc("Asks whether {@code " + transition + "} would be admitted for {@code " + target + "} in the state"
-                + " it is in now, as the operation that executes it would decide, without running it: it writes no"
-                + " state, runs no action and tells no observer. It refuses a null argument with a"
-                + " {@code NullPointerException} that names the parameter.", tags);
+                + " it is in now, " + (check.gate()
+                        ? "as the gate's guards and its state's policy decide, the only way the gate is asked"
+                        : "as the operation that executes it would decide")
+                + ", without running it: it writes no state, runs no action and tells no observer. It refuses a null"
+                + " argument with a {@code NullPointerException} that names the parameter.", tags);
         out.line("@" + names.of(OVERRIDE));
         out.open("public " + names.of(ELIGIBILITY) + typeArguments(model.types(), names) + " " + check.name() + "("
                 + e + " " + target + parameters.declaration() + ")");
@@ -619,10 +627,12 @@ public final class MachineGenerator {
 
     /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
-     * claims them: its own first, then the fixed ones, then the types of the watched peers and of the children, then
-     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code Eligibility},
-     * {@code ChoiceEligibility} and {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two
-     * throwable types or more, an automatic order, a check, a choice or a chain that runs only on advance needs them,
+     * claims them: its own first, then the fixed ones, {@code Eligibility} and {@code IllegalArgumentException} among
+     * them for the selector every companion writes, then the types of the watched peers and of the children, then
+     * {@code Duration}, {@code Optional}, {@code WatchCondition}, {@code List}, {@code ChoiceEligibility} and
+     * {@code AutomaticChain} where an edge, a watch, a recovery rule that lists two throwable types or more, a guard
+     * that declares the types it propagates, an automatic order, a choice or a chain that runs only on advance needs
+     * them,
      * then the model's other types, then, where a lambda catches what a call throws, {@code Throwable} and the types
      * the lambdas catch.
      */
@@ -631,7 +641,8 @@ public final class MachineGenerator {
         Names.claim(types, model.types().facade());
         Names.claim(types, qualifiedName(model));
         for (String fixed : List.of(GRAPH_DEFINITION, MACHINE_KEY, ResultTypes.OUTCOME, STATE_MACHINE, STATE_GRAPH,
-                GRAPH_BUILDER, OBJECTS, SET, COMPLETABLE_FUTURE, SUPPLIER, GENERATED, SUPPRESS_WARNINGS, OVERRIDE)) {
+                GRAPH_BUILDER, OBJECTS, SET, COMPLETABLE_FUTURE, SUPPLIER, GENERATED, SUPPRESS_WARNINGS, OVERRIDE,
+                ELIGIBILITY, ILLEGAL_ARGUMENT)) {
             Names.claim(types, fixed);
         }
         for (WatchModel watch : model.watches()) {
@@ -668,21 +679,16 @@ public final class MachineGenerator {
     /**
      * Claims in {@code types}, in this order, {@code Duration} when an edge of {@code model} has a timeout,
      * {@code Optional} when the owner reader of a watch returns the owner itself, {@code WatchCondition} when a watch
-     * has a built-in rule, {@code List} when a recovery rule lists two throwable types or more, the graph declares
-     * an automatic order or the facade declares a choice, {@code Eligibility} when the facade declares a check,
-     * {@code ChoiceEligibility} when it declares a choice that returns one and {@code AutomaticChain} when the graph
-     * chains only on advance.
+     * has a built-in rule, {@code List} when {@link #needsList} says so, {@code ChoiceEligibility} when the facade
+     * declares a choice that returns one and {@code AutomaticChain} when the graph chains only on advance.
      */
     private static void claimWhereNeeded(Map<String, String> types, MachineModel model) {
         boolean anyTimeout = false;
         boolean anyPlainOwner = false;
         boolean anyBuiltIn = false;
-        boolean anyTypeList = !model.automaticOrders().isEmpty() || !model.choices().isEmpty();
+        boolean anyTypeList = needsList(model);
         for (TransitionModel transition : model.allTransitions()) {
             anyTimeout |= transition.timeout().isPresent();
-            for (RecoveryModel recovery : transition.recoveries()) {
-                anyTypeList |= recovery.failsOn().size() > 1;
-            }
         }
         for (WatchModel watch : model.watches()) {
             anyPlainOwner |= watch.owner() instanceof WatchOwner.Read read && !read.optional();
@@ -702,15 +708,35 @@ public final class MachineGenerator {
         if (anyTypeList) {
             Names.claim(types, LIST);
         }
-        if (!model.checks().isEmpty()) {
-            Names.claim(types, ELIGIBILITY);
-        }
         if (model.choices().stream().anyMatch(ChoiceModel::check)) {
             Names.claim(types, ResultTypes.CHOICE_ELIGIBILITY);
         }
         if (GraphStatements.declaresChain(model)) {
             Names.claim(types, SharedTypeNames.AUTOMATIC_CHAIN);
         }
+    }
+
+    /**
+     * Whether the companion writes {@code List}: a recovery rule lists two throwable types or more, a guard declares
+     * the types it propagates, the graph declares an automatic order or the facade declares a choice.
+     */
+    private static boolean needsList(MachineModel model) {
+        if (!model.automaticOrders().isEmpty() || !model.choices().isEmpty()) {
+            return true;
+        }
+        for (TransitionModel transition : model.allTransitions()) {
+            for (RecoveryModel recovery : transition.recoveries()) {
+                if (recovery.failsOn().size() > 1) {
+                    return true;
+                }
+            }
+            for (Binding guard : transition.guards()) {
+                if (!guard.propagates().isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

@@ -29,8 +29,9 @@ import java.util.Set;
  * identifiers its fallback and its recovery rules recover through, one policy per state that declares one or is
  * terminal, the identifiers each watch executes, each sub-machine with the terminal states of its child and its
  * exits as declared, and the automatic orders as declared. An edge carries whether it has guards, whether it is
- * automatic, whether its {@code onFailure} continues the chain and the identifiers its continuing recovery rules
- * name. No pair is materialized.
+ * automatic, whether its {@code onFailure} continues the chain, the identifiers its continuing recovery rules name,
+ * whether it is a gate or external, and whether it has a hook, which for a gate or an external edge is only one it
+ * declares itself. No pair is materialized.
  */
 final class Outlines {
 
@@ -50,7 +51,8 @@ final class Outlines {
             for (String from : transition.from()) {
                 edges.add(new TransitionOutline(from, transition.transitionId(), transition.to(), transition.kind(),
                         transition.onFailure(), recoveries, !transition.guards().isEmpty(), transition.automatic(),
-                        transition.onFailureContinues(), List.copyOf(continuing)));
+                        transition.onFailureContinues(), List.copyOf(continuing), transition.gate(),
+                        transition.external(), transition.afterCommit().isPresent()));
             }
         }
         List<WatchOutline> watches = new ArrayList<>();

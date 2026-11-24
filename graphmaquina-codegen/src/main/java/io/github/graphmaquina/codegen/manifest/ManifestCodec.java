@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.ExportListRequest;
 import io.github.graphmaquina.codegen.ExportRequest;
 import io.github.graphmaquina.codegen.GenerationFiles;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -275,6 +276,33 @@ public final class ManifestCodec {
             writer.name("classpath");
             JsonSupport.writeStringArray(writer, toStrings(request.classpath()));
             writer.name("outputDirectory").value(request.outputDirectory().toString());
+            writer.endObject();
+        }
+    }
+
+    /**
+     * Reads an {@link ExportListRequest} from {@code path}: a flat JSON object whose one member, {@code classpath}, is
+     * an array of path strings.
+     *
+     * @throws CodegenException if {@code path} is not that JSON object or a member is missing or of the wrong type
+     * @throws IllegalArgumentException if a path member is not a valid path
+     * @throws IOException if {@code path} cannot be read
+     */
+    public static ExportListRequest readExportListRequest(Path path) throws IOException {
+        JsonObject object = JsonSupport.readObject(path);
+        return new ExportListRequest(toPaths(JsonSupport.requireStringArray(object, "classpath", path)));
+    }
+
+    /**
+     * Writes {@code request} as the flat JSON object {@link #readExportListRequest} reads.
+     *
+     * @throws IOException if {@code path} cannot be written
+     */
+    public static void writeExportListRequest(Path path, ExportListRequest request) throws IOException {
+        try (JsonWriter writer = JsonSupport.newWriter(path)) {
+            writer.beginObject();
+            writer.name("classpath");
+            JsonSupport.writeStringArray(writer, toStrings(request.classpath()));
             writer.endObject();
         }
     }

@@ -37,31 +37,44 @@ import org.junit.jupiter.api.function.Executable;
  */
 class SetGenerationTest {
 
+    /** The emitted description of {@code recordTrail()}, its lines joined. */
+    private static final String RECORD_TRAIL_DOC = "Records the trail of every call through the set on the set's clock,"
+            + " the one clock(InstantSource) gives or InstantSource.system(), by calling recordTrail() on the"
+            + " StateMachines.Builder of every machine of the set. The root machine of a call decides for the whole"
+            + " call, so every root call made through the set records its trail, the peers it cascades to and the exits"
+            + " of sub-machines its steps run included, and so does each watch reaction, a call of its own that its own"
+            + " machine, one of the set, decides. The flow such a call hands out, in its outcome or in its failure,"
+            + " lists in trail() each hop and each sub-machine start the call took, each at the instant that clock read"
+            + " right after the call took it, then the rejection or the failure that ended the call, at the instant it"
+            + " ended. A call that records its trail creates its flow when its step starts, so it hands out its flow,"
+            + " with the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored"
+            + " outcome hands out the empty flow: a reevaluation that selects no edge and an advance whose state has no"
+            + " automatic edge run no step, and an advance whose automatic edges were all refused, or a choice whose"
+            + " candidates were all refused, wrote nothing. The clock is read on the thread running the call, once per"
+            + " entry the call appends, an entry a rollback later drops included, so a clock that advances on each read"
+            + " leaves a gap for each dropped entry. Anything but an Error that the clock throws, a checked exception"
+            + " included, fails the call as what an identity function throws does: the entry it could not mark is left"
+            + " out of the trail. When it throws while the call reads the instant of the Failed entry that ends a"
+            + " failed call, whatever failed the call, the call's CallFailedException carries what it threw as"
+            + " suppressed, unless it threw that very exception, and its trail ends without that entry; an"
+            + " InterruptedException suppressed there interrupts the thread again, and an Error propagates. A clock"
+            + " that answers null counts as one that throws a NullPointerException. A set built without recordTrail"
+            + " keeps no mark.";
+
     /**
-     * The emitted description of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter,
-     * whose name depends on the other variables of the companion; only the {@code @param} tag after it does.
+     * The emitted description of {@code clock(InstantSource)}, its lines joined. It never names the parameter, whose
+     * name depends on the other variables of the companion; only the {@code @param} tag after it does.
      */
-    private static final String RECORD_TRAIL_DOC = "Records the trail of every call through the set on the given clock,"
-            + " by handing it to the StateMachines.Builder of every machine of the set. The root machine of a call"
-            + " decides for the whole call, so every root call made through the set records its trail, the peers it"
-            + " cascades to and the exits of sub-machines its steps run included, and so does each watch reaction, a"
-            + " call of its own that its own machine, one of the set, decides. The flow such a call hands out, in its"
-            + " outcome or in its failure, lists in trail() each hop and each sub-machine start the call took, each at"
-            + " the instant that clock read right after the call took it, then the rejection or the failure that ended"
-            + " the call, at the instant it ended. A call that records its trail creates its flow when its step starts,"
-            + " so it hands out its flow, with the root entity and the trail, even when none of its steps or hooks"
-            + " wrote to it; an ignored outcome hands out the empty flow: a reevaluation that selects no edge and an"
-            + " advance whose state has no automatic edge run no step, and an advance whose automatic edges were all"
-            + " refused, or a choice whose candidates were all refused, wrote nothing. The clock is read on the thread"
-            + " running the call, once per entry the call appends, an entry a rollback later drops included, so a clock"
-            + " that advances on each read leaves a gap for each dropped entry; a test can pass a clock it controls,"
-            + " such as a java.time.Clock. Anything but an Error that the clock throws, a checked exception included,"
-            + " fails the call as what an identity function throws does: the entry it could not mark is left out of the"
-            + " trail. When it throws while the call reads the instant of the Failed entry that ends a failed call,"
-            + " whatever failed the call, the call's CallFailedException carries what it threw as suppressed, unless it"
-            + " threw that very exception, and its trail ends without that entry; an InterruptedException suppressed"
-            + " there interrupts the thread again, and an Error propagates. A clock that answers null counts as one"
-            + " that throws a NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
+    private static final String CLOCK_DOC = "Sets the clock of every machine of the set, by handing the given clock to"
+            + " the StateMachines.Builder of every machine of the set; InstantSource.system() by default. The now() of"
+            + " a guard's or an action's context reads it once per request: the first time a context of a root call or"
+            + " of a check asks, and every later now() of the same call answers that same instant, in the steps it"
+            + " cascades to, the exits its steps run and the checks its guards start. A check of its own, a choice"
+            + " check for all its candidates, a watch reaction and each automatic attempt read it again, and a call"
+            + " that never asks reads no clock. Anything but an Error that the clock throws, and a null instant,"
+            + " refused with a NullPointerException, is thrown by now() to the guard or the action that asked. A set"
+            + " that records its trail reads its trail on this clock too. A test can pass a clock it controls, such as"
+            + " a java.time.Clock.";
 
     @Test
     void builderSignatureFollowsTheDependenciesAndAsyncness() {
@@ -239,7 +252,7 @@ class SetGenerationTest {
         Method timeout = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
         Method executor = builder.getClass().getMethod("asyncExecutor", Executor.class);
         Method trail = builder.getClass().getMethod("recordTrail");
-        Method clock = builder.getClass().getMethod("recordTrail", InstantSource.class);
+        Method clock = builder.getClass().getMethod("clock", InstantSource.class);
         Method build = builder.getClass().getMethod("build");
         MachineObserver first = new MachineObserver() { };
         MachineObserver second = new MachineObserver() { };
@@ -264,12 +277,12 @@ class SetGenerationTest {
     }
 
     /**
-     * The Builder offers the trail of the set in two methods, each documented in the companion: one on the system
-     * clock and one on a clock of the caller's, both handed to the builder of every machine of the set after the
-     * checks of the Builder itself.
+     * The Builder offers the trail of the set and its clock in two methods, each documented in the companion, both
+     * handed to the builder of every machine of the set after the checks of the Builder itself; no recordTrail takes
+     * a clock.
      */
     @Test
-    void theBuilderHandsRecordTrailToEveryMachineAndDocumentsIt() {
+    void theBuilderHandsRecordTrailAndTheClockToEveryMachineAndDocumentsThem() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
@@ -278,15 +291,13 @@ class SetGenerationTest {
         assertTrue(source.contains("    public Builder recordTrail() {" + body + "checkUnused();" + body
                 + "docsBuilder.recordTrail();" + body + "pagesBuilder.recordTrail();" + body + "return this;\n"),
                 source);
-        assertTrue(source.contains("    public Builder recordTrail(InstantSource clock) {" + body + "checkUnused();"
-                + body + "Objects.requireNonNull(clock, \"clock\");" + body + "docsBuilder.recordTrail(clock);" + body
-                + "pagesBuilder.recordTrail(clock);" + body + "return this;\n"), source);
-        assertEquals("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
-                + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes. @return this builder",
-                doc(source, "public Builder recordTrail()"));
-        assertEquals(RECORD_TRAIL_DOC + " @param clock the clock the trail is read on @return this builder",
-                doc(source, "public Builder recordTrail(InstantSource clock)"));
+        assertTrue(source.contains("    public Builder clock(InstantSource clock) {" + body + "checkUnused();"
+                + body + "Objects.requireNonNull(clock, \"clock\");" + body + "docsBuilder.clock(clock);" + body
+                + "pagesBuilder.clock(clock);" + body + "return this;\n"), source);
+        assertFalse(source.contains("recordTrail(InstantSource"), source);
+        assertEquals(RECORD_TRAIL_DOC + " @return this builder", doc(source, "public Builder recordTrail()"));
+        assertEquals(CLOCK_DOC + " @param clock the clock of every machine of the set @return this builder",
+                doc(source, "public Builder clock(InstantSource clock)"));
     }
 
     /**
@@ -308,8 +319,8 @@ class SetGenerationTest {
     }
 
     /**
-     * {@code recordTrail(clock)} reaches every machine of the set: a root call of each machine records its trail on
-     * that clock, and so does the watch reaction a page's call triggers, a call of its own that its own machine,
+     * {@code clock(clock)} with {@code recordTrail()} reaches every machine of the set: a root call of each machine
+     * records its trail on that clock, and so does the watch reaction a page's call triggers, a call of its own that its own machine,
      * one of the set, decides.
      */
     @Test
@@ -319,8 +330,9 @@ class SetGenerationTest {
         assertTrue(result.success(), result.describe());
         Instant noon = Instant.parse("2026-10-10T12:00:00Z");
         Object builder = libraryBuilder(result);
-        assertSame(builder, builder.getClass().getMethod("recordTrail", InstantSource.class)
+        assertSame(builder, builder.getClass().getMethod("clock", InstantSource.class)
                 .invoke(builder, InstantSource.fixed(noon)));
+        assertSame(builder, builder.getClass().getMethod("recordTrail").invoke(builder));
         try (Machines library = (Machines) builder.getClass().getMethod("build").invoke(builder)) {
             Outcome<?, ?, ?> submitted = submit(result, library);
             Class<?> pageClass = result.load("fx.Page");
@@ -508,22 +520,22 @@ class SetGenerationTest {
 
     /**
      * An accessor named {@code clock} names the field that keeps its facade, so the parameter of
-     * {@code recordTrail(InstantSource)} takes another name, as every variable of the companion does, and its Javadoc,
+     * {@code clock(InstantSource)} takes another name, as every variable of the companion does, and its Javadoc,
      * which names no parameter, stays the same.
      */
     @Test
-    void anAccessorNamedClockLeavesRecordTrailAParameterOfAnotherName() {
+    void anAccessorNamedClockLeavesTheClockMethodAParameterOfAnotherName() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY,
                 Fixtures.LIBRARY.replace("    Pages pages();\n", "    Pages clock();\n")));
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.LibraryRuntime");
         assertTrue(source.contains("private final Pages clock;"), source);
-        assertTrue(source.contains("public Builder recordTrail(InstantSource clock2) {"), source);
+        assertTrue(source.contains("public Builder clock(InstantSource clock2) {"), source);
         assertTrue(source.contains("Objects.requireNonNull(clock2, \"clock\");"), source);
-        assertTrue(source.contains("clockBuilder.recordTrail(clock2);"), source);
-        assertEquals(RECORD_TRAIL_DOC + " @param clock2 the clock the trail is read on @return this builder",
-                doc(source, "public Builder recordTrail(InstantSource clock2)"));
+        assertTrue(source.contains("clockBuilder.clock(clock2);"), source);
+        assertEquals(CLOCK_DOC + " @param clock2 the clock of every machine of the set @return this builder",
+                doc(source, "public Builder clock(InstantSource clock2)"));
     }
 
     @Test

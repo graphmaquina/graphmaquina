@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The checks a facade declares with its generated {@code Check}: what the processor refuses in them. A check is no
- * operation. It names the identifier of one of the facade's operations ({@code SG512}), repeats that operation's
- * parameters under the result {@code Eligibility<E, S, T>} ({@code SG513}), and is the only check of that operation,
- * on a method of its own ({@code SG514}). Like any vocabulary, it is read on an abstract method of its own facade
- * only.
+ * operation. It names the identifier of one of the facade's operations or of a gate ({@code SG512}), repeats that
+ * operation's parameters under the result {@code Eligibility<E, S, T>} ({@code SG513}), and is the only check of that
+ * operation, on a method of its own ({@code SG514}). Like any vocabulary, it is read on an abstract method of its own
+ * facade only.
  *
  * <p>Every case is an error. Each fixture is otherwise valid, so the error a test expects is the only one the
  * compilation reports; {@link TypedCheckGenerationTest} compiles the checks that are valid. The result is named in
@@ -29,7 +29,7 @@ class TypedCheckDiagnosticsTest {
 
     /** What {@code SG512} says after the method and the identifier it checks. */
     private static final String NO_OPERATION = ", which no operation of Docs executes: a Check names the identifier"
-            + " of one of the facade's operations";
+            + " of one of the facade's operations, or a gate";
 
     @Test
     void checkOfARecoveryRouteIsNotExecutedByAnyOperation() {
@@ -176,7 +176,7 @@ class TypedCheckDiagnosticsTest {
 
         assertTrue(result.hasError(DiagnosticCode.SG514.name()), result.describe());
         assertEquals(List.of("[" + DiagnosticCode.SG514
-                + "] mayPublish checks PUBLISH, which canPublish checks already: an operation has"
+                + "] mayPublish checks PUBLISH, which canPublish checks already: an operation or a gate has"
                 + " one Check at most"), result.errors(), result.describe());
     }
 

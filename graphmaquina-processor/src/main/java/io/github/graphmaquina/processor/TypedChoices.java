@@ -33,7 +33,9 @@ import javax.lang.model.type.TypeMirror;
  * the facade executes needs the input of that operation: of the same type, and none when the operation takes none.
  * An identifier that failure routes use may be a candidate, since a call can still request it. Each of these rules is
  * {@code SG516}, with a message of its own, and so is a method that carries a {@code Choice} beside a
- * {@code Transition} or a {@code Check}, since a choice is declared on a method of its own.</p>
+ * {@code Transition} or a {@code Check}, since a choice is declared on a method of its own. An external identifier,
+ * which another system takes, is no candidate of any choice, and a gate, which only a check asks, is a candidate only
+ * of a choice that checks ({@code SG517}).</p>
  *
  * <p>A candidate that no edge declares, but whose {@code Transition} the facade or one of its methods carries, belongs
  * to a declaration refused for a reason already reported, and draws nothing more; the choice is left out. Where a
@@ -66,11 +68,13 @@ final class TypedChoices {
     }
 
     /**
-     * The facade, the types of its machine, the identifiers its edges declare, its operations and its sub-machines:
-     * what the candidates of a choice are read against.
+     * The facade, the types of its machine, the identifiers its edges declare, its operations, its sub-machines and the
+     * edges it declares itself, among which are its gates and external edges: what the candidates of a choice are read
+     * against.
      */
     private record Graph(TypeElement facade, MachineTypes types, Set<String> declared,
-                         List<OperationModel> operations, List<SubmachineModel> submachines) { }
+                         List<OperationModel> operations, List<SubmachineModel> submachines,
+                         List<TransitionModel> edges) { }
 
     /**
      * The choices of {@code facade}, in the order {@code declared} holds them. {@code declared} are the abstract
@@ -88,7 +92,7 @@ final class TypedChoices {
         for (OperationModel operation : operations) {
             operation.transitions().forEach((TransitionModel edge) -> identifiers.add(edge.transitionId()));
         }
-        Graph graph = new Graph(facade, types, identifiers, operations, submachines);
+        Graph graph = new Graph(facade, types, identifiers, operations, submachines, edges);
         List<ChoiceModel> choices = new ArrayList<>();
         for (ExecutableElement method : declared) {
             Optional<AnnotationMirror> choice = checks.own(method, VocabularyKind.CHOICE, facade).stream().findFirst();
@@ -104,7 +108,8 @@ final class TypedChoices {
             }
             Role role = role(method, types);
             boolean shaped = shaped(method, types);
-            if (role != Role.REFUSED && shaped && admits(method, choice.get(), values, candidates.get(), graph)) {
+            if (role != Role.REFUSED && shaped
+                    && admits(method, choice.get(), values, candidates.get(), graph, role == Role.CHECKS)) {
                 choices.add(model(method, candidates.get(), role == Role.CHECKS));
             }
         }
@@ -162,11 +167,12 @@ final class TypedChoices {
 
     /**
      * Whether every candidate of {@code choice}, the {@code Choice} of {@code method}, may be one: SG516 at the
-     * choice when it names none, and at the value of each candidate {@link #refusal} refuses. A candidate whose own
-     * declaration was refused, as {@link #reported} says, is no candidate, and draws nothing more.
+     * choice when it names none, SG517 at the value of each candidate {@link #misuse} refuses, and SG516 at the value
+     * of each other one {@link #refusal} refuses. A candidate whose own declaration was refused, as {@link #reported}
+     * says, is no candidate, and draws nothing more. {@code check} is whether the choice checks rather than runs.
      */
     private boolean admits(ExecutableElement method, AnnotationMirror choice, List<AnnotationValue> values,
-            List<String> candidates, Graph graph) {
+            List<String> candidates, Graph graph, boolean check) {
         String name = method.getSimpleName().toString();
         if (candidates.isEmpty()) {
             DiagnosticAnchor.of(method, choice).report(diagnostics, DiagnosticCode.SG516,
@@ -181,6 +187,13 @@ final class TypedChoices {
             String candidate = candidates.get(index);
             boolean first = named.add(candidate);
             if (first && reported(candidate, graph)) {
+                admitted = false;
+                continue;
+            }
+            Optional<String> misuse = first ? misuse(candidate, check, graph) : Optional.empty();
+            if (misuse.isPresent()) {
+                DiagnosticAnchor.of(method, choice, values.get(index)).report(diagnostics, DiagnosticCode.SG517,
+                        name + " names " + candidate + misuse.get());
                 admitted = false;
                 continue;
             }
@@ -202,6 +215,21 @@ final class TypedChoices {
      */
     private boolean reported(String candidate, Graph graph) {
         return !graph.declared().contains(candidate) && refused(candidate, graph);
+    }
+
+    /**
+     * Why {@code candidate} cannot be a candidate of a choice that checks, when {@code check}, or runs: an external
+     * identifier never, a gate only of a choice that checks; said after the candidate's name, and empty when it can be.
+     */
+    private static Optional<String> misuse(String candidate, boolean check, Graph graph) {
+        if (TypedChecks.marked(graph.edges(), candidate, TransitionModel::external)) {
+            return Optional.of(", which is external: another system takes it, so no Choice names it");
+        }
+        if (!check && TypedChecks.marked(graph.edges(), candidate, TransitionModel::gate)) {
+            return Optional.of(", which is a gate: only a check asks a gate, so a Choice that runs names none; return"
+                    + " ChoiceEligibility to check it");
+        }
+        return Optional.empty();
     }
 
     /**

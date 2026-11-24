@@ -180,13 +180,13 @@ final class MachineVocabularyEmitter {
     }
 
     private static void statePolicy(JavaSource source, String vocabulary, String machine, String state) {
-        describe(source, "Gives one state of {@link " + machine + "} the reason every identifier it declares",
-            "no edge for is refused with.");
+        describe(source, "Gives one or more states of {@link " + machine + "} the reason every identifier each of",
+            "them declares no edge for is refused with. A state named twice, in one policy or in two, is refused.");
         annotation(source, machine, "STATE_POLICY", TYPE_TARGET, Optional.of(vocabulary + ".StatePolicies"),
             "StatePolicy");
-        element(source, state + " state();", "the state whose refusals the policy words");
+        element(source, state + "[] state();", "the states whose refusals the policy words, at least one");
         element(source, "java.lang.String otherwise();",
-            "the reason an identifier with no edge from that state is refused with");
+            "the reason an identifier with no edge from one of those states is refused with");
         close(source);
     }
 
@@ -198,6 +198,16 @@ final class MachineVocabularyEmitter {
         close(source);
     }
 
+    /** The elements of {@code Transition} that mark an edge as a gate or as external. */
+    private static void edgeKinds(JavaSource source) {
+        element(source, "boolean gate() default false;",
+            "whether the edge is a gate, a self-loop that declares guards at most, needs no {@code allowsCycle} and"
+                + " takes no operation, only checks; false by default");
+        element(source, "boolean external() default false;",
+            "whether the edge is external, one that leads to another state and declares nothing else, takes no"
+                + " operation and no check; false by default");
+    }
+
     private static void transition(JavaSource source, String vocabulary, String machine, String state,
             String transition) {
         describe(source, "Declares one edge of {@link " + machine + "}, identified by {@code id} from each of",
@@ -205,7 +215,12 @@ final class MachineVocabularyEmitter {
             "",
             "<p>An {@code automatic} edge is one the engine attempts by itself from its origin, in the order of the",
             "{@link " + vocabulary + ".AutomaticOrder} of that state when it has several. An automatic attempt carries",
-            "no input, so the identifier of an automatic edge may not run an operation that takes one.</p>");
+            "no input, so the identifier of an automatic edge may not run an operation that takes one.</p>",
+            "",
+            "<p>A {@code gate} is a self-loop that only a check asks: its guards and the state's policy answer a",
+            "{@code Check} or a choice that only checks, while a request of its identifier is answered as if the state",
+            "had no edge for it. An {@code external} edge is one another system takes: it counts for the structure,",
+            "while this machine never takes it.</p>");
         annotation(source, machine, "TRANSITION", EDGE_TARGETS, Optional.of(vocabulary + ".Transitions"),
             "Transition");
         element(source, transition + " id();", "the identifier of the edge");
@@ -235,9 +250,10 @@ final class MachineVocabularyEmitter {
                 + " Definition's automaticChain is ON_ADVANCE; false by default");
         element(source, "boolean onFailureContinues() default false;",
             "whether the {@code onFailure} route continues the chain of automatic attempts; false by default");
+        edgeKinds(source);
         element(source, symbolClass(HookSymbol.class) + "[] afterCommit() default {};",
             "the hook run after the edge commits, at most one; none inherits the default hook of the"
-                + " {@code Definition}");
+                + " {@code Definition}, except on a gate or an external edge, which this machine never commits");
         close(source);
     }
 

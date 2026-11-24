@@ -58,7 +58,6 @@ public final class SetGenerator {
     private static final String EXECUTOR = "java.util.concurrent.Executor";
     private static final String INSTANT_SOURCE = "java.time.InstantSource";
     private static final String CLASS = "java.lang.Class";
-    private static final String ILLEGAL_ARGUMENT = "java.lang.IllegalArgumentException";
     private static final String ILLEGAL_STATE = "java.lang.IllegalStateException";
 
     /** The member types the set companion declares itself: its public {@code Builder}. */
@@ -72,31 +71,47 @@ public final class SetGenerator {
             "chain", "observer", "built");
 
     /**
-     * The doc text of the {@code Builder}'s {@code recordTrail(InstantSource)}: what
-     * {@code StateMachines.Builder.recordTrail(InstantSource)} says of one machine, said of the set. It never names the
+     * The doc text of the {@code Builder}'s {@code recordTrail()}: what {@code StateMachines.Builder.recordTrail()}
+     * says of one machine, said of the set.
+     */
+    private static final String RECORD_TRAIL = "Records the trail of every call through the set on the set's clock,"
+            + " the one clock(InstantSource) gives or InstantSource.system(), by calling recordTrail() on the"
+            + " StateMachines.Builder of every machine of the set. The root machine of a call decides for the whole"
+            + " call, so every root call made through the set records its trail, the peers it cascades to and the exits"
+            + " of sub-machines its steps run included, and so does each watch reaction, a call of its own that its own"
+            + " machine, one of the set, decides. The flow such a call hands out, in its outcome or in its failure,"
+            + " lists in trail() each hop and each sub-machine start the call took, each at the instant that clock read"
+            + " right after the call took it, then the rejection or the failure that ended the call, at the instant it"
+            + " ended. A call that records its trail creates its flow when its step starts, so it hands out its flow,"
+            + " with the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored"
+            + " outcome hands out the empty flow: a reevaluation that selects no edge and an advance whose state has no"
+            + " automatic edge run no step, and an advance whose automatic edges were all refused, or a choice whose"
+            + " candidates were all refused, wrote nothing. The clock is read on the thread running the call, once per"
+            + " entry the call appends, an entry a rollback later drops included, so a clock that advances on each read"
+            + " leaves a gap for each dropped entry. Anything but an Error that the clock throws, a checked exception"
+            + " included, fails the call as what an identity function throws does: the entry it could not mark is left"
+            + " out of the trail. When it throws while the call reads the instant of the Failed entry that ends a"
+            + " failed call, whatever failed the call, the call's CallFailedException carries what it threw as"
+            + " suppressed, unless it threw that very exception, and its trail ends without that entry; an"
+            + " InterruptedException suppressed there interrupts the thread again, and an Error propagates. A clock"
+            + " that answers null counts as one that throws a NullPointerException. A set built without recordTrail"
+            + " keeps no mark.";
+
+    /**
+     * The doc text of the {@code Builder}'s {@code clock(InstantSource)}: what
+     * {@code StateMachines.Builder.clock(InstantSource)} says of one machine, said of the set. It never names the
      * parameter: when another variable of the companion holds {@code clock}, the parameter takes another name.
      */
-    private static final String RECORD_TRAIL = "Records the trail of every call through the set on the given clock, by"
-            + " handing it to the StateMachines.Builder of every machine of the set. The root machine of a call decides"
-            + " for the whole call, so every root call made through the set records its trail, the peers it cascades to"
-            + " and the exits of sub-machines its steps run included, and so does each watch reaction, a call of its"
-            + " own that its own machine, one of the set, decides. The flow such a call hands out, in its outcome or in"
-            + " its failure, lists in trail() each hop and each sub-machine start the call took, each at the instant"
-            + " that clock read right after the call took it, then the rejection or the failure that ended the call, at"
-            + " the instant it ended. A call that records its trail creates its flow when its step starts, so it hands"
-            + " out its flow, with the root entity and the trail, even when none of its steps or hooks wrote to it; an"
-            + " ignored outcome hands out the empty flow: a reevaluation that selects no edge and an advance whose"
-            + " state has no automatic edge run no step, and an advance whose automatic edges were all refused, or a"
-            + " choice whose candidates were all refused, wrote nothing. The clock is read on the thread running the"
-            + " call, once per entry the call appends, an entry a rollback later drops included, so a clock that"
-            + " advances on each read leaves a gap for each dropped entry; a test can pass a clock it controls, such as"
-            + " a java.time.Clock. Anything but an Error that the clock throws, a checked exception included, fails the"
-            + " call as what an identity function throws does: the entry it could not mark is left out of the trail."
-            + " When it throws while the call reads the instant of the Failed entry that ends a failed call, whatever"
-            + " failed the call, the call's CallFailedException carries what it threw as suppressed, unless it threw"
-            + " that very exception, and its trail ends without that entry; an InterruptedException suppressed there"
-            + " interrupts the thread again, and an Error propagates. A clock that answers null counts as one that"
-            + " throws a NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
+    private static final String CLOCK = "Sets the clock of every machine of the set, by handing the given clock to the"
+            + " StateMachines.Builder of every machine of the set; InstantSource.system() by default. The now() of a"
+            + " guard's or an action's context reads it once per request: the first time a context of a root call or"
+            + " of a check asks, and every later now() of the same call answers that same instant, in the steps it"
+            + " cascades to, the exits its steps run and the checks its guards start. A check of its own, a choice"
+            + " check for all its candidates, a watch reaction and each automatic attempt read it again, and a call"
+            + " that never asks reads no clock. Anything but an Error that the clock throws, and a null instant,"
+            + " refused with a NullPointerException, is thrown by now() to the guard or the action that asked. A set"
+            + " that records its trail reads its trail on this clock too. A test can pass a clock it controls, such as"
+            + " a java.time.Clock.";
 
     /** The {@code @return} tag of every {@code Builder} method that answers the builder itself. */
     private static final String THIS_BUILDER = "@return this builder";
@@ -350,7 +365,7 @@ public final class SetGenerator {
                 out.close();
             }
         }
-        out.line("throw new " + names.of(ILLEGAL_ARGUMENT) + "(" + machine + ".getSimpleName() + "
+        out.line("throw new " + names.of(MachineGenerator.ILLEGAL_ARGUMENT) + "(" + machine + ".getSimpleName() + "
                 + MachineGenerator.quote(" is not an asynchronous machine of " + model.setName()) + ");");
         out.close();
         out.blank();
@@ -379,15 +394,13 @@ public final class SetGenerator {
     }
 
     /**
-     * The {@code Builder}'s {@code recordTrail()} and {@code recordTrail(InstantSource)}, which hand the recording of
-     * the trail to the builder of every machine, on the system clock or on the given one, which the second refuses,
-     * through {@code objects}, when null.
+     * The {@code Builder}'s {@code recordTrail()} and {@code clock(InstantSource)}, which hand the recording of the
+     * trail, and the given clock, which the second refuses through {@code objects} when null, to the builder of every
+     * machine.
      */
     private static void recordTrail(SetModel model, Names names, Variables variables, String objects,
                                     SourceWriter out) {
-        out.javadoc("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
-                + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes.", List.of(THIS_BUILDER));
+        out.javadoc(RECORD_TRAIL, List.of(THIS_BUILDER));
         out.open("public Builder recordTrail()");
         out.line("checkUnused();");
         for (MachineAccessor accessor : model.machines()) {
@@ -397,12 +410,12 @@ public final class SetGenerator {
         out.close();
         out.blank();
         String clock = variables.setters().get("clock");
-        out.javadoc(RECORD_TRAIL, List.of("@param " + clock + " the clock the trail is read on", THIS_BUILDER));
-        out.open("public Builder recordTrail(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
+        out.javadoc(CLOCK, List.of("@param " + clock + " the clock of every machine of the set", THIS_BUILDER));
+        out.open("public Builder clock(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
         out.line("checkUnused();");
         out.line(objects + ".requireNonNull(" + clock + ", \"clock\");");
         for (MachineAccessor accessor : model.machines()) {
-            out.line(variables.builders().get(accessor.method()) + ".recordTrail(" + clock + ");");
+            out.line(variables.builders().get(accessor.method()) + ".clock(" + clock + ");");
         }
         out.line("return this;");
         out.close();
@@ -687,7 +700,7 @@ public final class SetGenerator {
             Names.claim(types, MachineGenerator.GRAPH_DEFINITION);
         }
         if (model.hasAsync()) {
-            for (String fixed : List.of(MACHINE, MachineGenerator.DURATION, CLASS, ILLEGAL_ARGUMENT)) {
+            for (String fixed : List.of(MACHINE, MachineGenerator.DURATION, CLASS, MachineGenerator.ILLEGAL_ARGUMENT)) {
                 Names.claim(types, fixed);
             }
         }

@@ -361,17 +361,17 @@ class SubmachineGenerationTest {
     }
 
     /**
-     * A set built with {@code recordTrail(clock)} records the trail of a deposit's capture on that clock: the
-     * capture, the exit it runs on its booking and the start of the balance that exit enters, in the order the call
-     * took them.
+     * A set built with {@code clock(clock)} and {@code recordTrail()} records the trail of a deposit's capture on that
+     * clock: the capture, the exit it runs on its booking and the start of the balance that exit enters, in the order
+     * the call took them.
      */
     @Test
     void aSetThatRecordsItsTrailListsTheExitAndTheStartACaptureRuns() throws Exception {
         String noon = "2026-10-10T12:00:00Z";
         assertEquals("PENDING-CAPTURE->CAPTURED@" + noon + " DEPOSIT-DEPOSIT_PAID->BALANCE@" + noon
                         + " BALANCE:PENDING@" + noon,
-                run(billing(), "builder(ledger).recordTrail(java.time.InstantSource.fixed(java.time.Instant.parse(\""
-                        + noon + "\")))", """
+                run(billing(), "builder(ledger).clock(java.time.InstantSource.fixed(java.time.Instant.parse(\""
+                        + noon + "\"))).recordTrail()", """
                         Payment deposit = new Payment("deposit");
                         Booking booking = new Booking("booking", deposit, new Payment("balance"));
                         BookingLookups.register(booking);

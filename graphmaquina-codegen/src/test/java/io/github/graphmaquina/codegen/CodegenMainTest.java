@@ -97,9 +97,11 @@ class CodegenMainTest {
         Invocation unknown = run("export", request());
 
         assertEquals(2, unknown.exitCode(), unknown.errors());
-        assertTrue(unknown.errors().contains("expected one of generate, prepare-compile, complete-compile, export-dot"),
+        assertTrue(unknown.errors().contains(
+                "expected one of generate, prepare-compile, complete-compile, export-dot, list-exports"),
                 unknown.errors());
-        assertTrue(unknown.errors().contains("<generate|prepare-compile|complete-compile|export-dot> --request <file>"),
+        assertTrue(unknown.errors().contains(
+                "<generate|prepare-compile|complete-compile|export-dot|list-exports> --request <file>"),
                 unknown.errors());
     }
 

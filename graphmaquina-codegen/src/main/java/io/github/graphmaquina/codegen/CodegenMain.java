@@ -1,6 +1,7 @@
 package io.github.graphmaquina.codegen;
 
 import io.github.graphmaquina.codegen.export.DotExport;
+import io.github.graphmaquina.codegen.export.ExportIndexReport;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.output.CompilationOutputs;
@@ -17,6 +18,7 @@ import java.util.List;
  * io.github.graphmaquina.codegen.CodegenMain prepare-compile --request request.json
  * io.github.graphmaquina.codegen.CodegenMain complete-compile --request request.json
  * io.github.graphmaquina.codegen.CodegenMain export-dot --request export-request.json
+ * io.github.graphmaquina.codegen.CodegenMain list-exports --request list-exports-request.json
  * }</pre>
  *
  * <p>{@code generate} emits the typed vocabulary and the manifest before javac; {@code prepare-compile} retires
@@ -25,7 +27,9 @@ import java.util.List;
  * the last one after a failed compilation. {@code export-dot} reads another request, an
  * {@link ExportRequest}, and writes the Graphviz DOT of every machine a completed compilation published, as
  * {@link DotExport} describes, printing the absolute path of each file it wrote on the output stream, one per line,
- * in the order of the index.</p>
+ * in the order of the index. {@code list-exports} reads an {@link ExportListRequest} and prints, on the output stream,
+ * the report of the export indexes its classpath carries, as {@link ExportIndexReport} describes; an index the report
+ * marks as refused does not fail the operation.</p>
  *
  * <p>Nothing is caught and continued. An operation this tool cannot run leaves status {@code 1} and a message on
  * the error stream naming the operation, the request file and the cause, with its SG code when it has one and
@@ -40,7 +44,8 @@ public final class CodegenMain {
     private static final String PREPARE = "prepare-compile";
     private static final String COMPLETE = "complete-compile";
     private static final String EXPORT = "export-dot";
-    private static final List<String> OPERATIONS = List.of(GENERATE, PREPARE, COMPLETE, EXPORT);
+    private static final String LIST_EXPORTS = "list-exports";
+    private static final List<String> OPERATIONS = List.of(GENERATE, PREPARE, COMPLETE, EXPORT, LIST_EXPORTS);
     private static final String REQUEST = "--request";
     private static final String USAGE =
         "usage: " + CodegenMain.class.getName() + " <" + String.join("|", OPERATIONS) + "> " + REQUEST + " <file>";
@@ -83,19 +88,7 @@ public final class CodegenMain {
         }
         String requestFile = args[2];
         try {
-            if (EXPORT.equals(operation)) {
-                for (Path written : DotExport.export(ManifestCodec.readExportRequest(Path.of(requestFile)))) {
-                    System.out.println(written);
-                }
-                return 0;
-            }
-            GenerationRequest request = ManifestCodec.readRequest(Path.of(requestFile));
-            switch (operation) {
-                case GENERATE -> StateGraphCodegen.generate(request);
-                case PREPARE -> CompilationOutputs.prepare(request);
-                case COMPLETE -> CompilationOutputs.complete(request);
-                default -> throw new IllegalStateException("unreachable operation: " + operation);
-            }
+            perform(operation, Path.of(requestFile));
             return 0;
         } catch (IOException | RuntimeException failure) {
             return failed(operation, requestFile, failure);
@@ -105,6 +98,29 @@ public final class CodegenMain {
                 throw failure;
             }
             return failed(operation, requestFile, failure);
+        }
+    }
+
+    /**
+     * Runs {@code operation}, one of {@link #OPERATIONS}, over the request in {@code requestFile}, printing the files
+     * {@code export-dot} wrote and the report {@code list-exports} composed on the output stream, one per line.
+     */
+    private static void perform(String operation, Path requestFile) throws IOException {
+        switch (operation) {
+            case EXPORT -> print(DotExport.export(ManifestCodec.readExportRequest(requestFile)));
+            case LIST_EXPORTS -> print(ExportIndexReport.report(
+                    ManifestCodec.readExportListRequest(requestFile).classpath()));
+            case GENERATE -> StateGraphCodegen.generate(ManifestCodec.readRequest(requestFile));
+            case PREPARE -> CompilationOutputs.prepare(ManifestCodec.readRequest(requestFile));
+            case COMPLETE -> CompilationOutputs.complete(ManifestCodec.readRequest(requestFile));
+            default -> throw new IllegalStateException("unreachable operation: " + operation);
+        }
+    }
+
+    /** Prints each of {@code lines} on the output stream, one per line, in order. */
+    private static void print(Iterable<?> lines) {
+        for (Object line : lines) {
+            System.out.println(line);
         }
     }
 

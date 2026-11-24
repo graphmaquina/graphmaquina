@@ -293,6 +293,26 @@ final class StructuralChecks {
     }
 
     /**
+     * Whether every type of {@code propagates}, which the guard {@code guard} declares, may be propagated: SG302 at
+     * {@code at}, the value of the edge's {@code guards} that names the guard, for each one {@code failsOn} may not
+     * list either.
+     */
+    boolean checkPropagates(String guard, List<TypeMirror> propagates, Element element, AnnotationMirror mirror,
+                            AnnotationValue at) {
+        boolean admitted = true;
+        for (TypeMirror type : propagates) {
+            if (isForbiddenFailsOn(type)) {
+                diagnostics.error(DiagnosticCode.SG302, "the guard " + guard + " propagates " + type
+                        + ", which it may not; only throwable types foreign to the library, and never Throwable,"
+                        + " Exception, RuntimeException, an Error or a CancellationException, nor CompletionException"
+                        + " or ExecutionException, which are unwrapped before matching", element, mirror, at);
+                admitted = false;
+            }
+        }
+        return admitted;
+    }
+
+    /**
      * SG507 when an edge that runs no action still declares what only an action can use. {@code remedy} ends the
      * message.
      */

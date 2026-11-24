@@ -7,11 +7,13 @@ import io.github.graphmaquina.api.Eligibility;
 import io.github.graphmaquina.processor.model.CheckModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
+import io.github.graphmaquina.processor.model.TransitionModel;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -29,14 +31,16 @@ import javax.lang.model.util.ElementFilter;
  *
  * <p>A check is no operation. It owns no identifier, so it never takes part in {@code SG703}, and opens no edge, so
  * it never takes part in {@code SG804} either. Its {@code id} names the identifier one of the facade's operations
- * executes, never a route the facade only declares on itself, the exit of a sub-machine or an identifier without an
- * edge ({@code SG512}). A check of an identifier that a method of the facade declares a {@code Transition} for, but
- * that no operation executes because that method was refused for a reason already reported, is left out without a
- * word. A check repeats the parameters of its operation, the same entity and the same input, present exactly when
- * the operation takes one, under the result {@code Eligibility<E, S, T>} of the machine's own types and without
- * varargs or type parameters of its own ({@code SG513}). An operation has one check at most, and a method that
- * carries a {@code Transition} and a {@code Check} is refused, since a check is declared on a method of its own
- * ({@code SG514}).</p>
+ * executes, or a gate the facade declares on itself, never another route the facade only declares on itself, the exit
+ * of a sub-machine or an identifier without an edge ({@code SG512}), nor an external edge, which another system takes
+ * ({@code SG517}). A check of an identifier that a method of the facade declares a {@code Transition} for, but that
+ * no operation executes because that method was refused for a reason already reported, is left out without a word. A
+ * check repeats the parameters of its operation, the same entity and the same input, present exactly when the
+ * operation takes one, under the result {@code Eligibility<E, S, T>} of the machine's own types and without varargs
+ * or type parameters of its own ({@code SG513}); the check of a gate, which has no operation, takes the entity and at
+ * most one input of any type, for the gate's guards to read. An operation or a gate has one check at most, and a
+ * method that carries a {@code Transition} and a {@code Check} is refused, since a check is declared on a method of
+ * its own ({@code SG514}).</p>
  *
  * <p>Where a {@code Check} may be written at all is asked elsewhere: on a default, static or private method it is
  * never read, which {@link VocabularyPlacement} reports, and the {@code Check} of another machine is refused where it
@@ -61,13 +65,14 @@ final class TypedChecks {
     /**
      * The checks of {@code facade}, in the order {@code declared} holds them. {@code declared} are the abstract
      * methods the facade declares that carry a {@code Check} of its own vocabulary and neither a {@code Transition}
-     * nor a {@code Choice}, and {@code operations} the operations read from the same facade. A check with a problem
-     * is reported and left out; one whose {@code id} javac could not read is left out, since javac has refused it
-     * already, and so is one whose operation was refused: a method of the facade declares a {@code Transition} of
-     * that identifier, and the error that refused it was reported already.
+     * nor a {@code Choice}, {@code operations} the operations read from the same facade and {@code edges} the edges it
+     * declares itself, among which are its gates and external edges. A check with a problem is reported and left out;
+     * one whose {@code id} javac could not read is left out, since javac has refused it already, and so is one whose
+     * operation was refused: a method of the facade declares a {@code Transition} of that identifier, and the error
+     * that refused it was reported already.
      */
     List<CheckModel> read(TypeElement facade, MachineTypes types, List<ExecutableElement> declared,
-            List<OperationModel> operations) {
+            List<OperationModel> operations, List<TransitionModel> edges) {
         List<CheckModel> checks = new ArrayList<>();
         Map<String, ExecutableElement> checked = new LinkedHashMap<>();
         for (ExecutableElement method : declared) {
@@ -82,18 +87,30 @@ final class TypedChecks {
             Optional<OperationModel> operation = operations.stream()
                     .filter((OperationModel candidate) -> candidate.transitionId().equals(identifier.get()))
                     .findFirst();
+            if (operation.isEmpty() && marked(edges, identifier.get(), TransitionModel::external)) {
+                DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, DiagnosticCode.SG517,
+                        method.getSimpleName() + " checks " + identifier.get() + ", which is external: another system"
+                                + " takes it, so no Check asks it");
+                continue;
+            }
+            if (operation.isEmpty() && marked(edges, identifier.get(), TransitionModel::gate)) {
+                if (claims(method, check.get(), identifier.get(), checked) && gateShaped(method, types)) {
+                    checks.add(model(method, identifier.get(), true));
+                }
+                continue;
+            }
             if (operation.isEmpty()) {
                 // Silent when a method declares the identifier: its refusal as an operation was reported already.
                 if (!declaredOnAMethod(facade, identifier.get(), types)) {
                     DiagnosticAnchor.of(method, check.get(), id.get()).report(diagnostics, DiagnosticCode.SG512,
                             method.getSimpleName() + " checks " + identifier.get() + ", which no operation of "
                                     + facade.getSimpleName() + " executes: a Check names the identifier of one of"
-                                    + " the facade's operations");
+                                    + " the facade's operations, or a gate");
                 }
                 continue;
             }
             if (claims(method, check.get(), identifier.get(), checked) && repeats(method, operation.get(), types)) {
-                checks.add(model(method, identifier.get()));
+                checks.add(model(method, identifier.get(), false));
             }
         }
         return checks;
@@ -142,7 +159,20 @@ final class TypedChecks {
         return own;
     }
 
-    /** SG514 at {@code check} unless {@code identifier} is still unchecked: an operation has one check at most. */
+    /** Whether one of {@code edges} is of {@code identifier} and carries the mark {@code kind} reads. */
+    static boolean marked(List<TransitionModel> edges, String identifier, Predicate<TransitionModel> kind) {
+        for (TransitionModel edge : edges) {
+            if (edge.transitionId().equals(identifier) && kind.test(edge)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * SG514 at {@code check} unless {@code identifier} is still unchecked: an operation or a gate has one check at
+     * most.
+     */
     private boolean claims(ExecutableElement method, AnnotationMirror check, String identifier,
             Map<String, ExecutableElement> checked) {
         if (!checked.containsKey(identifier)) {
@@ -151,7 +181,7 @@ final class TypedChecks {
         }
         DiagnosticAnchor.of(method, check).report(diagnostics, DiagnosticCode.SG514, method.getSimpleName() + " checks "
                 + identifier + ", which " + checked.get(identifier).getSimpleName() + " checks already: an operation"
-                + " has one Check at most");
+                + " or a gate has one Check at most");
         return false;
     }
 
@@ -180,13 +210,36 @@ final class TypedChecks {
         return false;
     }
 
-    /** The check {@code method} declares of {@code identifier}, whose signature is that of the operation it checks. */
-    private static CheckModel model(ExecutableElement method, String identifier) {
+    /**
+     * SG513 unless {@code method}, the check of a gate, is declared as {@code Eligibility<E, S, T> method(E)} or as
+     * {@code Eligibility<E, S, T> method(E, I)} for any type {@code I}, without varargs or type parameters of its own.
+     */
+    private boolean gateShaped(ExecutableElement method, MachineTypes types) {
+        List<? extends VariableElement> parameters = method.getParameters();
+        DeclaredType eligibility = signatures.declared(ELIGIBILITY, types.entity(), types.states(),
+                types.transitions());
+        if ((parameters.size() == 1 || parameters.size() == 2) && !method.isVarArgs()
+                && method.getTypeParameters().isEmpty() && signatures.same(parameters.get(0).asType(), types.entity())
+                && signatures.same(method.getReturnType(), eligibility)) {
+            return true;
+        }
+        String name = method.getSimpleName().toString();
+        diagnostics.error(DiagnosticCode.SG513, name + " must be declared as Eligibility<" + types.entityName() + ", "
+                + types.statesName() + ", " + types.transitionsName() + "> " + name + "(" + types.entityName()
+                + ") or with one input after the entity, which the gate's guards read", method);
+        return false;
+    }
+
+    /**
+     * The check {@code method} declares of {@code identifier}, whose signature is that of the operation it checks, or,
+     * when {@code gate}, the one it declares for the gate's guards.
+     */
+    private static CheckModel model(ExecutableElement method, String identifier, boolean gate) {
         Optional<VariableElement> input = method.getParameters().size() == 2
                 ? Optional.of(method.getParameters().get(1)) : Optional.empty();
         return new CheckModel(method.getSimpleName().toString(), identifier,
                 method.getParameters().get(0).getSimpleName().toString(),
                 input.map((VariableElement parameter) -> parameter.getSimpleName().toString()),
-                input.map(VariableElement::asType));
+                input.map(VariableElement::asType), gate);
     }
 }

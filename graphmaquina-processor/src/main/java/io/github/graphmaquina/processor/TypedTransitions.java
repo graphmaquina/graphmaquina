@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.GraphGuard;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.model.Binding;
@@ -70,7 +71,8 @@ final class TypedTransitions {
      * The edge {@code mirror} declares on {@code element}, or empty when it has a problem, which was reported.
      * {@code operation} is the name of the method an operation declares it on, and is empty for a transition of
      * the interface itself, whose label is the action it selected. {@code defaultAfterCommit} is the hook the
-     * enclosing machine declares as its default, used when this declaration names none of its own.
+     * enclosing machine declares as its default, used when this declaration names none of its own and is neither a
+     * gate nor external, which this machine never commits.
      */
     Optional<TransitionModel> read(Element element, AnnotationMirror mirror, MachineTypes machine,
             String operation, Optional<Binding> defaultAfterCommit) {
@@ -104,7 +106,7 @@ final class TypedTransitions {
         List<RecoveryModel> recoveries = recoveries(mirror, machine);
         structure.checkRecoveries(recoveries, failsOn, failsOnValues, element, mirror);
         Optional<Binding> afterCommit = afterCommit(element, mirror, machine)
-                .or(() -> defaultAfterCommit);
+                .or(() -> flag(mirror, "gate") || flag(mirror, "external") ? Optional.empty() : defaultAfterCommit);
 
         structure.checkActionRequired(declaredAction.isPresent(), onFailure, failsOn, timeout, "",
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
@@ -119,7 +121,8 @@ final class TypedTransitions {
                 : Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
                         action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
                         action, guards, onFailure, failsOn, timeout, afterCommit, recoveries,
-                        flag(mirror, "automatic"), flag(mirror, "onFailureContinues")));
+                        flag(mirror, "automatic"), flag(mirror, "onFailureContinues"), flag(mirror, "gate"),
+                        flag(mirror, "external")));
     }
 
     /** Whether the boolean element {@code name} of {@code mirror} holds {@code true}, its default being false. */
@@ -180,9 +183,24 @@ final class TypedTransitions {
                                 + ", which a rejection reports: the guards of one edge need members of distinct names");
                 continue;
             }
-            guards.add(guard.get());
+            List<AnnotationValue> propagates = propagates(guard.get());
+            List<TypeMirror> types = classes(propagates);
+            if (structure.checkPropagates(guard.get().methodName(), types, element, mirror, value)) {
+                guards.add(guard.get().propagating(types));
+            }
         }
         return guards;
+    }
+
+    /**
+     * The class values of the {@code propagates} of the {@code GraphGuard} on the method {@code guard} calls, which
+     * javac reads from a dependency's class file too, since the annotation's retention is CLASS; none when the marker
+     * declares none.
+     */
+    private List<AnnotationValue> propagates(Binding guard) {
+        return annotations.find(guard.method(), GraphGuard.class)
+                .map((AnnotationMirror marker) -> classValues(annotations.array(marker, "propagates")))
+                .orElse(List.of());
     }
 
     /** The method {@code value} names when it is used as {@code role}, or empty after the resolver reported why. */

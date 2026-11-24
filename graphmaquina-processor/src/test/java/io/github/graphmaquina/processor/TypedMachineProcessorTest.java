@@ -44,7 +44,9 @@ class TypedMachineProcessorTest {
         assertTrue(result.hasGenerated("fx.DocsRuntime"));
         String companion = result.generated("fx.DocsRuntime");
         assertTrue(companion.contains("public Outcome<Doc, DocStatus, DocTransition> publish(Doc doc)"), companion);
-        assertFalse(companion.contains("public Outcome<Doc, DocStatus, DocTransition> execute("), companion);
+        assertTrue(companion.contains(
+                "public Outcome<Doc, DocStatus, DocTransition> execute(Doc entity, DocTransition transition)"),
+                companion);
         assertTrue(companion.contains(".action(\"publish\", (context) -> docActions.publish(context))"), companion);
     }
 
