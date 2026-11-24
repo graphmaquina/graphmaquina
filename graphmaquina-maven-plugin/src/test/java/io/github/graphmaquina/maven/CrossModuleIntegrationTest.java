@@ -112,6 +112,32 @@ class CrossModuleIntegrationTest {
     }
 
     /**
+     * {@code list-exports} reads the dependencies without generating: an installed producer whose index another tool
+     * version wrote, which the consumer's generation refuses with {@code SG602}, is listed with that refusal, and the
+     * goal succeeds. The installed jar is put back as the producer's build installed it however the build ends.
+     */
+    @Test
+    void anInstalledProducerOfAnotherToolVersionIsListedAsRefused() throws IOException {
+        installProducer();
+        Path installed = MavenFixture.installedJar("fx.build", "fixture", "1.0.0");
+        byte[] original = Files.readAllBytes(installed);
+        MavenResult result;
+        try {
+            Files.write(installed, withToolVersion(installed, "0.0.1"));
+            MavenFixture consumer = MavenFixture.consumer(tempDirectory, fixtureRepository);
+            consumer.writeSources(MavenFixture.crossModuleSources("consumer"));
+            result = consumer.run("graphmaquina:list-exports");
+        } finally {
+            Files.write(installed, original);
+        }
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("graphmaquina export index: " + installed), result.output());
+        assertTrue(result.output().contains("  refused by " + DiagnosticCode.SG602.name()
+                + ": written by tool version 0.0.1; this tool is "), result.output());
+    }
+
+    /**
      * Installs the producer, {@code fx.build:fixture:1.0.0}, into the fixtures' local repository with its own build,
      * which publishes the export index inside its jar.
      */
@@ -138,6 +164,26 @@ class CrossModuleIntegrationTest {
                     .filter((Path file) -> PRODUCER_PACKAGES.contains(file.getParent().getFileName().toString()))
                     .toList();
         }
+    }
+
+    /** The entries of {@code jar}, in its order, with its export index's tool version replaced by {@code version}. */
+    private static byte[] withToolVersion(Path jar, String version) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipFile source = new ZipFile(jar.toFile(), StandardCharsets.UTF_8);
+                ZipOutputStream out = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
+            for (ZipEntry entry : source.stream().toList()) {
+                out.putNextEntry(new ZipEntry(entry.getName()));
+                try (InputStream content = source.getInputStream(entry)) {
+                    byte[] read = content.readAllBytes();
+                    String index = new String(read, StandardCharsets.UTF_8);
+                    String versioned = index.replaceFirst("\"toolVersion\"\\s*:\\s*\"[^\"]*\"",
+                            "\"toolVersion\": \"" + version + "\"");
+                    out.write(EXPORTS.equals(entry.getName()) ? versioned.getBytes(StandardCharsets.UTF_8) : read);
+                }
+                out.closeEntry();
+            }
+        }
+        return bytes.toByteArray();
     }
 
     /** The entries of {@code jar}, in its order, all but the export index. */

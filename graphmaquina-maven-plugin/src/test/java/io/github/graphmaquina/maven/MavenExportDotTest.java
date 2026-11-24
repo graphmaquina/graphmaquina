@@ -114,15 +114,15 @@ class MavenExportDotTest {
     }
 
     /**
-     * Run from the parent of a reactor, {@code list-exports} compiles every module first and prints, in the consumer,
-     * the export index of the producer its compile classpath carries, with its machines and no refusal.
+     * Run from the parent of a reactor after {@code compile}, {@code list-exports} prints, in the consumer, the export
+     * index of the producer its compile classpath carries, with its machines and no refusal.
      */
     @Test
     void listExportsPrintsTheIndexOfTheProducerInTheConsumer() throws IOException {
         MavenFixture parent = MavenFixture.project(tempDirectory, fixtureRepository, Map.of());
         parent.reactor();
 
-        MavenResult result = parent.run("graphmaquina:list-exports");
+        MavenResult result = parent.run("compile", "graphmaquina:list-exports");
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("graphmaquina export index: "), result.output());

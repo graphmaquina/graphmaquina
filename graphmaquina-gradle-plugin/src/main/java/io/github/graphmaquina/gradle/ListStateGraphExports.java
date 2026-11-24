@@ -29,8 +29,9 @@ import java.util.List;
  * symbols, and each reason {@code SG602} would refuse it when the source set compiles.
  *
  * <p>The task writes the request the generator reads and runs its {@code list-exports} operation under the launcher it
- * holds, by convention the generation task's; the generator prints the report on the build's output. It declares no
- * output, so it runs every time it is asked for.</p>
+ * holds, by convention the generation task's; the generator prints the report on the build's output. It runs neither
+ * the generation nor the compilation of the source set, so it lists an index that the generation would refuse. It
+ * declares no output, so it runs every time it is asked for.</p>
  */
 public abstract class ListStateGraphExports extends DefaultTask {
 
@@ -40,7 +41,8 @@ public abstract class ListStateGraphExports extends DefaultTask {
     /**
      * Registers the listing task of {@code sourceSet}, {@code listStateGraphExports} for {@code main} and
      * {@code list<SourceSet>StateGraphExports} for any other, which runs under the launcher and over the generator
-     * classpath the generation task {@code generate} holds, and takes part when that task does.
+     * classpath the generation task {@code generate} holds, and takes part when that task does, without depending on
+     * that task.
      *
      * @param project the project the source set belongs to
      * @param sourceSet the source set whose compile classpath the task reports
@@ -52,11 +54,13 @@ public abstract class ListStateGraphExports extends DefaultTask {
             task.setGroup("graphmaquina");
             task.setDescription("Prints the StateGraph export index of every compile classpath entry of the '"
                     + sourceSet.getName() + "' source set that publishes one.");
-            task.getParticipates().convention(generate.flatMap(GenerateGraphApi::getParticipates));
+            // Plain providers: one derived from the generation task would carry that task as its producer, and the
+            // listing, which reports what the generation would refuse, would run the generation first.
+            task.getParticipates().convention(project.provider(() -> generate.get().getParticipates().get()));
             task.onlyIf(ProcessorDeclarations.declaresProcessor(sourceSet), new Participation());
             task.getCompileClasspath().convention(sourceSet.getCompileClasspath());
-            task.getGeneratorClasspath().convention(generate.map(GenerateGraphApi::getGeneratorClasspath));
-            task.getJavaLauncher().convention(generate.flatMap(GenerateGraphApi::getJavaLauncher));
+            task.getGeneratorClasspath().convention(project.provider(() -> generate.get().getGeneratorClasspath()));
+            task.getJavaLauncher().convention(project.provider(() -> generate.get().getJavaLauncher().get()));
             task.getRequestFile().convention(generate.flatMap(GenerateGraphApi::getWorkDirectory)
                     .map((Directory work) -> work.file(LIST_REQUEST)));
         });

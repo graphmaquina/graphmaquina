@@ -230,6 +230,23 @@ class CrossModuleFunctionalTest {
                 + ", which carries no export index"), result::getOutput);
     }
 
+    /**
+     * The listing reads the classpath without generating: a producer jar whose index another tool version wrote,
+     * which the consumer's generation refuses with {@code SG602}, is listed with that refusal, and the generation does
+     * not run.
+     */
+    @Test
+    void anIndexOfAnotherToolVersionIsListedAsRefusedWithoutGenerating() throws IOException {
+        PluginFixture consumer = consumerOf(withToolVersion(builtProducerJar(), "0.0.1"));
+
+        BuildResult result = consumer.run("listStateGraphExports", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":listStateGraphExports").getOutcome());
+        assertEquals(null, result.task(":generateStateGraphApi"), result::getOutput);
+        assertTrue(result.getOutput().contains("  refused by " + DiagnosticCode.SG602.name()
+                + ": written by tool version 0.0.1; this tool is "), result::getOutput);
+    }
+
     /** Builds the producer's jar with its own build, which publishes the export index inside it. */
     private Path builtProducerJar() throws IOException {
         PluginFixture producer = PluginFixture.project(Files.createDirectories(tempDirectory.resolve("producer")),
@@ -308,6 +325,26 @@ class CrossModuleFunctionalTest {
     }
 
     /** The entries of {@code jar}, in its order, all but the export index. */
+    /** The bytes of {@code jar} with the tool version of its export index replaced by {@code version}. */
+    private static byte[] withToolVersion(Path jar, String version) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ZipFile source = new ZipFile(jar.toFile(), StandardCharsets.UTF_8);
+                ZipOutputStream out = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
+            for (ZipEntry entry : source.stream().toList()) {
+                out.putNextEntry(new ZipEntry(entry.getName()));
+                try (InputStream content = source.getInputStream(entry)) {
+                    byte[] read = content.readAllBytes();
+                    String index = new String(read, StandardCharsets.UTF_8);
+                    String versioned = index.replaceFirst("\"toolVersion\"\\s*:\\s*\"[^\"]*\"",
+                            "\"toolVersion\": \"" + version + "\"");
+                    out.write(EXPORTS.equals(entry.getName()) ? versioned.getBytes(StandardCharsets.UTF_8) : read);
+                }
+                out.closeEntry();
+            }
+        }
+        return bytes.toByteArray();
+    }
+
     private static byte[] withoutIndex(Path jar) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ZipFile source = new ZipFile(jar.toFile(), StandardCharsets.UTF_8);

@@ -519,7 +519,7 @@
     </mojo>
     <mojo>
       <goal>list-exports</goal>
-      <description>Prints the StateGraph export index of every entry of the main compilation's compile classpath, without its own class output, that publishes META-INF/graphmaquina/exports.json: its location, the tool version that wrote it, its machines and its symbols, and each reason SG602 would refuse it when the project compiles. The generator reads the indexes in a JVM of its own. Binds to no phase and forks the default lifecycle up to compile first, so the modules of a reactor the project depends on have published their indexes. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Prints the StateGraph export index of every entry of the main compilation's compile classpath, without its own class output, that publishes META-INF/graphmaquina/exports.json: its location, the tool version that wrote it, its machines and its symbols, and each reason SG602 would refuse it when the project compiles. The generator reads the indexes in a JVM of its own. Binds to no phase and forks no lifecycle: it reads the dependencies Maven resolves and runs neither the generation nor the compilation, so it lists an index the generation would refuse. A module of the same reactor is read once it compiled earlier in the same run, as in mvn compile graphmaquina:list-exports. Does nothing in a project packaged as pom, when the default lifecycle runs no execution of maven-compiler-plugin's compile goal, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -527,7 +527,6 @@
       <aggregator>false</aggregator>
       <requiresOnline>false</requiresOnline>
       <inheritedByDefault>true</inheritedByDefault>
-      <executePhase>compile</executePhase>
       <implementation>io.github.graphmaquina.maven.ListExportsMojo</implementation>
       <language>java</language>
       <instantiationStrategy>per-lookup</instantiationStrategy>
