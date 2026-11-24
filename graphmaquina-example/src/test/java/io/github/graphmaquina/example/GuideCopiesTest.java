@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -28,7 +29,8 @@ import org.junit.jupiter.api.Test;
  * facades declare, and the tests that ask them. Every Java block of the automatic transitions page follows a link to a
  * source or a test of the onboarding or of the profile and appears verbatim in that file, with or without the file's
  * Javadoc comments, and so does every Java block of the choices page, after a link to a source or a test of the
- * shipment, among them its facade. A
+ * shipment, among them its facade, and of the pages on edge kinds and guard evidence, after a link to the loan; the
+ * dependency injection and persistence pages quote the loan's wiring and its derived state the same way. A
  * block may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing,
  * so it fails. The export of the shop's order machine that the inspection page shows is the order golden, verbatim.
  */
@@ -74,6 +76,17 @@ class GuideCopiesTest {
     private static final String CHOICES_PAGE = "choices.md";
     /** The shipment's facade, whose declaration of the choice the choices page quotes. */
     private static final String SHIPMENTS = "main/java/io/github/graphmaquina/example/shipment/Shipments.java";
+    /** A link to a source or a test of the loan, which the pages on edge kinds and guard evidence quote. */
+    private static final Pattern LOAN_LINK = Pattern.compile(
+            "\\]\\(\\.\\./graphmaquina-example/src/((?:main|test)" + EXAMPLE_PACKAGE + "loan/[^)]+\\.java)\\)");
+    /** Each page that quotes the loan, with the file of the loan it is about. */
+    private static final Map<String, String> LOAN_PAGES = Map.of(
+            "edge-kinds.md", "main/java/io/github/graphmaquina/example/loan/Loans.java",
+            "guard-evidence.md", "main/java/io/github/graphmaquina/example/loan/LoanGuards.java",
+            "dependency-injection.md", "main/java/io/github/graphmaquina/example/loan/LoanWiring.java",
+            "commit-and-persistence.md", "test/java/io/github/graphmaquina/example/loan/DerivedStateTest.java");
+    /** The pages whose every Java block quotes the loan. */
+    private static final Set<String> LOAN_ONLY_PAGES = Set.of("edge-kinds.md", "guard-evidence.md");
     private static final Pattern JAVADOC = Pattern.compile("\n[ \t]*/\\*\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\n(.*?)```", Pattern.DOTALL);
     /** The inspection page's export of the shop's order machine: the text block right after its introduction. */
@@ -199,6 +212,51 @@ class GuideCopiesTest {
         assertEquals(JAVA_BLOCK.matcher(page).results().count(), (long) quotes.size(),
                 "a Java block of the page follows no link to the shipment");
         assertEquals(List.of(), missing);
+    }
+
+    /**
+     * The pages written over the loan quote it as it is: every Java block of the edge kinds page and of the guard
+     * evidence page follows a link to a source or a test of the loan and appears verbatim in that file, with or without
+     * its Javadoc comments, and so does each block of the dependency injection page and of the persistence page that a
+     * link to the loan introduces. Each page quotes the file it is about.
+     */
+    @Test
+    void thePagesOnTheLoanQuoteItVerbatim() throws IOException {
+        List<String> missing = new ArrayList<>();
+        for (Map.Entry<String, String> page : LOAN_PAGES.entrySet()) {
+            missing.addAll(loanQuoteProblems(page.getKey(), page.getValue()));
+        }
+        assertEquals(List.of(), missing);
+    }
+
+    /**
+     * What is wrong with the loan quotes of {@code page}, which is about the loan's file {@code about}: each block
+     * that is not verbatim, no quote of {@code about}, and, on a page whose every Java block quotes the loan, a block
+     * that follows no link to it.
+     */
+    private static List<String> loanQuoteProblems(String page, String about) throws IOException {
+        String text = read(path("graphmaquina.docs", page));
+        List<TestQuote> quotes = new TestQuoteReader(LOAN_LINK).read(text);
+        List<String> missing = new ArrayList<>(unquoted(page, quotes));
+        if (quotes.stream().noneMatch((TestQuote quote) -> quote.source().equals(about))) {
+            missing.add("docs/" + page + " quotes nothing of " + about);
+        }
+        long blocks = JAVA_BLOCK.matcher(text).results().count();
+        if (LOAN_ONLY_PAGES.contains(page) && blocks != quotes.size()) {
+            missing.add("docs/" + page + " has a Java block that follows no link to the loan");
+        }
+        return missing;
+    }
+
+    /** Each of {@code quotes}, blocks of {@code page}, that is blank or not verbatim in the file it follows. */
+    private static List<String> unquoted(String page, List<TestQuote> quotes) throws IOException {
+        List<String> missing = new ArrayList<>();
+        for (TestQuote quote : quotes) {
+            if (quote.code().isBlank() || !quotes(read(exampleFile(quote.source())), quote.code())) {
+                missing.add("docs/" + page + ":" + quote.start() + " " + quote.source());
+            }
+        }
+        return missing;
     }
 
     @Test
