@@ -292,8 +292,10 @@ give its binding an exit for the new terminal state: until it declares one, that
 The Gradle task `listStateGraphExports`, or `list<SourceSet>StateGraphExports` for another source set, and the Maven
 goal `list-exports` print the export index of every entry of the compile classpath that publishes one, in classpath
 order: where it is, the tool version that wrote it, the machines it describes and its generated symbols, then a line
-for each reason `SG602` would refuse it when the consumer compiles. The Maven goal compiles the modules of the reactor
-first, as the export goals do. Each index prints these lines, in this order:
+for each reason `SG602` would refuse it when the consumer compiles. Neither runs the consumer's generation or
+compilation, so either lists an index that generation would refuse; the Maven goal reads the dependencies Maven
+resolves, so a module of the same reactor is read once it compiled earlier in the same run, as in
+`mvn compile graphmaquina:list-exports`. Each index prints these lines, in this order:
 
 - `graphmaquina export index: <classpath entry>`;
 - `  tool version: <the version that wrote the index>`;

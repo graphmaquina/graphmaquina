@@ -9,14 +9,14 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The guards of the loan's edges. The due-date guards read the instant of the call from {@code ctx.now()}, on the
- * clock the set was built with. The two reservation guards share one answer of the reservations service through
- * {@code ctx.memo}, so a check asks the service once, and both propagate {@link ReservationsUnavailable}, so the caller
- * receives the service's failure as itself.
+ * clock the set was built with. The two reservation guards share one answer of the reservations service for each loan
+ * through {@code ctx.memo}, so a check asks the service once, and both propagate {@link ReservationsUnavailable}, so
+ * the caller receives the service's failure as itself.
  */
 @RequiredArgsConstructor
 public final class LoanGuards {
 
-    /** The reservations of the loan's book, kept for the rest of the request once a guard read them. */
+    /** The reservations of the loan's book, kept for that loan for the rest of the request once a guard read them. */
     public static final MemoKey<ReservationSummary> RESERVATIONS = MemoKey.named("reservations");
 
     @NonNull

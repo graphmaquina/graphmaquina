@@ -48,8 +48,8 @@ Anything but an Error that the clock throws, and a null instant, refused with a 
 
 The extension gate has two guards that need the book's reservations: one refuses while a reader waits for the book, the
 other while a course holds it. Each could call the reservations service; `ctx.memo(key, supplier)` makes them share one
-answer. The first guard of the request that asks for the key computes the value with the supplier; every later guard of
-the request that asks gets the same value back. The
+answer. The first guard of the request that asks for the key about an entity computes the value with the supplier;
+every later guard of the request that asks about the same entity gets the same value back. The
 [loan's guards](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/loan/LoanGuards.java) declare the
 key once, as a constant:
 
@@ -66,6 +66,9 @@ private ReservationSummary summary(GuardContext<Loan, LoanStatus, LoanTransition
 - **One request.** A request is one call, an operation, an `execute`, a choice or an attempt, with the steps it cascades
   to and the checks its guards start, or one check. A choice check is one request for all its candidates, so evidence
   that several candidates share is read once, as [choices](choices.md) recommend. Two calls compute the value twice.
+- **One value per entity.** Each entity the request decides about keeps values of its own, told apart by machine and
+  identity as the engine tells entities apart: the steps of a `cascadeAll` over a collection, and a check a guard starts
+  for another entity, each compute their own, so a constant key, like the loan's, keeps evidence about the entity.
 - **Keys by reference.** Two `MemoKey` instances are two keys even when they share a name, which is for messages only.
 - **Failures keep nothing.** A supplier that throws is the guard throwing, and a supplier that answers null aborts the
   call, or fails the check, as a guard that returns null does; neither keeps a value.
@@ -103,10 +106,11 @@ public GuardResult noWaitingReader(GuardContext<Loan, LoanStatus, LoanTransition
 The DSL takes the same list as the third argument of `guard` and `asyncGuard`. When the guard of the root step throws an
 instance of a declared type, the call throws that very throwable instead of the abort, once its observers heard of the
 failure and its unit of work was discarded, and so does a check. This holds for the calls the application makes, an
-operation, `execute`, a choice and the attempt `advance(entity)` makes itself, and for checks. The attempts an automatic
-chain makes after a commit and watch reactions still never throw to the caller, and a guard of a step reached by a
-cascade still aborts the root, whose `guardFailure()` gives what that guard threw. A guard may not propagate a type that
-`failsOn` may not list either, such as `Exception`, `RuntimeException` or an `Error`: the build refuses it as `SG302`.
+operation, `execute`, a choice, `reevaluate` and the attempt `advance(entity)` makes itself, and for checks. The
+attempts an automatic chain makes after a commit and watch reactions still never throw to the caller, and a guard of a
+step reached by a cascade still aborts the root, whose `guardFailure()` gives what that guard threw. A guard may not
+propagate a type that `failsOn` may not list either, such as `Exception`, `RuntimeException` or an `Error`: the build
+refuses it as `SG302`.
 
 ## Move a check that does I/O into a guard
 

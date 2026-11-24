@@ -137,7 +137,7 @@ reads `<testRelease>`, `<testSource>` and `<testTarget>`, or their `maven.compil
 | `complete-test` | `test-compile` | the same for the test source set |
 | `export-dot` | none; forks the lifecycle up to `compile` first | writes the Graphviz DOT of every machine of the main compilation into `target/graphmaquina/main/dot`, as [Export from the command line](graph-inspection.md#export-from-the-command-line) describes |
 | `export-dot-test` | none; forks the lifecycle up to `test-compile` first | the same for the test compilation, into `target/graphmaquina/test/dot` |
-| `list-exports` | none; forks the lifecycle up to `compile` first | prints the export index of every entry of the main compilation's compile classpath that publishes one, and marks each one the compilation would refuse with `SG602`, as [see what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) shows |
+| `list-exports` | none; forks no lifecycle | prints the export index of every entry of the main compilation's compile classpath that publishes one, and marks each one the compilation would refuse with `SG602`, without generating or compiling; a module of the same reactor is read once it compiled earlier in the same run, as in `mvn compile graphmaquina:list-exports`, as [see what a dependency exports](cross-module-composition.md#see-what-a-dependency-exports) shows |
 
 The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for example
 `mvn graphmaquina:generate`.
