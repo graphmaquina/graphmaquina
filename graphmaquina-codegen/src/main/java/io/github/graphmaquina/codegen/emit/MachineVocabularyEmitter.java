@@ -180,11 +180,12 @@ final class MachineVocabularyEmitter {
     }
 
     private static void statePolicy(JavaSource source, String vocabulary, String machine, String state) {
-        describe(source, "Gives one or more states of {@link " + machine + "} the reason every identifier each of",
+        describe(source, "Gives the states it names of {@link " + machine + "} the reason every identifier each of",
             "them declares no edge for is refused with. A state named twice, in one policy or in two, is refused.");
         annotation(source, machine, "STATE_POLICY", TYPE_TARGET, Optional.of(vocabulary + ".StatePolicies"),
             "StatePolicy");
-        element(source, state + "[] state();", "the states whose refusals the policy words, at least one");
+        element(source, state + "[] state();",
+            "the states whose refusals the policy words; with none, it words nothing");
         element(source, "java.lang.String otherwise();",
             "the reason an identifier with no edge from one of those states is refused with");
         close(source);
