@@ -17,8 +17,9 @@ import org.junit.jupiter.api.Test;
  * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
  * listings of a host's members, which visit every member, do not multiply with the references to it. A round is
  * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it, the
- * values of an edge are read once, however many of them its reader looks up, and the members of an entity are listed
- * as many times however many accessor names the conventions probe on it.
+ * values of an edge are read once, however many of them its reader looks up, the members of an entity are listed as
+ * many times however many accessor names the conventions probe on it, and the supertypes of a host are walked as many
+ * times however many members it exports.
  */
 class ProcessorScaleTest {
 
@@ -97,6 +98,23 @@ class ProcessorScaleTest {
 
         assertEquals(probingOneWriterName, probingTwoWriterNames,
                 "listings of the members of scale.E0 written by setStatus(x), then by status(x)");
+    }
+
+    /**
+     * The supertypes of a host are walked once per round, however many of its members are checked against the
+     * contracts they override: each walk asks javac for the host's own direct supertypes first.
+     */
+    @Test
+    void walksTheSupertypesOfAHostAsManyTimesWhateverTheNumberOfItsMembers() {
+        int few = supertypeQueries(project(1, 20));
+        int many = supertypeQueries(project(1, 80));
+
+        assertEquals(few, many, "queries of the direct supertypes of scale.H0 with 20 exported actions, then 80");
+    }
+
+    private static int supertypeQueries(Map<String, String> sources) {
+        scans(sources);
+        return CountingProcessor.SUPERTYPE_QUERIES.getOrDefault("scale.H0", 0);
     }
 
     private static int listings(Map<String, String> sources) {
