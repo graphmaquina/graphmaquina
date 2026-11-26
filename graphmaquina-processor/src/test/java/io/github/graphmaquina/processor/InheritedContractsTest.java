@@ -88,10 +88,11 @@ class InheritedContractsTest {
     }
 
     /**
-     * {@code SubHooks.notified} overrides three contracts of other roles: the one of {@code RootHooks}, the superclass
-     * of its superclass, the one of {@code Right}, an interface of its superclass, and the one of {@code Notifying},
-     * which its own interface extends. Each marked declaration is checked on its own, so the ones whose signature
-     * does not suit their role are reported too.
+     * {@code SubHooks.notified} overrides four contracts of other roles: the one of {@code Left}, its own interface,
+     * before the deeper ones, though its superclass comes first; then the one of {@code RootHooks}, the superclass of
+     * its superclass, the one of {@code Right}, an interface of its superclass, and the one of {@code Notifying}, which
+     * {@code Left} extends. Each marked declaration is checked on its own, so the ones whose signature does not suit
+     * their role, or whose own contract they contradict, are reported too.
      */
     @Test
     void reportsTheContractsAnOverrideContradictsNearestSupertypeFirst() {
@@ -99,6 +100,11 @@ class InheritedContractsTest {
 
         assertFalse(result.success(), result.describe());
         assertEquals(List.of(
+                "ERROR Left.java:4:15 [" + DiagnosticCode.SG604 + "] fx.Left.notified does not have the signature of"
+                        + " a lookup: expected Optional of the parent or owner entity from the child or peer entity"
+                        + " alone",
+                "ERROR Left.java:4:15 [" + DiagnosticCode.SG604 + "] fx.Left.notified is exported as a lookup, but it"
+                        + " overrides fx.Notifying.notified, whose contract is a condition",
                 "ERROR Notifying.java:4:5 [" + DiagnosticCode.SG604 + "] fx.Notifying.notified does not have the"
                         + " signature of a condition: expected boolean from the entity, a supertype of Collection and a"
                         + " PeerView",
@@ -108,6 +114,8 @@ class InheritedContractsTest {
                 "ERROR SubHooks.java:4:15 [" + DiagnosticCode.SG604 + "] fx.SubHooks.notified does not have the"
                         + " signature of a guard: expected GuardResult or CompletionStage<GuardResult> from one"
                         + " GuardContext",
+                "ERROR SubHooks.java:4:15 [" + DiagnosticCode.SG604 + "] fx.SubHooks.notified is exported as a guard,"
+                        + " but it overrides fx.Left.notified, whose contract is a lookup",
                 "ERROR SubHooks.java:4:15 [" + DiagnosticCode.SG604 + "] fx.SubHooks.notified is exported as a guard,"
                         + " but it overrides fx.RootHooks.notified, whose contract is an action",
                 "ERROR SubHooks.java:4:15 [" + DiagnosticCode.SG604 + "] fx.SubHooks.notified is exported as a guard,"
@@ -145,7 +153,13 @@ class InheritedContractsTest {
                     @GraphCondition default void notified(Doc doc) { }
                 }
                 """);
-        sources.put("fx.Left", "package fx;\npublic interface Left extends Notifying { }\n");
+        sources.put("fx.Left", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphLookup;
+                public interface Left extends Notifying {
+                    @Override @GraphLookup default void notified(Doc doc) { }
+                }
+                """);
         sources.put("fx.SubHooks", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphGuard;
