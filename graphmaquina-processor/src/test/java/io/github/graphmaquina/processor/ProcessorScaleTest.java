@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
  * behind {@link CountingProcessor}, and requires the count of an operation whose cost grows with the whole compilation
  * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
  * listings of a host's members, which visit every member, do not multiply with the references to it. A round is
- * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it.
+ * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it, and
+ * the values of an edge are read once, however many of them its reader looks up.
  */
 class ProcessorScaleTest {
 
@@ -58,6 +59,25 @@ class ProcessorScaleTest {
         int many = listings(project(1, 80));
 
         assertEquals(few, many, "listings of the members of scale.H0 with 20 edges that run its actions, then 80");
+    }
+
+    /**
+     * The values of each edge are read from javac once, defaults included, though reading an edge looks up each of its
+     * elements, some of them twice: every edge of the project is declared on its facade, so only the reader of the
+     * edges asks for them.
+     */
+    @Test
+    void readsTheValuesOfEachEdgeOnce() {
+        scans(project(1, 20));
+
+        Map<String, Integer> edges = new LinkedHashMap<>();
+        CountingProcessor.VALUE_READINGS.forEach((String mirror, Integer readings) -> {
+            if (mirror.startsWith("@scale.M0Graph.Transition(")) {
+                edges.put(mirror, readings);
+            }
+        });
+        assertEquals(20, edges.size(), "the edges whose values were read: " + edges.keySet());
+        edges.forEach((String mirror, Integer readings) -> assertEquals(1, readings, "the readings of " + mirror));
     }
 
     private static int listings(Map<String, String> sources) {

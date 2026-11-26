@@ -1,0 +1,248 @@
+package fx;
+
+import io.github.graphmaquina.api.Machine;
+import java.time.Duration;
+import io.github.graphmaquina.api.MachineObserver;
+import io.github.graphmaquina.runtime.MachineRegistry;
+import io.github.graphmaquina.runtime.StateMachines;
+import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.time.InstantSource;
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+
+/** Generated set of {@link Library}: builds the registry once and hands out the facades. Do not edit. */
+@GeneratedCompanion
+@SuppressWarnings({"deprecation", "removal", "rawtypes"})
+public final class LibraryRuntime implements Library {
+
+    private final MachineRegistry machineRegistry;
+    private final Docs docs;
+    private final Pages pages;
+
+    private LibraryRuntime(MachineRegistry machineRegistry) {
+        this.machineRegistry = machineRegistry;
+        this.docs = new DocsRuntime(machineRegistry.of(DocsRuntime.KEY));
+        this.pages = new PagesRuntime(machineRegistry.of(PagesRuntime.KEY));
+    }
+
+    /**
+     * Starts a builder of the set over every class with instance members the machines use, after the
+     * timeout shared by the asynchronous machines.
+     *
+     * @param asyncTimeout the timeout shared by the asynchronous machines
+     * @param docActions the {@code fx.DocActions} whose instance members the machines call
+     * @return a new builder of the set
+     */
+    public static Builder builder(Duration asyncTimeout, DocActions docActions) {
+        return new Builder(asyncTimeout, docActions);
+    }
+
+    /**
+     * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and hands
+     * every setting to as soon as it is given: what they refuse is refused where it is given, and
+     * observers add up in the order they are given. Single-use and not thread-safe: once build()
+     * succeeded, nothing is accepted.
+     */
+    public static final class Builder {
+
+        private final MachineRegistry.Builder registry = MachineRegistry.builder();
+        private final StateMachines.Builder<Doc, DocStatus, DocTransition> docsBuilder;
+        private final StateMachines.Builder<Page, PageStatus, PageTransition> pagesBuilder;
+        private boolean used;
+
+        private Builder(Duration asyncTimeout, DocActions docActions) {
+            Objects.requireNonNull(asyncTimeout, "asyncTimeout");
+            Objects.requireNonNull(docActions, "docActions");
+            this.docsBuilder = StateMachines.from(DocsRuntime.graph(docActions))
+                    .state((Doc entity) -> entity.getStatus(), (Doc entity, DocStatus state) -> entity.setStatus(state))
+                    .identity((Doc entity) -> entity.getId())
+                    .as(Docs.class);
+            docsBuilder.asyncTimeout(asyncTimeout);
+            registry.add(docsBuilder);
+            this.pagesBuilder = StateMachines.from(PagesRuntime.graph())
+                    .state((Page entity) -> entity.status(), (Page entity, PageStatus state) -> entity.status(state))
+                    .identity((Page entity) -> entity.id())
+                    .as(Pages.class);
+            registry.add(pagesBuilder);
+        }
+
+        /**
+         * Overrides the shared timeout for one asynchronous machine: one whose own graph has an asynchronous
+         * edge, or whose calls can run one implicitly, such as the exit of a sub-machine.
+         *
+         * @param machine the facade class of an asynchronous machine of the set
+         * @param timeout the timeout of that machine
+         * @return this builder
+         */
+        public Builder asyncTimeout(Class<? extends Machine<?, ?, ?>> machine, Duration timeout) {
+            checkUnused();
+            Objects.requireNonNull(machine, "machine");
+            Objects.requireNonNull(timeout, "timeout");
+            if (machine.equals(Docs.class)) {
+                docsBuilder.asyncTimeout(timeout);
+                return this;
+            }
+            throw new IllegalArgumentException(machine.getSimpleName() + " is not an asynchronous machine of Library");
+        }
+
+        /**
+         * Hands the given executor to the StateMachines.Builder of every machine of the set, whose calls
+         * submitted through async(...) then run on it, as StateMachines.Builder.asyncExecutor(Executor)
+         * describes.
+         *
+         * @param executor the executor of those calls
+         * @return this builder
+         */
+        public Builder asyncExecutor(Executor executor) {
+            checkUnused();
+            Objects.requireNonNull(executor, "executor");
+            docsBuilder.asyncExecutor(executor);
+            pagesBuilder.asyncExecutor(executor);
+            return this;
+        }
+
+        /**
+         * Records the trail of every call through the set on the set's clock, the one clock(InstantSource)
+         * gives or InstantSource.system(), by calling recordTrail() on the StateMachines.Builder of every
+         * machine of the set. The root machine of a call decides for the whole call, so every root call made
+         * through the set records its trail, the peers it cascades to and the exits of sub-machines its steps
+         * run included, and so does each watch reaction, a call of its own that its own machine, one of the
+         * set, decides. The flow such a call hands out, in its outcome or in its failure, lists in trail()
+         * each hop and each sub-machine start the call took, each at the instant that clock read right after
+         * the call took it, then the rejection or the failure that ended the call, at the instant it ended. A
+         * call that records its trail creates its flow when its step starts, so it hands out its flow, with
+         * the root entity and the trail, even when none of its steps or hooks wrote to it; an ignored outcome
+         * hands out the empty flow: a reevaluation that selects no edge and an advance whose state has no
+         * automatic edge run no step, and an advance whose automatic edges were all refused, or a choice whose
+         * candidates were all refused, wrote nothing. The clock is read on the thread running the call, once
+         * per entry the call appends, an entry a rollback later drops included, so a clock that advances on
+         * each read leaves a gap for each dropped entry. Anything but an Error that the clock throws, a
+         * checked exception included, fails the call as what an identity function throws does: the entry it
+         * could not mark is left out of the trail. When it throws while the call reads the instant of the
+         * Failed entry that ends a failed call, whatever failed the call, the call's CallFailedException
+         * carries what it threw as suppressed, unless it threw that very exception, and its trail ends without
+         * that entry; an InterruptedException suppressed there interrupts the thread again, and an Error
+         * propagates. A clock that answers null counts as one that throws a NullPointerException. A set built
+         * without recordTrail keeps no mark.
+         *
+         * @return this builder
+         */
+        public Builder recordTrail() {
+            checkUnused();
+            docsBuilder.recordTrail();
+            pagesBuilder.recordTrail();
+            return this;
+        }
+
+        /**
+         * Sets the clock of every machine of the set, by handing the given clock to the StateMachines.Builder
+         * of every machine of the set; InstantSource.system() by default. The now() of a guard's or an
+         * action's context reads it once per request: the first time a context of a root call or of a check
+         * asks, and every later now() of the same call answers that same instant, in the steps it cascades to,
+         * the exits its steps run and the checks its guards start. A check of its own, a choice check for all
+         * its candidates, a watch reaction and each automatic attempt read it again, and a call that never
+         * asks reads no clock. Anything but an Error that the clock throws, and a null instant, refused with a
+         * NullPointerException, is thrown by now() to the guard or the action that asked. A set that records
+         * its trail reads its trail on this clock too. A test can pass a clock it controls, such as a
+         * java.time.Clock.
+         *
+         * @param clock the clock of every machine of the set
+         * @return this builder
+         */
+        public Builder clock(InstantSource clock) {
+            checkUnused();
+            Objects.requireNonNull(clock, "clock");
+            docsBuilder.clock(clock);
+            pagesBuilder.clock(clock);
+            return this;
+        }
+
+        /**
+         * Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at its
+         * own depth: one level below the step that ended the child or, when the child stood in a terminal
+         * state while its parent was still running the step that entered the bound state, one level below that
+         * step. The default is 10, and a value below 1 is refused.
+         *
+         * @param depth the deepest level a cascade may reach, at least 1
+         * @return this builder
+         */
+        public Builder maxCascadeDepth(int depth) {
+            checkUnused();
+            registry.maxCascadeDepth(depth);
+            return this;
+        }
+
+        /**
+         * Bounds how many watch reactions may follow one another; the default is 10, and a value below 1 is
+         * refused. A call that an after-commit hook starts is a new root, which this bound never counts: the
+         * watch reactions it triggers begin a chain of their own, so hooks that keep starting calls recur
+         * until the stack of the thread overflows, as MachineRegistry says.
+         *
+         * @param chain how many watch reactions may follow one another, at least 1
+         * @return this builder
+         */
+        public Builder maxWatchChain(int chain) {
+            checkUnused();
+            registry.maxWatchChain(chain);
+            return this;
+        }
+
+        /**
+         * Bounds how many automatic attempts that commit something may follow one another on one path of
+         * continuations from a call of the application; the default is 10, and a value below 1 is refused. The
+         * attempt past the bound that admits a candidate aborts before its action, writing nothing, with an
+         * AutomaticChainExceededException. A call that an after-commit hook starts is a new root, which this
+         * bound never counts.
+         *
+         * @param chain how many automatic attempts may follow one another, at least 1
+         * @return this builder
+         */
+        public Builder maxAutomaticChain(int chain) {
+            checkUnused();
+            registry.maxAutomaticChain(chain);
+            return this;
+        }
+
+        /**
+         * Adds an observer of every call of the set; observers add up and are notified in the order they are
+         * given.
+         *
+         * @param observer the observer to add
+         * @return this builder
+         */
+        public Builder observer(MachineObserver observer) {
+            checkUnused();
+            registry.observer(observer);
+            return this;
+        }
+
+        /**
+         * Builds the registry of the machines and the set over it, which hands out their facades. Once it
+         * succeeds, the builder accepts nothing more.
+         *
+         * @return the set
+         */
+        public Library build() {
+            checkUnused();
+            LibraryRuntime built = new LibraryRuntime(registry.build());
+            used = true;
+            return built;
+        }
+
+        /** Refuses any use once build() has succeeded: a built set is neither rebuilt nor reconfigured. */
+        private void checkUnused() {
+            if (used) {
+                throw new IllegalStateException("this LibraryRuntime.Builder was already used");
+            }
+        }
+    }
+
+    @Override
+    public Docs docs() { return docs; }
+
+    @Override
+    public Pages pages() { return pages; }
+
+    @Override
+    public void close() { machineRegistry.close(); }
+}
