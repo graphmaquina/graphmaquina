@@ -307,7 +307,8 @@ The trail follows the rollbacks of the call:
 
 A step reads `ctx.flow().trail()` and a hook `commit.flow().trail()`, under the thread and lifetime checks of the
 rest of the flow: a step reads what the call took so far, and a hook every hop and start the call committed. Each read
-builds a new list, which does not follow later entries.
+of a step builds a new list, which does not follow later entries. The trail of a committed call no longer changes, so
+the first read of one of its hooks builds the list, and every later read of its hooks gets that same list.
 
 A call that records its trail creates its flow when its step starts, so it hands out a flow with the root entity and
 the trail even when no step or hook wrote to it, a rejected call included. Two such outcomes are equal only when their
