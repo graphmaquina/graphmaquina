@@ -150,7 +150,8 @@ final class FlowHandle implements FlowContext {
      *       no step of the call wrote and the call does not record its trail. A hook that never writes costs this
      *       object alone.</li>
      *   <li>Its trail is the call's whole trail: every hop and start the call committed, the call's log being
-     *       final once it committed.</li>
+     *       final once it committed. The first read of a hook of the call builds it, and every later read of any hook
+     *       of the call gets the same unmodifiable list, as {@link UnitOfWork#committedTrail()} says.</li>
      *   <li>A write applies at once, so the later hooks of the call read it. It keeps the size of the committed log,
      *       and no rollback follows the commit, so nothing undoes it.</li>
      *   <li>A call that logs at TRACE logs each write with the hook's name and without a depth, the value only for a
@@ -224,7 +225,7 @@ final class FlowHandle implements FlowContext {
 
         @Override
         public List<FlowEntry> trail() {
-            return check().trail();
+            return check().committedTrail();
         }
 
         @Override

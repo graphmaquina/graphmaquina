@@ -91,6 +91,11 @@ final class UnitOfWork {
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
     /**
+     * The trail of the committed call, as {@link #committedTrail()} hands it out; empty until a post-commit hook of
+     * the call first reads it.
+     */
+    private Optional<List<FlowEntry>> committedTrail = Optional.empty();
+    /**
      * The request this unit of work belongs to, which its root call or check sets before its step runs; empty only
      * for the unit of work of no call, which no live context reaches.
      */
@@ -575,6 +580,19 @@ final class UnitOfWork {
             return List.of();
         }
         return Collections.unmodifiableList(trailOf(records(), starts()));
+    }
+
+    /**
+     * The trail of the call once it committed, as {@link #trail()} builds it, for its post-commit hooks: built by the
+     * first read and handed to every later one, the same unmodifiable list. The log of a committed call is final, no
+     * rollback follows the commit, a hook's write to the flow adds no entry and no mark, and the phases after the
+     * commit refuse a cascade, so a later read would build an equal list. Only for a call that committed.
+     */
+    List<FlowEntry> committedTrail() {
+        if (committedTrail.isEmpty()) {
+            committedTrail = Optional.of(trail());
+        }
+        return committedTrail.get();
     }
 
     /**
