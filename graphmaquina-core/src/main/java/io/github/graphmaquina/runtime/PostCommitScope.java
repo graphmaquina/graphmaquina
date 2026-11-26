@@ -48,11 +48,13 @@ final class PostCommitScope {
     private final List<EntityRef> moved = new ArrayList<>();
     /**
      * The entities of {@link #moved} before the position {@link #indexed}, as the commit log compares them, but those
-     * whose identity threw as they were indexed, which {@link #unindexed} holds instead.
+     * whose identity threw as they were indexed, which {@link #unindexed} holds instead; created, with
+     * {@link #unindexed}, by the first {@link #movedBelow} that finds a reported entity to index, so that a scope no
+     * nested commit reported to allocates neither.
      */
-    private final Set<EntityRef> index = new HashSet<>();
-    /** The entities of {@link #moved} whose identity threw as they were indexed. */
-    private final List<EntityRef> unindexed = new ArrayList<>();
+    private Optional<Set<EntityRef>> index = Optional.empty();
+    /** The entities of {@link #moved} whose identity threw as they were indexed; created with {@link #index}. */
+    private Optional<List<EntityRef>> unindexed = Optional.empty();
     private int indexed;
     /**
      * Whether the scope is closed: the first statement of the finally that closes it stores true here, before it calls
@@ -106,19 +108,26 @@ final class PostCommitScope {
      * interrupts the thread again; an Error propagates.
      */
     boolean movedBelow(EntityRef ref) {
+        if (moved.isEmpty()) {
+            return false;
+        }
+        if (index.isEmpty()) {
+            index = Optional.of(new HashSet<>());
+            unindexed = Optional.of(new ArrayList<>());
+        }
         while (indexed < moved.size()) {
             EntityRef entry = moved.get(indexed);
             try {
-                index.add(entry);
+                index.get().add(entry);
             } catch (Error fatal) {
                 throw fatal;
             } catch (Throwable unindexable) {
                 Interrupts.keep(unindexable);
-                unindexed.add(entry);
+                unindexed.get().add(entry);
             }
             indexed++;
         }
-        return index.contains(ref) || unindexed.contains(ref);
+        return index.get().contains(ref) || unindexed.get().contains(ref);
     }
 
     /** Each entity a nested commit reported, in order, repeats included. */
