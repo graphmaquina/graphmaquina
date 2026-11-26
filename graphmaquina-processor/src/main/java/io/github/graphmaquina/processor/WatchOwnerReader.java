@@ -49,7 +49,7 @@ final class WatchOwnerReader {
             return Optional.empty();
         }
         String name = owner ? OWNER : OWNER_LOOKUP;
-        Optional<AnnotationValue> value = TypedValues.optional(watch, name, annotations,
+        Optional<AnnotationValue> value = TypedValues.optional(annotations.values(watch), name,
                 DiagnosticAnchor.of(facade, watch, annotations.value(watch, name)), diagnostics);
         Optional<TypeMirror> symbol = value.flatMap(TypedValues::symbol);
         if (symbol.isEmpty()) {
