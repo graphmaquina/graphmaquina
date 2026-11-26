@@ -45,6 +45,11 @@ import lombok.RequiredArgsConstructor;
 final class UnitOfWork {
 
     private static final ActionRecord[] NO_ACTIONS = new ActionRecord[0];
+    /**
+     * Up to how many entries {@link #holds} scans the whole log rather than reading {@link #held}: comparing the
+     * machine keys of a few entries costs less than indexing them.
+     */
+    static final int SCANNED = 32;
 
     private final List<LogEntry> log = new ArrayList<>();
     /**
@@ -52,6 +57,16 @@ final class UnitOfWork {
      * pending state back must not pay for the index.
      */
     private Optional<PendingIndex> pending = Optional.empty();
+    /**
+     * The positions in the log of the entries of each machine, in log order, for {@link #holds}: the first
+     * {@link #heldCovered} entries of the log are in it. Created by the first {@code holds} that finds the log longer
+     * than {@link #SCANNED} entries, extended by the later ones to the entries appended since, and dropped by every
+     * rollback, so that the next {@code holds} builds it again from the log that remains. Keyed by machine key, so
+     * building it runs no identity code.
+     */
+    private Optional<Map<MachineKey<?, ?, ?>, Positions>> held = Optional.empty();
+    /** How many entries of the log, from the first, {@link #held} holds the positions of. */
+    private int heldCovered;
     /**
      * The journal, in its first journalSize slots, grown as an ArrayList grows. An entry is only appended, and its
      * status changes once, from RUNNING. The slots below journalShared, the size of the latest snapshot of this array,
@@ -220,6 +235,7 @@ final class UnitOfWork {
      * context would add an entry in the middle of the undo, which would then drop it in place of the one it undid.
      */
     void rollbackTo(int savepoint) {
+        held = Optional.empty();
         if (savepoint == 0 && pending.isEmpty()) {
             log.clear();
             rollbackFlow(savepoint);
@@ -431,7 +447,10 @@ final class UnitOfWork {
      * Whether this unit of work holds {@code ref}, for {@link Reentrancy}: an entity in flight, the root's own step,
      * a cascade's or an exit's, or one with an entry in the log, a hop or a start, which gives it a pending state. An
      * entity only registered is not held. Only the equals of {@code ref}'s identity runs, never another identity's
-     * equals or hashCode, and the pending index is neither built nor read.
+     * equals or hashCode, and the pending index is neither built nor read. A log of up to {@link #SCANNED} entries is
+     * scanned whole; a longer one only among the entries of {@code ref}'s machine, in log order, which {@link #held}
+     * finds. An entry of another machine differs from {@code ref} by its key before any identity's equals could run,
+     * so either way the equals of {@code ref}'s identity runs as often, and on the same identities.
      */
     boolean holds(EntityRef ref) {
         for (InFlight flight : inFlight) {
@@ -439,12 +458,38 @@ final class UnitOfWork {
                 return true;
             }
         }
-        for (int i = 0; i < log.size(); i++) {
-            if (ref.equals(log.get(i).ref())) {
+        if (log.size() <= SCANNED) {
+            for (int i = 0; i < log.size(); i++) {
+                if (ref.equals(log.get(i).ref())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        Positions positions = heldIndex().get(ref.key());
+        if (positions == null) {
+            return false;
+        }
+        for (int i = 0; i < positions.size; i++) {
+            if (ref.equals(log.get(positions.at[i]).ref())) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** {@link #held}, created if absent and extended to every entry of the log. */
+    private Map<MachineKey<?, ?, ?>, Positions> heldIndex() {
+        if (held.isEmpty()) {
+            held = Optional.of(new HashMap<>());
+            heldCovered = 0;
+        }
+        Map<MachineKey<?, ?, ?>, Positions> index = held.get();
+        for (; heldCovered < log.size(); heldCovered++) {
+            index.computeIfAbsent(log.get(heldCovered).ref().key(), (MachineKey<?, ?, ?> key) -> new Positions())
+                    .add(heldCovered);
+        }
+        return index;
     }
 
     List<String> path() {
@@ -620,6 +665,20 @@ final class UnitOfWork {
             }
         }
         return entries;
+    }
+
+    /** Positions in the log, in ascending order, in the first {@code size} slots of an array grown as needed. */
+    private static final class Positions {
+
+        int[] at = new int[4];
+        int size;
+
+        void add(int position) {
+            if (size == at.length) {
+                at = Arrays.copyOf(at, size * 2);
+            }
+            at[size++] = position;
+        }
     }
 
     /**
