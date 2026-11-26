@@ -16,8 +16,9 @@ import org.junit.jupiter.api.Test;
  * behind {@link CountingProcessor}, and requires the count of an operation whose cost grows with the whole compilation
  * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
  * listings of a host's members, which visit every member, do not multiply with the references to it. A round is
- * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it, and
- * the values of an edge are read once, however many of them its reader looks up.
+ * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it, the
+ * values of an edge are read once, however many of them its reader looks up, and the members of an entity are listed
+ * as many times however many accessor names the conventions probe on it.
  */
 class ProcessorScaleTest {
 
@@ -80,12 +81,34 @@ class ProcessorScaleTest {
         edges.forEach((String mirror, Integer readings) -> assertEquals(1, readings, "the readings of " + mirror));
     }
 
+    /**
+     * The conventions probe three reader names on the entity, then a writer name for each alternative they try: the
+     * {@code setP} one alone when the entity has it, both when only {@code p(x)} writes the state. Either way the
+     * entity's members are listed as many times, since each name is looked up among the members the round listed.
+     */
+    @Test
+    void listsTheMembersOfAnEntityAsManyTimesWhateverTheNamesTheConventionsProbe() {
+        Map<String, String> fluent = project(1, STATES - 1);
+        Map<String, String> setter = project(1, STATES - 1);
+        setter.put("scale.E0", setter.get("scale.E0").replace("public void status(", "public void setStatus("));
+
+        int probingOneWriterName = listings(setter, "scale.E0");
+        int probingTwoWriterNames = listings(fluent, "scale.E0");
+
+        assertEquals(probingOneWriterName, probingTwoWriterNames,
+                "listings of the members of scale.E0 written by setStatus(x), then by status(x)");
+    }
+
     private static int listings(Map<String, String> sources) {
+        return listings(sources, "scale.H0");
+    }
+
+    private static int listings(Map<String, String> sources, String type) {
         CountingProcessor.reset();
         Compilation.Result result = Compilation.compileWithoutLifecycle(Compilation.prepare(sources),
                 List.of("-processor", CountingProcessor.class.getName()));
         assertTrue(result.success(), result.describe());
-        return CountingProcessor.MEMBER_LISTINGS.getOrDefault("scale.H0", 0);
+        return CountingProcessor.MEMBER_LISTINGS.getOrDefault(type, 0);
     }
 
     private static List<Integer> scans(Map<String, String> sources) {

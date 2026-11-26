@@ -2,24 +2,17 @@ package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
  * What the processor makes of every value an edge declares, pinned whole: the companions it generates from them, byte
- * for byte, and the problems it reports about them, in their order and at the value each one is anchored at. The
- * companions are kept under {@code characterization/} in the test resources, one directory per scenario.
+ * for byte, as {@link PinnedCompanions} keeps them, and the problems it reports about them, in their order and at
+ * the value each one is anchored at.
  */
 class TransitionValuesTest {
 
@@ -78,13 +71,13 @@ class TransitionValuesTest {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
 
-        assertGeneratedAsPinned("watching", result);
+        PinnedCompanions.assertGenerated("watching", result);
     }
 
     /** The example publication: recovery rules, failsOn of the edge and of each rule, and a fallback route. */
     @Test
     void generatesTheRecoveriesOfAnEdgeAsPinned() throws IOException {
-        assertGeneratedAsPinned("recoveries", Compilation.compileTyped(RecoveryFixtures.example()));
+        PinnedCompanions.assertGenerated("recoveries", Compilation.compileTyped(RecoveryFixtures.example()));
     }
 
     /** Automatic edges, a continuing failure route, a gate, an external edge and the hook the machine defaults to. */
@@ -95,7 +88,7 @@ class TransitionValuesTest {
         sources.put("fx.DocTransition",
                 "package fx;\npublic enum DocTransition { SUBMIT, PUBLISH, RETURN, FAST, PEEK, RETIRE }\n");
 
-        assertGeneratedAsPinned("kinds", Compilation.compileTyped(sources));
+        PinnedCompanions.assertGenerated("kinds", Compilation.compileTyped(sources));
     }
 
     /**
@@ -140,36 +133,5 @@ class TransitionValuesTest {
                 "ERROR Docs.java:35:44 [" + DiagnosticCode.SG304 + "] failure kind fx.Busy is declared by more than one"
                         + " recover"),
                 result.located(), result.describe());
-    }
-
-    /**
-     * The processor generated, for {@code scenario}, the very companions pinned under its directory: the same files,
-     * each with the same text.
-     */
-    private static void assertGeneratedAsPinned(String scenario, Compilation.Result result) throws IOException {
-        assertTrue(result.success(), result.describe());
-        List<Path> generated;
-        try (Stream<Path> walk = Files.walk(result.output())) {
-            generated = walk.filter(Files::isRegularFile).sorted().toList();
-        }
-        List<String> names = generated.stream().map((Path file) -> file.getFileName().toString()).toList();
-        assertEquals(pinnedNames(scenario), names, "the companions generated for " + scenario);
-        for (Path file : generated) {
-            assertEquals(pinned(scenario, file.getFileName().toString()),
-                    Files.readString(file, StandardCharsets.UTF_8), "the companion " + file.getFileName());
-        }
-    }
-
-    /** The names of the companions pinned for {@code scenario}, as listed in its {@code companions.txt}. */
-    private static List<String> pinnedNames(String scenario) throws IOException {
-        return pinned(scenario, "companions.txt").lines().toList();
-    }
-
-    private static String pinned(String scenario, String name) throws IOException {
-        String resource = "/characterization/" + scenario + "/" + name + (name.endsWith(".txt") ? "" : ".txt");
-        try (InputStream in = TransitionValuesTest.class.getResourceAsStream(resource)) {
-            assertNotNull(in, "nothing is pinned at " + resource);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 }

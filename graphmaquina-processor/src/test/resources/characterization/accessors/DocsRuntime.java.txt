@@ -1,0 +1,129 @@
+package fx;
+
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.GraphBuilder;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+import io.github.graphmaquina.api.Eligibility;
+import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
+
+/** Generated companion of {@link Docs}: builds its graph and implements its facade. Do not edit. */
+@GeneratedCompanion
+@SuppressWarnings({"deprecation", "removal", "rawtypes"})
+public final class DocsRuntime implements Docs {
+
+    /** The key of the machine: its entity, state and transition classes. */
+    public static final MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class, DocStatus.class, DocTransition.class);
+
+    private final StateMachine<Doc, DocStatus, DocTransition> stateMachine;
+
+    /**
+     * Implements the facade over the given state machine, which every method of it calls.
+     *
+     * @param stateMachine the state machine of the facade
+     */
+    public DocsRuntime(StateMachine<Doc, DocStatus, DocTransition> stateMachine) {
+        this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
+    }
+
+    /**
+     * The definition, built from the annotations of {@link Docs}. One parameter per class with instance
+     * members.
+     *
+     * @param docActions the {@code fx.DocActions} whose instance members the graph calls
+     * @return the definition
+     */
+    public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions) {
+        Objects.requireNonNull(docActions, "docActions");
+        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(KEY);
+        graph = graph.initial(DocStatus.DRAFT);
+        graph = graph.terminal(DocStatus.PUBLISHED);
+        graph = graph.statePolicy(DocStatus.DRAFT, "publish before finishing");
+        graph = graph.transition(DocTransition.PUBLISH, DocStatus.DRAFT, DocStatus.PUBLISHED).action("publish", (context) -> docActions.publish(context)).endTransition();
+        return graph.build();
+    }
+
+    /**
+     * The definition as the annotations of {@link Docs} declare it, with no collaborator bound, for
+     * inspection, structural tests and diagrams. An action, guard, hook or lookup that calls an instance
+     * member of a class throws {@code IllegalStateException} when it runs; a static member, a property
+     * read and a built-in watch condition run as in {@code graph(...)}. Build machines from {@code
+     * graph(...)}.
+     *
+     * @return the definition, with no collaborator bound
+     */
+    public static GraphDefinition<Doc, DocStatus, DocTransition> structure() {
+        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(KEY);
+        graph = graph.initial(DocStatus.DRAFT);
+        graph = graph.terminal(DocStatus.PUBLISHED);
+        graph = graph.statePolicy(DocStatus.DRAFT, "publish before finishing");
+        graph = graph.transition(DocTransition.PUBLISH, DocStatus.DRAFT, DocStatus.PUBLISHED).action("publish", (context) -> UnboundCollaborator.<DocActions>of("fx.DocActions", "fx.DocsRuntime").publish(context)).endTransition();
+        return graph.build();
+    }
+
+    @Override
+    public Outcome<Doc, DocStatus, DocTransition> publish(Doc doc) {
+        Objects.requireNonNull(doc, "doc");
+        return stateMachine.execute(doc, DocTransition.PUBLISH);
+    }
+
+    /**
+     * Runs the operation without input that {@link Docs} declares for {@code transition}, as calling it
+     * does. It refuses a null argument with a {@code NullPointerException} that names the parameter, and
+     * any other identifier with an {@code IllegalArgumentException}, before anything runs.
+     *
+     * @param entity the entity
+     * @param transition the identifier
+     * @return the outcome of the operation
+     */
+    @Override
+    public Outcome<Doc, DocStatus, DocTransition> execute(Doc entity, DocTransition transition) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        return switch (transition) {
+            case PUBLISH -> publish(entity);
+            default -> throw new IllegalArgumentException(
+                    transition.name() + " has no operation without input on Docs");
+        };
+    }
+
+    /**
+     * Runs the check without input that {@link Docs} declares for {@code transition}, as calling it does:
+     * it writes no state, runs no action and tells no observer. It refuses a null argument with a {@code
+     * NullPointerException} that names the parameter, and any other identifier with an {@code
+     * IllegalArgumentException}, before anything runs.
+     *
+     * @param entity the entity
+     * @param transition the identifier
+     * @return the answer of the check
+     */
+    @Override
+    public Eligibility<Doc, DocStatus, DocTransition> eligibility(Doc entity, DocTransition transition) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        throw new IllegalArgumentException(
+                transition.name() + " has no check without input on Docs");
+    }
+
+    @Override
+    public GraphDefinition<Doc, DocStatus, DocTransition> definition() { return stateMachine.definition(); }
+
+    @Override
+    public Outcome<Doc, DocStatus, DocTransition> reevaluate(Doc doc) { return stateMachine.reevaluate(doc); }
+
+    @Override
+    public Outcome<Doc, DocStatus, DocTransition> advance(Doc doc) { return stateMachine.advance(doc); }
+
+    @Override
+    public Set<DocTransition> transitionsFrom(DocStatus state) { return stateMachine.transitionsFrom(state); }
+
+    @Override
+    public <R> CompletableFuture<R> async(Supplier<R> call) { return stateMachine.supplyAsync(call); }
+}
