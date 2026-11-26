@@ -13,6 +13,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * The includes and excludes one compiler execution selects its sources with, matched the way the directory
@@ -92,22 +93,27 @@ final class SourcePatterns {
             "**/ChangeSet/**", "**/_darcs", "**/_darcs/**", "**/.darcsrepo", "**/.darcsrepo/**", "**/-darcs-backup*",
             "**/.darcs-temp-mail");
 
-    private final List<String> includes;
-    private final List<String> excludes;
+    private final List<ScannerPattern> includes;
+    private final List<ScannerPattern> excludes;
+
+    /** {@link #DEFAULT_EXCLUDES}, read for {@link #separator}. */
+    private final List<ScannerPattern> defaultExcludes;
 
     /** The file separator of the platform the scanner of the compiler runs on, {@code /} or {@code \}. */
     private final char separator;
 
     /**
-     * Holds the patterns of one execution.
+     * Holds the patterns of one execution, and the default excludes, each read here, once, for {@code separator}:
+     * normalized, then compiled when it is a regular expression, or unwrapped and split into its names otherwise.
      *
      * @param includes the patterns of the sources it compiles, none meaning every source
      * @param excludes the patterns of the sources it leaves out
      * @param separator the file separator of the platform the build runs on, {@code /} or {@code \}
      */
     SourcePatterns(List<String> includes, List<String> excludes, char separator) {
-        this.includes = List.copyOf(includes);
-        this.excludes = List.copyOf(excludes);
+        this.includes = read(List.copyOf(includes), separator);
+        this.excludes = read(List.copyOf(excludes), separator);
+        this.defaultExcludes = read(DEFAULT_EXCLUDES, separator);
         this.separator = separator;
     }
 
@@ -211,19 +217,21 @@ final class SourcePatterns {
      */
     private boolean entered(String path) {
         return includes.isEmpty() || matched(path)
-                || includes.stream().anyMatch((String pattern) -> couldMatchBelow(pattern, path, separator));
+                || includes.stream().anyMatch((ScannerPattern pattern) -> pattern.couldMatchBelow(path, separator));
     }
 
     /**
-     * Whether the relative {@code path} is included, and excluded neither here nor by default.
+     * Whether the relative {@code path} is included, and excluded neither here nor by default. The path is split
+     * into its names once, for every pattern.
      *
      * @param path the path as the scanner spells it, its names separated by {@link #separator}
      */
     private boolean matched(String path) {
+        List<String> names = names(path, separator);
         boolean included = includes.isEmpty()
-                || includes.stream().anyMatch((String pattern) -> matchesSpelled(pattern, path, separator));
-        return included && excludes.stream().noneMatch((String pattern) -> matchesSpelled(pattern, path, separator))
-                && DEFAULT_EXCLUDES.stream().noneMatch((String pattern) -> matchesSpelled(pattern, path, separator));
+                || includes.stream().anyMatch((ScannerPattern pattern) -> pattern.matches(path, names));
+        return included && excludes.stream().noneMatch((ScannerPattern pattern) -> pattern.matches(path, names))
+                && defaultExcludes.stream().noneMatch((ScannerPattern pattern) -> pattern.matches(path, names));
     }
 
     /** The path of {@code file} relative to {@code root} as the scanner spells it. */
@@ -242,7 +250,7 @@ final class SourcePatterns {
 
     /**
      * Whether a relative path matches one pattern of the compiler, on a platform whose file separator is
-     * {@code separator}.
+     * {@code separator}. The pattern is read anew on every call.
      *
      * @param pattern an include or exclude, as the POM spells it
      * @param path a path relative to its source root, its names separated by {@code /}
@@ -250,51 +258,25 @@ final class SourcePatterns {
      * @return {@code true} if the pattern selects that path
      */
     static boolean matches(String pattern, String path, char separator) {
-        return matchesSpelled(pattern, scannerPath(path, separator), separator);
+        String spelled = scannerPath(path, separator);
+        return ScannerPattern.of(pattern, separator).matches(spelled, names(spelled, separator));
     }
 
-    /** {@link #matches(String, String, char)}, over a {@code path} as the scanner spells it with {@code separator}. */
-    private static boolean matchesSpelled(String pattern, String path, char separator) {
-        String normalized = normalized(pattern, separator);
-        if (spelled(normalized, REGEX)) {
-            return path.matches(normalized.substring(REGEX.length(), normalized.length() - 1));
-        }
-        return matches(names(ant(normalized), separator), 0, names(path, separator), 0);
+    /** Each of {@code patterns}, read for the file separator {@code separator}, in their order. */
+    private static List<ScannerPattern> read(List<String> patterns, char separator) {
+        return patterns.stream().map((String pattern) -> ScannerPattern.of(pattern, separator)).toList();
     }
 
     /**
-     * Whether plexus-utils judges that an include could match a path below the directory at the relative
-     * {@code path}, which lets its scanner into that directory: a regular expression always could; any other include
-     * could when either of two tests passes, one over the path as the scanner spells it, with {@code separator}, and
-     * one over the path with every backslash read as {@code /}, with {@code /} as the separator. A relative path
-     * never starts with a separator, so where {@code separator} is {@code /}, an include that starts with one passes
-     * neither test, and the second only differs from the first for a name that holds a backslash. Where it is
-     * {@code \}, the include, its separators rewritten to {@code \}, does not start with {@code /}, so the second
-     * test reads it as if it had no leading separator.
-     *
-     * @param path the path of the directory as the scanner spells it, its names separated by {@code separator}
-     */
-    private static boolean couldMatchBelow(String pattern, String path, char separator) {
-        String normalized = normalized(pattern, separator);
-        if (spelled(normalized, REGEX)) {
-            return true;
-        }
-        String ant = ant(normalized);
-        return startMatches(ant, separator, path, separator)
-                || startMatches(ant, separator, path.replace('\\', '/'), '/');
-    }
-
-    /**
-     * One of the two tests of {@link #couldMatchBelow}: whether the include {@code ant}, whose names are separated by
-     * {@code antSeparator}, starts with {@code pathSeparator} exactly when {@code path} does, and its names match the
+     * One of the two tests of {@link ScannerPattern#couldMatchBelow}: whether the include {@code ant}, whose names
+     * are {@code pattern}, starts with {@code pathSeparator} exactly when {@code path} does, and its names match the
      * names of {@code path}, separated by {@code pathSeparator}, one by one, up to its first {@code **} or to the last
      * name of the path, whichever comes first.
      */
-    private static boolean startMatches(String ant, char antSeparator, String path, char pathSeparator) {
+    private static boolean startMatches(String ant, List<String> pattern, String path, char pathSeparator) {
         if (ant.startsWith(String.valueOf(pathSeparator)) != path.startsWith(String.valueOf(pathSeparator))) {
             return false;
         }
-        List<String> pattern = names(ant, antSeparator);
         List<String> directory = names(path, pathSeparator);
         int at = 0;
         while (at < pattern.size() && at < directory.size()) {
@@ -341,12 +323,25 @@ final class SourcePatterns {
     /** The names of {@code path} that {@code separator} separates, empty ones left out. */
     private static List<String> names(String path, char separator) {
         List<String> names = new ArrayList<>();
-        for (String name : path.split(Pattern.quote(String.valueOf(separator)))) {
-            if (!name.isEmpty()) {
-                names.add(name);
+        int start = 0;
+        for (int at = 0; at <= path.length(); at++) {
+            if (at == path.length() || path.charAt(at) == separator) {
+                if (at > start) {
+                    names.add(path.substring(start, at));
+                }
+                start = at + 1;
             }
         }
         return names;
+    }
+
+    /** {@code expression} compiled; empty when it does not compile. */
+    private static Optional<Pattern> compiled(String expression) {
+        try {
+            return Optional.of(Pattern.compile(expression));
+        } catch (PatternSyntaxException invalid) {
+            return Optional.empty();
+        }
     }
 
     /** Whether the names of the pattern from {@code next} on match the names of the path from {@code at} on. */
@@ -395,5 +390,65 @@ final class SourcePatterns {
             next++;
         }
         return next == pattern.length();
+    }
+
+    /**
+     * One include or exclude as the scanner of the compiler reads it for one file separator, read once: normalized,
+     * then, when it is spelled {@code %regex[...]}, the regular expression it stands for, compiled, and otherwise the
+     * Ant pattern it stands for, unwrapped from {@code %ant[...]}, with the names of that pattern.
+     *
+     * @param expression the regular expression a pattern spelled {@code %regex[...]} stands for; empty for any other
+     * @param regex that expression compiled; empty for any other pattern, and for an expression that does not compile,
+     *     which then fails, as {@link String#matches} fails over it, each time a path is matched against it
+     * @param antPattern the Ant pattern any other pattern stands for; empty for a regular expression
+     * @param antNames the names of that Ant pattern, empty ones left out; none for a regular expression
+     */
+    private record ScannerPattern(Optional<String> expression, Optional<Pattern> regex, String antPattern,
+            List<String> antNames) {
+
+        /** {@code pattern} as the scanner reads it for the file separator {@code separator}. */
+        static ScannerPattern of(String pattern, char separator) {
+            String normalized = normalized(pattern, separator);
+            if (spelled(normalized, REGEX)) {
+                String expression = normalized.substring(REGEX.length(), normalized.length() - 1);
+                return new ScannerPattern(Optional.of(expression), compiled(expression), "", List.of());
+            }
+            String ant = ant(normalized);
+            return new ScannerPattern(Optional.empty(), Optional.empty(), ant, names(ant, separator));
+        }
+
+        /**
+         * Whether a relative path matches this pattern.
+         *
+         * @param path the path as the scanner spells it, its names separated by the separator this pattern is read for
+         * @param names the names of that path, empty ones left out
+         */
+        boolean matches(String path, List<String> names) {
+            if (expression.isPresent()) {
+                return regex.isPresent() ? regex.get().matcher(path).matches() : path.matches(expression.get());
+            }
+            return SourcePatterns.matches(antNames, 0, names, 0);
+        }
+
+        /**
+         * Whether plexus-utils judges that this include could match a path below the directory at the relative
+         * {@code path}, which lets its scanner into that directory: a regular expression always could; any other
+         * include could when either of two tests passes, one over the path as the scanner spells it, with
+         * {@code separator}, and one over the path with every backslash read as {@code /}, with {@code /} as the
+         * separator. A relative path never starts with a separator, so where {@code separator} is {@code /}, an
+         * include that starts with one passes neither test, and the second only differs from the first for a name
+         * that holds a backslash. Where it is {@code \}, the include, its separators rewritten to {@code \}, does not
+         * start with {@code /}, so the second test reads it as if it had no leading separator.
+         *
+         * @param path the path of the directory as the scanner spells it, its names separated by {@code separator}
+         * @param separator the file separator this include is read for
+         */
+        boolean couldMatchBelow(String path, char separator) {
+            if (expression.isPresent()) {
+                return true;
+            }
+            return startMatches(antPattern, antNames, path, separator)
+                    || startMatches(antPattern, antNames, path.replace('\\', '/'), '/');
+        }
     }
 }

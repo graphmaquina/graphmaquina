@@ -173,7 +173,7 @@ final class TypedWatchReader {
         }
         Optional<String> executed = TypedValues.constantName(declaredTransition.get(), machine.transitionsElement());
         String alternative = given.get(0);
-        Optional<AnnotationValue> value = TypedValues.optional(rule, alternative, annotations,
+        Optional<AnnotationValue> value = TypedValues.optional(annotations.values(rule), alternative,
                 DiagnosticAnchor.of(facade, rule), diagnostics);
         if (executed.isEmpty() || value.isEmpty()) {
             return Optional.empty();

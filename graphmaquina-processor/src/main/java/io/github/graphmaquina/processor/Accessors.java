@@ -24,13 +24,14 @@ final class Accessors {
 
     /**
      * Every public instance method {@code owner} has under {@code name} with {@code arity} parameters,
-     * inherited ones included. Which of them suits a use is decided on its signature as a member of the owner,
-     * never on the order they are found in.
+     * inherited ones included, looked up among the members the round's {@link MemberIndex} lists for the owner once,
+     * however many names are probed on it. Which of them suits a use is decided on its signature as a member of the
+     * owner, never on the order they are found in.
      */
     List<ExecutableElement> methods(DeclaredType owner, String name, int arity) {
         List<ExecutableElement> found = new ArrayList<>();
-        for (Element member : signatures.elements().getAllMembers((TypeElement) owner.asElement())) {
-            if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
+        for (Element member : signatures.members().all((TypeElement) owner.asElement(), name)) {
+            if (member.getKind() == ElementKind.METHOD) {
                 ExecutableElement method = (ExecutableElement) member;
                 if (isPublicInstance(method) && method.getParameters().size() == arity) {
                     found.add(method);

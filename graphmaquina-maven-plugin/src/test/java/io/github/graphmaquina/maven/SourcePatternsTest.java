@@ -16,9 +16,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.PatternSyntaxException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -134,6 +136,27 @@ class SourcePatternsTest {
     void anEscapedBackslashOfARegularExpressionStandsForASeparator() {
         assertTrue(SourcePatterns.matches("%regex[fx\\\\drafts\\\\.*]", "fx/drafts/Draft.java", '/'));
         assertFalse(SourcePatterns.matches("%regex[fx\\\\drafts\\\\.*]", "fx/Orders.java", '/'));
+    }
+
+    /**
+     * A regular expression that does not compile fails, as {@link String#matches} fails over it, only when a path is
+     * matched against it, and again each time: not when the patterns are held, not for a path that an include before
+     * it already matches, not for an exclude of a path that no include matches, and not when the scanner asks whether
+     * an include could match below a directory, which a regular expression always could.
+     */
+    @Test
+    void anExpressionThatDoesNotCompileFailsOnlyWhenAPathIsMatchedAgainstIt(@TempDir Path root) throws IOException {
+        SourcePatterns invalid = new SourcePatterns(List.of("%regex[a(b]"), List.of(), '/');
+
+        assertTrue(invalid.narrow());
+        assertEquals(List.of(), invalid.select(root.resolve("absent")));
+        assertThrows(PatternSyntaxException.class, () -> invalid.selects("Root.java"));
+        assertThrows(PatternSyntaxException.class, () -> invalid.selects("Root.java"));
+        assertThrows(PatternSyntaxException.class, () -> SourcePatterns.matches("%regex[a(b]", "Root.java", '/'));
+        assertTrue(new SourcePatterns(List.of("**", "%regex[a(b]"), List.of(), '/').selects("fx/Orders.java"));
+        assertFalse(new SourcePatterns(List.of("fx/**"), List.of("%regex[a(b]"), '/').selects("other/Other.java"));
+        assertEquals(Optional.empty(), new SourcePatterns(List.of("/other", "%regex[a(b]"), List.of("other"), '/')
+                .skippedDirectory("other/Other.java"));
     }
 
     /**

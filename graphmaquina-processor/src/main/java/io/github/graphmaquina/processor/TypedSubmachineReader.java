@@ -178,7 +178,7 @@ final class TypedSubmachineReader {
         if (declared.isEmpty()) {
             return Optional.empty();
         }
-        return TypedValues.optional(submachine, name, annotations, DiagnosticAnchor.of(facade, submachine,
+        return TypedValues.optional(annotations.values(submachine), name, DiagnosticAnchor.of(facade, submachine,
                 declared.get()), diagnostics);
     }
 

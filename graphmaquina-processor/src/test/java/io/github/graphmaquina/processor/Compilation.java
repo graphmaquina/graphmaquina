@@ -92,6 +92,21 @@ final class Compilation {
             return -1;
         }
 
+        /**
+         * Every diagnostic, in the order javac reported it, as its kind, the name of the file it is anchored in, its
+         * line and column, and its message: what a test pins when the order and the anchors matter.
+         */
+        List<String> located() {
+            List<String> located = new ArrayList<>();
+            for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
+                String file = diagnostic.getSource() == null ? "-"
+                        : Path.of(diagnostic.getSource().toUri()).getFileName().toString();
+                located.add(diagnostic.getKind() + " " + file + ":" + diagnostic.getLineNumber() + ":"
+                        + diagnostic.getColumnNumber() + " " + diagnostic.getMessage(null));
+            }
+            return located;
+        }
+
         String describe() {
             StringBuilder text = new StringBuilder();
             for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {

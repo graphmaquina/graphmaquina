@@ -45,6 +45,11 @@ import lombok.RequiredArgsConstructor;
 final class UnitOfWork {
 
     private static final ActionRecord[] NO_ACTIONS = new ActionRecord[0];
+    /**
+     * Up to how many entries {@link #holds} scans the whole log rather than reading {@link #held}: comparing the
+     * machine keys of a few entries costs less than indexing them.
+     */
+    static final int SCANNED = 32;
 
     private final List<LogEntry> log = new ArrayList<>();
     /**
@@ -52,6 +57,14 @@ final class UnitOfWork {
      * pending state back must not pay for the index.
      */
     private Optional<PendingIndex> pending = Optional.empty();
+    /**
+     * The positions in the log of the entries of each machine, for {@link #holds}, as {@link HeldIndex} keeps them.
+     * Created by the first {@code holds} that finds the log longer than {@link #SCANNED} entries, extended by the later
+     * ones to the entries appended since, and dropped by every rollback, so that the next {@code holds} builds it again
+     * from the log that remains. Keyed by machine key, so building it runs no identity code. One field, so that a call
+     * that never asks costs its unit of work no more than a reference.
+     */
+    private Optional<HeldIndex> held = Optional.empty();
     /**
      * The journal, in its first journalSize slots, grown as an ArrayList grows. An entry is only appended, and its
      * status changes once, from RUNNING. The slots below journalShared, the size of the latest snapshot of this array,
@@ -215,6 +228,7 @@ final class UnitOfWork {
      * context would add an entry in the middle of the undo, which would then drop it in place of the one it undid.
      */
     void rollbackTo(int savepoint) {
+        held = Optional.empty();
         if (savepoint == 0 && pending.isEmpty()) {
             log.clear();
             rollbackFlow(savepoint);
@@ -426,7 +440,12 @@ final class UnitOfWork {
      * Whether this unit of work holds {@code ref}, for {@link Reentrancy}: an entity in flight, the root's own step,
      * a cascade's or an exit's, or one with an entry in the log, a hop or a start, which gives it a pending state. An
      * entity only registered is not held. Only the equals of {@code ref}'s identity runs, never another identity's
-     * equals or hashCode, and the pending index is neither built nor read.
+     * equals or hashCode, and the pending index is neither built nor read. A log of up to {@link #SCANNED} entries is
+     * scanned whole; a longer one only among the entries of {@code ref}'s machine, in log order, which {@link #held}
+     * finds. An entry of another machine differs from {@code ref} by its key before any identity's equals could run,
+     * so either way the equals of {@code ref}'s identity runs as often, and on the same identities. When that equals
+     * changes the log as it runs, as only a cascade through a context it kept can, the rest of the log is scanned
+     * whole from the entry it was compared with, as a scan of the whole log would go on.
      */
     boolean holds(EntityRef ref) {
         for (InFlight flight : inFlight) {
@@ -434,12 +453,51 @@ final class UnitOfWork {
                 return true;
             }
         }
-        for (int i = 0; i < log.size(); i++) {
+        int size = log.size();
+        if (size <= SCANNED) {
+            return heldFrom(0, ref);
+        }
+        Positions positions = heldIndex().get(ref.key());
+        if (positions == null) {
+            return false;
+        }
+        int count = positions.size;
+        for (int i = 0; i < count; i++) {
+            int at = positions.at[i];
+            if (ref.equals(log.get(at).ref())) {
+                return true;
+            }
+            if (log.size() != size) {
+                return heldFrom(at + 1, ref);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether an entry of the log from {@code start} on is of {@code ref}, the log read again at each entry, so that
+     * entries that the equals of {@code ref}'s identity adds, or drops, as it runs are compared, or not, as they stand.
+     */
+    private boolean heldFrom(int start, EntityRef ref) {
+        for (int i = start; i < log.size(); i++) {
             if (ref.equals(log.get(i).ref())) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** {@link #held}, created if absent and extended to every entry of the log. */
+    private Map<MachineKey<?, ?, ?>, Positions> heldIndex() {
+        if (held.isEmpty()) {
+            held = Optional.of(new HeldIndex());
+        }
+        HeldIndex index = held.get();
+        for (; index.covered < log.size(); index.covered++) {
+            index.positions.computeIfAbsent(log.get(index.covered).ref().key(),
+                    (MachineKey<?, ?, ?> key) -> new Positions()).add(index.covered);
+        }
+        return index.positions;
     }
 
     List<String> path() {
@@ -578,6 +636,24 @@ final class UnitOfWork {
     }
 
     /**
+     * The trail of the call once it committed, as {@link #trail()} builds it, for its post-commit hooks: built by the
+     * first read and handed to every later one, the same unmodifiable list, which the call's flow keeps. The log of a
+     * committed call is final, no rollback follows the commit, a hook's write to the flow adds no entry and no mark,
+     * and the phases after the commit refuse a cascade, so a later read would build an equal list. The empty list when
+     * the call does not record its trail. Only for a call that committed.
+     */
+    List<FlowEntry> committedTrail() {
+        if (clock.isEmpty()) {
+            return List.of();
+        }
+        CallFlow kept = flow.orElseThrow();
+        if (kept.committedTrail().isEmpty()) {
+            kept.committedTrail(trail());
+        }
+        return kept.committedTrail().get();
+    }
+
+    /**
      * The entries of the trail of a call that records it, in log order, in a new list the caller may extend: a hop
      * entry wraps the next of {@code records}, a start entry the next of {@code starts}, which are the
      * {@link #records()} and {@link #starts()} of the log as it stands; each is at the instant of its entry's mark, and
@@ -602,6 +678,30 @@ final class UnitOfWork {
             }
         }
         return entries;
+    }
+
+    /**
+     * The positions of the entries of each machine in the log, in log order, for the first {@code covered} entries of
+     * the log.
+     */
+    private static final class HeldIndex {
+
+        final Map<MachineKey<?, ?, ?>, Positions> positions = new HashMap<>();
+        int covered;
+    }
+
+    /** Positions in the log, in ascending order, in the first {@code size} slots of an array grown as needed. */
+    private static final class Positions {
+
+        int[] at = new int[4];
+        int size;
+
+        void add(int position) {
+            if (size == at.length) {
+                at = Arrays.copyOf(at, size * 2);
+            }
+            at[size++] = position;
+        }
     }
 
     /**

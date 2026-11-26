@@ -13,13 +13,61 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
-/** Reads annotation mirrors by element name, defaults included, and unwraps @Repeatable containers. */
+/**
+ * Reads annotation mirrors by element name, defaults included, and unwraps @Repeatable containers. Each lookup by a
+ * mirror reads that mirror's values from javac again; a reader that looks up several elements of one mirror reads
+ * them once, through {@link #values}, and looks them all up in what that one reading returned.
+ */
 @RequiredArgsConstructor
 final class Annotations {
 
     private final Elements elements;
+
+    /**
+     * The values of one annotation mirror by element name, defaults included, as {@link #values} read them from javac,
+     * once. It answers for the one reader call that read it and is never kept.
+     */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    static final class Values {
+
+        private final AnnotationMirror mirror;
+        private final Map<? extends ExecutableElement, ? extends AnnotationValue> read;
+
+        /**
+         * The value of the element {@code name}, or empty when the mirror carries none: javac refuses an annotation
+         * that omits an element without a default, and it leaves that element out of the mirror it hands over.
+         */
+        Optional<AnnotationValue> find(String name) {
+            for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : read.entrySet()) {
+                if (entry.getKey().getSimpleName().contentEquals(name)) {
+                    return Optional.of(entry.getValue());
+                }
+            }
+            return Optional.empty();
+        }
+
+        AnnotationValue value(String name) {
+            return find(name).orElseThrow(() ->
+                    new IllegalArgumentException(mirror.getAnnotationType() + " has no element " + name));
+        }
+
+        /** The values of an array element; a single non-array value is returned as a one-element list. */
+        List<AnnotationValue> array(String name) {
+            AnnotationValue value = value(name);
+            List<AnnotationValue> values = new ArrayList<>();
+            if (value.getValue() instanceof List<?> list) {
+                for (Object item : list) {
+                    values.add((AnnotationValue) item);
+                }
+            } else {
+                values.add(value);
+            }
+            return values;
+        }
+    }
 
     Optional<AnnotationMirror> find(Element element, Class<? extends Annotation> type) {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
@@ -49,23 +97,21 @@ final class Annotations {
         return declared.getQualifiedName().contentEquals(type.getCanonicalName());
     }
 
+    /** The values of {@code mirror}, defaults included, read from javac once for every lookup a reader makes. */
+    Values values(AnnotationMirror mirror) {
+        return new Values(mirror, elements.getElementValuesWithDefaults(mirror));
+    }
+
     /**
      * The value of the element {@code name}, or empty when the mirror carries none: javac refuses an annotation
      * that omits an element without a default, and it leaves that element out of the mirror it hands over.
      */
     Optional<AnnotationValue> find(AnnotationMirror mirror, String name) {
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry
-                : elements.getElementValuesWithDefaults(mirror).entrySet()) {
-            if (entry.getKey().getSimpleName().contentEquals(name)) {
-                return Optional.of(entry.getValue());
-            }
-        }
-        return Optional.empty();
+        return values(mirror).find(name);
     }
 
     AnnotationValue value(AnnotationMirror mirror, String name) {
-        return find(mirror, name).orElseThrow(() ->
-                new IllegalArgumentException(mirror.getAnnotationType() + " has no element " + name));
+        return values(mirror).value(name);
     }
 
     String string(AnnotationMirror mirror, String name) {
@@ -74,16 +120,7 @@ final class Annotations {
 
     /** The values of an array element; a single non-array value is returned as a one-element list. */
     List<AnnotationValue> array(AnnotationMirror mirror, String name) {
-        AnnotationValue value = value(mirror, name);
-        List<AnnotationValue> values = new ArrayList<>();
-        if (value.getValue() instanceof List<?> list) {
-            for (Object item : list) {
-                values.add((AnnotationValue) item);
-            }
-        } else {
-            values.add(value);
-        }
-        return values;
+        return values(mirror).array(name);
     }
 
     List<String> strings(AnnotationMirror mirror, String name) {

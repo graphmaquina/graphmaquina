@@ -50,8 +50,9 @@ final class RequestScope {
         if (memos.isEmpty()) {
             memos = Optional.of(new HashMap<>());
         }
+        // Sized for a few keys, as a guard's memo usually holds: the default size allocates a 64-slot table.
         Map<MemoKey<?>, Object> kept =
-                memos.get().computeIfAbsent(owner, (EntityRef absent) -> new IdentityHashMap<>());
+                memos.get().computeIfAbsent(owner, (EntityRef absent) -> new IdentityHashMap<>(2));
         Object value = kept.get(key);
         if (value != null) {
             return (V) value;

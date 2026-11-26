@@ -106,11 +106,10 @@ final class Attempts {
      */
     private static <E, S extends Enum<S>, T extends Enum<T>> Attempt<E, S, T> attemptOf(
             DefaultStateMachine<E, S, T> machine, E entity, S read, Committed<E, S, T> committed) {
-        for (ChainStart start : committed.summary().chainStarts()) {
-            if (start.ref().instance() == entity && start.ref().key().equals(machine.key())) {
-                return new Attempt<>(committed.outcome(), committed.movedBelow(), start.stopsChain(),
-                        machine.key().states().cast(start.state()));
-            }
+        Optional<ChainStart> start = committed.summary().chainStartOf(entity, machine.key());
+        if (start.isPresent()) {
+            return new Attempt<>(committed.outcome(), committed.movedBelow(), start.get().stopsChain(),
+                    machine.key().states().cast(start.get().state()));
         }
         return new Attempt<>(committed.outcome(), committed.movedBelow(), false, read);
     }

@@ -1,10 +1,13 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.MachineKey;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -79,12 +82,31 @@ final class CommitSummary {
      * so.
      */
     List<ChainStart> chainStarts() {
-        List<ChainStart> starts = new ArrayList<>();
+        List<ChainStart> starts = new ArrayList<>(changes.size());
         for (Change change : changes) {
-            LogEntry last = change.last();
-            starts.add(new ChainStart(change.ref(), last.to(), last instanceof LogEntry.Hop hop && hop.stopsChain()));
+            starts.add(startOf(change));
         }
-        return List.copyOf(starts);
+        return Collections.unmodifiableList(starts);
+    }
+
+    /**
+     * The entry {@link #chainStarts()} lists for the first change whose reference holds the very {@code instance}
+     * under {@code key}, built for it alone; empty when none does. Instances are compared by reference and keys by
+     * equality, so no identity's equals or hashCode runs.
+     */
+    Optional<ChainStart> chainStartOf(Object instance, MachineKey<?, ?, ?> key) {
+        for (Change change : changes) {
+            if (change.ref().instance() == instance && change.ref().key().equals(key)) {
+                return Optional.of(startOf(change));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The chain start of {@code change}: where its last entry leaves the entity, and whether it stops the chain. */
+    private static ChainStart startOf(Change change) {
+        LogEntry last = change.last();
+        return new ChainStart(change.ref(), last.to(), last instanceof LogEntry.Hop hop && hop.stopsChain());
     }
 
     /**

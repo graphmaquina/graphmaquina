@@ -4,7 +4,6 @@ import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
@@ -86,13 +85,13 @@ final class TypedValues {
     }
 
     /**
-     * The one value of the array element {@code name}, which is how an annotation declares something the model
-     * holds at most once: none is empty, one is that value, and more is empty after reporting {@code SG607}.
-     * Reading the first, or the last, of several would silently drop a declaration the author wrote.
+     * The one value of the array element {@code name} of {@code declared}, which is how an annotation declares
+     * something the model holds at most once: none is empty, one is that value, and more is empty after reporting
+     * {@code SG607}. Reading the first, or the last, of several would silently drop a declaration the author wrote.
      */
-    static Optional<AnnotationValue> optional(AnnotationMirror mirror, String name, Annotations annotations,
-            DiagnosticAnchor anchor, Diagnostics diagnostics) {
-        List<AnnotationValue> values = annotations.array(mirror, name);
+    static Optional<AnnotationValue> optional(Annotations.Values declared, String name, DiagnosticAnchor anchor,
+            Diagnostics diagnostics) {
+        List<AnnotationValue> values = declared.array(name);
         if (values.size() > 1) {
             anchor.report(diagnostics, DiagnosticCode.SG607,
                     name + " declares " + values.size() + " values but holds one at most");

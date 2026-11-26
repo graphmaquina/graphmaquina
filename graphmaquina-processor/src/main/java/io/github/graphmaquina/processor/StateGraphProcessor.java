@@ -156,16 +156,19 @@ public final class StateGraphProcessor extends AbstractProcessor {
         scope.checkLaterTypes();
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
         validateExports();
-        runtimeNames.validate(round, scope);
+        // Each scan visits every element of the round, so the facades and the sets are listed once for both readers.
+        Set<? extends Element> facades = round.getElementsAnnotatedWith(GenerateGraphApi.class);
+        Set<? extends Element> setDeclarations = round.getElementsAnnotatedWith(StateGraphs.class);
+        runtimeNames.validate(round, facades, setDeclarations, scope);
         for (TypeElement type : waited(deferred)) {
             resolve(type, round);
         }
-        for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
+        for (Element element : facades) {
             handed.add(((TypeElement) element).getQualifiedName().toString());
             resolve((TypeElement) element, round);
         }
         List<TypeElement> declaredSets = waited(deferredSets);
-        declaredSets.addAll(ElementFilter.typesIn(round.getElementsAnnotatedWith(StateGraphs.class)));
+        declaredSets.addAll(ElementFilter.typesIn(setDeclarations));
         for (TypeElement type : declaredSets) {
             if (holdsDeferred(type)) {
                 deferredSets.add(type.getQualifiedName().toString());
@@ -215,9 +218,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     /**
      * Drops every listing of members an earlier round made, which the members javac enters afresh in this round
-     * replace: the members each type declares and inherits, the effective methods of each host and the methods of
-     * each owner a generated call competes with. Within a round each of them is listed once, however many
-     * declarations name it.
+     * replace: the members each type declares and inherits, the effective methods of each host and its supertypes,
+     * and the methods of each owner a generated call competes with. Within a round each of them is listed once,
+     * however many declarations name it.
      */
     private void forgetMembers() {
         signatures.members().forget();

@@ -1,0 +1,158 @@
+package fx;
+
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.GraphBuilder;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
+import io.github.graphmaquina.api.Eligibility;
+import io.github.graphmaquina.annotation.internal.UnboundCollaborator;
+
+/** Generated companion of {@link Tickets}: builds its graph and implements its facade. Do not edit. */
+@GeneratedCompanion
+@SuppressWarnings({"deprecation", "removal", "rawtypes"})
+public final class TicketsRuntime implements Tickets {
+
+    /** The key of the machine: its entity, state and transition classes. */
+    public static final MachineKey<Ticket, TicketState, TicketChange> KEY = MachineKey.of(Ticket.class, TicketState.class, TicketChange.class);
+
+    private final StateMachine<Ticket, TicketState, TicketChange> stateMachine;
+
+    /**
+     * Implements the facade over the given state machine, which every method of it calls.
+     *
+     * @param stateMachine the state machine of the facade
+     */
+    public TicketsRuntime(StateMachine<Ticket, TicketState, TicketChange> stateMachine) {
+        this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
+    }
+
+    /**
+     * The definition, built from the annotations of {@link Tickets}. One parameter per class with instance
+     * members.
+     *
+     * @param ticketActions the {@code fx.TicketActions} whose instance members the graph calls
+     * @return the definition
+     */
+    public static GraphDefinition<Ticket, TicketState, TicketChange> graph(TicketActions ticketActions) {
+        Objects.requireNonNull(ticketActions, "ticketActions");
+        GraphBuilder<Ticket, TicketState, TicketChange> graph = StateGraph.define(KEY);
+        graph = graph.initial(TicketState.READY);
+        graph = graph.terminal(TicketState.PUBLISHED);
+        graph = graph.terminal(TicketState.CLOSED);
+        graph = graph.allowsCycle(TicketState.READY);
+        graph = graph.statePolicy(TicketState.READY, "publish the ticket");
+        graph = graph.statePolicy(TicketState.RETRY_PENDING, "retry the publication explicitly");
+        graph = graph.statePolicy(TicketState.REJECTED_BY_PROVIDER, "close the rejected ticket");
+        graph = graph.statePolicy(TicketState.INTEGRATION_FAILED, "close after manual review");
+        graph = graph.transition(TicketChange.SCHEDULE_RETRY, TicketState.READY, TicketState.RETRY_PENDING).endTransition();
+        graph = graph.transition(TicketChange.RECORD_REJECTION, TicketState.READY, TicketState.REJECTED_BY_PROVIDER).endTransition();
+        graph = graph.transition(TicketChange.MARK_INTEGRATION_FAILED, TicketState.READY, TicketState.INTEGRATION_FAILED).endTransition();
+        graph = graph.transition(TicketChange.CLOSE, TicketState.REJECTED_BY_PROVIDER, TicketState.CLOSED).endTransition();
+        graph = graph.transition(TicketChange.CLOSE, TicketState.INTEGRATION_FAILED, TicketState.CLOSED).endTransition();
+        graph = graph.transition(TicketChange.RETRY, TicketState.RETRY_PENDING, TicketState.READY).endTransition();
+        graph = graph.transition(TicketChange.PUBLISH, TicketState.READY, TicketState.PUBLISHED).action("publish", (context) -> ticketActions.publish(context)).onFailure(TicketChange.MARK_INTEGRATION_FAILED).failsOn(fx.InvalidResponseException.class).recover(fx.PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY, fx.ServiceUnavailableException.class).recover(fx.PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION, fx.ProviderRejectedException.class).endTransition();
+        return graph.build();
+    }
+
+    /**
+     * The definition as the annotations of {@link Tickets} declare it, with no collaborator bound, for
+     * inspection, structural tests and diagrams. An action, guard, hook or lookup that calls an instance
+     * member of a class throws {@code IllegalStateException} when it runs; a static member, a property
+     * read and a built-in watch condition run as in {@code graph(...)}. Build machines from {@code
+     * graph(...)}.
+     *
+     * @return the definition, with no collaborator bound
+     */
+    public static GraphDefinition<Ticket, TicketState, TicketChange> structure() {
+        GraphBuilder<Ticket, TicketState, TicketChange> graph = StateGraph.define(KEY);
+        graph = graph.initial(TicketState.READY);
+        graph = graph.terminal(TicketState.PUBLISHED);
+        graph = graph.terminal(TicketState.CLOSED);
+        graph = graph.allowsCycle(TicketState.READY);
+        graph = graph.statePolicy(TicketState.READY, "publish the ticket");
+        graph = graph.statePolicy(TicketState.RETRY_PENDING, "retry the publication explicitly");
+        graph = graph.statePolicy(TicketState.REJECTED_BY_PROVIDER, "close the rejected ticket");
+        graph = graph.statePolicy(TicketState.INTEGRATION_FAILED, "close after manual review");
+        graph = graph.transition(TicketChange.SCHEDULE_RETRY, TicketState.READY, TicketState.RETRY_PENDING).endTransition();
+        graph = graph.transition(TicketChange.RECORD_REJECTION, TicketState.READY, TicketState.REJECTED_BY_PROVIDER).endTransition();
+        graph = graph.transition(TicketChange.MARK_INTEGRATION_FAILED, TicketState.READY, TicketState.INTEGRATION_FAILED).endTransition();
+        graph = graph.transition(TicketChange.CLOSE, TicketState.REJECTED_BY_PROVIDER, TicketState.CLOSED).endTransition();
+        graph = graph.transition(TicketChange.CLOSE, TicketState.INTEGRATION_FAILED, TicketState.CLOSED).endTransition();
+        graph = graph.transition(TicketChange.RETRY, TicketState.RETRY_PENDING, TicketState.READY).endTransition();
+        graph = graph.transition(TicketChange.PUBLISH, TicketState.READY, TicketState.PUBLISHED).action("publish", (context) -> UnboundCollaborator.<TicketActions>of("fx.TicketActions", "fx.TicketsRuntime").publish(context)).onFailure(TicketChange.MARK_INTEGRATION_FAILED).failsOn(fx.InvalidResponseException.class).recover(fx.PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY, fx.ServiceUnavailableException.class).recover(fx.PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION, fx.ProviderRejectedException.class).endTransition();
+        return graph.build();
+    }
+
+    @Override
+    public Outcome<Ticket, TicketState, TicketChange> retry(Ticket ticket) {
+        Objects.requireNonNull(ticket, "ticket");
+        return stateMachine.execute(ticket, TicketChange.RETRY);
+    }
+
+    @Override
+    public Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket) {
+        Objects.requireNonNull(ticket, "ticket");
+        return stateMachine.execute(ticket, TicketChange.PUBLISH);
+    }
+
+    /**
+     * Runs the operation without input that {@link Tickets} declares for {@code transition}, as calling it
+     * does. It refuses a null argument with a {@code NullPointerException} that names the parameter, and
+     * any other identifier with an {@code IllegalArgumentException}, before anything runs.
+     *
+     * @param entity the entity
+     * @param transition the identifier
+     * @return the outcome of the operation
+     */
+    @Override
+    public Outcome<Ticket, TicketState, TicketChange> execute(Ticket entity, TicketChange transition) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        return switch (transition) {
+            case RETRY -> retry(entity);
+            case PUBLISH -> publish(entity);
+            default -> throw new IllegalArgumentException(
+                    transition.name() + " has no operation without input on Tickets");
+        };
+    }
+
+    /**
+     * Runs the check without input that {@link Tickets} declares for {@code transition}, as calling it
+     * does: it writes no state, runs no action and tells no observer. It refuses a null argument with a
+     * {@code NullPointerException} that names the parameter, and any other identifier with an {@code
+     * IllegalArgumentException}, before anything runs.
+     *
+     * @param entity the entity
+     * @param transition the identifier
+     * @return the answer of the check
+     */
+    @Override
+    public Eligibility<Ticket, TicketState, TicketChange> eligibility(Ticket entity, TicketChange transition) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        throw new IllegalArgumentException(
+                transition.name() + " has no check without input on Tickets");
+    }
+
+    @Override
+    public GraphDefinition<Ticket, TicketState, TicketChange> definition() { return stateMachine.definition(); }
+
+    @Override
+    public Outcome<Ticket, TicketState, TicketChange> reevaluate(Ticket ticket) { return stateMachine.reevaluate(ticket); }
+
+    @Override
+    public Outcome<Ticket, TicketState, TicketChange> advance(Ticket ticket) { return stateMachine.advance(ticket); }
+
+    @Override
+    public Set<TicketChange> transitionsFrom(TicketState state) { return stateMachine.transitionsFrom(state); }
+
+    @Override
+    public <R> CompletableFuture<R> async(Supplier<R> call) { return stateMachine.supplyAsync(call); }
+}

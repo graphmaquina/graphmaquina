@@ -32,6 +32,7 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocMachines;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -98,6 +99,42 @@ class GuardMemoTest {
         return machine((GraphBuilder<Doc, DocStatus, DocTransition> graph) -> graph
                 .transition(SUBMIT, DRAFT, REVIEW).guard("submit", submit).endTransition()
                 .transition(DISCARD, DRAFT, ARCHIVED).guard("discard", discard).endTransition());
+    }
+
+    /** Many keys kept for one entity: each computes once, and a later guard reads the very value of each. */
+    @Test
+    void manyKeysOfOneEntityEachComputeOnce() {
+        List<MemoKey<Object>> keys = new ArrayList<>();
+        for (int key = 0; key < 40; key++) {
+            keys.add(MemoKey.named("key" + key));
+        }
+        List<Object> first = new ArrayList<>();
+        List<Object> second = new ArrayList<>();
+        StateMachine<Doc, DocStatus, DocTransition> machine = machine(
+                (GraphBuilder<Doc, DocStatus, DocTransition> graph) -> graph
+                        .transition(SUBMIT, DRAFT, REVIEW).guard("first", keeping(keys, first))
+                        .guard("second", keeping(keys, second)).endTransition()
+                        .transition(DISCARD, DRAFT, ARCHIVED).endTransition());
+
+        assertEquals(OutcomeStatus.APPLIED, machine.execute(new Doc("1", DRAFT), SUBMIT).status());
+        assertEquals(40, computed.get());
+        assertEquals(40, second.size());
+        for (int key = 0; key < 40; key++) {
+            assertSame(first.get(key), second.get(key));
+        }
+    }
+
+    /** A guard that adds to {@code seen} what each of {@code keys} keeps, computing a new object when it keeps none. */
+    private TransitionGuard<Doc, DocStatus, DocTransition> keeping(List<MemoKey<Object>> keys, List<Object> seen) {
+        return (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+            for (MemoKey<Object> key : keys) {
+                seen.add(ctx.memo(key, () -> {
+                    computed.incrementAndGet();
+                    return new Object();
+                }));
+            }
+            return GuardResult.pass();
+        };
     }
 
     @Test

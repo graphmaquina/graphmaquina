@@ -77,36 +77,37 @@ final class TypedTransitions {
     Optional<TransitionModel> read(Element element, AnnotationMirror mirror, MachineTypes machine,
             String operation, Optional<Binding> defaultAfterCommit) {
         int before = diagnostics.errors();
-        Optional<AnnotationValue> declaredId = annotations.find(mirror, "id");
-        Optional<AnnotationValue> declaredFrom = annotations.find(mirror, "from");
-        Optional<AnnotationValue> declaredTo = annotations.find(mirror, "to");
+        Annotations.Values declared = annotations.values(mirror);
+        Optional<AnnotationValue> declaredId = declared.find("id");
+        Optional<AnnotationValue> declaredFrom = declared.find("from");
+        Optional<AnnotationValue> declaredTo = declared.find("to");
         if (declaredId.isEmpty() || declaredFrom.isEmpty() || declaredTo.isEmpty()) {
             // javac refuses an annotation that omits an element it requires, and leaves that element out.
             return Optional.empty();
         }
         Optional<String> id = TypedValues.constantName(declaredId.get(), machine.transitionsElement());
-        Optional<List<String>> from = origins(element, mirror, declaredFrom.get(), machine);
+        Optional<List<String>> from = origins(element, mirror, declared, declaredFrom.get(), machine);
         Optional<String> to = TypedValues.constantName(declaredTo.get(), machine.statesElement());
         if (id.isEmpty() || from.isEmpty() || to.isEmpty()) {
             return Optional.empty();
         }
 
-        Optional<AnnotationValue> declaredAction = single(element, mirror, "action");
+        Optional<AnnotationValue> declaredAction = single(element, mirror, declared, "action");
         Optional<Binding> action = declaredAction.flatMap((AnnotationValue value) ->
                 resolve(value, Bindings.Role.ACTION, element, mirror, machine));
-        List<Binding> guards = guards(element, mirror, machine);
-        Optional<AnnotationValue> declaredTimeout = single(element, mirror, "timeout");
+        List<Binding> guards = guards(element, mirror, declared, machine);
+        Optional<AnnotationValue> declaredTimeout = single(element, mirror, declared, "timeout");
         Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) ->
                 duration(value, element, mirror));
-        Optional<String> onFailure = single(element, mirror, "onFailure")
+        Optional<String> onFailure = single(element, mirror, declared, "onFailure")
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
-        List<AnnotationValue> failsOnValues = classValues(annotations.array(mirror, "failsOn"));
+        List<AnnotationValue> failsOnValues = classValues(declared.array("failsOn"));
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
-        List<RecoveryModel> recoveries = recoveries(mirror, machine);
+        List<RecoveryModel> recoveries = recoveries(declared, machine);
         structure.checkRecoveries(recoveries, failsOn, failsOnValues, element, mirror);
-        Optional<Binding> afterCommit = afterCommit(element, mirror, machine)
-                .or(() -> flag(mirror, "gate") || flag(mirror, "external") ? Optional.empty() : defaultAfterCommit);
+        Optional<Binding> afterCommit = afterCommit(element, mirror, declared, machine)
+                .or(() -> flag(declared, "gate") || flag(declared, "external") ? Optional.empty() : defaultAfterCommit);
 
         structure.checkActionRequired(declaredAction.isPresent(), onFailure, failsOn, timeout, "",
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
@@ -114,44 +115,51 @@ final class TypedTransitions {
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
         structure.checkAsyncTimeout(timeout, action,
                 DiagnosticAnchor.of(element, mirror, declaredTimeout.orElse(declaredTo.get())));
-        automaticChecks.checkContinuationHasRoute(flag(mirror, "onFailureContinues"), onFailure, id.get(), from.get(),
-                to.get(), DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "onFailureContinues")));
+        automaticChecks.checkContinuationHasRoute(flag(declared, "onFailureContinues"), onFailure, id.get(),
+                from.get(), to.get(), DiagnosticAnchor.of(element, mirror, declared.value("onFailureContinues")));
         return diagnostics.errors() > before
                 ? Optional.empty()
                 : Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
                         action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
                         action, guards, onFailure, failsOn, timeout, afterCommit, recoveries,
-                        flag(mirror, "automatic"), flag(mirror, "onFailureContinues"), flag(mirror, "gate"),
-                        flag(mirror, "external")));
+                        flag(declared, "automatic"), flag(declared, "onFailureContinues"), flag(declared, "gate"),
+                        flag(declared, "external")));
     }
 
-    /** Whether the boolean element {@code name} of {@code mirror} holds {@code true}, its default being false. */
-    private boolean flag(AnnotationMirror mirror, String name) {
-        return annotations.find(mirror, name).map(AnnotationValue::getValue).map(Boolean.TRUE::equals).orElse(false);
+    /** Whether the boolean element {@code name} of {@code declared} holds {@code true}, its default being false. */
+    private static boolean flag(Annotations.Values declared, String name) {
+        return declared.find(name).map(AnnotationValue::getValue).map(Boolean.TRUE::equals).orElse(false);
     }
 
     /**
-     * The origins {@code mirror} declares on {@code element}, as constants of the states of {@code machine}, or
-     * empty when one of them is not, which javac has refused; {@code SG507} at {@code declaredFrom}, the value of
-     * its {@code from}, when it declares none.
+     * The origins {@code mirror} declares on {@code element}, read from {@code declared}, its values, as constants of
+     * the states of {@code machine}, or empty when one of them is not, which javac has refused; {@code SG507} at
+     * {@code declaredFrom}, the value of its {@code from}, when it declares none.
      */
-    private Optional<List<String>> origins(Element element, AnnotationMirror mirror, AnnotationValue declaredFrom,
-            MachineTypes machine) {
-        List<AnnotationValue> fromValues = annotations.array(mirror, "from");
+    private Optional<List<String>> origins(Element element, AnnotationMirror mirror, Annotations.Values declared,
+            AnnotationValue declaredFrom, MachineTypes machine) {
+        List<AnnotationValue> fromValues = declared.array("from");
         structure.checkFrom(!fromValues.isEmpty(), DiagnosticAnchor.of(element, mirror, declaredFrom));
         return TypedValues.constantNames(fromValues, machine.statesElement());
     }
 
     /** Resolves the optional hook on a definition or transition at its own declaration. */
     Optional<Binding> afterCommit(Element element, AnnotationMirror mirror, MachineTypes machine) {
-        return single(element, mirror, "afterCommit")
+        return afterCommit(element, mirror, annotations.values(mirror), machine);
+    }
+
+    /** The same, with {@code declared}, the values of {@code mirror}, read already. */
+    private Optional<Binding> afterCommit(Element element, AnnotationMirror mirror, Annotations.Values declared,
+            MachineTypes machine) {
+        return single(element, mirror, declared, "afterCommit")
                 .flatMap((AnnotationValue value) -> resolve(value, Bindings.Role.HOOK, element, mirror, machine));
     }
 
-    /** The one value of the element {@code name}, and empty when the element holds none. */
-    private Optional<AnnotationValue> single(Element element, AnnotationMirror mirror, String name) {
-        return TypedValues.optional(mirror, name, annotations,
-                DiagnosticAnchor.of(element, mirror, annotations.value(mirror, name)), diagnostics);
+    /** The one value of the element {@code name} of {@code declared}, and empty when the element holds none. */
+    private Optional<AnnotationValue> single(Element element, AnnotationMirror mirror, Annotations.Values declared,
+            String name) {
+        return TypedValues.optional(declared, name, DiagnosticAnchor.of(element, mirror, declared.value(name)),
+                diagnostics);
     }
 
     /**
@@ -159,11 +167,12 @@ final class TypedTransitions {
      * whose member has the simple name of an earlier one's: the generated guard is named by that simple name, which a
      * rejection reports, so two guards of one edge that shared it could not be told apart.
      */
-    private List<Binding> guards(Element element, AnnotationMirror mirror, MachineTypes machine) {
+    private List<Binding> guards(Element element, AnnotationMirror mirror, Annotations.Values declared,
+            MachineTypes machine) {
         List<Binding> guards = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         Map<String, TypeMirror> named = new HashMap<>();
-        for (AnnotationValue value : annotations.array(mirror, "guards")) {
+        for (AnnotationValue value : declared.array("guards")) {
             if (!(value.getValue() instanceof TypeMirror symbol)) {
                 continue;
             }
@@ -221,10 +230,10 @@ final class TypedTransitions {
         return timeouts.read(timeout, DiagnosticAnchor.of(element, mirror, value));
     }
 
-    /** The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order. */
-    private List<RecoveryModel> recoveries(AnnotationMirror mirror, MachineTypes machine) {
+    /** The recovery rules {@code declared} holds in its {@code recoveries}, in declaration order. */
+    private List<RecoveryModel> recoveries(Annotations.Values declared, MachineTypes machine) {
         List<RecoveryModel> recoveries = new ArrayList<>();
-        for (AnnotationValue value : annotations.array(mirror, "recoveries")) {
+        for (AnnotationValue value : declared.array("recoveries")) {
             if (value.getValue() instanceof AnnotationMirror recovery) {
                 recovery(recovery, machine).ifPresent(recoveries::add);
             }
@@ -237,16 +246,17 @@ final class TypedTransitions {
      * a constant of {@code machine}'s own enum. A type of its failsOn javac could not read as a class is left out.
      */
     private Optional<RecoveryModel> recovery(AnnotationMirror recovery, MachineTypes machine) {
-        Optional<AnnotationValue> declaredKind = annotations.find(recovery, "kind");
-        Optional<AnnotationValue> declaredTransition = annotations.find(recovery, "transition");
+        Annotations.Values declared = annotations.values(recovery);
+        Optional<AnnotationValue> declaredKind = declared.find("kind");
+        Optional<AnnotationValue> declaredTransition = declared.find("transition");
         if (declaredKind.isEmpty() || declaredTransition.isEmpty()
                 || !(declaredKind.get().getValue() instanceof TypeMirror kind)) {
             return Optional.empty();
         }
         Optional<String> transition = TypedValues.constantName(declaredTransition.get(), machine.transitionsElement());
-        List<AnnotationValue> failsOnValues = classValues(annotations.array(recovery, "failsOn"));
+        List<AnnotationValue> failsOnValues = classValues(declared.array("failsOn"));
         return transition.map((String identifier) -> new RecoveryModel(kind, identifier, classes(failsOnValues),
-                recovery, declaredKind.get(), failsOnValues, flag(recovery, "continueChain")));
+                recovery, declaredKind.get(), failsOnValues, flag(declared, "continueChain")));
     }
 
     /** The exception types an array element names, skipping any value javac could not read as a class. */

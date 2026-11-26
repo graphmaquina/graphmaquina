@@ -1,10 +1,12 @@
 package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -13,7 +15,11 @@ import org.junit.jupiter.api.Test;
  * What the processor does more of as a compilation grows. Each test compiles two projects that differ only in size,
  * behind {@link CountingProcessor}, and requires the count of an operation whose cost grows with the whole compilation
  * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
- * listings of a host's members, which visit every member, do not multiply with the references to it.
+ * listings of a host's members, which visit every member, do not multiply with the references to it. A round is
+ * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it, the
+ * values of an edge are read once, however many of them its reader looks up, the members of an entity are listed as
+ * many times however many accessor names the conventions probe on it, and the supertypes of a host are walked as many
+ * times however many members it exports.
  */
 class ProcessorScaleTest {
 
@@ -32,6 +38,20 @@ class ProcessorScaleTest {
     }
 
     /**
+     * A round is scanned once for each annotation, or set of annotations, it is scanned for: the facades and the sets
+     * of a round, which more than one reader asks for, are listed once and handed to each of them.
+     */
+    @Test
+    void scansEachRoundOnceForEachAnnotation() {
+        scans(project(4, STATES - 1));
+
+        assertFalse(CountingProcessor.SCANNED_PER_ROUND.isEmpty(), "no round was counted");
+        for (List<String> round : CountingProcessor.SCANNED_PER_ROUND) {
+            assertEquals(new ArrayList<>(new LinkedHashSet<>(round)), round, "what one round was scanned for");
+        }
+    }
+
+    /**
      * A host is listed once per round, however many edges run an action of it: neither resolving each reference, nor
      * checking what its companion may name, nor writing each call lists the host's members again.
      */
@@ -43,12 +63,70 @@ class ProcessorScaleTest {
         assertEquals(few, many, "listings of the members of scale.H0 with 20 edges that run its actions, then 80");
     }
 
+    /**
+     * The values of each edge are read from javac once, defaults included, though reading an edge looks up each of its
+     * elements, some of them twice: every edge of the project is declared on its facade, so only the reader of the
+     * edges asks for them.
+     */
+    @Test
+    void readsTheValuesOfEachEdgeOnce() {
+        scans(project(1, 20));
+
+        Map<String, Integer> edges = new LinkedHashMap<>();
+        CountingProcessor.VALUE_READINGS.forEach((String mirror, Integer readings) -> {
+            if (mirror.startsWith("@scale.M0Graph.Transition(")) {
+                edges.put(mirror, readings);
+            }
+        });
+        assertEquals(20, edges.size(), "the edges whose values were read: " + edges.keySet());
+        edges.forEach((String mirror, Integer readings) -> assertEquals(1, readings, "the readings of " + mirror));
+    }
+
+    /**
+     * The conventions probe three reader names on the entity, then a writer name for each alternative they try: the
+     * {@code setP} one alone when the entity has it, both when only {@code p(x)} writes the state. Either way the
+     * entity's members are listed as many times, since each name is looked up among the members the round listed.
+     */
+    @Test
+    void listsTheMembersOfAnEntityAsManyTimesWhateverTheNamesTheConventionsProbe() {
+        Map<String, String> fluent = project(1, STATES - 1);
+        Map<String, String> setter = project(1, STATES - 1);
+        setter.put("scale.E0", setter.get("scale.E0").replace("public void status(", "public void setStatus("));
+
+        int probingOneWriterName = listings(setter, "scale.E0");
+        int probingTwoWriterNames = listings(fluent, "scale.E0");
+
+        assertEquals(probingOneWriterName, probingTwoWriterNames,
+                "listings of the members of scale.E0 written by setStatus(x), then by status(x)");
+    }
+
+    /**
+     * The supertypes of a host are walked once per round, however many of its members are checked against the
+     * contracts they override: each walk asks javac for the host's own direct supertypes first.
+     */
+    @Test
+    void walksTheSupertypesOfAHostAsManyTimesWhateverTheNumberOfItsMembers() {
+        int few = supertypeQueries(project(1, 20));
+        int many = supertypeQueries(project(1, 80));
+
+        assertEquals(few, many, "queries of the direct supertypes of scale.H0 with 20 exported actions, then 80");
+    }
+
+    private static int supertypeQueries(Map<String, String> sources) {
+        scans(sources);
+        return CountingProcessor.SUPERTYPE_QUERIES.getOrDefault("scale.H0", 0);
+    }
+
     private static int listings(Map<String, String> sources) {
+        return listings(sources, "scale.H0");
+    }
+
+    private static int listings(Map<String, String> sources, String type) {
         CountingProcessor.reset();
         Compilation.Result result = Compilation.compileWithoutLifecycle(Compilation.prepare(sources),
                 List.of("-processor", CountingProcessor.class.getName()));
         assertTrue(result.success(), result.describe());
-        return CountingProcessor.MEMBER_LISTINGS.getOrDefault("scale.H0", 0);
+        return CountingProcessor.MEMBER_LISTINGS.getOrDefault(type, 0);
     }
 
     private static List<Integer> scans(Map<String, String> sources) {

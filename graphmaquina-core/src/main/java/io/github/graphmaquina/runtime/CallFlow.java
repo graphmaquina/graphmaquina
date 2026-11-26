@@ -70,6 +70,12 @@ final class CallFlow {
     private Optional<Map<FlowKey<?>, Integer>> index = Optional.empty();
     /** The mark of each entry of the log, by index; created by the first mark. */
     private Optional<List<Mark>> marks = Optional.empty();
+    /**
+     * The trail of the call once it committed, which {@link UnitOfWork#committedTrail()} builds for the first read of
+     * a post-commit hook and keeps here for the later ones; empty until then.
+     */
+    @Getter(AccessLevel.PACKAGE)
+    private Optional<List<FlowEntry>> committedTrail = Optional.empty();
 
     /** The value of the last write of a key equal to {@code key}, if that write put one. */
     <V> Optional<V> get(FlowKey<V> key) {
@@ -110,6 +116,11 @@ final class CallFlow {
             }
         }
         writes.subList(kept, writes.size()).clear();
+    }
+
+    /** Keeps {@code trail}, the trail of the committed call, for the later reads of its post-commit hooks. */
+    void committedTrail(List<FlowEntry> trail) {
+        committedTrail = Optional.of(trail);
     }
 
     /** How many writes the flow keeps: a write that replaced the one just before it counts once. */

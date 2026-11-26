@@ -34,8 +34,9 @@ final class TypedTimeouts {
      * empty too, with nothing reported, for a value javac has already refused.
      */
     Optional<Duration> read(AnnotationMirror timeout, DiagnosticAnchor anchor) {
-        if (!(annotations.value(timeout, "seconds").getValue() instanceof Long seconds)
-                || !(annotations.value(timeout, "nanos").getValue() instanceof Integer nanos)) {
+        Annotations.Values declared = annotations.values(timeout);
+        if (!(declared.value("seconds").getValue() instanceof Long seconds)
+                || !(declared.value("nanos").getValue() instanceof Integer nanos)) {
             // javac has already refused a value it could not read as the number the element declares.
             return Optional.empty();
         }
