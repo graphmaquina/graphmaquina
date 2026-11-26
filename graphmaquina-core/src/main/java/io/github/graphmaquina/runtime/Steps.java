@@ -382,14 +382,14 @@ final class Steps {
             Transaction tx, DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
             int depth, GuardRef<E, S, T> guard, DefaultGuardContext<E, S, T> ctx) {
         long started = tx.log().trace() ? System.nanoTime() : 0L;
-        Optional<Enum<?>> id = Optional.of(transition.transition());
-        Optional<Enum<?>> to = Optional.of(transition.to());
         GuardResult verdict = switch (guard) {
             case GuardRef.Sync<E, S, T> sync -> syncVerdict(tx, machine, ref, transition, depth, sync, ctx);
-            case GuardRef.Async<E, S, T> async -> asyncVerdict(tx, machine, ref, transition, depth, async, ctx, id, to);
+            case GuardRef.Async<E, S, T> async -> asyncVerdict(tx, machine, ref, transition, depth, async, ctx,
+                    Optional.of(transition.transition()), Optional.of(transition.to()));
         };
         if (verdict == null) {
-            throw tx.abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
+            throw tx.abort(machine, ref, transition.from(), Optional.of(transition.transition()),
+                    Optional.of(transition.to()), Optional.empty(), depth,
                     "the guard " + guard.name() + " returned null", Optional.empty());
         }
         if (tx.log().trace()) {
