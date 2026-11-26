@@ -58,15 +58,13 @@ final class UnitOfWork {
      */
     private Optional<PendingIndex> pending = Optional.empty();
     /**
-     * The positions in the log of the entries of each machine, in log order, for {@link #holds}: the first
-     * {@link #heldCovered} entries of the log are in it. Created by the first {@code holds} that finds the log longer
-     * than {@link #SCANNED} entries, extended by the later ones to the entries appended since, and dropped by every
-     * rollback, so that the next {@code holds} builds it again from the log that remains. Keyed by machine key, so
-     * building it runs no identity code.
+     * The positions in the log of the entries of each machine, for {@link #holds}, as {@link HeldIndex} keeps them.
+     * Created by the first {@code holds} that finds the log longer than {@link #SCANNED} entries, extended by the later
+     * ones to the entries appended since, and dropped by every rollback, so that the next {@code holds} builds it again
+     * from the log that remains. Keyed by machine key, so building it runs no identity code. One field, so that a call
+     * that never asks costs its unit of work no more than a reference.
      */
-    private Optional<Map<MachineKey<?, ?, ?>, Positions>> held = Optional.empty();
-    /** How many entries of the log, from the first, {@link #held} holds the positions of. */
-    private int heldCovered;
+    private Optional<HeldIndex> held = Optional.empty();
     /**
      * The journal, in its first journalSize slots, grown as an ArrayList grows. An entry is only appended, and its
      * status changes once, from RUNNING. The slots below journalShared, the size of the latest snapshot of this array,
@@ -105,11 +103,6 @@ final class UnitOfWork {
     private Optional<CallFlow> flow = Optional.empty();
     /** The clock of the call's trail; empty when the root machine does not record its trail. */
     private Optional<InstantSource> clock = Optional.empty();
-    /**
-     * The trail of the committed call, as {@link #committedTrail()} hands it out; empty until a post-commit hook of
-     * the call first reads it.
-     */
-    private Optional<List<FlowEntry>> committedTrail = Optional.empty();
     /**
      * The request this unit of work belongs to, which its root call or check sets before its step runs; empty only
      * for the unit of work of no call, which no live context reaches.
@@ -481,15 +474,14 @@ final class UnitOfWork {
     /** {@link #held}, created if absent and extended to every entry of the log. */
     private Map<MachineKey<?, ?, ?>, Positions> heldIndex() {
         if (held.isEmpty()) {
-            held = Optional.of(new HashMap<>());
-            heldCovered = 0;
+            held = Optional.of(new HeldIndex());
         }
-        Map<MachineKey<?, ?, ?>, Positions> index = held.get();
-        for (; heldCovered < log.size(); heldCovered++) {
-            index.computeIfAbsent(log.get(heldCovered).ref().key(), (MachineKey<?, ?, ?> key) -> new Positions())
-                    .add(heldCovered);
+        HeldIndex index = held.get();
+        for (; index.covered < log.size(); index.covered++) {
+            index.positions.computeIfAbsent(log.get(index.covered).ref().key(),
+                    (MachineKey<?, ?, ?> key) -> new Positions()).add(index.covered);
         }
-        return index;
+        return index.positions;
     }
 
     List<String> path() {
@@ -629,15 +621,20 @@ final class UnitOfWork {
 
     /**
      * The trail of the call once it committed, as {@link #trail()} builds it, for its post-commit hooks: built by the
-     * first read and handed to every later one, the same unmodifiable list. The log of a committed call is final, no
-     * rollback follows the commit, a hook's write to the flow adds no entry and no mark, and the phases after the
-     * commit refuse a cascade, so a later read would build an equal list. Only for a call that committed.
+     * first read and handed to every later one, the same unmodifiable list, which the call's flow keeps. The log of a
+     * committed call is final, no rollback follows the commit, a hook's write to the flow adds no entry and no mark,
+     * and the phases after the commit refuse a cascade, so a later read would build an equal list. The empty list when
+     * the call does not record its trail. Only for a call that committed.
      */
     List<FlowEntry> committedTrail() {
-        if (committedTrail.isEmpty()) {
-            committedTrail = Optional.of(trail());
+        if (clock.isEmpty()) {
+            return List.of();
         }
-        return committedTrail.get();
+        CallFlow kept = flow.orElseThrow();
+        if (kept.committedTrail().isEmpty()) {
+            kept.committedTrail(trail());
+        }
+        return kept.committedTrail().get();
     }
 
     /**
@@ -665,6 +662,16 @@ final class UnitOfWork {
             }
         }
         return entries;
+    }
+
+    /**
+     * The positions of the entries of each machine in the log, in log order, for the first {@code covered} entries of
+     * the log.
+     */
+    private static final class HeldIndex {
+
+        final Map<MachineKey<?, ?, ?>, Positions> positions = new HashMap<>();
+        int covered;
     }
 
     /** Positions in the log, in ascending order, in the first {@code size} slots of an array grown as needed. */
