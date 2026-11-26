@@ -1,7 +1,5 @@
 package io.github.graphmaquina.processor;
 
-import io.github.graphmaquina.annotation.GenerateGraphApi;
-import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.annotation.internal.DiagnosticCode;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
@@ -67,7 +65,8 @@ final class RuntimeNameCheck {
 
     /**
      * Reserves the normalized runtime names of this round's top-level declarations before any source of the round is
-     * written. A declaration is refused, at the declaration itself, when its simple name does not normalize to a
+     * written: the facades of {@code round}, {@code facades}, then its sets, {@code sets}, each in the order the round
+     * lists them. A declaration is refused, at the declaration itself, when its simple name does not normalize to a
      * runtime name, when another declaration or an existing type takes that name already, when the companion name of
      * another declaration differs from it only in case and the volume of the companions' sources or of the class
      * output does not tell names apart, which would hold the two companions, or their class files, as one file, or
@@ -83,9 +82,10 @@ final class RuntimeNameCheck {
      * already, or over a class it was given by name; it warns of any other existing type under
      * {@code -Xlint:processing}.</p>
      */
-    void validate(RoundEnvironment round, CompanionScope scope) {
-        Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
-        declarations.addAll(round.getElementsAnnotatedWith(StateGraphs.class));
+    void validate(RoundEnvironment round, Set<? extends Element> facades, Set<? extends Element> sets,
+            CompanionScope scope) {
+        Set<Element> declarations = new LinkedHashSet<>(facades);
+        declarations.addAll(sets);
         for (Element declaration : declarations) {
             TypeElement type = (TypeElement) declaration;
             if (type.getNestingKind() != NestingKind.TOP_LEVEL) {

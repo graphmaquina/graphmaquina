@@ -156,16 +156,19 @@ public final class StateGraphProcessor extends AbstractProcessor {
         scope.checkLaterTypes();
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
         validateExports();
-        runtimeNames.validate(round, scope);
+        // Each scan visits every element of the round, so the facades and the sets are listed once for both readers.
+        Set<? extends Element> facades = round.getElementsAnnotatedWith(GenerateGraphApi.class);
+        Set<? extends Element> setDeclarations = round.getElementsAnnotatedWith(StateGraphs.class);
+        runtimeNames.validate(round, facades, setDeclarations, scope);
         for (TypeElement type : waited(deferred)) {
             resolve(type, round);
         }
-        for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
+        for (Element element : facades) {
             handed.add(((TypeElement) element).getQualifiedName().toString());
             resolve((TypeElement) element, round);
         }
         List<TypeElement> declaredSets = waited(deferredSets);
-        declaredSets.addAll(ElementFilter.typesIn(round.getElementsAnnotatedWith(StateGraphs.class)));
+        declaredSets.addAll(ElementFilter.typesIn(setDeclarations));
         for (TypeElement type : declaredSets) {
             if (holdsDeferred(type)) {
                 deferredSets.add(type.getQualifiedName().toString());
