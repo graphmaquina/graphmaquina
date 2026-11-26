@@ -443,7 +443,9 @@ final class UnitOfWork {
      * equals or hashCode, and the pending index is neither built nor read. A log of up to {@link #SCANNED} entries is
      * scanned whole; a longer one only among the entries of {@code ref}'s machine, in log order, which {@link #held}
      * finds. An entry of another machine differs from {@code ref} by its key before any identity's equals could run,
-     * so either way the equals of {@code ref}'s identity runs as often, and on the same identities.
+     * so either way the equals of {@code ref}'s identity runs as often, and on the same identities. When that equals
+     * changes the log as it runs, as only a cascade through a context it kept can, the rest of the log is scanned
+     * whole from the entry it was compared with, as a scan of the whole log would go on.
      */
     boolean holds(EntityRef ref) {
         for (InFlight flight : inFlight) {
@@ -451,20 +453,34 @@ final class UnitOfWork {
                 return true;
             }
         }
-        if (log.size() <= SCANNED) {
-            for (int i = 0; i < log.size(); i++) {
-                if (ref.equals(log.get(i).ref())) {
-                    return true;
-                }
-            }
-            return false;
+        int size = log.size();
+        if (size <= SCANNED) {
+            return heldFrom(0, ref);
         }
         Positions positions = heldIndex().get(ref.key());
         if (positions == null) {
             return false;
         }
-        for (int i = 0; i < positions.size; i++) {
-            if (ref.equals(log.get(positions.at[i]).ref())) {
+        int count = positions.size;
+        for (int i = 0; i < count; i++) {
+            int at = positions.at[i];
+            if (ref.equals(log.get(at).ref())) {
+                return true;
+            }
+            if (log.size() != size) {
+                return heldFrom(at + 1, ref);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether an entry of the log from {@code start} on is of {@code ref}, the log read again at each entry, so that
+     * entries that the equals of {@code ref}'s identity adds, or drops, as it runs are compared, or not, as they stand.
+     */
+    private boolean heldFrom(int start, EntityRef ref) {
+        for (int i = start; i < log.size(); i++) {
+            if (ref.equals(log.get(i).ref())) {
                 return true;
             }
         }
