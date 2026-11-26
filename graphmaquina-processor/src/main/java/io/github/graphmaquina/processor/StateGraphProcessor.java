@@ -218,9 +218,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     /**
      * Drops every listing of members an earlier round made, which the members javac enters afresh in this round
-     * replace: the members each type declares and inherits, the effective methods of each host and the methods of
-     * each owner a generated call competes with. Within a round each of them is listed once, however many
-     * declarations name it.
+     * replace: the members each type declares and inherits, the effective methods of each host and its supertypes,
+     * and the methods of each owner a generated call competes with. Within a round each of them is listed once,
+     * however many declarations name it.
      */
     private void forgetMembers() {
         signatures.members().forget();

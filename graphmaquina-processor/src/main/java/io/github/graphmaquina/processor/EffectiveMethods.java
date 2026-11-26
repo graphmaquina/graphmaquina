@@ -41,7 +41,8 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>The methods of a host are listed once per round, however many references name it: {@link #of} keeps what it
  * answered for each host, and {@link #forget}, which the processor calls at the start of every round, drops it with
- * the members javac enters afresh in that round.</p>
+ * the members javac enters afresh in that round. So are the supertypes of a host, which {@link #overridden} walks for
+ * each of its methods: they are walked once per round, and forgotten with the rest.</p>
  */
 final class EffectiveMethods {
 
@@ -50,6 +51,7 @@ final class EffectiveMethods {
     private final Signatures signatures;
     private final Annotations annotations;
     private final Map<TypeElement, Effective> listed = new HashMap<>();
+    private final Map<TypeElement, List<TypeElement>> walked = new HashMap<>();
 
     /** What {@link #of} answered for a host, with the very type it was asked for. */
     private record Effective(DeclaredType host, List<Binding> methods) { }
@@ -78,9 +80,10 @@ final class EffectiveMethods {
         return methods;
     }
 
-    /** Drops what {@link #of} answered, with the members of the round it listed them in. */
+    /** Drops what {@link #of} answered and the supertypes walked, with the members of the round they were read in. */
     void forget() {
         listed.clear();
+        walked.clear();
     }
 
     private List<Binding> list(DeclaredType host, TypeElement element) {
@@ -150,8 +153,16 @@ final class EffectiveMethods {
                 || signatures.subtype(returned, Signatures.COMPLETION_STAGE);
     }
 
-    /** Every supertype of {@code host}, transitively, each one once. */
+    /** Every supertype of {@code host}, transitively, each one once, walked once per round. */
     private List<TypeElement> supertypes(TypeElement host) {
+        return walked.computeIfAbsent(host, (TypeElement key) -> walk(key));
+    }
+
+    /**
+     * Every supertype of {@code host}, transitively, each one once, in the order of a walk breadth first, each type's
+     * direct supertypes in the order javac gives them.
+     */
+    private List<TypeElement> walk(TypeElement host) {
         List<TypeElement> found = new ArrayList<>();
         Set<TypeElement> visited = new LinkedHashSet<>();
         Deque<TypeMirror> pending = new ArrayDeque<>(signatures.types().directSupertypes(host.asType()));
@@ -166,7 +177,7 @@ final class EffectiveMethods {
             found.add(element);
             pending.addAll(signatures.types().directSupertypes(current));
         }
-        return found;
+        return List.copyOf(found);
     }
 
     private static Map<Class<? extends Annotation>, SymbolKind> roles() {
