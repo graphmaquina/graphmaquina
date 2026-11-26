@@ -197,13 +197,9 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     /**
      * The edges that leave one state, whose identifiers are distinct, as {@code build()} refuses a duplicate edge:
      * the ordinals of their identifiers in ascending order and, at the same position, the edge already wrapped, so
-     * that a lookup compares ordinals of the state's own edges, one by one up to {@link #SCANNED} edges and by binary
-     * search beyond, and allocates nothing.
+     * that a lookup is a binary search over the ordinals of the state's own edges and allocates nothing.
      */
     private static final class Leaving<E, S extends Enum<S>, T extends Enum<T>> {
-
-        /** Up to how many edges a lookup compares the ordinals one by one. */
-        private static final int SCANNED = 8;
 
         private final int[] ordinals;
         private final Optional<TransitionSpec<E, S, T>>[] edges;
@@ -222,16 +218,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
 
         /** The edge with {@code transition}, an identifier of the machine's enum; empty when the state has none. */
         Optional<TransitionSpec<E, S, T>> find(T transition) {
-            int ordinal = transition.ordinal();
-            if (ordinals.length <= SCANNED) {
-                for (int position = 0; position < ordinals.length; position++) {
-                    if (ordinals[position] == ordinal) {
-                        return edges[position];
-                    }
-                }
-                return Optional.empty();
-            }
-            int position = Arrays.binarySearch(ordinals, ordinal);
+            int position = Arrays.binarySearch(ordinals, transition.ordinal());
             return position < 0 ? Optional.empty() : edges[position];
         }
     }
