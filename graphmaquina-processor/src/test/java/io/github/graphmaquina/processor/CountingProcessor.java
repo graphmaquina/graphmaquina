@@ -5,6 +5,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +19,8 @@ import javax.lang.model.util.Elements;
 
 /**
  * Runs the real {@link StateGraphProcessor} unchanged behind proxies that count what scales with the size of a
- * compilation: how many times each round is scanned for annotated elements, and how many times the members of each
- * type are listed. It is public because javac instantiates a processor reflectively from the name given to
+ * compilation: how many times each round is scanned for annotated elements, and for which annotations, and how many
+ * times the members of each type are listed. It is public because javac instantiates a processor reflectively from the name given to
  * {@code -processor}, and javac loads it through a loader that delegates to the test's, so the counts are the test's
  * own.
  */
@@ -27,6 +28,12 @@ public final class CountingProcessor extends AbstractProcessor {
 
     /** The calls of {@code getElementsAnnotatedWith} and {@code getElementsAnnotatedWithAny}, one entry per round. */
     static final List<Integer> SCANS_PER_ROUND = new ArrayList<>();
+
+    /**
+     * What each of those calls asked for, one list per round in the order of the calls: the qualified name of the
+     * annotation a scan looks for, or the names of the annotations a scan for any of several looks for.
+     */
+    static final List<List<String>> SCANNED_PER_ROUND = new ArrayList<>();
 
     /** The calls of {@code Elements.getAllMembers}, by the qualified name of the type whose members were listed. */
     static final Map<String, Integer> MEMBER_LISTINGS = new LinkedHashMap<>();
@@ -36,6 +43,7 @@ public final class CountingProcessor extends AbstractProcessor {
     /** Forgets the counts of a previous compilation. */
     static void reset() {
         SCANS_PER_ROUND.clear();
+        SCANNED_PER_ROUND.clear();
         MEMBER_LISTINGS.clear();
     }
 
@@ -71,15 +79,33 @@ public final class CountingProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
         int[] scans = {0};
+        List<String> scanned = new ArrayList<>();
         RoundEnvironment counted = proxy(RoundEnvironment.class, (Object self, Method method, Object[] arguments) -> {
             if (method.getName().startsWith("getElementsAnnotatedWith")) {
                 scans[0]++;
+                scanned.add(described(arguments[0]));
             }
             return forward(round, method, arguments);
         });
         boolean claimed = delegate.process(annotations, counted);
         SCANS_PER_ROUND.add(scans[0]);
+        SCANNED_PER_ROUND.add(List.copyOf(scanned));
         return claimed;
+    }
+
+    /** The annotation, or the annotations, a scan asked for, by qualified name. */
+    private static String described(Object asked) {
+        if (asked instanceof Class<?> type) {
+            return type.getCanonicalName();
+        }
+        if (asked instanceof TypeElement type) {
+            return type.getQualifiedName().toString();
+        }
+        List<String> names = new ArrayList<>();
+        for (Object each : asked instanceof Object[] array ? List.of(array) : (Collection<?>) asked) {
+            names.add(described(each));
+        }
+        return "any of " + names;
     }
 
     private static <T> T proxy(Class<T> type, InvocationHandler handler) {

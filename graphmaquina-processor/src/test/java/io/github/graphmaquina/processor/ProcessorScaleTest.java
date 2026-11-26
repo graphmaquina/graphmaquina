@@ -1,10 +1,12 @@
 package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -13,7 +15,8 @@ import org.junit.jupiter.api.Test;
  * What the processor does more of as a compilation grows. Each test compiles two projects that differ only in size,
  * behind {@link CountingProcessor}, and requires the count of an operation whose cost grows with the whole compilation
  * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
- * listings of a host's members, which visit every member, do not multiply with the references to it.
+ * listings of a host's members, which visit every member, do not multiply with the references to it. A round is
+ * scanned once for each annotation it is scanned for, however many readers ask for the elements that carry it.
  */
 class ProcessorScaleTest {
 
@@ -29,6 +32,20 @@ class ProcessorScaleTest {
         List<Integer> many = scans(project(16, STATES - 1));
 
         assertEquals(few, many, "scans per round with 4 machines, then with 16");
+    }
+
+    /**
+     * A round is scanned once for each annotation, or set of annotations, it is scanned for: the facades and the sets
+     * of a round, which more than one reader asks for, are listed once and handed to each of them.
+     */
+    @Test
+    void scansEachRoundOnceForEachAnnotation() {
+        scans(project(4, STATES - 1));
+
+        assertFalse(CountingProcessor.SCANNED_PER_ROUND.isEmpty(), "no round was counted");
+        for (List<String> round : CountingProcessor.SCANNED_PER_ROUND) {
+            assertEquals(new ArrayList<>(new LinkedHashSet<>(round)), round, "what one round was scanned for");
+        }
     }
 
     /**
