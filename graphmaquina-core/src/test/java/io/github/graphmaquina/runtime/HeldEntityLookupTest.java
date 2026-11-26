@@ -113,6 +113,15 @@ class HeldEntityLookupTest {
     private static final int HASH_COLLECT = 22;
     /** The peer's identity is hashed by its four checks and never compared. */
     private static final int PEER_HASH = 4;
+    /** The children of the long cascades: their log outgrows a short scan. */
+    private static final int LONG = 40;
+    /** The child that the long COLLECT cascade rolls back, once the log outgrew a short scan. */
+    private static final int LONG_THROWING = 35;
+    /** How often the children's identities ran equals and hashCode in the long cascades, as measured. */
+    private static final int EQUALS_LONG_COMMIT = 1639;
+    private static final int HASH_LONG_COMMIT = 279;
+    private static final int EQUALS_LONG_COLLECT = 1632;
+    private static final int HASH_LONG_COLLECT = 202;
 
     private final Calls childCalls = new Calls();
     private final Calls peerCalls = new Calls();
@@ -122,7 +131,7 @@ class HeldEntityLookupTest {
 
     @Test
     void checksOfACommittingCascadeFindTheMovedSiblingsHeld() {
-        Fixture fixture = new Fixture(CascadePolicy.FAIL_FAST, -1);
+        Fixture fixture = new Fixture(4, CascadePolicy.FAIL_FAST, -1);
         Outcome<Parent, ParentStatus, ParentStep> outcome = fixture.run();
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertEquals(List.of(
@@ -136,7 +145,7 @@ class HeldEntityLookupTest {
 
     @Test
     void aSiblingThatACollectCascadeRolledBackIsNoLongerHeld() {
-        Fixture fixture = new Fixture(CascadePolicy.COLLECT, 1);
+        Fixture fixture = new Fixture(4, CascadePolicy.COLLECT, 1);
         assertThrows(CallFailedException.class, fixture::run);
         assertEquals(List.of(
                 "c0 peer=Eligible next=Eligible",
@@ -147,14 +156,53 @@ class HeldEntityLookupTest {
                 List.of(childCalls.equals, childCalls.hashCode, peerCalls.equals, peerCalls.hashCode));
     }
 
-    /** Four children, a peer, and a parent whose COMPLETE cascades GO to the children; one child may throw. */
+    /** A cascade long enough that the log outgrows a short scan before its last checks. */
+    @Test
+    void checksOfALongCommittingCascadeFindTheMovedSiblingsHeld() {
+        Fixture fixture = new Fixture(LONG, CascadePolicy.FAIL_FAST, -1);
+        assertInstanceOf(Outcome.Applied.class, fixture.run());
+        assertEquals(expectedLines(LONG, -1), seen);
+        assertEquals(List.of(EQUALS_LONG_COMMIT, HASH_LONG_COMMIT, 0, LONG),
+                List.of(childCalls.equals, childCalls.hashCode, peerCalls.equals, peerCalls.hashCode));
+    }
+
+    /** The rolled-back element is past the point where the log outgrew a short scan. */
+    @Test
+    void aSiblingThatALongCollectCascadeRolledBackIsNoLongerHeld() {
+        Fixture fixture = new Fixture(LONG, CascadePolicy.COLLECT, LONG_THROWING);
+        assertThrows(CallFailedException.class, fixture::run);
+        assertEquals(expectedLines(LONG, LONG_THROWING), seen);
+        assertEquals(List.of(EQUALS_LONG_COLLECT, HASH_LONG_COLLECT, 0, LONG),
+                List.of(childCalls.equals, childCalls.hashCode, peerCalls.equals, peerCalls.hashCode));
+    }
+
+    /**
+     * The line of each of {@code size} children: the peer is eligible, the next child too, the previous one held,
+     * except the child after {@code rolledBack}, whose previous sibling was rolled back and is eligible again.
+     */
+    private static List<String> expectedLines(int size, int rolledBack) {
+        List<String> lines = new ArrayList<>();
+        for (int at = 0; at < size; at++) {
+            StringBuilder line = new StringBuilder("c" + at + " peer=Eligible");
+            if (at > 0) {
+                line.append(" previous=").append(at - 1 == rolledBack ? "Eligible" : "HELD_CHECK");
+            }
+            if (at < size - 1) {
+                line.append(" next=Eligible");
+            }
+            lines.add(line.toString());
+        }
+        return lines;
+    }
+
+    /** Children, a peer, and a parent whose COMPLETE cascades GO to the children; one child may throw. */
     private final class Fixture {
         private final Parent parent = new Parent();
         private final PeerNode peer = new PeerNode(100, peerCalls);
         private final StateMachine<Parent, ParentStatus, ParentStep> parents;
 
-        Fixture(CascadePolicy policy, int throwing) {
-            for (int value = 0; value < 4; value++) {
+        Fixture(int size, CascadePolicy policy, int throwing) {
+            for (int value = 0; value < size; value++) {
                 parent.children.add(new Child(value, childCalls));
             }
             AtomicReference<MachineRegistry> registry = new AtomicReference<>();
