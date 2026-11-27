@@ -1,12 +1,9 @@
 package io.github.graphmaquina.test.internal;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
 /**
  * A unified, line-oriented difference between two texts, meant to be read inside an assertion message:
@@ -27,208 +24,268 @@ public final class LineDiff {
     private static final int MAX_LINES = 200;
     private static final long MAX_CELLS = 1_000_000L;
     private static final String NO_NEWLINE = "\\ No newline at end of file";
+    /** A line in both texts; also the index of its marker in {@link #MARKERS}. */
+    private static final byte KEEP = 0;
+    /** A line only in the expected text. */
+    private static final byte DELETE = 1;
+    /** A line only in the actual text. */
+    private static final byte ADD = 2;
+    private static final char[] MARKERS = {' ', '-', '+'};
 
     private LineDiff() { }
 
     public static String render(String expected, String actual) {
-        List<Line> left = lines(normalize(Objects.requireNonNull(expected, "expected")));
-        List<Line> right = lines(normalize(Objects.requireNonNull(actual, "actual")));
-        List<Op> ops = script(left, right);
-        List<String> rendered = new ArrayList<>();
-        for (int[] hunk : hunks(ops)) {
-            render(rendered, ops, hunk[0], hunk[1]);
-        }
-        return join(rendered);
-    }
-
-    /** Splits on line feeds and marks a missing final feed, so two texts differing only in it still differ. */
-    private static List<Line> lines(String text) {
-        if (text.isEmpty()) {
-            return List.of();
-        }
-        List<String> textLines = new ArrayList<>(Arrays.asList(text.split("\n", -1)));
-        boolean missingFinalFeed = !textLines.get(textLines.size() - 1).isEmpty();
-        if (!missingFinalFeed) {
-            textLines.remove(textLines.size() - 1);
-        }
-        List<Line> lines = new ArrayList<>(textLines.size() + (missingFinalFeed ? 1 : 0));
-        for (String textLine : textLines) {
-            lines.add(new Line(textLine, false));
-        }
-        if (missingFinalFeed) {
-            lines.add(new Line(NO_NEWLINE, true));
-        }
-        return lines;
+        Text left = Text.of(normalize(Objects.requireNonNull(expected, "expected")));
+        Text right = Text.of(normalize(Objects.requireNonNull(actual, "actual")));
+        return Script.of(left, right).render(left, right);
     }
 
     private static String normalize(String text) {
         return text.replace("\r\n", "\n").replace('\r', '\n');
     }
 
-    private static List<Op> script(List<Line> left, List<Line> right) {
-        int prefix = 0;
-        while (prefix < left.size() && prefix < right.size() && left.get(prefix).equals(right.get(prefix))) {
-            prefix++;
-        }
-        int suffix = 0;
-        while (suffix < left.size() - prefix && suffix < right.size() - prefix
-                && left.get(left.size() - 1 - suffix).equals(right.get(right.size() - 1 - suffix))) {
-            suffix++;
-        }
-        List<Op> ops = new ArrayList<>();
-        for (int index = Math.max(0, prefix - CONTEXT); index < prefix; index++) {
-            ops.add(new Op(Kind.CONTEXT, left.get(index), index, index));
-        }
-        middle(ops, left.subList(prefix, left.size() - suffix), right.subList(prefix, right.size() - suffix),
-                prefix);
-        int leftTail = left.size() - suffix;
-        int rightTail = right.size() - suffix;
-        for (int index = 0; index < Math.min(CONTEXT, suffix); index++) {
-            ops.add(new Op(Kind.CONTEXT, left.get(leftTail + index), leftTail + index, rightTail + index));
-        }
-        return ops;
-    }
-
-    private static void middle(List<Op> ops, List<Line> left, List<Line> right, int base) {
-        if ((long) (left.size() + 1) * (right.size() + 1) > MAX_CELLS) {
-            deleteThenAdd(ops, left, right, base, 0, 0);
-        } else {
-            align(ops, left, right, base, commonLengths(left, right));
-        }
-    }
-
     /**
-     * The table whose cell {@code [i][j]} is the length of the longest common subsequence of the two blocks
-     * from those lines on.
+     * The lines of a text, split on line feeds. When a non-empty text does not end with a line feed, its last line is
+     * the marker that says so, and that line differs from a real line that happens to read the same.
      */
-    private static int[][] commonLengths(List<Line> left, List<Line> right) {
-        int rows = left.size();
-        int columns = right.size();
-        int[][] lcs = new int[rows + 1][columns + 1];
-        for (int i = rows - 1; i >= 0; i--) {
-            for (int j = columns - 1; j >= 0; j--) {
-                lcs[i][j] = left.get(i).equals(right.get(j))
-                        ? 1 + lcs[i + 1][j + 1]
-                        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    private record Text(String[] lines, boolean missingFeed) {
+
+        static Text of(String text) {
+            if (text.isEmpty()) {
+                return new Text(new String[0], false);
             }
+            boolean missingFeed = text.charAt(text.length() - 1) != '\n';
+            int feeds = 0;
+            for (int at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1)) {
+                feeds++;
+            }
+            String[] lines = new String[missingFeed ? feeds + 2 : feeds];
+            int begin = 0;
+            for (int line = 0; line < feeds; line++) {
+                int end = text.indexOf('\n', begin);
+                lines[line] = text.substring(begin, end);
+                begin = end + 1;
+            }
+            if (missingFeed) {
+                lines[feeds] = text.substring(begin);
+                lines[feeds + 1] = NO_NEWLINE;
+            }
+            return new Text(lines, missingFeed);
         }
-        return lcs;
+
+        int size() {
+            return lines.length;
+        }
+
+        boolean marker(int line) {
+            return missingFeed && line == lines.length - 1;
+        }
+
+        boolean same(int line, Text other, int otherLine) {
+            return marker(line) == other.marker(otherLine) && lines[line].equals(other.lines[otherLine]);
+        }
     }
 
     /**
-     * Walks the table from its first cell, keeping the common lines and preferring a deletion over an addition
-     * on a tie, then deletes and adds what is left.
+     * The edit script: for each step, its kind and the zero-based position each side stands at when it is emitted.
+     * A step that keeps or deletes a line shows the expected text's line at its left position; one that adds shows
+     * the actual text's line at its right position.
      */
-    private static void align(List<Op> ops, List<Line> left, List<Line> right, int base, int[][] lcs) {
-        int rows = left.size();
-        int columns = right.size();
-        int i = 0;
-        int j = 0;
-        while (i < rows && j < columns) {
-            if (left.get(i).equals(right.get(j))) {
-                ops.add(new Op(Kind.CONTEXT, left.get(i), base + i, base + j));
-                i++;
-                j++;
-            } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-                ops.add(new Op(Kind.DELETE, left.get(i), base + i, base + j));
-                i++;
+    private static final class Script {
+
+        private final byte[] kinds;
+        private final int[] lefts;
+        private final int[] rights;
+        private int size;
+
+        private Script(int capacity) {
+            kinds = new byte[capacity];
+            lefts = new int[capacity];
+            rights = new int[capacity];
+        }
+
+        private void add(byte kind, int left, int right) {
+            kinds[size] = kind;
+            lefts[size] = left;
+            rights[size] = right;
+            size++;
+        }
+
+        static Script of(Text left, Text right) {
+            int prefix = 0;
+            while (prefix < left.size() && prefix < right.size() && left.same(prefix, right, prefix)) {
+                prefix++;
+            }
+            int suffix = 0;
+            while (suffix < left.size() - prefix && suffix < right.size() - prefix
+                    && left.same(left.size() - 1 - suffix, right, right.size() - 1 - suffix)) {
+                suffix++;
+            }
+            int leftTail = left.size() - suffix;
+            int rightTail = right.size() - suffix;
+            Script script = new Script(Math.min(CONTEXT, prefix) + leftTail - prefix + rightTail - prefix
+                    + Math.min(CONTEXT, suffix));
+            for (int index = Math.max(0, prefix - CONTEXT); index < prefix; index++) {
+                script.add(KEEP, index, index);
+            }
+            new Middle(left, right, prefix, leftTail, rightTail).emit(script);
+            for (int index = 0; index < Math.min(CONTEXT, suffix); index++) {
+                script.add(KEEP, leftTail + index, rightTail + index);
+            }
+            return script;
+        }
+
+        /** The hunks, each as its first and last step, grouping changes that share context. */
+        private int[] hunks() {
+            int[] hunks = new int[2 * size + 2];
+            int count = 0;
+            int start = -1;
+            int lastChange = -1;
+            for (int index = 0; index < size; index++) {
+                if (kinds[index] == KEEP) {
+                    continue;
+                }
+                if (start < 0) {
+                    start = Math.max(0, index - CONTEXT);
+                } else if (index - lastChange > 2 * CONTEXT) {
+                    hunks[count++] = start;
+                    hunks[count++] = lastChange + CONTEXT;
+                    start = index - CONTEXT;
+                }
+                lastChange = index;
+            }
+            if (start >= 0) {
+                hunks[count++] = start;
+                hunks[count++] = Math.min(size - 1, lastChange + CONTEXT);
+            }
+            return Arrays.copyOf(hunks, count);
+        }
+
+        /**
+         * Each hunk as a header and its lines, the first two hundred of them, then how many more there were. Lines
+         * past the cut are counted, not built.
+         */
+        String render(Text left, Text right) {
+            int[] hunks = hunks();
+            int total = 0;
+            for (int hunk = 0; hunk < hunks.length; hunk += 2) {
+                total += 2 + hunks[hunk + 1] - hunks[hunk];
+            }
+            StringBuilder text = new StringBuilder();
+            int shown = 0;
+            for (int hunk = 0; hunk < hunks.length && shown < MAX_LINES; hunk += 2) {
+                shown = renderHunk(text, shown, left, right, hunks[hunk], hunks[hunk + 1]);
+            }
+            if (shown < total) {
+                text.append("... ").append(total - shown)
+                        .append(" more diff lines omitted; compare the golden resource named by this failure"
+                                + " in full\n");
+            }
+            return text.toString();
+        }
+
+        /** Appends the header and the lines of one hunk while fewer than two hundred are shown; returns the count. */
+        private int renderHunk(StringBuilder text, int alreadyShown, Text left, Text right, int start, int end) {
+            int leftLines = 0;
+            int rightLines = 0;
+            for (int index = start; index <= end; index++) {
+                leftLines += kinds[index] == ADD ? 0 : 1;
+                rightLines += kinds[index] == DELETE ? 0 : 1;
+            }
+            text.append("@@ -").append(position(lefts[start], leftLines)).append(',').append(leftLines)
+                    .append(" +").append(position(rights[start], rightLines)).append(',').append(rightLines)
+                    .append(" @@\n");
+            int shown = alreadyShown + 1;
+            for (int index = start; index <= end && shown < MAX_LINES; index++) {
+                String line = kinds[index] == ADD ? right.lines()[rights[index]] : left.lines()[lefts[index]];
+                text.append(MARKERS[kinds[index]]).append(line).append('\n');
+                shown++;
+            }
+            return shown;
+        }
+
+        private static int position(int index, int count) {
+            return count == 0 ? index : index + 1;
+        }
+    }
+
+    /**
+     * The block between the common prefix and suffix: lines {@code base} to {@code leftEnd} of the expected text and
+     * {@code base} to {@code rightEnd} of the actual one.
+     */
+    private record Middle(Text left, Text right, int base, int leftEnd, int rightEnd) {
+
+        void emit(Script script) {
+            int rows = leftEnd - base;
+            int columns = rightEnd - base;
+            if ((long) (rows + 1) * (columns + 1) > MAX_CELLS) {
+                deleteThenAdd(script, 0, 0);
             } else {
-                ops.add(new Op(Kind.ADD, right.get(j), base + i, base + j));
-                j++;
+                align(script, rows, columns);
             }
         }
-        deleteThenAdd(ops, left, right, base, i, j);
-    }
 
-    /**
-     * Deletes the lines of the left block from {@code row} on and then adds those of the right block from
-     * {@code column} on.
-     */
-    private static void deleteThenAdd(List<Op> ops, List<Line> left, List<Line> right, int base, int row, int column) {
-        for (int i = row; i < left.size(); i++) {
-            ops.add(new Op(Kind.DELETE, left.get(i), base + i, base + column));
-        }
-        for (int j = column; j < right.size(); j++) {
-            ops.add(new Op(Kind.ADD, right.get(j), base + left.size(), base + j));
-        }
-    }
-
-    /** Groups the changes into hunks of three context lines, merging two changes that share context. */
-    private static List<int[]> hunks(List<Op> ops) {
-        List<int[]> hunks = new ArrayList<>();
-        int start = -1;
-        int lastChange = -1;
-        for (int index = 0; index < ops.size(); index++) {
-            if (ops.get(index).kind() == Kind.CONTEXT) {
-                continue;
+        /**
+         * Numbers each line of the block, the same number for the same line, fills the table whose cell
+         * {@code [i][j]} is the length of the longest common subsequence of the two blocks from those lines on, then
+         * walks it from its first cell, keeping the common lines and preferring a deletion over an addition on a tie,
+         * and deletes and adds what is left. Within a million cells no length exceeds 999, so a cell fits in 16 bits.
+         */
+        private void align(Script script, int rows, int columns) {
+            Map<String, Integer> numbers = HashMap.newHashMap(rows + columns);
+            int[] leftNumbers = number(left, base, rows, numbers);
+            int[] rightNumbers = number(right, base, columns, numbers);
+            int width = columns + 1;
+            short[] table = new short[(rows + 1) * width];
+            for (int i = rows - 1; i >= 0; i--) {
+                int row = i * width;
+                int line = leftNumbers[i];
+                short after = 0;
+                for (int j = columns - 1; j >= 0; j--) {
+                    after = line == rightNumbers[j] ? (short) (table[row + width + j + 1] + 1)
+                            : (short) Math.max(table[row + width + j], after);
+                    table[row + j] = after;
+                }
             }
-            if (start < 0) {
-                start = Math.max(0, index - CONTEXT);
-            } else if (index - lastChange > 2 * CONTEXT) {
-                hunks.add(new int[] {start, lastChange + CONTEXT});
-                start = index - CONTEXT;
+            int i = 0;
+            int j = 0;
+            while (i < rows && j < columns) {
+                if (leftNumbers[i] == rightNumbers[j]) {
+                    script.add(KEEP, base + i++, base + j++);
+                } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
+                    script.add(DELETE, base + i++, base + j);
+                } else {
+                    script.add(ADD, base + i, base + j++);
+                }
             }
-            lastChange = index;
+            deleteThenAdd(script, i, j);
         }
-        if (start >= 0) {
-            hunks.add(new int[] {start, Math.min(ops.size() - 1, lastChange + CONTEXT)});
+
+        /** The number of each of {@code count} lines from {@code base}: -1 for the missing-feed marker. */
+        private static int[] number(Text text, int base, int count, Map<String, Integer> numbers) {
+            int[] numbered = new int[count];
+            for (int line = 0; line < count; line++) {
+                if (text.marker(base + line)) {
+                    numbered[line] = -1;
+                } else {
+                    Integer known = numbers.putIfAbsent(text.lines()[base + line], numbers.size());
+                    numbered[line] = known == null ? numbers.size() - 1 : known;
+                }
+            }
+            return numbered;
         }
-        return hunks;
+
+        /**
+         * Deletes the lines of the left block from {@code row} on and then adds those of the right block from
+         * {@code column} on.
+         */
+        private void deleteThenAdd(Script script, int row, int column) {
+            for (int i = base + row; i < leftEnd; i++) {
+                script.add(DELETE, i, base + column);
+            }
+            for (int j = base + column; j < rightEnd; j++) {
+                script.add(ADD, leftEnd, j);
+            }
+        }
     }
-
-    private static void render(List<String> rendered, List<Op> ops, int start, int end) {
-        int leftLines = 0;
-        int rightLines = 0;
-        for (int index = start; index <= end; index++) {
-            Kind kind = ops.get(index).kind();
-            leftLines += kind == Kind.ADD ? 0 : 1;
-            rightLines += kind == Kind.DELETE ? 0 : 1;
-        }
-        Op first = ops.get(start);
-        rendered.add("@@ -" + position(first.left(), leftLines) + "," + leftLines
-                + " +" + position(first.right(), rightLines) + "," + rightLines + " @@");
-        for (int index = start; index <= end; index++) {
-            Op op = ops.get(index);
-            rendered.add(op.kind().marker() + op.line().text());
-        }
-    }
-
-    private static int position(int index, int count) {
-        return count == 0 ? index : index + 1;
-    }
-
-    private static String join(List<String> rendered) {
-        StringBuilder text = new StringBuilder();
-        int shown = Math.min(rendered.size(), MAX_LINES);
-        for (int index = 0; index < shown; index++) {
-            text.append(rendered.get(index)).append('\n');
-        }
-        if (shown < rendered.size()) {
-            text.append("... ").append(rendered.size() - shown)
-                    .append(" more diff lines omitted; compare the golden resource named by this failure"
-                            + " in full\n");
-        }
-        return text.toString();
-    }
-
-    /**
-     * How a line of the edit script stands against the two texts: in both, only in the expected one or only in
-     * the actual one, each rendered with its own marker character.
-     */
-    @Getter(AccessLevel.PACKAGE)
-    @RequiredArgsConstructor
-    private enum Kind {
-        CONTEXT(' '), DELETE('-'), ADD('+');
-
-        private final char marker;
-    }
-
-    /**
-     * One line of a text. {@code diagnostic} marks the line that stands for a missing final line feed, so a
-     * real line that happens to read the same is a different line.
-     */
-    private record Line(String text, boolean diagnostic) { }
-
-    /** One line of the edit script with the zero-based position each side stands at when it is emitted. */
-    private record Op(Kind kind, Line line, int left, int right) { }
 }
