@@ -45,12 +45,13 @@ final class NumberedGraph<N> {
 
     /** The numbered form of {@code graph}, or empty when a node or an edge endpoint has user-defined equality. */
     static <N> Optional<NumberedGraph<N>> of(Graph<N> graph) {
-        Object[] nodes = graph.nodes().toArray();
-        for (Object node : nodes) {
+        // Checked before anything is copied, so a graph of user nodes, which keeps the object search, pays only this.
+        for (N node : graph.nodes()) {
             if (!lawful(node)) {
                 return Optional.empty();
             }
         }
+        Object[] nodes = graph.nodes().toArray();
         Set<GraphEdge<N>> edges = graph.edges();
         int[] from = new int[edges.size()];
         int[] to = new int[edges.size()];
