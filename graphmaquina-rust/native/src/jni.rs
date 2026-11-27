@@ -1,5 +1,4 @@
-//! JNI entry points for `io.github.graphmaquina.rust.RustKernels`, and two plain C entry points for measuring the
-//! cost of a Foreign Function and Memory API downcall against a JNI call.
+//! JNI entry points for `io.github.graphmaquina.rust.RustKernels`.
 //!
 //! Rules every entry point keeps:
 //!
@@ -359,23 +358,4 @@ pub unsafe extern "system" fn Java_io_github_graphmaquina_rust_RustKernels_align
         let mut kinds = env.critical::<u8>(kinds, kinds_length, true)?;
         Ok(lcs::align(left.as_slice(), right.as_slice(), kinds.as_mut_slice())? as jint)
     })
-}
-
-/// Does nothing; the target of a Foreign Function and Memory API downcall, to compare its cost with a JNI call.
-#[unsafe(no_mangle)]
-pub extern "C" fn gm_noop() {}
-
-/// The wrapping sum of `length` ints at `values`; a downcall that borrows one array.
-///
-/// # Safety
-///
-/// `values` must point at `length` readable, initialized `i32`s (or `length` must be 0), valid for the call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn gm_sum(values: *const i32, length: usize) -> i32 {
-    if length == 0 {
-        return 0;
-    }
-    // SAFETY: the caller guarantees `length` readable ints at the non-null `values` for the call.
-    let values = unsafe { std::slice::from_raw_parts(values, length) };
-    values.iter().fold(0i32, |sum, &value| sum.wrapping_add(value))
 }

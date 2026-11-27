@@ -3,7 +3,8 @@
 //! longest-common-subsequence alignment of `LineDiff`.
 //!
 //! The kernels in [`csr`], [`scc`], [`cycles`] and [`lcs`] are safe Rust over borrowed slices. Every `unsafe` block
-//! lives in [`jni`], the boundary with the JVM.
+//! lives at a boundary with the JVM: [`jni`], what the Java module calls, and [`ffm`], plain C entry points the
+//! benchmarks call through the Foreign Function and Memory API for reference.
 //!
 //! Allocation failures: the cycle listing, the only buffer whose size depends on the answer rather than the input,
 //! and the copies of Java arrays grow fallibly, so a native heap that cannot hold them becomes a Java
@@ -13,6 +14,7 @@
 
 pub mod csr;
 pub mod cycles;
+pub mod ffm;
 pub mod jni;
 pub mod lcs;
 pub mod scc;
