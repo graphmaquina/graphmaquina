@@ -77,23 +77,32 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         guards = List.copyOf(guards);
         failsOn = List.copyOf(failsOn);
         recoveryRules = List.copyOf(recoveryRules);
-        String where = from.name() + " -" + transition.name() + "-> " + to.name();
         if (action.isEmpty() && (onFailure.isPresent() || !failsOn.isEmpty())) {
-            throw new IllegalArgumentException(where + ": onFailure and failsOn are only allowed with an action");
+            throw new IllegalArgumentException(where(from, transition, to)
+                    + ": onFailure and failsOn are only allowed with an action");
         }
         if (onFailureContinues && onFailure.isEmpty()) {
-            throw new IllegalArgumentException(where + ": onFailureContinues needs an onFailure");
+            throw new IllegalArgumentException(where(from, transition, to) + ": onFailureContinues needs an onFailure");
         }
         if (action.isEmpty() && !recoveryRules.isEmpty()) {
-            throw new IllegalArgumentException(where + ": recovery rules are only allowed with an action");
+            throw new IllegalArgumentException(where(from, transition, to)
+                    + ": recovery rules are only allowed with an action");
         }
         if (timeout.isPresent() && !(action.isPresent() && action.get().isAsync())) {
-            throw new IllegalArgumentException(where + ": timeout is only allowed on an asynchronous action");
+            throw new IllegalArgumentException(where(from, transition, to)
+                    + ": timeout is only allowed on an asynchronous action");
         }
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {
-            throw new IllegalArgumentException(where + ": timeout must be positive");
+            throw new IllegalArgumentException(where(from, transition, to) + ": timeout must be positive");
         }
-        requireDistinctRules(where, recoveryRules, failsOn);
+        if (!recoveryRules.isEmpty()) {
+            requireDistinctRules(where(from, transition, to), recoveryRules, failsOn);
+        }
+    }
+
+    /** How a refusal names the edge: {@code FROM -ID-> TO}; built only when a refusal needs it. */
+    private static String where(Enum<?> from, Enum<?> transition, Enum<?> to) {
+        return from.name() + " -" + transition.name() + "-> " + to.name();
     }
 
     /**

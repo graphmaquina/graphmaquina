@@ -56,6 +56,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<SubmachineDraft<E, S, T, ?, ?, ?>> submachines = new ArrayList<>();
     @Getter(AccessLevel.PACKAGE)
     private final Problems problems = new Problems();
+    /** Whether build() has run; a stage this graph opened reads it before it names itself in a refusal. */
+    @Getter(AccessLevel.PACKAGE)
     private boolean built;
 
     DefaultGraphBuilder(MachineKey<E, S, T> key) {

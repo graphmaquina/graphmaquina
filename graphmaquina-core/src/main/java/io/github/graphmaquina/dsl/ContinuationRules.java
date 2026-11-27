@@ -45,11 +45,17 @@ final class ContinuationRules {
                 }
             }
         }
-        cycles(Graph.of(outline.states(), jumps), problems);
+        if (!jumps.isEmpty()) {
+            // Without a jump every component is a single state that points at nothing: no cycle to report.
+            cycles(Graph.of(outline.states(), jumps), problems);
+        }
     }
 
     /** The continuing routes of {@code edge}: its continuing recoveries in declaration order, then its onFailure. */
     private static List<Route> routes(TransitionOutline edge, OutlineIndex index) {
+        if (edge.continuingRecoveries().isEmpty() && !(edge.onFailureContinues() && edge.onFailure().isPresent())) {
+            return List.of();
+        }
         Set<String> identifiers = new LinkedHashSet<>(edge.continuingRecoveries());
         if (edge.onFailureContinues() && edge.onFailure().isPresent()) {
             identifiers.add(edge.onFailure().get());
