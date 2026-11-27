@@ -45,6 +45,9 @@ final class CompositionCycles {
     static <E, S extends Enum<S>, T extends Enum<T>> void check(MachineKey<E, S, T> key,
                                                                 List<SubmachineDraft<E, S, T, ?, ?, ?>> submachines,
                                                                 Problems problems) {
+        if (submachines.isEmpty()) {
+            return;
+        }
         List<SubmachineDraft<E, S, T, ?, ?, ?>> byState = new ArrayList<>(submachines);
         byState.sort(Comparator.comparingInt((SubmachineDraft<E, S, T, ?, ?, ?> draft) -> draft.state().ordinal()));
         Deque<Visit> queue = new ArrayDeque<>();
