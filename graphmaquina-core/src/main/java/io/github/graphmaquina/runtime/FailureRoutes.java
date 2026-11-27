@@ -50,9 +50,8 @@ final class FailureRoutes {
         UnitOfWork uow = tx.uow();
         uow.rollbackTo(savepoint);
         S from = failing.from();
-        Optional<String> actionName = failing.action().map(ActionRef::name);
         if (recovery.isEmpty()) {
-            throw unhandled(tx, machine, ref, failing, depth, reason, cause, actionName);
+            throw unhandled(tx, machine, ref, failing, depth, reason, cause, failing.action().map(ActionRef::name));
         }
         T recoveryId = recovery.orElseThrow();
         if (tx.log().trace()) {
