@@ -208,8 +208,22 @@ public final class Graph<N> {
      * <p>The search carries its path on an explicit stack, so a cycle as long as the graph does not grow the
      * Java stack. Roots are visited in the declared node order and not component by component, because members
      * of different components interleave in that order and the order of the answer is part of the contract.
+     *
+     * <p>A graph whose nodes and edge endpoints are all strings, enum constants or boxed primitives is numbered once
+     * and searched over arrays of ints; any other graph is searched over its node objects, which calls their
+     * {@code equals} and {@code hashCode}. Both searches return the same cycles holding the same instances: the
+     * root's declared instance, then the instance each followed edge carries.
      */
     public List<List<N>> cycles() {
+        Optional<NumberedGraph<N>> numbered = NumberedGraph.of(this);
+        return numbered.isPresent() ? numbered.get().cycles() : cyclesOverObjects();
+    }
+
+    /**
+     * {@link #cycles()} over the node objects themselves: what every graph whose equality is user code gets, and the
+     * reference a test holds the numbered search to.
+     */
+    List<List<N>> cyclesOverObjects() {
         List<Set<N>> components = StrongComponents.find(this);
         Map<N, Integer> componentOf = new HashMap<>();
         Set<Integer> cyclic = new HashSet<>();

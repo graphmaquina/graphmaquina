@@ -27,8 +27,23 @@ public final class StrongComponents {
 
     private StrongComponents() { }
 
-    /** The components of {@code graph}, ordered by the declaration index of their first node. */
+    /**
+     * The components of {@code graph}, ordered by the declaration index of their first node.
+     *
+     * <p>A graph whose nodes and edge endpoints are all strings, enum constants or boxed primitives is numbered once
+     * and searched over arrays of ints; any other graph is searched over its node objects, which calls their
+     * {@code equals} and {@code hashCode}. Both searches return the same components holding the same instances.
+     */
     public static <N> List<Set<N>> find(@NonNull Graph<N> graph) {
+        Optional<NumberedGraph<N>> numbered = NumberedGraph.of(graph);
+        return numbered.isPresent() ? numbered.get().components() : findOverObjects(graph);
+    }
+
+    /**
+     * {@link #find} over the node objects themselves: what every graph whose equality is user code gets, and the
+     * reference a test holds the numbered search to.
+     */
+    static <N> List<Set<N>> findOverObjects(Graph<N> graph) {
         List<N> order = new ArrayList<>(graph.nodes());
         Map<N, Integer> index = new HashMap<>();
         for (int i = 0; i < order.size(); i++) {
