@@ -485,7 +485,6 @@ final class Submachines {
     private static <E, S extends Enum<S>, T extends Enum<T>, P> P childOf(
             Transaction tx, DefaultStateMachine<?, ?, ?> machine, EntityRef ref, TransitionSpec<?, ?, ?> edge,
             int depth, DefaultStateMachine<E, S, T> parentMachine, E parent, SubmachineSpec<E, S, T, P, ?, ?> spec) {
-        String binding = parentMachine.key() + "." + spec.state().name();
         Optional<P> child;
         try {
             child = spec.childOf().apply(parent);
@@ -495,11 +494,12 @@ final class Submachines {
             Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw entryAbort(tx, machine, ref, edge, depth,
-                    "the childOf of " + binding + " threw " + Texts.shown(cause), Optional.of(cause));
+                    "the childOf of " + bindingName(parentMachine, spec) + " threw " + Texts.shown(cause),
+                    Optional.of(cause));
         }
         if (child == null) {
-            throw entryAbort(tx, machine, ref, edge, depth, "the childOf of " + binding + " returned null",
-                    Optional.empty());
+            throw entryAbort(tx, machine, ref, edge, depth,
+                    "the childOf of " + bindingName(parentMachine, spec) + " returned null", Optional.empty());
         }
         if (child.isEmpty()) {
             throw entryAbort(tx, machine, ref, edge, depth,
@@ -507,6 +507,12 @@ final class Submachines {
                     Optional.empty());
         }
         return child.get();
+    }
+
+    /** How an abort names the binding of {@code spec}: the parent's key, a dot and the bound state; only to throw. */
+    private static String bindingName(DefaultStateMachine<?, ?, ?> parentMachine,
+                                      SubmachineSpec<?, ?, ?, ?, ?, ?> spec) {
+        return parentMachine.key() + "." + spec.state().name();
     }
 
     /** An abort of the step that entered a bound node along {@code edge}, before its action ran. */

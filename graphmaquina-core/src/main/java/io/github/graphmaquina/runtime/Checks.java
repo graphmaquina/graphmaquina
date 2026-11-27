@@ -49,8 +49,13 @@ final class Checks {
         Reentrancy.Cell cell = Reentrancy.cell();
         Reentrancy.requireCheckMayStart(cell, machine, entity);
         UnitOfWork uow = new UnitOfWork(machine.registry().maxCascadeDepth(), machine.deadlineNanos());
-        uow.request(cell.top.map(UnitOfWork::request)
-                .orElseGet(() -> request.orElseGet(() -> new RequestScope(machine.clock()))));
+        if (cell.top.isPresent()) {
+            uow.request(cell.top.get().request());
+        } else if (request.isPresent()) {
+            uow.request(request.get());
+        } else {
+            uow.request(new RequestScope(machine.clock()));
+        }
         UnitOfWork enclosing = cell.top.orElse(uow);
         int guards = enclosing.guards;
         enclosing.guards = 0;
