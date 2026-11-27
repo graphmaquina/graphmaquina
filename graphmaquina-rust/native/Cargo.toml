@@ -1,0 +1,30 @@
+[package]
+name = "graphmaquina-rust"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+description = "Native kernels for GraphMaquina graph and diff algorithms, called from Java through JNI"
+license = "Apache-2.0"
+
+[lib]
+name = "graphmaquina_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni-sys = "0.4.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Unwinding stays on: every JNI entry point catches a panic and turns it into a Java exception, so a bug in a
+# kernel can never take the JVM down.
+panic = "unwind"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
