@@ -12,4 +12,11 @@ package io.github.graphmaquina.runtime;
  * @param watch the watch reactions on the path, the call itself included when it is one
  * @param automatic the automatic attempts on the path, the call itself included when it is one
  */
-record ChainLevels(int watch, int automatic) { }
+record ChainLevels(int watch, int automatic) {
+
+    /** A call of the application that is not an advance: no watch reaction and no automatic attempt on its path. */
+    static final ChainLevels APPLICATION = new ChainLevels(0, 0);
+
+    /** An advance the application calls: its own attempt is the first automatic one. */
+    static final ChainLevels ADVANCE = new ChainLevels(0, 1);
+}

@@ -42,7 +42,11 @@ sealed class Transaction permits Transaction.Admission {
     private final MachineRegistry registry;
     @Getter(AccessLevel.PACKAGE)
     private final UnitOfWork uow;
-    private final List<ContextHandle> contexts = new ArrayList<>();
+    /**
+     * The contexts the call handed out, in that order: the shared empty list until the first one, so that a call that
+     * hands none out allocates no list.
+     */
+    private List<ContextHandle> contexts = List.of();
 
     /** The key of the root call's machine. */
     @Getter(AccessLevel.PACKAGE)
@@ -143,6 +147,9 @@ sealed class Transaction permits Transaction.Admission {
 
     /** Keeps {@code context}, a context the call handed out, for {@link #invalidate}. */
     void track(ContextHandle context) {
+        if (contexts.isEmpty()) {
+            contexts = new ArrayList<>(2);
+        }
         contexts.add(context);
     }
 

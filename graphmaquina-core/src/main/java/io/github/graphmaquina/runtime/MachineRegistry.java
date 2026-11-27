@@ -220,8 +220,9 @@ public final class MachineRegistry implements AutoCloseable {
                 CallRequest.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class,
                 RejectionKind.class, StatesWritten.class, TransitionKind.class, CallFailedException.class,
                 ReentrantTransitionException.Refusal.class, CallFailureFlows.class, FrozenFlow.class, Await.class,
-                CallLog.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class, PostCommitScope.class,
-                Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
+                CallLog.class, ChainLevels.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class,
+                PostCommitScope.class, Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class,
+                Watcher.NoOwner.class);
     }
 
     /**

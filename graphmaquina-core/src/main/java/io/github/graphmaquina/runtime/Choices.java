@@ -52,7 +52,7 @@ final class Choices {
         }
         return RootCall.run(machine, entity, CallRequest.CHOOSE, Optional.empty(), CallOrigin.APPLICATION, observed,
                 log, (Transaction tx) -> Attempts.firstAdmitted(tx, machine, entity, tried, input),
-                new ChainLevels(0, 0), Optional.empty()).outcome();
+                ChainLevels.APPLICATION, Optional.empty()).outcome();
     }
 
     /**
