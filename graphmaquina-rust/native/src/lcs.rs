@@ -42,11 +42,21 @@ pub fn align(left: &[i32], right: &[i32], kinds: &mut [u8]) -> Result<usize, Ker
     let mut table = vec![0u16; cells];
     for i in (0..rows).rev() {
         let (upper, lower) = table.split_at_mut((i + 1) * width);
+        // Both rows are exactly `width` long and `right` exactly `columns`, so every index below is provably in
+        // bounds and the compiler drops the checks.
         let row = &mut upper[i * width..];
         let below = &lower[..width];
         let line = left[i];
+        // The cell to the right of the one being filled, carried in a register instead of read back from memory.
+        let mut right_cell = 0u16;
         for j in (0..columns).rev() {
-            row[j] = if line == right[j] { below[j + 1] + 1 } else { below[j].max(row[j + 1]) };
+            let cell = if line == right[j] {
+                below[j + 1] + 1
+            } else {
+                below[j].max(right_cell)
+            };
+            row[j] = cell;
+            right_cell = cell;
         }
     }
     let (mut i, mut j, mut steps) = (0, 0, 0);
@@ -105,7 +115,10 @@ mod tests {
         let left = vec![0; 999];
         let right = vec![1; 1001];
         let mut kinds = vec![0; left.len() + right.len()];
-        assert!(matches!(align(&left, &right, &mut kinds), Err(KernelError::TableTooLarge)));
+        assert!(matches!(
+            align(&left, &right, &mut kinds),
+            Err(KernelError::TableTooLarge)
+        ));
     }
 
     #[test]
@@ -119,7 +132,10 @@ mod tests {
     #[test]
     fn refuses_an_output_too_small_for_the_longest_script() {
         let mut kinds = vec![0; 2];
-        assert!(matches!(align(&[1, 2], &[3], &mut kinds), Err(KernelError::OutputTooSmall)));
+        assert!(matches!(
+            align(&[1, 2], &[3], &mut kinds),
+            Err(KernelError::OutputTooSmall)
+        ));
     }
 
     /// `LineDiff.commonLengths` and `LineDiff.align` as Java writes them, over an `int[][]`-shaped table.

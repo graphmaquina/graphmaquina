@@ -32,8 +32,9 @@ pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
     }
     let mut on_path = vec![false; nodes];
     let mut path: Vec<i32> = Vec::with_capacity(nodes);
-    // The node and the position of its next edge, for each node on the path; never more than `nodes` of them.
-    let mut frames: Vec<(u32, u32)> = Vec::with_capacity(nodes);
+    // The frame on top of the search lives in locals (`node`, `edge`, `end`), where the compiler can keep it in
+    // registers; `suspended` holds the frames below it. A path holds each node once, so neither vector reallocates.
+    let mut suspended: Vec<(u32, u32)> = Vec::with_capacity(nodes);
     let mut found = 0;
     for root in 0..nodes {
         let root_component = component[root];
@@ -42,18 +43,21 @@ pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
         }
         path.push(root as i32);
         on_path[root] = true;
-        frames.push((root as u32, graph.first_edge(root) as u32));
-        while let Some(frame) = frames.last_mut() {
-            let (node, edge) = (frame.0 as usize, frame.1 as usize);
-            if edge == graph.end_edge(node) {
-                frames.pop();
+        let (mut node, mut edge, mut end) = (root, graph.first_edge(root), graph.end_edge(root));
+        loop {
+            if edge == end {
                 on_path[node] = false;
                 path.pop();
+                let Some((parent, parent_edge)) = suspended.pop() else {
+                    break;
+                };
+                (node, edge) = (parent as usize, parent_edge as usize);
+                end = graph.end_edge(node);
                 continue;
             }
-            frame.1 += 1;
             let next = graph.target(edge);
-            if component[next] != root_component || next < root {
+            edge += 1;
+            if next < root || component[next] != root_component {
                 continue;
             }
             if next == root {
@@ -63,7 +67,8 @@ pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
             } else if !on_path[next] {
                 on_path[next] = true;
                 path.push(next as i32);
-                frames.push((next as u32, graph.first_edge(next) as u32));
+                suspended.push((node as u32, edge as u32));
+                (node, edge, end) = (next, graph.first_edge(next), graph.end_edge(next));
             }
         }
     }
@@ -103,7 +108,9 @@ mod tests {
     }
 
     fn dense(size: usize) -> Vec<Vec<i32>> {
-        (0..size).map(|from| (1..size).map(|offset| ((from + offset) % size) as i32).collect()).collect()
+        (0..size)
+            .map(|from| (1..size).map(|offset| ((from + offset) % size) as i32).collect())
+            .collect()
     }
 
     #[test]
@@ -147,7 +154,14 @@ mod tests {
         for start in 0..adjacency.len() {
             let mut on_path = vec![false; adjacency.len()];
             on_path[start] = true;
-            search(adjacency, start, start, &mut vec![start as i32], &mut on_path, &mut found);
+            search(
+                adjacency,
+                start,
+                start,
+                &mut vec![start as i32],
+                &mut on_path,
+                &mut found,
+            );
         }
         found
     }
@@ -159,8 +173,7 @@ mod tests {
             let n = 1 + random.below(7);
             let adjacency: Vec<Vec<i32>> = (0..n)
                 .map(|_| {
-                    let mut successors: Vec<i32> =
-                        (0..n as i32).filter(|_| random.below(3) == 0).collect();
+                    let mut successors: Vec<i32> = (0..n as i32).filter(|_| random.below(3) == 0).collect();
                     for i in (1..successors.len()).rev() {
                         successors.swap(i, random.below(i + 1));
                     }

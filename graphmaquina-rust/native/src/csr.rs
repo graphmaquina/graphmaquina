@@ -16,7 +16,9 @@ impl<'a> Csr<'a> {
     /// `n + 1` non-decreasing entries from 0 to `targets.len()`, and every target is a node below `n`.
     pub fn new(offsets: &'a [i32], targets: &'a [i32]) -> Result<Self, KernelError> {
         let Some((&first, _)) = offsets.split_first() else {
-            return Err(KernelError::MalformedGraph(c"the offsets need one entry per node plus one"));
+            return Err(KernelError::MalformedGraph(
+                c"the offsets need one entry per node plus one",
+            ));
         };
         if first != 0 {
             return Err(KernelError::MalformedGraph(c"the first offset must be 0"));
@@ -95,12 +97,18 @@ mod tests {
 
     #[test]
     fn refuses_decreasing_offsets() {
-        assert!(matches!(Csr::new(&[0, 2, 1, 2], &[0, 0]), Err(KernelError::MalformedGraph(_))));
+        assert!(matches!(
+            Csr::new(&[0, 2, 1, 2], &[0, 0]),
+            Err(KernelError::MalformedGraph(_))
+        ));
     }
 
     #[test]
     fn refuses_offsets_that_do_not_end_at_the_edge_count() {
-        assert!(matches!(Csr::new(&[0, 1], &[0, 0]), Err(KernelError::MalformedGraph(_))));
+        assert!(matches!(
+            Csr::new(&[0, 1], &[0, 0]),
+            Err(KernelError::MalformedGraph(_))
+        ));
     }
 
     #[test]

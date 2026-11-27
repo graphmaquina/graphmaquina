@@ -64,7 +64,14 @@ impl Env {
             let raw = unsafe { ((**self.0).v1_2.GetPrimitiveArrayCritical)(self.0, array, ptr::null_mut()) };
             NonNull::new(raw.cast::<T>()).ok_or(Failure::Pending)?
         };
-        Ok(Critical { env: self, array, data, length, mode: if writes { 0 } else { JNI_ABORT }, call: PhantomData })
+        Ok(Critical {
+            env: self,
+            array,
+            data,
+            length,
+            mode: if writes { 0 } else { JNI_ABORT },
+            call: PhantomData,
+        })
     }
 
     /// Copies the `length` ints of `array` into a new vector, holding no critical region.
@@ -80,6 +87,33 @@ impl Env {
             copy.set_len(length);
         }
         Ok(copy)
+    }
+
+    /// Copies `array`, which holds `length` ints, onto the stack one chunk at a time and hands each chunk to
+    /// `consume`: no heap allocation and no critical region, at the price of one copy.
+    fn for_each_int_chunk(
+        self,
+        array: jintArray,
+        length: usize,
+        mut consume: impl FnMut(&[i32]),
+    ) -> Result<(), Failure> {
+        const CHUNK: usize = 1024;
+        let mut buffer = [0i32; CHUNK];
+        let mut start = 0;
+        while start < length {
+            let count = CHUNK.min(length - start);
+            // SAFETY: valid environment, non-null int array of `length` elements; the region
+            // [start, start + count) lies inside it and `buffer` has room for `count` ints.
+            unsafe {
+                ((**self.0).v1_1.GetIntArrayRegion)(self.0, array, start as jint, count as jint, buffer.as_mut_ptr());
+                if ((**self.0).v1_2.ExceptionCheck)(self.0) {
+                    return Err(Failure::Pending);
+                }
+            }
+            consume(&buffer[..count]);
+            start += count;
+        }
+        Ok(())
     }
 
     /// A new Java int array holding `values`.
@@ -195,7 +229,32 @@ pub unsafe extern "system" fn Java_io_github_graphmaquina_rust_RustKernels_sumCr
     entry(env, 0, || {
         let length = env.length(values)?;
         let values = env.critical::<i32>(values, length, false)?;
-        Ok(values.as_slice().iter().fold(0i32, |sum, &value| sum.wrapping_add(value)))
+        Ok(values
+            .as_slice()
+            .iter()
+            .fold(0i32, |sum, &value| sum.wrapping_add(value)))
+    })
+}
+
+/// `RustKernels.sumRegion(int[])`.
+///
+/// # Safety
+///
+/// Called by the JVM only, with its environment for the current thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_io_github_graphmaquina_rust_RustKernels_sumRegion(
+    env: *mut JNIEnv,
+    _class: jclass,
+    values: jintArray,
+) -> jint {
+    let env = Env(env);
+    entry(env, 0, || {
+        let length = env.length(values)?;
+        let mut sum = 0i32;
+        env.for_each_int_chunk(values, length, |chunk| {
+            sum = chunk.iter().fold(sum, |sum, &value| sum.wrapping_add(value));
+        })?;
+        Ok(sum)
     })
 }
 

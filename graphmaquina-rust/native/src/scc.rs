@@ -23,9 +23,10 @@ pub fn strong_components(graph: &Csr<'_>, component: &mut [i32]) -> usize {
     let mut index = vec![UNVISITED; nodes];
     let mut low = vec![0u32; nodes];
     let mut stack: Vec<u32> = Vec::with_capacity(nodes);
-    // One frame per node on the search path: the node and the position of its next edge to examine. A path holds
-    // each node at most once, so `nodes` frames is the most it ever needs and the vector never reallocates.
-    let mut frames: Vec<(u32, u32)> = Vec::with_capacity(nodes);
+    // The frame on top of the search lives in locals (`node`, `edge`, `end`), where the compiler can keep it in
+    // registers; `suspended` holds the frames below it, each a node and the position of its next edge. A path holds
+    // each node at most once, so `nodes` entries is the most it ever needs and the vector never reallocates.
+    let mut suspended: Vec<(u32, u32)> = Vec::with_capacity(nodes);
     let mut next_index = 0u32;
     let mut closed = 0i32;
     for root in 0..nodes {
@@ -36,27 +37,22 @@ pub fn strong_components(graph: &Csr<'_>, component: &mut [i32]) -> usize {
         low[root] = next_index;
         next_index += 1;
         stack.push(root as u32);
-        frames.push((root as u32, graph.first_edge(root) as u32));
-        while let Some(frame) = frames.last_mut() {
-            let (node, edge) = (frame.0 as usize, frame.1 as usize);
-            if edge < graph.end_edge(node) {
-                frame.1 += 1;
+        let (mut node, mut edge, mut end) = (root, graph.first_edge(root), graph.end_edge(root));
+        loop {
+            if edge < end {
                 let next = graph.target(edge);
+                edge += 1;
                 if index[next] == UNVISITED {
                     index[next] = next_index;
                     low[next] = next_index;
                     next_index += 1;
                     stack.push(next as u32);
-                    frames.push((next as u32, graph.first_edge(next) as u32));
+                    suspended.push((node as u32, edge as u32));
+                    (node, edge, end) = (next, graph.first_edge(next), graph.end_edge(next));
                 } else if component[next] < 0 {
                     low[node] = low[node].min(index[next]);
                 }
                 continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                let parent = parent as usize;
-                low[parent] = low[parent].min(low[node]);
             }
             if low[node] == index[node] {
                 while let Some(member) = stack.pop() {
@@ -67,6 +63,13 @@ pub fn strong_components(graph: &Csr<'_>, component: &mut [i32]) -> usize {
                 }
                 closed += 1;
             }
+            let Some((parent, parent_edge)) = suspended.pop() else {
+                break;
+            };
+            let finished_low = low[node];
+            (node, edge) = (parent as usize, parent_edge as usize);
+            end = graph.end_edge(node);
+            low[node] = low[node].min(finished_low);
         }
     }
     // Tarjan closes components in finishing order; renumber them by their lowest node. `index` is free again
@@ -138,8 +141,9 @@ pub(crate) mod tests {
     #[test]
     fn a_deep_chain_is_one_component_per_node() {
         let n = 200_000;
-        let adjacency: Vec<Vec<i32>> =
-            (0..n).map(|v| if v + 1 < n { vec![(v + 1) as i32] } else { vec![] }).collect();
+        let adjacency: Vec<Vec<i32>> = (0..n)
+            .map(|v| if v + 1 < n { vec![(v + 1) as i32] } else { vec![] })
+            .collect();
         let lists: Vec<&[i32]> = adjacency.iter().map(Vec::as_slice).collect();
         let (count, component) = components(&lists);
         assert_eq!(count, n);

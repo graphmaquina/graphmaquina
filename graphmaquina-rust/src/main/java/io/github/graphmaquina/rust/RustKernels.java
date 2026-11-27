@@ -28,6 +28,9 @@ public final class RustKernels {
     /** The wrapping sum of {@code values}, read in place: the cost of borrowing one array for a call. */
     public static native int sumCritical(int[] values);
 
+    /** The same sum, copying the array out in chunks onto the native stack instead of borrowing it in place. */
+    public static native int sumRegion(int[] values);
+
     /**
      * Writes the strongly connected component of each node of a CSR graph into {@code component}, numbered by the
      * lowest node of each component, and returns how many components there are. The successors of node {@code v}

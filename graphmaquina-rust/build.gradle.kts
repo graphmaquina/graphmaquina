@@ -32,10 +32,12 @@ val cargoBuild = tasks.register<Exec>("cargoBuild") {
 
 val cargoTest = tasks.register<Exec>("cargoTest") {
     group = "verification"
-    description = "Runs the Rust kernel tests and clippy with warnings as errors"
+    description = "Checks the Rust formatting, runs the Rust kernel tests and clippy with warnings as errors"
     workingDir(nativeDir)
-    commandLine("sh", "-c", "cargo test --locked && cargo clippy --locked --all-targets -- -D warnings")
-    inputs.files(nativeDir.file("Cargo.toml"), nativeDir.file("Cargo.lock"), nativeDir.file("rust-toolchain.toml"))
+    commandLine("sh", "-c",
+        "cargo fmt --check && cargo test --locked && cargo clippy --locked --all-targets -- -D warnings")
+    inputs.files(nativeDir.file("Cargo.toml"), nativeDir.file("Cargo.lock"), nativeDir.file("rust-toolchain.toml"),
+        nativeDir.file("rustfmt.toml"))
     inputs.dir(nativeDir.dir("src"))
     inputs.dir(nativeDir.dir("tests"))
     outputs.upToDateWhen { false }
@@ -44,6 +46,8 @@ val cargoTest = tasks.register<Exec>("cargoTest") {
 tasks.test {
     dependsOn(cargoBuild, cargoTest)
     systemProperty("graphmaquina.rust.library", nativeLibrary.asFile.absolutePath)
+    // The library is read through a path, so it is declared as an input: a rebuilt kernel reruns the tests.
+    inputs.file(nativeLibrary).withPropertyName("nativeLibrary")
     // JDK 24 and later warn when unnamed code loads a native library unless native access is granted to it.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }

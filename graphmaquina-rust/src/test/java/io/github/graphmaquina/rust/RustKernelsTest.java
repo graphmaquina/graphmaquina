@@ -25,6 +25,19 @@ class RustKernelsTest {
     }
 
     @Test
+    void anArrayCopiedOutInChunksSumsTheSame() {
+        int[] values = new int[5_000];
+        int expected = 0;
+        for (int i = 0; i < values.length; i++) {
+            values[i] = i * 7919;
+            expected += values[i];
+        }
+        assertEquals(expected, RustKernels.sumRegion(values));
+        assertEquals(6, RustKernels.sumRegion(new int[] {1, 2, 3}));
+        assertEquals(0, RustKernels.sumRegion(new int[0]));
+    }
+
+    @Test
     void componentsAreNumberedByTheirFirstDeclaredNode() {
         int[] component = new int[4];
         int count = RustKernels.strongComponents(new int[] {0, 1, 3, 4, 4}, new int[] {1, 0, 2, 3}, component);
@@ -76,6 +89,7 @@ class RustKernelsTest {
     @Test
     void aNullArrayIsAJavaExceptionAndNotACrash() {
         assertThrows(NullPointerException.class, () -> RustKernels.sumCritical(null));
+        assertThrows(NullPointerException.class, () -> RustKernels.sumRegion(null));
         assertThrows(NullPointerException.class, () -> RustKernels.strongComponents(null, new int[0], new int[0]));
         assertThrows(NullPointerException.class, () -> RustKernels.strongComponents(new int[] {0}, null, new int[0]));
         assertThrows(NullPointerException.class, () -> RustKernels.strongComponents(new int[] {0}, new int[0], null));
