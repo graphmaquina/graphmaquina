@@ -17,7 +17,7 @@ use crate::csr::Csr;
 use crate::{cycles, lcs, scc};
 use jni_sys::{JNI_ABORT, JNIEnv, jarray, jbyteArray, jclass, jint, jintArray};
 use std::ffi::{CStr, c_void};
-use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::{self, NonNull};
 
@@ -55,7 +55,7 @@ impl Env {
 
     /// Borrows the elements of `array`, which holds `length` elements of type `T`, until the guard is dropped.
     /// `writes` says whether changes must reach the Java array on release.
-    fn critical<'call, T>(self, array: jarray, length: usize, writes: bool) -> Result<Critical<'call, T>, Failure> {
+    fn critical<T>(self, array: jarray, length: usize, writes: bool) -> Result<Critical<T>, Failure> {
         let data = if length == 0 {
             NonNull::dangling()
         } else {
@@ -70,13 +70,13 @@ impl Env {
             data,
             length,
             mode: if writes { 0 } else { JNI_ABORT },
-            call: PhantomData,
         })
     }
 
     /// Copies the `length` ints of `array` into a new vector, holding no critical region.
     fn copy_ints(self, array: jintArray, length: usize) -> Result<Vec<i32>, Failure> {
-        let mut copy = Vec::with_capacity(length);
+        let mut copy = Vec::new();
+        copy.try_reserve_exact(length).map_err(|_| KernelError::OutOfMemory)?;
         // SAFETY: valid environment and non-null int array of exactly `length` elements; `copy` has room for
         // `length` ints and its length is set only after the JVM has written all of them.
         unsafe {
@@ -98,19 +98,28 @@ impl Env {
         mut consume: impl FnMut(&[i32]),
     ) -> Result<(), Failure> {
         const CHUNK: usize = 1024;
-        let mut buffer = [0i32; CHUNK];
+        // Left uninitialized: the JVM writes each chunk before it is read, so zeroing 4 KiB per call would be waste.
+        let mut buffer = [MaybeUninit::<i32>::uninit(); CHUNK];
         let mut start = 0;
         while start < length {
             let count = CHUNK.min(length - start);
             // SAFETY: valid environment, non-null int array of `length` elements; the region
             // [start, start + count) lies inside it and `buffer` has room for `count` ints.
             unsafe {
-                ((**self.0).v1_1.GetIntArrayRegion)(self.0, array, start as jint, count as jint, buffer.as_mut_ptr());
+                ((**self.0).v1_1.GetIntArrayRegion)(
+                    self.0,
+                    array,
+                    start as jint,
+                    count as jint,
+                    buffer.as_mut_ptr().cast::<i32>(),
+                );
                 if ((**self.0).v1_2.ExceptionCheck)(self.0) {
                     return Err(Failure::Pending);
                 }
             }
-            consume(&buffer[..count]);
+            // SAFETY: with no exception pending, GetIntArrayRegion has initialized the first `count` elements.
+            let chunk = unsafe { std::slice::from_raw_parts(buffer.as_ptr().cast::<i32>(), count) };
+            consume(chunk);
             start += count;
         }
         Ok(())
@@ -130,6 +139,12 @@ impl Env {
         }
     }
 
+    /// Whether two references name the same Java object.
+    fn same(self, first: jarray, second: jarray) -> bool {
+        // SAFETY: valid environment and two local references received by this call; no critical region is open.
+        unsafe { ((**self.0).v1_1.IsSameObject)(self.0, first, second) }
+    }
+
     /// Throws a new exception of `class` with `message`, unless a JNI call already left one pending.
     fn throw(self, class: &CStr, message: &CStr) {
         // SAFETY: valid environment, no critical region open, NUL-terminated class name and message.
@@ -145,18 +160,17 @@ impl Env {
     }
 }
 
-/// A primitive array held through `GetPrimitiveArrayCritical`, released when dropped. The `'call` lifetime keeps the
-/// slices it hands out from outliving the native call.
-struct Critical<'call, T> {
+/// A primitive array held through `GetPrimitiveArrayCritical`, released when dropped. The slices it hands out borrow
+/// the guard, so none of them outlives the release.
+struct Critical<T> {
     env: Env,
     array: jarray,
     data: NonNull<T>,
     length: usize,
     mode: jint,
-    call: PhantomData<&'call mut [T]>,
 }
 
-impl<T> Critical<'_, T> {
+impl<T> Critical<T> {
     fn as_slice(&self) -> &[T] {
         // SAFETY: `data` points at `length` initialized elements of the Java array (or is dangling for an empty
         // one), which stay valid and in place until `Drop` releases them.
@@ -164,12 +178,14 @@ impl<T> Critical<'_, T> {
     }
 
     fn as_mut_slice(&mut self) -> &mut [T] {
-        // SAFETY: as in `as_slice`; `&mut self` makes this the only live view of the elements.
+        // SAFETY: as in `as_slice`. `&mut self` makes this the only view handed out by this guard, and no entry point
+        // holds a second guard on the same array while one writes: `strongComponents` refuses an output array that is
+        // also an input (`Env::same`), and `align` writes a `byte[]` while it reads `int[]`s.
         unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.length) }
     }
 }
 
-impl<T> Drop for Critical<'_, T> {
+impl<T> Drop for Critical<T> {
     fn drop(&mut self) {
         if self.length == 0 {
             return;
@@ -191,14 +207,22 @@ fn entry<R>(env: Env, fallback: R, body: impl FnOnce() -> Result<R, Failure>) ->
     match catch_unwind(AssertUnwindSafe(body)) {
         Ok(Ok(value)) => value,
         Ok(Err(Failure::Kernel(error))) => {
-            env.throw(c"java/lang/IllegalArgumentException", error.message());
+            env.throw(error.java_class(), error.message());
             fallback
         }
         Ok(Err(Failure::Null)) => {
             env.throw(c"java/lang/NullPointerException", c"array");
             fallback
         }
-        Ok(Err(Failure::Pending)) => fallback,
+        // The JNI call that failed normally left its own exception, which `throw` keeps; if it left none, the
+        // caller still gets an error instead of a silently empty answer.
+        Ok(Err(Failure::Pending)) => {
+            env.throw(
+                c"java/lang/OutOfMemoryError",
+                c"the JVM could not lend an array to native code",
+            );
+            fallback
+        }
         Err(_) => {
             env.throw(c"java/lang/IllegalStateException", c"the Rust kernel panicked");
             fallback
@@ -275,6 +299,9 @@ pub unsafe extern "system" fn Java_io_github_graphmaquina_rust_RustKernels_stron
     entry(env, 0, || {
         let (offsets_length, targets_length) = (env.length(offsets)?, env.length(targets)?);
         let component_length = env.length(component)?;
+        if env.same(component, offsets) || env.same(component, targets) {
+            return Err(KernelError::OutputAliasesInput.into());
+        }
         let offsets = env.critical::<i32>(offsets, offsets_length, false)?;
         let targets = env.critical::<i32>(targets, targets_length, false)?;
         let mut component = env.critical::<i32>(component, component_length, true)?;
@@ -305,7 +332,7 @@ pub unsafe extern "system" fn Java_io_github_graphmaquina_rust_RustKernels_cycle
         let targets = env.copy_ints(targets, targets_length)?;
         let graph = Csr::new(&offsets, &targets)?;
         let mut listing = Vec::new();
-        cycles::cycles(&graph, &mut listing);
+        cycles::cycles(&graph, &mut listing)?;
         env.new_ints(&listing)
     })
 }

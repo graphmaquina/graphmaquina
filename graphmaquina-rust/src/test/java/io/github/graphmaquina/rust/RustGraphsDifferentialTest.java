@@ -1,15 +1,16 @@
 package io.github.graphmaquina.rust;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.graph.Graph;
 import io.github.graphmaquina.graph.GraphEdge;
 import io.github.graphmaquina.graph.StrongComponents;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -71,19 +72,43 @@ class RustGraphsDifferentialTest {
     }
 
     @Test
-    void theAnswersHoldTheInstancesTheGraphDeclares() {
+    void edgesHoldingEqualButDistinctInstancesGetTheVeryInstancesTheLibraryReturns() {
         Label declaredA = new Label("A");
         Label declaredB = new Label("B");
         Graph<Label> graph = Graph.of(List.of(declaredA, declaredB, new Label("A")),
-                List.of(new GraphEdge<>(new Label("A"), new Label("B")),
-                        new GraphEdge<>(new Label("B"), new Label("A"))));
-        assertSameAnswers(graph);
-        Iterator<Label> members = RustGraphs.components(graph).get(0).iterator();
-        assertSame(declaredA, members.next());
-        assertSame(declaredB, members.next());
-        List<Label> cycle = RustGraphs.cycles(graph).get(0);
-        assertSame(declaredA, cycle.get(0));
-        assertSame(declaredB, cycle.get(1));
+                List.of(new GraphEdge<>(declaredA, new Label("B")), new GraphEdge<>(new Label("B"), declaredA)));
+        assertSameInstances(ordered(StrongComponents.find(graph)), ordered(RustGraphs.components(graph)));
+        assertSameInstances(graph.cycles(), RustGraphs.cycles(graph));
+        String nodeA = "A";
+        String nodeB = "B";
+        Graph<String> strings = Graph.of(List.of(nodeA, nodeB),
+                List.of(new GraphEdge<>(nodeA, new String("B")), new GraphEdge<>(nodeB, nodeA)));
+        assertSameInstances(ordered(StrongComponents.find(strings)), ordered(RustGraphs.components(strings)));
+        assertSameInstances(strings.cycles(), RustGraphs.cycles(strings));
+    }
+
+    @Test
+    void aNodeTypeThatBreaksTheEqualsContractGetsTheLibrarysAnswer() {
+        Lawless first = new Lawless("X");
+        Lawless second = new Lawless("X");
+        Graph<Lawless> graph = Graph.of(List.of(first, second),
+                List.of(new GraphEdge<>(first, second), new GraphEdge<>(second, first)));
+        assertSameInstances(ordered(StrongComponents.find(graph)), ordered(RustGraphs.components(graph)));
+        assertSameInstances(graph.cycles(), RustGraphs.cycles(graph));
+    }
+
+    @Test
+    void theKernelAnswersGraphsOfJdkValueTypesWhoseEdgesReuseTheDeclaredInstances() {
+        List<String> names = List.of("A", "B", "C");
+        assertTrue(RustGraphs.usesKernel(Graph.of(names,
+                List.of(new GraphEdge<>(names.get(0), names.get(1)), new GraphEdge<>(names.get(1), names.get(0))))));
+        assertTrue(RustGraphs.usesKernel(Graph.of(List.of(Phase.ONE, Phase.TWO),
+                List.of(new GraphEdge<>(Phase.ONE, Phase.TWO)))));
+        assertTrue(RustGraphs.usesKernel(Graph.of(List.of(1, 2), List.of(new GraphEdge<>(1, 2)))));
+        assertTrue(RustGraphs.usesKernel(Graph.of(List.<String>of(), List.of())));
+        assertFalse(RustGraphs.usesKernel(Graph.of(List.of(new Label("A")), List.of())));
+        assertFalse(RustGraphs.usesKernel(Graph.of(names,
+                List.of(new GraphEdge<>(names.get(0), new String("B"))))));
     }
 
     @Test
@@ -152,6 +177,43 @@ class RustGraphsDifferentialTest {
         return lists;
     }
 
-    /** A node whose equal instances are distinct objects, so an answer can be checked for the declared one. */
+    /** Fails unless both lists hold the same elements, in the same order, as the very same objects. */
+    private static <N> void assertSameInstances(List<List<N>> expected, List<List<N>> actual) {
+        assertEquals(expected, actual);
+        for (int i = 0; i < expected.size(); i++) {
+            for (int j = 0; j < expected.get(i).size(); j++) {
+                assertSame(expected.get(i).get(j), actual.get(i).get(j), "element " + j + " of list " + i);
+            }
+        }
+    }
+
+    /** A node whose equal instances are distinct objects, so an answer can be checked instance by instance. */
     private record Label(String name) { }
+
+    /** Equal by name but hashed by identity: a node type that breaks the {@code equals}/{@code hashCode} contract. */
+    private static final class Lawless {
+        private final String name;
+
+        Lawless(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Lawless lawless && lawless.name.equals(name);
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+
+        @Override
+        public String toString() {
+            return name + "@" + System.identityHashCode(this);
+        }
+    }
+
+    /** An enum node type. */
+    private enum Phase { ONE, TWO }
 }

@@ -2,9 +2,12 @@ package io.github.graphmaquina.rust;
 
 /**
  * The JNI entry points of the Rust kernels in {@code graphmaquina-rust/native}. Every method borrows the arrays it
- * is given for the length of the call only and keeps nothing afterwards. A refusal comes back as a Java exception:
- * {@link NullPointerException} for a null array and {@link IllegalArgumentException} for a malformed graph, an
- * output array too short or an alignment past a million cells.
+ * is given for the length of the call only and keeps nothing afterwards; the caller must not change those arrays from
+ * another thread during the call. A refusal comes back as a Java exception: {@link NullPointerException} for a null
+ * array; {@link IllegalArgumentException} for a malformed graph, an output array too short or that is also one of
+ * the inputs, or an alignment past a million cells; {@link OutOfMemoryError} when the answer does not fit in the
+ * native heap or in one Java array. A panic inside a kernel becomes an {@link IllegalStateException}, after Rust's
+ * default panic handler has printed its message on the standard error stream.
  *
  * <p>The library is loaded once, from the path in the system property {@code graphmaquina.rust.library} when it is
  * set and from {@code java.library.path} otherwise.

@@ -1,5 +1,6 @@
 //! Elementary cycles, listed in exactly the order `Graph.cycles()` lists them.
 
+use crate::KernelError;
 use crate::csr::Csr;
 use crate::scc::strong_components;
 
@@ -14,7 +15,11 @@ use crate::scc::strong_components;
 ///
 /// The working memory (components, flags, path and frame stack) is reserved once from the node count; the only
 /// buffer that grows is `out`, geometrically, because the size of the answer is not known before it is found.
-pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
+///
+/// # Errors
+///
+/// [`KernelError::OutOfMemory`] when the native heap cannot hold the answer; `out` keeps the cycles found so far.
+pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> Result<usize, KernelError> {
     let nodes = graph.nodes();
     let mut component = vec![0i32; nodes];
     let components = strong_components(graph, &mut component);
@@ -61,6 +66,7 @@ pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
                 continue;
             }
             if next == root {
+                reserve(out, 1 + path.len())?;
                 out.push(path.len() as i32);
                 out.extend_from_slice(&path);
                 found += 1;
@@ -72,19 +78,34 @@ pub fn cycles(graph: &Csr<'_>, out: &mut Vec<i32>) -> usize {
             }
         }
     }
-    found
+    Ok(found)
+}
+
+/// Makes room for `additional` more entries in the answer, reporting a native heap that cannot grant it as an error:
+/// the infallible `Vec` growth would abort the whole JVM instead.
+fn reserve(out: &mut Vec<i32>, additional: usize) -> Result<(), KernelError> {
+    out.try_reserve(additional).map_err(|_| KernelError::OutOfMemory)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn growing_the_answer_past_addressable_memory_is_an_error_not_an_abort() {
+        let mut out = vec![1, 2, 3];
+        assert_eq!(reserve(&mut out, usize::MAX / 2), Err(KernelError::OutOfMemory));
+        assert_eq!(out, vec![1, 2, 3]);
+        assert_eq!(reserve(&mut out, 10), Ok(()));
+        assert!(out.capacity() >= 13);
+    }
     use crate::scc::tests::{SplitMix, csr};
 
     fn listing(adjacency: &[&[i32]]) -> Vec<Vec<i32>> {
         let (offsets, targets) = csr(adjacency);
         let graph = Csr::new(&offsets, &targets).unwrap();
         let mut out = Vec::new();
-        let count = cycles(&graph, &mut out);
+        let count = cycles(&graph, &mut out).unwrap();
         let mut result = Vec::with_capacity(count);
         let mut at = 0;
         while at < out.len() {

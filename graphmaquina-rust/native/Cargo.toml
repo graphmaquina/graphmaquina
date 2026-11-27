@@ -18,8 +18,8 @@ jni-sys = "0.4.1"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-# Unwinding stays on: every JNI entry point catches a panic and turns it into a Java exception, so a bug in a
-# kernel can never take the JVM down.
+# Unwinding stays on: every JNI entry point catches a panic and turns it into a Java exception, so a panic in a
+# kernel never takes the JVM down. (An allocation failure is not a panic: see the crate documentation in lib.rs.)
 panic = "unwind"
 
 [lints.rust]

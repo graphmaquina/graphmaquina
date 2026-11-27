@@ -96,7 +96,7 @@ fn cycle_enumeration_allocates_a_fixed_set_of_buffers_besides_its_answer() {
         let mut out = Vec::with_capacity(4 * nodes);
         let mut found = 0;
         counts.push(allocations(|| {
-            found = cycles::cycles(&graph, &mut out);
+            found = cycles::cycles(&graph, &mut out).unwrap();
         }));
         assert_eq!(found, nodes / 3);
     }

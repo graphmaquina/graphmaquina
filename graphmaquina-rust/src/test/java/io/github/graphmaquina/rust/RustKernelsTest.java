@@ -80,6 +80,28 @@ class RustKernelsTest {
     }
 
     @Test
+    void anOutputArrayThatIsAlsoAnInputIsRefusedAndLeftUntouched() {
+        int[] offsets = {0, 1, 2};
+        int[] targets = {1, 0};
+        IllegalArgumentException asTargets = assertThrows(IllegalArgumentException.class,
+                () -> RustKernels.strongComponents(offsets, targets, targets));
+        assertEquals("the output array must not be one of the input arrays", asTargets.getMessage());
+        IllegalArgumentException asOffsets = assertThrows(IllegalArgumentException.class,
+                () -> RustKernels.strongComponents(offsets, targets, offsets));
+        assertEquals("the output array must not be one of the input arrays", asOffsets.getMessage());
+        assertArrayEquals(new int[] {0, 1, 2}, offsets);
+        assertArrayEquals(new int[] {1, 0}, targets);
+    }
+
+    @Test
+    void oneArrayMayBeBothReadOnlyInputs() {
+        byte[] kinds = new byte[4];
+        int[] lines = {1, 2};
+        assertEquals(2, RustKernels.align(lines, lines, kinds));
+        assertArrayEquals(new byte[] {0, 0}, Arrays.copyOf(kinds, 2));
+    }
+
+    @Test
     void anAlignmentPastAMillionCellsIsRefused() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> RustKernels.align(new int[999], new int[1001], new byte[2000]));

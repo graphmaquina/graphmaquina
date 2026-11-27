@@ -42,8 +42,8 @@ pub fn align(left: &[i32], right: &[i32], kinds: &mut [u8]) -> Result<usize, Ker
     let mut table = vec![0u16; cells];
     for i in (0..rows).rev() {
         let (upper, lower) = table.split_at_mut((i + 1) * width);
-        // Both rows are exactly `width` long and `right` exactly `columns`, so every index below is provably in
-        // bounds and the compiler drops the checks.
+        // Both rows are exactly `width` long and `right` exactly `columns`, so every index of the fill loop below is
+        // provably in bounds and the compiler drops its checks. (The walk after the table keeps its own.)
         let row = &mut upper[i * width..];
         let below = &lower[..width];
         let line = left[i];
