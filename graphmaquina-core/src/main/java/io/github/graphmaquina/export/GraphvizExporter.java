@@ -372,9 +372,12 @@ public final class GraphvizExporter {
     /**
      * {@code text} inside an HTML-like label: the four XML specials as entities, each line break as the end of a
      * left-aligned line, a tab as a space, since Graphviz drops tabs there, and U+FFFD for a character XML forbids,
-     * any of which would make Graphviz drop the label.
+     * any of which would make Graphviz drop the label. A text with none of those characters comes back as it is.
      */
     private static String html(String text) {
+        if (plain(text)) {
+            return text;
+        }
         StringBuilder out = new StringBuilder();
         for (char c : text.replace("\r\n", "\n").replace("\r", "\n").toCharArray()) {
             switch (c) {
@@ -388,6 +391,17 @@ public final class GraphvizExporter {
             }
         }
         return out.toString();
+    }
+
+    /** Whether {@link #html} would leave {@code text} unchanged: no XML special, no control and no forbidden char. */
+    private static boolean plain(String text) {
+        for (int index = 0; index < text.length(); index++) {
+            char c = text.charAt(index);
+            if (c < ' ' || c == '&' || c == '<' || c == '>' || c == '"' || c == '\uFFFE' || c == '\uFFFF') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The word that ends the fragment of a route that continues the chain of automatic attempts. */

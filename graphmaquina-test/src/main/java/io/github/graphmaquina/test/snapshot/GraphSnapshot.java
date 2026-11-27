@@ -64,8 +64,9 @@ public final class GraphSnapshot {
 
     private final Map<String, String> fields;
 
-    private GraphSnapshot(Map<String, String> fields) {
-        this.fields = Collections.unmodifiableMap(new TreeMap<>(fields));
+    /** {@code fields} becomes the snapshot's own: every caller hands over a map that nothing else keeps. */
+    private GraphSnapshot(TreeMap<String, String> fields) {
+        this.fields = Collections.unmodifiableMap(fields);
     }
 
     /** Reads the definition's own accessors only: no callback of the graph is ever invoked. */
@@ -79,7 +80,7 @@ public final class GraphSnapshot {
      * @throws IllegalArgumentException if the text is not a well-formed snapshot of the current version
      */
     public static GraphSnapshot parse(String text) {
-        return new GraphSnapshot(SnapshotCodec.decode(Objects.requireNonNull(text, "text")));
+        return new GraphSnapshot(new TreeMap<>(SnapshotCodec.decode(Objects.requireNonNull(text, "text"))));
     }
 
     public String serialize() {
@@ -88,7 +89,7 @@ public final class GraphSnapshot {
 
     private static <E, S extends Enum<S>, T extends Enum<T>> GraphSnapshot captureTyped(
             GraphDefinition<E, S, T> definition) {
-        Map<String, String> fields = new TreeMap<>();
+        TreeMap<String, String> fields = new TreeMap<>();
         fields.put("/machine/entity", definition.key().entity().getName());
         fields.put("/machine/states", definition.key().states().getName());
         fields.put("/machine/transitions", definition.key().transitions().getName());

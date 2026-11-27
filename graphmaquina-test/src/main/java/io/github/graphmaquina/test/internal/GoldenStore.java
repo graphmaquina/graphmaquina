@@ -134,13 +134,28 @@ public final class GoldenStore {
         }
     }
 
-    /** Strict UTF-8, minus one leading byte order mark: an editor adds it, and it is invisible in a diff. */
+    /**
+     * Strict UTF-8, minus one leading byte order mark: an editor adds it, and it is invisible in a diff. Bytes that are
+     * all ASCII decode to the same text without a decoder: they are valid UTF-8, and a byte order mark is not ASCII.
+     */
     private static String decodeStrictly(byte[] bytes) throws CharacterCodingException {
+        if (ascii(bytes)) {
+            return new String(bytes, StandardCharsets.US_ASCII);
+        }
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
         String text = decoder.decode(ByteBuffer.wrap(bytes)).toString();
         return !text.isEmpty() && text.charAt(0) == BYTE_ORDER_MARK ? text.substring(1) : text;
+    }
+
+    private static boolean ascii(byte[] bytes) {
+        for (byte b : bytes) {
+            if (b < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** A source that cannot be decoded differs from any text written here, so update mode replaces it. */
