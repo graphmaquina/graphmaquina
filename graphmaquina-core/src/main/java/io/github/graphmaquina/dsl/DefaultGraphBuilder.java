@@ -56,6 +56,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<SubmachineDraft<E, S, T, ?, ?, ?>> submachines = new ArrayList<>();
     @Getter(AccessLevel.PACKAGE)
     private final Problems problems = new Problems();
+    /** Whether build() has run; a stage this graph opened reads it before it names itself in a refusal. */
+    @Getter(AccessLevel.PACKAGE)
     private boolean built;
 
     DefaultGraphBuilder(MachineKey<E, S, T> key) {
@@ -300,13 +302,21 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
                 otherwise = Optional.of("terminal state " + state.name() + " accepts no transitions");
             }
             Map<T, String> reasons = rejections.getOrDefault(state, Map.of());
-            if (otherwise.isEmpty() || otherwise.get().isBlank()
-                    || reasons.values().stream().anyMatch(String::isBlank)) {
+            if (otherwise.isEmpty() || otherwise.get().isBlank() || anyBlank(reasons.values())) {
                 continue;
             }
             resolved.put(state, new StatePolicy<>(state, otherwise.get(), reasons));
         }
         return resolved;
+    }
+
+    private static boolean anyBlank(Collection<String> reasons) {
+        for (String reason : reasons) {
+            if (reason.isBlank()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Map<S, WatchSpec<E, S, T, ?, ?, ?>> resolveWatches() {

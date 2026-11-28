@@ -220,8 +220,9 @@ public final class MachineRegistry implements AutoCloseable {
                 CallRequest.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class, OutcomeStatus.class,
                 RejectionKind.class, StatesWritten.class, TransitionKind.class, CallFailedException.class,
                 ReentrantTransitionException.Refusal.class, CallFailureFlows.class, FrozenFlow.class, Await.class,
-                CallLog.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class, PostCommitScope.class,
-                Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class, Watcher.NoOwner.class);
+                CallLog.class, ChainLevels.class, CommitSummary.class, FlowHandle.Hook.class, Observers.class,
+                PostCommitScope.class, Reentrancy.class, Submachines.Hold.class, Submit.class, UnitOfWork.class,
+                Watcher.NoOwner.class);
     }
 
     /**
@@ -384,14 +385,15 @@ public final class MachineRegistry implements AutoCloseable {
         if (watchers.isEmpty()) {
             return List.of();
         }
-        Optional<Long> trigger = log.id() > 0 ? Optional.of(log.id()) : Optional.empty();
-        Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = new LinkedHashMap<>();
+        // The shared empty map until the first owner is found, so a commit that moves no watched entity builds none.
+        Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = Map.of();
         List<Reaction> reactions = new ArrayList<>();
         for (EntityRef moved : summary.movedEntities()) {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
                     Watcher.Lookup lookup = watcher.lookUpOwner(moved.instance());
                     if (lookup instanceof Watcher.Watched watched) {
+                        targets = targets.isEmpty() ? new LinkedHashMap<>() : targets;
                         targets.putIfAbsent(watched.owner(), watcher);
                     }
                     if (log.trace()) {
@@ -411,9 +413,12 @@ public final class MachineRegistry implements AutoCloseable {
                 }
             }
         }
-        for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
-            reactions.add(entry.getValue().react(entry.getKey().instance(),
-                    new ChainLevels(levels.watch() + 1, levels.automatic()), trigger));
+        if (!targets.isEmpty()) {
+            Optional<Long> trigger = log.id() > 0 ? Optional.of(log.id()) : Optional.empty();
+            for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
+                reactions.add(entry.getValue().react(entry.getKey().instance(),
+                        new ChainLevels(levels.watch() + 1, levels.automatic()), trigger));
+            }
         }
         return List.copyOf(reactions);
     }

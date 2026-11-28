@@ -282,13 +282,18 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         return from.name() + " -" + transition.name() + "-> " + to.name();
     }
 
-    /** A closed draft has already become its edge, and a built graph reads nothing more: a late call is refused. */
+    /**
+     * A closed draft has already become its edge, and a built graph reads nothing more: a late call is refused. The
+     * edge is named only for a refusal.
+     */
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("endTransition() was already called on " + where() + " in the graph "
                     + graph.key());
         }
-        graph.requireUnbuilt(where());
+        if (graph.built()) {
+            graph.requireUnbuilt(where());
+        }
     }
 
     /** Records SG507 for a draft never closed: only {@code endTransition()} turns a draft into an edge. */
@@ -470,8 +475,11 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
      */
     private boolean collectGuards(String where, int fromIndex, int idIndex, Problems problems,
                                   List<GuardRef<E, S, T>> guardRefs) {
+        if (guards.isEmpty()) {
+            return true;
+        }
         boolean valid = true;
-        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>(guards.size()));
         // A rejection names the guard that rejected, so the name of each guard of the edge must be its own.
         Set<String> named = new HashSet<>();
         for (GuardDraft<E, S, T> guard : guards) {

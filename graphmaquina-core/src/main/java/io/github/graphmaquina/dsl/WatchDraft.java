@@ -79,7 +79,9 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
 
     /** Once the graph is built nothing reads this watch any more, so a late call would be lost. */
     private void requireUnbuilt() {
-        graph.requireUnbuilt("the watch of " + state.name());
+        if (graph.built()) {
+            graph.requireUnbuilt("the watch of " + state.name());
+        }
     }
 
     private void reportPending(Problems problems) {

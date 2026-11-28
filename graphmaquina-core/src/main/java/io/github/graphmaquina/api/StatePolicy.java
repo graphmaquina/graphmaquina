@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -29,9 +30,18 @@ public record StatePolicy<S extends Enum<S>, T extends Enum<T>>(@NonNull S state
                 Objects.requireNonNull(transition, "rejected transition"),
                 Objects.requireNonNull(reason, "rejection reason")));
         rejectionReasons = Collections.unmodifiableMap(ordered);
-        if (otherwise.isBlank() || ordered.values().stream().anyMatch(String::isBlank)) {
+        if (otherwise.isBlank() || anyBlank(ordered.values())) {
             throw new IllegalArgumentException("the policy of " + state.name() + " has a blank reason");
         }
+    }
+
+    private static boolean anyBlank(Collection<String> reasons) {
+        for (String reason : reasons) {
+            if (reason.isBlank()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public String reasonFor(@NonNull T transition) {

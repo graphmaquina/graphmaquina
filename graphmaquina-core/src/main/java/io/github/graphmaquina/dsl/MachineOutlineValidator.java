@@ -240,22 +240,33 @@ public final class MachineOutlineValidator {
      * the allowed states removed must hold none. One witness per remaining cyclic component is enough.
      *
      * <p>An unused permission is filed under its state's declaration index, because the outline holds the
-     * authorisations in a set whose iteration order is not guaranteed.
+     * authorisations in a set whose iteration order is not guaranteed. With no permission at all, the graph with the
+     * allowed states removed is the graph itself, so its components are the ones already found.
      */
     private static void cycles(MachineOutline outline, OutlineIndex index, Problems problems) {
         Graph<String> full = index.topology();
+        List<Set<String>> components = StrongComponents.find(full);
         Set<String> participating = new HashSet<>();
-        for (Set<String> component : StrongComponents.find(full))
+        for (Set<String> component : components)
             if (cyclic(component, full)) participating.addAll(component);
         for (String allowed : outline.cycleAllowed())
             if (!participating.contains(allowed))
                 problems.add(DiagnosticCode.SG205, index.stateIndex(allowed), -1, "unused cycle permission " + allowed);
+        if (outline.cycleAllowed().isEmpty()) {
+            unauthorized(full, components, problems);
+            return;
+        }
         Graph<String> restricted = full.inducedSubgraph(
             full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
-        for (Set<String> component : StrongComponents.find(restricted))
-            if (cyclic(component, restricted))
+        unauthorized(restricted, StrongComponents.find(restricted), problems);
+    }
+
+    /** SG204 with one witness for each cyclic component of {@code components}, the components of {@code graph}. */
+    private static void unauthorized(Graph<String> graph, List<Set<String>> components, Problems problems) {
+        for (Set<String> component : components)
+            if (cyclic(component, graph))
                 problems.add(DiagnosticCode.SG204,
-                        "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
+                        "unauthorized cycle " + StrongComponents.cycleWitness(graph, component));
     }
 
     /** More than one node, or a single node that reaches itself. */

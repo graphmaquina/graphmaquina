@@ -57,13 +57,13 @@ final class CommitSummary {
      * identity is the enum equality the base compared these two states by.
      */
     List<EntityRef> movedEntities() {
-        List<EntityRef> moved = new ArrayList<>();
+        List<EntityRef> moved = new ArrayList<>(changes.size());
         for (Change change : changes) {
             if (change.first().from() != change.last().to()) {
                 moved.add(change.ref());
             }
         }
-        return List.copyOf(moved);
+        return Collections.unmodifiableList(moved);
     }
 
     /** The entity of each change, in order of first appearance: one per entity with an entry in the log. */

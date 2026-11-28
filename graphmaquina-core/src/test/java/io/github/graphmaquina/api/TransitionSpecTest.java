@@ -69,19 +69,23 @@ class TransitionSpecTest {
 
     @Test
     void onFailureAndFailsOnRequireAnAction() {
-        assertThrows(IllegalArgumentException.class,
-                () -> spec(Optional.empty(), List.of(), Optional.of(Month.MARCH), Optional.empty()));
-        assertThrows(IllegalArgumentException.class, () -> new TransitionSpec<String, DayOfWeek, Month>(
-                DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Optional.empty(), List.of(), Optional.empty(),
-                List.of(IllegalStateException.class), Optional.empty(), Optional.empty()));
+        String expected = "MONDAY -JANUARY-> TUESDAY: onFailure and failsOn are only allowed with an action";
+        assertEquals(expected, assertThrows(IllegalArgumentException.class,
+                () -> spec(Optional.empty(), List.of(), Optional.of(Month.MARCH), Optional.empty())).getMessage());
+        assertEquals(expected, assertThrows(IllegalArgumentException.class, () -> new TransitionSpec<String, DayOfWeek,
+                Month>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Optional.empty(), List.of(),
+                Optional.empty(), List.of(IllegalStateException.class), Optional.empty(), Optional.empty()))
+                .getMessage());
     }
 
     @Test
     void timeoutOnlyOnAsyncActionAndPositive() {
-        assertThrows(IllegalArgumentException.class,
-                () -> spec(Optional.of(SYNC), List.of(), Optional.empty(), Optional.of(Duration.ofSeconds(1))));
-        assertThrows(IllegalArgumentException.class,
-                () -> spec(Optional.of(ASYNC), List.of(), Optional.empty(), Optional.of(Duration.ZERO)));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: timeout is only allowed on an asynchronous action",
+                assertThrows(IllegalArgumentException.class, () -> spec(Optional.of(SYNC), List.of(),
+                        Optional.empty(), Optional.of(Duration.ofSeconds(1)))).getMessage());
+        assertEquals("MONDAY -JANUARY-> TUESDAY: timeout must be positive",
+                assertThrows(IllegalArgumentException.class, () -> spec(Optional.of(ASYNC), List.of(),
+                        Optional.empty(), Optional.of(Duration.ZERO))).getMessage());
         TransitionSpec<String, DayOfWeek, Month> ok =
                 spec(Optional.of(ASYNC), List.of(), Optional.empty(), Optional.of(Duration.ofSeconds(1)));
         assertTrue(ok.isAsync());

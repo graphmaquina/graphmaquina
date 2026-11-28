@@ -42,6 +42,10 @@ sealed class Transaction permits Transaction.Admission {
     private final MachineRegistry registry;
     @Getter(AccessLevel.PACKAGE)
     private final UnitOfWork uow;
+    /**
+     * The contexts the call handed out, in that order. Created with the transaction on purpose: created with the first
+     * context instead, a call that hands none out measured slower and allocated more on JDK 25.
+     */
     private final List<ContextHandle> contexts = new ArrayList<>();
 
     /** The key of the root call's machine. */

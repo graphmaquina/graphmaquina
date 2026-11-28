@@ -572,6 +572,10 @@ final class UnitOfWork {
         if (started) {
             return hopRecords();
         }
+        if (log.size() == 1) {
+            LogEntry.Hop hop = (LogEntry.Hop) log.get(0);
+            return List.of(Typed.record(hop.ref().key(), hop));
+        }
         TransitionRecord<?, ?, ?>[] records = new TransitionRecord<?, ?, ?>[log.size()];
         for (int index = 0; index < records.length; index++) {
             LogEntry.Hop hop = (LogEntry.Hop) log.get(index);
