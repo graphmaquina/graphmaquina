@@ -112,9 +112,16 @@ final class NumberedGraph<N> {
         Object[] reached = new Object[nodes.length];
         int[] finished = finishOrder(reached);
         Object[] chosen = new Object[nodes.length];
-        int[] component = new int[nodes.length];
+        int[] component = ungathered();
         int count = gather(finished, reached, chosen, component);
         return freeze(component, count, chosen);
+    }
+
+    /** A component array in which no node is gathered yet. */
+    private int[] ungathered() {
+        int[] component = new int[nodes.length];
+        Arrays.fill(component, -1);
+        return component;
     }
 
     /**
@@ -122,14 +129,16 @@ final class NumberedGraph<N> {
      * {@code reached} records the instance with which the pass first reached each node.
      */
     private int[] finishOrder(Object[] reached) {
+        boolean[] seen = new boolean[nodes.length];
         int[] finished = new int[nodes.length];
         int done = 0;
         int[] stackNode = new int[nodes.length];
         int[] stackEdge = new int[nodes.length];
         for (int root = 0; root < nodes.length; root++) {
-            if (reached[root] != null) {
+            if (seen[root]) {
                 continue;
             }
+            seen[root] = true;
             reached[root] = nodes[root];
             stackNode[0] = root;
             stackEdge[0] = forwardStart[root];
@@ -144,7 +153,8 @@ final class NumberedGraph<N> {
                 }
                 stackEdge[depth - 1] = edge + 1;
                 int next = forwardTarget[edge];
-                if (reached[next] == null) {
+                if (!seen[next]) {
+                    seen[next] = true;
                     reached[next] = forwardInstance[edge];
                     stackNode[depth] = next;
                     stackEdge[depth] = forwardStart[next];
@@ -157,26 +167,28 @@ final class NumberedGraph<N> {
 
     /**
      * Walks the edges backwards from each node not yet gathered, last finished first, taking pending nodes last in
-     * first out; writes each node's component, numbered in the order they are gathered, and the instance it is
-     * gathered with into {@code chosen}. Returns how many components there are.
+     * first out; writes each node's component, numbered in the order they are gathered, as soon as the walk reaches it
+     * ({@code component} comes in with -1 for every node: none gathered yet), and the instance it is gathered with into
+     * {@code chosen}. Returns how many components there are.
      */
     private int gather(int[] finished, Object[] reached, Object[] chosen, int[] component) {
         int[] pending = new int[nodes.length];
         int count = 0;
         for (int i = finished.length - 1; i >= 0; i--) {
             int root = finished[i];
-            if (chosen[root] != null) {
+            if (component[root] >= 0) {
                 continue;
             }
+            component[root] = count;
             chosen[root] = reached[root];
             pending[0] = root;
             int top = 1;
             while (top > 0) {
                 int current = pending[--top];
-                component[current] = count;
                 for (int edge = backwardStart[current]; edge < backwardStart[current + 1]; edge++) {
                     int previous = backwardSource[edge];
-                    if (chosen[previous] == null) {
+                    if (component[previous] < 0) {
+                        component[previous] = count;
                         chosen[previous] = backwardInstance[edge];
                         pending[top++] = previous;
                     }
@@ -227,7 +239,7 @@ final class NumberedGraph<N> {
     List<List<N>> cycles() {
         Object[] reached = new Object[nodes.length];
         int[] finished = finishOrder(reached);
-        int[] component = new int[nodes.length];
+        int[] component = ungathered();
         int count = gather(finished, reached, new Object[nodes.length], component);
         boolean[] closes = closing(component, count);
         List<List<N>> cycles = new ArrayList<>();

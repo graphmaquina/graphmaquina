@@ -268,8 +268,13 @@ public final class LineDiff {
                 if (text.marker(base + line)) {
                     numbered[line] = -1;
                 } else {
-                    Integer known = numbers.putIfAbsent(text.lines()[base + line], numbers.size());
-                    numbered[line] = known == null ? numbers.size() - 1 : known;
+                    String content = text.lines()[base + line];
+                    int known = numbers.getOrDefault(content, -1);
+                    if (known < 0) {
+                        known = numbers.size();
+                        numbers.put(content, known);
+                    }
+                    numbered[line] = known;
                 }
             }
             return numbered;
