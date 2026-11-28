@@ -7,6 +7,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 /**
  * A {@link Graph} numbered once, so that {@link StrongComponents#find} and {@link Graph#cycles()} walk arrays of ints
@@ -272,6 +274,7 @@ final class NumberedGraph<N> {
     }
 
     /** The cycle search's path, its stack and its marks, allocated once and reused from root to root. */
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     private final class Search {
 
         private final int[] component;
@@ -279,10 +282,6 @@ final class NumberedGraph<N> {
         private final boolean[] onPath = new boolean[nodes.length];
         private final int[] stackNode = new int[nodes.length];
         private final int[] stackEdge = new int[nodes.length];
-
-        private Search(int[] component) {
-            this.component = component;
-        }
 
         /**
          * Appends the cycles that start at {@code root}, in the order the search closes them. The path and the stack
